@@ -11,8 +11,7 @@ interface SidebarNavSkeletonProps {
 /**
  * Loading placeholder for the sidebar nav tabs.
  *
- * Rendered while the session/permissions (which decide what tabs are visible)
- * are still loading, so the nav fades in as a set of shimmering rows instead of
+ * Rendered until the client has mounted, so the nav fades in as a set of shimmering rows instead of
  * popping in item-by-item.
  */
 export function SidebarNavSkeleton({ rows = 7 }: SidebarNavSkeletonProps) {

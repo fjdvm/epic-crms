@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/breadcrumb";
 import { HeaderNotifications } from "./header-notifications";
 import { ThemeToggle } from "./theme-toggle";
+import { HeaderProfile } from "./header-profile";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator"
+import { Separator } from "@/components/ui/separator";
 
 
 function getBreadcrumbItems(pathname: string) {
@@ -39,7 +40,7 @@ export function Header() {
       {/* Left: Sidebar Toggle & Breadcrumb */}
       <div className="flex items-center gap-sm sm:gap-md flex-1 overflow-hidden">
         <SidebarTrigger className="h-9 w-9 shrink-0  hover:bg-accent text-foreground transition-all cursor-pointer" />
-        <Separator orientation="vertical" className="h-5" /> 
+        <Separator orientation="vertical" className="h-5" />
         <Breadcrumb className="overflow-hidden">
           <BreadcrumbList className="flex-nowrap whitespace-nowrap text-sm sm:text-base font-semibold">
             {breadcrumbItems.map((item, index) => (
@@ -66,6 +67,7 @@ export function Header() {
       <div className="flex items-center gap-xs shrink-0">
         <HeaderNotifications />
         <ThemeToggle />
+        <HeaderProfile />
       </div>
     </header>
   );

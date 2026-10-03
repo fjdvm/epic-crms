@@ -18,7 +18,7 @@ function MainContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div
-      className={`flex-1 flex flex-col min-w-0 pb-16 md:pb-0 transition-[margin] duration-300 ${marginClass}`}
+      className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-300 ${marginClass}`}
     >
       <Header />
 

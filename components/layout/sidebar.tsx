@@ -6,7 +6,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
@@ -16,7 +15,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { sidebarItems } from "./sidebar-nav";
-import { SidebarProfileFooter } from "./sidebar-profile-footer";
 import { SidebarNavSkeleton } from "./sidebar-nav-skeleton";
 import { SidebarEnterpriseHeader } from "./sidebar-enterprise-header";
 
@@ -55,7 +53,7 @@ export function Sidebar() {
               {!mounted ? (
                 <SidebarNavSkeleton rows={1} />
               ) : (
-                <div className="space-y-xs">
+                <SidebarMenu className="space-y-xs">
                   {sidebarItems.map((item) => {
                     const ItemIcon = item.icon;
                     const isActive =
@@ -63,31 +61,25 @@ export function Sidebar() {
                       pathname.startsWith(item.href + "/");
 
                     return (
-                      <SidebarMenu key={item.name}>
-                        <SidebarMenuItem>
-                          <SidebarMenuButton
-                            asChild
-                            isActive={isActive}
-                            className="w-full flex items-center gap-sm px-sm py-sm rounded-lg text-sm text-foreground transition-colors"
-                          >
-                            <Link href={item.href} onClick={handleNavClick}>
-                              <ItemIcon className="w-4 h-4 shrink-0" />
-                              <span>{item.name}</span>
-                            </Link>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      </SidebarMenu>
+                      <SidebarMenuItem key={item.name}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={isActive}
+                          className="w-full flex items-center gap-sm px-sm py-sm rounded-lg text-sm text-foreground transition-colors"
+                        >
+                          <Link href={item.href} onClick={handleNavClick}>
+                            <ItemIcon className="w-4 h-4 shrink-0" />
+                            <span>{item.name}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
                     );
                   })}
-                </div>
+                </SidebarMenu>
               )}
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-
-        <SidebarFooter className="p-sm border-t border-border">
-          <SidebarProfileFooter />
-        </SidebarFooter>
 
         <SidebarRail />
       </aside>
