@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
@@ -15,6 +16,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { sidebarItems } from "./sidebar-nav";
+import { SidebarProfileFooter } from "./sidebar-profile-footer";
 import { SidebarNavSkeleton } from "./sidebar-nav-skeleton";
 import { SidebarEnterpriseHeader } from "./sidebar-enterprise-header";
 
@@ -80,6 +82,10 @@ export function Sidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
+
+        <SidebarFooter className="p-sm border-t border-border space-y-2">
+          <SidebarProfileFooter />
+        </SidebarFooter>
 
         <SidebarRail />
       </aside>

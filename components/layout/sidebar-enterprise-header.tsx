@@ -1,20 +1,99 @@
 "use client";
 
 import React from "react";
-import { X } from "lucide-react";
-import { SidebarHeader, SidebarTrigger } from "@/components/ui/sidebar";
+import { ChevronsUpDown, Check, X } from "lucide-react";
+import {
+  SidebarHeader,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { systems, type SystemChild } from "./sidebar-nav";
 
 export function SidebarEnterpriseHeader({ isMobile }: { isMobile: boolean }) {
   return (
     <SidebarHeader className="p-3 border-b border-border/50">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex flex-col min-w-0 gap-1 p-2">
-          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-sidebar-foreground truncate leading-none">
-            Bren Raphael&apos;s
-          </h1>
-          <span className="text-xs font-semibold bg-violet-500 text-white px-2.5 py-1 rounded-md truncate mt-0.5 w-fit shadow-xs inline-block">
-            Customer Relationship Mgmt.
-          </span>
+        <div className="flex-1 min-w-0">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-sidebar-accent cursor-pointer transition-colors group gap-2 border border-transparent hover:border-border/40">
+                <div className="flex flex-col min-w-0 gap-1 pr-1">
+                  <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-sidebar-foreground truncate leading-none">
+                    Bren Raphael&apos;s
+                  </h1>
+                  <span className="text-xs font-semibold bg-violet-500 text-white px-2.5 py-1 rounded-md truncate mt-0.5 w-fit shadow-xs inline-block">
+                    Customer Relationship Mgmt.
+                  </span>
+                </div>
+                <ChevronsUpDown className="w-4 h-4 text-muted-foreground shrink-0 group-hover:text-sidebar-foreground transition-colors" />
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className="w-72 sm:w-80 bg-popover border border-border text-popover-foreground z-[99999] p-2 space-y-1 shadow-xl rounded-xl"
+              align="start"
+              side="bottom"
+              sideOffset={6}
+            >
+              <DropdownMenuLabel className="text-[11px] text-muted-foreground font-bold uppercase tracking-wider px-3 py-1.5">
+                Select Enterprise Module
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator className="my-1 bg-border" />
+              {systems.map((sys: SystemChild) => {
+                const SysIcon = sys.icon;
+                return (
+                  <DropdownMenuItem
+                    key={sys.fullName}
+                    onClick={() => {
+                      if (sys.url) {
+                        window.location.href = sys.url;
+                      }
+                    }}
+                    className={`cursor-pointer text-xs flex items-center justify-between p-2.5 rounded-lg transition-all font-medium gap-3 ${
+                      sys.active
+                        ? "bg-violet-500/10 text-violet-700 dark:text-violet-300 font-semibold"
+                        : "hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden min-w-0 flex-1">
+                      <div
+                        className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                          sys.active
+                            ? "bg-violet-600 text-white shadow-xs"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <SysIcon className="w-4 h-4 shrink-0" />
+                      </div>
+                      <div className="flex flex-col min-w-0 overflow-hidden flex-1 justify-center gap-0.5">
+                        <span
+                          className={`font-semibold text-xs truncate leading-snug ${
+                            sys.active ? "text-foreground font-bold" : "text-foreground"
+                          }`}
+                        >
+                          {sys.fullName}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground truncate leading-tight">
+                          {sys.desc}
+                        </span>
+                      </div>
+                    </div>
+                    {sys.active && (
+                      <div className="w-5 h-5 rounded-full bg-violet-600 text-white flex items-center justify-center shrink-0 ml-2 shadow-xs">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
+                    )}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         {isMobile && (
           <SidebarTrigger
