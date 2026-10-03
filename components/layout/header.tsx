@@ -12,7 +12,6 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { HeaderNotifications } from "./header-notifications";
-import { HeaderProfile } from "./header-profile";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 
@@ -62,10 +61,9 @@ export function Header() {
         </Breadcrumb>
       </div>
 
-      {/* Right: Notifications & Profile */}
+      {/* Right: Notifications */}
       <div className="flex items-center gap-xs shrink-0">
         <HeaderNotifications />
-        <HeaderProfile />
       </div>
     </header>
   );
