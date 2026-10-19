@@ -8,15 +8,11 @@ import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { StaffProvider } from "./staff-context";
 import type { Staff } from "@/lib/portal/client";
+import { pollNotifications } from "@/features/notifications/actions";
+import { LiveUpdatesProvider } from "@/features/notifications/live-updates";
 import type { NotificationFeed } from "@/features/notifications/notifications";
 
-function MainContent({
-  children,
-  notifications,
-}: {
-  children: React.ReactNode;
-  notifications: NotificationFeed | null;
-}) {
+function MainContent({ children }: { children: React.ReactNode }) {
   const { open } = useSidebar();
   const pathname = usePathname();
   const mounted = useMounted();
@@ -29,7 +25,7 @@ function MainContent({
     <div
       className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-300 ${marginClass}`}
     >
-      <Header notifications={notifications} />
+      <Header />
 
       <main
         key={pathname}
@@ -54,12 +50,18 @@ export function AppShell({
 }) {
   return (
     <StaffProvider staff={staff} permittedPages={permittedPages}>
-      <SidebarProvider defaultOpen={true}>
-        <div className="flex min-h-screen w-full bg-background text-foreground relative">
-          <Sidebar />
-          <MainContent notifications={notifications}>{children}</MainContent>
-        </div>
-      </SidebarProvider>
+      <LiveUpdatesProvider
+        initialFeed={notifications}
+        poll={pollNotifications}
+        enabled={permittedPages.includes("/customer-profiles")}
+      >
+        <SidebarProvider defaultOpen={true}>
+          <div className="flex min-h-screen w-full bg-background text-foreground relative">
+            <Sidebar />
+            <MainContent>{children}</MainContent>
+          </div>
+        </SidebarProvider>
+      </LiveUpdatesProvider>
     </StaffProvider>
   );
 }
