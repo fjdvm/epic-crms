@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { formatAgo, formatDate, formatPesos } from "./format";
+import { OrdersTab } from "./orders-tab";
 import type { CustomerProfile } from "./profile";
 import { STAGE_LABELS } from "./rules";
 
@@ -79,13 +80,17 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
           <TabsTrigger value="details">Details</TabsTrigger>
         </TabsList>
 
-        {["orders", "cart", "feedback", "emails"].map((tab) => (
+        {["cart", "feedback", "emails"].map((tab) => (
           <TabsContent key={tab} value={tab}>
             <div className="p-xl text-center text-muted-foreground border border-border rounded-lg">
               Nothing to show here yet.
             </div>
           </TabsContent>
         ))}
+
+        <TabsContent value="orders">
+          <OrdersTab orders={p.orderHistory} />
+        </TabsContent>
 
         <TabsContent value="details" className="space-y-md">
           <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">

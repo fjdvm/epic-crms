@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 
+import { getCustomerOrders, type CustomerOrder } from "./orders";
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "./rules";
 
 export interface CustomerAddress {
@@ -37,6 +38,8 @@ export interface CustomerProfile {
   feedbackCount: number;
   averageRating: number | null;
   addresses: CustomerAddress[];
+  /** Newest first. */
+  orderHistory: CustomerOrder[];
 }
 
 /** One verified Customer's Profile, or null for a Lead or an id that does not exist. */
@@ -77,6 +80,8 @@ export async function getCustomerProfile(
     select id, label, street, barangay, city, province, postal_code, country, is_default
     from public.addresses where customer_id = ${id} order by id`;
 
+  const orderHistory = await getCustomerOrders(sql, id);
+
   const totalSpent = Number(row.total_spent);
   const paidOrders = row.paid_orders as number;
   const lastOrder = (row.last_order as Date | null) ?? null;
@@ -112,6 +117,7 @@ export async function getCustomerProfile(
     feedbackCount: row.feedback_count as number,
     averageRating: (row.average_rating as number | null) ?? null,
     addresses: mapped,
+    orderHistory,
   };
 }
 

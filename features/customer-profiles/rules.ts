@@ -55,3 +55,10 @@ export const STAGE_LABELS: Record<Stage, string> = {
   "at-risk": "At risk",
   lost: "Lost",
 };
+
+/** Payment status of an Order, derived from its status: there is no stored payment status. */
+export function paymentStatusOf(status: string): "Paid" | "Unpaid" | "Cancelled" {
+  if (status === "cancelled") return "Cancelled";
+
+  return PAID_OR_FULFILLED.includes(status) ? "Paid" : "Unpaid";
+}
