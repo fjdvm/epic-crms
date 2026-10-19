@@ -1,5 +1,6 @@
 import { CustomerListView } from "@/features/customer-profiles/customer-list";
-import { listCustomers, SORT_KEYS, type SortKey } from "@/features/customer-profiles/customers";
+import { loadCustomers, SORT_KEYS, type SortKey } from "@/features/customer-profiles/customers";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { database } from "@/lib/db";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
@@ -25,7 +26,24 @@ export default async function CustomerProfilesPage({
   const page = Math.max(1, Number.parseInt(first(raw.page), 10) || 1);
   const search = first(raw.q).trim();
 
-  const list = await listCustomers(database(), { search, sort, direction, page });
+  const result = await loadCustomers(database, { search, sort, direction, page });
+
+  if (!result.ok) {
+    return (
+      <div className="p-md sm:p-lg space-y-md">
+        <h1 className="text-headline-md text-foreground">Customer Profiles</h1>
+        <Alert variant="destructive">
+          <AlertTitle>Customers are temporarily unavailable</AlertTitle>
+          <AlertDescription>
+            CREOMS could not read the store&apos;s customer data. Reload to try again; if it keeps
+            happening, tell whoever maintains CREOMS.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  const { list } = result;
 
   return (
     <div className="p-md sm:p-lg space-y-md">
