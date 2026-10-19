@@ -119,6 +119,8 @@ export async function markRead(
   id: string,
   schema: string = DEFAULT_SCHEMA,
 ): Promise<void> {
+  if (!/^\d+$/.test(id)) return;
+
   const s = schemaIdent(writer, schema);
 
   await writer`update ${s}.notifications set read_at = now() where id = ${id}::bigint and read_at is null`;
