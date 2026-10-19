@@ -30,10 +30,10 @@ export default async function CustomerProfilesPage({
   return (
     <div className="p-md sm:p-lg space-y-md">
       <div>
-        <h1 className="text-headline-md text-foreground">Customer Profiles</h1>
-        <p className="text-body-sm text-muted-foreground mt-xs">
-          {list.profileCount} {list.profileCount === 1 ? "profile" : "profiles"}
-        </p>
+        <h1 className="text-headline-md text-foreground">
+          Customer Profiles{" "}
+          <span className="text-muted-foreground font-normal">({list.profileCount})</span>
+        </h1>
       </div>
       <CustomerListView list={list} params={{ search, sort, direction, page: list.page }} />
     </div>

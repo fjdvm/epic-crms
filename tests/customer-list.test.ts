@@ -2,7 +2,6 @@ import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { listCustomers } from "@/features/customer-profiles/customers";
-import { isCustomer, totalSpent } from "@/features/customer-profiles/rules";
 
 // Runs against the real shared database through the read-only role. Skipped when no
 // connection string is supplied. Every statement here is a SELECT; nothing is written.
@@ -13,6 +12,9 @@ afterAll(async () => {
   if (url) await sql.end();
 });
 
+/** Written out here on purpose, so a wrong status list in the module cannot pass both sides. */
+const COUNTS_TOWARD_TOTAL_SPENT = new Set(["paid", "preparing", "dispatched", "delivered"]);
+
 /** Independent expectation: plain per-table reads, aggregated in JS with the domain rules. */
 async function expected() {
   const customers = await sql`select * from public.customers`;
@@ -21,8 +23,11 @@ async function expected() {
   const carts = await sql`select distinct customer_id from public.cart_lines`;
 
   return customers
-    .filter((c) => isCustomer(users.find((u) => u.id === c.id) ? { emailVerified: users.find((u) => u.id === c.id)!.verified } : null))
-    .map((c) => {
+    .flatMap((c) => {
+      const user = users.find((u) => u.id === c.id);
+      return user?.verified ? [{ c, user }] : [];
+    })
+    .map(({ c, user }) => {
       const mine = orders.filter((o) => o.customer_id === c.id);
       return {
         id: c.id as string,
@@ -30,16 +35,12 @@ async function expected() {
         email: c.email as string,
         contactNumber: c.contact_number as string,
         orders: mine.length,
-        totalSpent: totalSpent(
-          mine.map((o) => ({
-            status: o.status,
-            subtotalInCentavos: o.subtotal_in_centavos,
-            deliveryFeeInCentavos: o.delivery_fee_in_centavos,
-          })),
-        ),
+        totalSpent: mine
+          .filter((o) => COUNTS_TOWARD_TOTAL_SPENT.has(o.status))
+          .reduce((sum, o) => sum + o.subtotal_in_centavos + (o.delivery_fee_in_centavos ?? 0), 0),
         lastOrder: mine.length ? Math.max(...mine.map((o) => o.created_at.getTime())) : null,
         cartHasItems: carts.some((x) => x.customer_id === c.id),
-        customerSince: users.find((u) => u.id === c.id)!.created.getTime(),
+        customerSince: user.created.getTime(),
       };
     });
 }
@@ -68,14 +69,14 @@ describe.skipIf(!url)("listCustomers (real database)", () => {
     const times = byDefault.rows.map((r) => r.customerSince.getTime());
     expect(times).toEqual([...times].sort((a, b) => b - a));
 
-    const byName = await listCustomers(sql, { sort: "name", direction: "asc", pageSize: 1000 });
-    const names = byName.rows.map((r) => r.name.toLowerCase());
-    expect(names).toEqual([...names].sort());
+    const byOrders = await listCustomers(sql, { sort: "orders", direction: "asc", pageSize: 1000 });
+    const counts = byOrders.rows.map((r) => r.orders);
+    expect(counts).toEqual([...counts].sort((a, b) => a - b));
   });
 
   it("searches name, email and contact number on the server", async () => {
     const all = (await listCustomers(sql, { pageSize: 1000 })).rows;
-    if (all.length === 0) return;
+    expect(all.length, "needs at least one Customer to search for").toBeGreaterThan(0);
     const target = all[0];
 
     for (const term of [target.name.slice(1, 4), target.email, target.contactNumber]) {

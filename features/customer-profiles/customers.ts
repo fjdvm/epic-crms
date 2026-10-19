@@ -71,6 +71,11 @@ export async function listCustomers(
     `${SORT_COLUMNS[sortKey]} ${direction} nulls last, customer_since desc, id`,
   );
 
+  const searchFilter =
+    search === ""
+      ? sql`true`
+      : sql`name ilike ${pattern} or email ilike ${pattern} or contact_number ilike ${pattern}`;
+
   const withCustomers = sql`
     with agg as (
       select
@@ -98,8 +103,7 @@ export async function listCustomers(
   const [counts] = await sql<{ matching: number; profile_count: number }[]>`
     ${withCustomers}
     select
-      count(*) filter (where ${search === "" ? sql`true` : sql`
-        name ilike ${pattern} or email ilike ${pattern} or contact_number ilike ${pattern}`})::int as matching,
+      count(*) filter (where ${searchFilter})::int as matching,
       count(*)::int as profile_count
     from agg`;
 
@@ -109,8 +113,7 @@ export async function listCustomers(
   const rows = await sql<Record<string, unknown>[]>`
     ${withCustomers}
     select * from agg
-    where ${search === "" ? sql`true` : sql`
-      name ilike ${pattern} or email ilike ${pattern} or contact_number ilike ${pattern}`}
+    where ${searchFilter}
     order by ${orderBy}
     limit ${pageSize} offset ${(page - 1) * pageSize}`;
 
