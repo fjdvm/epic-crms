@@ -27,23 +27,23 @@ export function SidebarProfileFooter() {
     <div className="w-full">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <div className="flex items-center gap-sm.5 p-sm rounded-xl hover:bg-sidebar-accent transition-colors cursor-pointer group">
+          <div className="flex items-center gap-3 rounded-xl hover:bg-sidebar-accent transition-colors cursor-pointer group">
             <div className="relative shrink-0">
-              <Avatar className="w-11 h-11 border-2 border-border shadow-sm">
-                <AvatarFallback className="text-sm bg-primary text-primary-foreground font-bold">
+              <Avatar className="size-[38px]">
+                <AvatarFallback className="text-[13px] bg-zinc-900 text-white font-semibold">
                   {initials}
                 </AvatarFallback>
               </Avatar>
               <span
-                className="absolute bottom-0 right-0 w-3 h-3 bg-success rounded-full border-2 border-sidebar"
+                className="absolute bottom-0 right-0 size-[11px] bg-success rounded-full border-2 border-sidebar"
                 title="Online"
               />
             </div>
             <div className="flex-1 overflow-hidden space-y-0.5">
-              <p className="text-sm font-bold truncate text-sidebar-foreground leading-tight">
+              <p className="text-sm font-semibold truncate text-zinc-900 leading-tight">
                 {name}
               </p>
-              <p className="text-xs font-medium text-muted-foreground truncate leading-tight">
+              <p className="text-xs text-zinc-500 truncate leading-tight">
                 {role}
               </p>
             </div>

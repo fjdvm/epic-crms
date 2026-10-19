@@ -45,4 +45,19 @@ describe("the sidebar", () => {
 
     expect(screen.queryByRole("link", { name: "Customer Profiles" })).toBeNull();
   });
+
+  it("groups Customer Profiles under CUSTOMERS and shows the product tag", async () => {
+    renderSidebar(["/customer-profiles"]);
+
+    expect(await screen.findByText("CUSTOMERS")).toBeTruthy();
+    expect(screen.getByText("Customer Relationship Mgmt.")).toBeTruthy();
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+  });
+
+  it("omits the CUSTOMERS group when no page is permitted", async () => {
+    renderSidebar([]);
+    await screen.findByText("Ada Okafor");
+
+    expect(screen.queryByText("CUSTOMERS")).toBeNull();
+  });
 });

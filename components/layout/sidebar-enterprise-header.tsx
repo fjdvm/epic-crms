@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { ChevronsUpDown, Check, X } from "lucide-react";
 import {
   SidebarHeader,
@@ -18,17 +19,25 @@ import { systems, type SystemChild } from "./sidebar-nav";
 
 export function SidebarEnterpriseHeader({ isMobile }: { isMobile: boolean }) {
   return (
-    <SidebarHeader className="p-3 border-b border-border/50">
+    <SidebarHeader className="h-24 justify-center py-0 pl-3.5 pr-2.5 border-b border-sidebar-border">
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-sidebar-accent cursor-pointer transition-colors group gap-2 border border-transparent hover:border-border/40">
-                <div className="flex flex-col min-w-0 gap-1 pr-1">
-                  <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-sidebar-foreground truncate leading-none">
+              <div className="flex items-center p-1 rounded-xl hover:bg-sidebar-accent cursor-pointer transition-colors group gap-[11px]">
+                <Image
+                  src="/images/bren-raphaels-logo.svg"
+                  alt=""
+                  width={44}
+                  height={44}
+                  unoptimized
+                  className="size-11 shrink-0 rounded-[10px]"
+                />
+                <div className="flex flex-col min-w-0 gap-1.5 pr-1">
+                  <h1 className="text-xl font-bold text-zinc-900 truncate leading-none">
                     Bren Raphael&apos;s
                   </h1>
-                  <span className="text-xs font-semibold bg-violet-500 text-white px-2.5 py-1 rounded-md truncate mt-0.5 w-fit shadow-xs inline-block">
+                  <span className="text-[11px] font-semibold bg-[#f3e8ff] text-[#6d28d9] px-2 py-[3px] rounded-md truncate w-fit inline-block">
                     Customer Relationship Mgmt.
                   </span>
                 </div>

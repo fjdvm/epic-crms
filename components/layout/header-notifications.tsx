@@ -23,7 +23,7 @@ export function HeaderNotifications() {
           title="Notifications"
         >
           <Bell className="w-4 h-4" />
-          <Badge className="absolute top-1.5 right-1.5 w-2 h-2 p-0 bg-destructive rounded-full" />
+          <Badge className="absolute top-1.5 right-1.5 w-2 h-2 p-0 bg-badge-notification rounded-full" />
         </Button>
       </DropdownMenuTrigger>
 

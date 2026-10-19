@@ -49,16 +49,24 @@ export function Sidebar() {
           className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[55] animate-in fade-in duration-200"
         />
       )}
-      <aside className="fixed left-0 top-0 h-full w-64 flex flex-col border-r border-border bg-sidebar text-sidebar-foreground z-[60] transition-all duration-300 shadow-xl md:shadow-none animate-in slide-in-from-left duration-300">
+      <aside className="fixed left-0 top-0 h-full w-64 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground z-[60] transition-all duration-300 shadow-xl md:shadow-none animate-in slide-in-from-left duration-300">
         <SidebarEnterpriseHeader isMobile={isMobile} />
 
-        <SidebarContent className="p-md overflow-y-auto">
+        <SidebarContent className="px-3 py-4 overflow-y-auto">
           <SidebarGroup className="p-0">
             <SidebarGroupContent>
               {!mounted ? (
                 <SidebarNavSkeleton rows={1} />
               ) : (
-                <SidebarMenu className="space-y-xs">
+                <SidebarMenu className="gap-0.5">
+                  {items.length > 0 && (
+                    <li
+                      aria-hidden
+                      className="pb-1.5 pl-2.5 pt-1 text-[11px] font-semibold tracking-wide text-zinc-400 list-none"
+                    >
+                      CUSTOMERS
+                    </li>
+                  )}
                   {items.map((item) => {
                     const ItemIcon = item.icon;
                     const isActive =
@@ -70,10 +78,10 @@ export function Sidebar() {
                         <SidebarMenuButton
                           asChild
                           isActive={isActive}
-                          className="w-full flex items-center gap-sm px-sm py-sm rounded-lg text-sm text-foreground transition-colors"
+                          className="h-auto w-full flex items-center gap-3 px-2.5 py-[9px] rounded-lg text-[15px] font-medium text-sidebar-foreground transition-colors data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
                         >
                           <Link href={item.href} onClick={handleNavClick}>
-                            <ItemIcon className="w-4 h-4 shrink-0" />
+                            <ItemIcon className="size-[18px] shrink-0" />
                             <span>{item.name}</span>
                           </Link>
                         </SidebarMenuButton>
@@ -86,7 +94,7 @@ export function Sidebar() {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-sm border-t border-border space-y-2">
+        <SidebarFooter className="py-3.5 pl-4 pr-3 border-t border-sidebar-border">
           <SidebarProfileFooter />
         </SidebarFooter>
 
