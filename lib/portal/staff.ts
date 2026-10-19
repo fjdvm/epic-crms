@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { accessFor } from "./access";
 import type { Staff } from "./client";
 import { LOGIN_PATH, NO_ACCESS_PATH, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
-import { guarded } from "./in-page";
 import { safeReturnTo } from "./return-to";
 
 /** One access checker per page load, so the Portal is asked once however many callers there are. */
@@ -60,9 +59,4 @@ export async function homePage(): Promise<string> {
   const result = await proceed(await (await requestAccess()).overview());
 
   return result.decision === "allowed" ? result.pages[0] : NO_ACCESS_PATH;
-}
-
-/** For server actions that load data in-page: asks the Portal, and says why when it refuses. */
-export async function guardedAction<T>(module: string, load: (staff: Staff) => Promise<T>) {
-  return guarded(accessFor((await cookies()).get(SESSION_COOKIE)?.value), module, load);
 }
