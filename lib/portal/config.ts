@@ -20,11 +20,13 @@ function required(name: string): string {
 export function portalConfig() {
   const appUrl = (process.env.CREOMS_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
+  const portalUrl = required("PORTAL_URL").replace(/\/$/, "");
+
   return {
-    portalUrl: required("PORTAL_URL").replace(/\/$/, ""),
+    portalUrl,
     systemName: process.env.PORTAL_SYSTEM_NAME ?? "CRMS",
     systemSecret: required("PORTAL_SYSTEM_SECRET"),
-    logoutUrl: `${required("PORTAL_URL").replace(/\/$/, "")}/logout`,
+    logoutUrl: `${portalUrl}/logout`,
     callbackUrl: `${appUrl}${CALLBACK_PATH}`,
   };
 }

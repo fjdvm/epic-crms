@@ -95,6 +95,7 @@ export function SidebarProfileFooter() {
           <form action={LOGOUT_PATH} method="post">
             <DropdownMenuItem
               asChild
+              onSelect={(event) => event.preventDefault()}
               className="cursor-pointer text-xs font-medium gap-sm p-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
               <button type="submit" className="w-full">
