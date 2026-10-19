@@ -14,9 +14,9 @@ function MainContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const mounted = useMounted();
 
-  // Use a stable class during SSR/hydration (ml-64, matching defaultOpen=true).
+  // Use a stable class during SSR/hydration (ml-[--sidebar-width], matching defaultOpen=true).
   // After mount, switch to the dynamic value based on sidebar state.
-  const marginClass = !mounted || open ? "md:ml-64" : "md:ml-0";
+  const marginClass = !mounted || open ? "md:ml-(--sidebar-width)" : "md:ml-0";
 
   return (
     <div
