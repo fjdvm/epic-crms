@@ -136,3 +136,22 @@ export async function listCustomers(
     totalPages,
   };
 }
+
+export type CustomerListResult =
+  { ok: true; list: CustomerList } | { ok: false };
+
+/**
+ * Like listCustomers, but a missing or unreachable database becomes `{ ok: false }` so the page
+ * can say so in place instead of crashing into the framework's generic error page.
+ */
+export async function loadCustomers(
+  connect: () => postgres.Sql,
+  query: CustomerListQuery,
+): Promise<CustomerListResult> {
+  try {
+    return { ok: true, list: await listCustomers(connect(), query) };
+  } catch (error) {
+    console.error("Customer Profiles could not read the ecommerce database", error);
+    return { ok: false };
+  }
+}
