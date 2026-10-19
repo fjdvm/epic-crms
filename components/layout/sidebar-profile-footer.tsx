@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { MoreVertical, User, Shield, Activity, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useStaff } from "./staff-context";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -13,16 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-// Placeholder staff profile until authentication is introduced.
-const staff = {
-  name: "Staff Member",
-  username: "staff",
-  email: "staff@example.com",
-  role: "Staff",
-};
-
 export function SidebarProfileFooter() {
-  const { name, username, email, role } = staff;
+  const { name, username, email, role } = useStaff();
   const initials = name
     .split(" ")
     .map((n) => n[0])

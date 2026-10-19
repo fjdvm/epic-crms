@@ -1,0 +1,112 @@
+import { portalConfig } from "./config";
+
+export type Staff = {
+  name: string;
+  username: string;
+  email: string;
+  role: string;
+};
+
+export type ExchangeResult =
+  | { ok: true; sessionHandle: string; expiresAt: Date }
+  | { ok: false; reason: "rejected" | "denied" | "unavailable" };
+
+export type Validation =
+  | { decision: "allowed"; staff: Staff }
+  | { decision: "invalid" }
+  | { decision: "denied" }
+  | { decision: "unavailable" };
+
+function basicAuth(): string {
+  const { systemName, systemSecret } = portalConfig();
+
+  return `Basic ${Buffer.from(`${systemName}:${systemSecret}`).toString("base64")}`;
+}
+
+async function postJson(path: string, body: unknown): Promise<Response | null> {
+  try {
+    return await fetch(`${portalConfig().portalUrl}${path}`, {
+      method: "POST",
+      headers: { authorization: basicAuth(), "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Server-to-server exchange of the single-use sign-in code for an opaque session handle. */
+export async function exchangeCode(input: {
+  code: string;
+  state: string;
+  codeVerifier: string;
+}): Promise<ExchangeResult> {
+  const response = await postJson("/api/integrations/exchange", {
+    code: input.code,
+    state: input.state,
+    code_verifier: input.codeVerifier,
+    redirect_uri: portalConfig().callbackUrl,
+  });
+
+  if (!response || response.status >= 500) {
+    return { ok: false, reason: "unavailable" };
+  }
+
+  if (response.status === 403) {
+    return { ok: false, reason: "denied" };
+  }
+
+  const body = response.ok
+    ? ((await response.json().catch(() => null)) as {
+        handle?: string;
+        expires_in?: number;
+      } | null)
+    : null;
+
+  if (!body?.handle || typeof body.expires_in !== "number") {
+    return { ok: false, reason: "rejected" };
+  }
+
+  return {
+    ok: true,
+    sessionHandle: body.handle,
+    expiresAt: new Date(Date.now() + body.expires_in * 1000),
+  };
+}
+
+/**
+ * Asks the Portal whether the handle may use a Module right now. The 200 body also carries
+ * the Staff member's profile (`staff`), an addition proposed to the Portal's validate contract.
+ */
+export async function validateSession(
+  sessionHandle: string,
+  module: string,
+): Promise<Validation> {
+  const response = await postJson("/api/integrations/validate", {
+    handle: sessionHandle,
+    module,
+  });
+
+  if (!response) {
+    return { decision: "unavailable" };
+  }
+
+  if (response.status === 401) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    return { decision: body?.error === "invalid_handle" ? "invalid" : "unavailable" };
+  }
+
+  if (response.status === 403) {
+    return { decision: "denied" };
+  }
+
+  const body = response.ok
+    ? ((await response.json().catch(() => null)) as { active?: boolean; staff?: Staff } | null)
+    : null;
+
+  return body?.active === true && body.staff
+    ? { decision: "allowed", staff: body.staff }
+    : { decision: "unavailable" };
+}

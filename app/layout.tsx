@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Hanken_Grotesk, Geist_Mono } from "next/font/google";
-import { AppShell } from "@/components/layout/app-shell";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -25,7 +24,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${hankenGrotesk.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-screen bg-background text-foreground font-sans">
-        <AppShell>{children}</AppShell>
+        {children}
         <Toaster />
       </body>
     </html>
