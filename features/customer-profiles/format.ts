@@ -1,4 +1,5 @@
 const pesos = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
+const months = new Intl.DateTimeFormat("en-PH", { month: "short", year: "numeric", timeZone: "Asia/Manila" });
 const dates = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" });
 
 /** Centavos shown as pesos. */
@@ -8,6 +9,11 @@ export function formatPesos(centavos: number): string {
 
 export function formatDate(date: Date): string {
   return dates.format(date);
+}
+
+/** "Mar 2026". */
+export function formatMonthYear(date: Date): string {
+  return months.format(date);
 }
 
 /** How long ago, in the largest whole unit: "Today", "3 days ago", "2 months ago". */

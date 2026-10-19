@@ -3,20 +3,12 @@ import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from "lucide-re
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ScrollableTable } from "@/components/shared/scrollable-table";
+import { cn } from "@/lib/utils";
 
 import type { CustomerList, SortKey } from "./customers";
 import { STAGES } from "./customers";
 import { STAGE_LABELS, type Stage } from "./rules";
+import { StageBadge } from "./stage-badge";
 import { formatDate, formatPesos } from "./format";
 
 export interface ListParams {
@@ -28,14 +20,14 @@ export interface ListParams {
   page: number;
 }
 
-const COLUMNS: { key: SortKey; header: string; className?: string }[] = [
-  { key: "name", header: "Name" },
-  { key: "email", header: "Email" },
-  { key: "contactNumber", header: "Contact number" },
-  { key: "orders", header: "Orders", className: "text-right" },
-  { key: "totalSpent", header: "Total spent", className: "text-right" },
-  { key: "lastOrder", header: "Last order" },
-  { key: "customerSince", header: "Customer since" },
+/** Column widths follow the design: fixed, with Last order taking the rest. */
+const COLUMNS: { key: SortKey | null; header: string; className: string }[] = [
+  { key: "name", header: "Customer", className: "w-[180px]" },
+  { key: "email", header: "Contact", className: "w-[320px]" },
+  { key: null, header: "Stage", className: "w-[120px]" },
+  { key: "orders", header: "Orders", className: "w-[90px]" },
+  { key: "totalSpent", header: "Total spent", className: "w-[140px]" },
+  { key: "lastOrder", header: "Last order", className: "flex-1 min-w-[120px]" },
 ];
 
 function href(params: ListParams, change: Partial<ListParams>): string {
@@ -51,9 +43,11 @@ function href(params: ListParams, change: Partial<ListParams>): string {
   return `/customer-profiles?${query}`;
 }
 
+const CELL = "shrink-0 py-[11px] text-sm text-foreground";
+
 export function CustomerListView({ list, params }: { list: CustomerList; params: ListParams }) {
   return (
-    <div className="space-y-md">
+    <div className="space-y-5">
       <form action="/customer-profiles" className="relative max-w-[24rem]">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
@@ -67,7 +61,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
         <input type="hidden" name="dir" value={params.direction} />
       </form>
 
-      <nav aria-label="Stage" className="flex flex-wrap gap-2">
+      <nav aria-label="Stage" className="flex flex-wrap gap-1">
         {[undefined, ...STAGES].map((stage) => {
           const count = stage
             ? list.stageCounts[stage]
@@ -75,33 +69,44 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           const active = params.stage === stage;
 
           return (
-            <Button key={stage ?? "all"} variant={active ? "default" : "outline"} size="sm" asChild>
-              <Link
-                href={href(params, { stage, page: 1 })}
-                aria-current={active ? "page" : undefined}
-              >
-                {stage ? STAGE_LABELS[stage] : "All"} ({count})
-              </Link>
-            </Button>
+            <Link
+              key={stage ?? "all"}
+              href={href(params, { stage, page: 1 })}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "rounded-lg px-3.5 py-2 text-sm font-medium",
+                active ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {stage ? STAGE_LABELS[stage] : "All"} {count}
+            </Link>
           );
         })}
       </nav>
 
-      {list.rows.length === 0 ? (
-        <div className="p-xl text-center text-muted-foreground border border-border rounded-lg">
-          {params.search || params.stage ? "No Customers match." : "No Customers yet."}
-        </div>
-      ) : (
-        <ScrollableTable>
-          <Table>
-            <TableHeader className="sticky top-0 bg-background z-10">
-              <TableRow>
+      <div className="space-y-[14px] rounded-xl border border-border bg-card p-5">
+        {list.rows.length === 0 ? (
+          <div className="p-xl text-center text-muted-foreground">
+            {params.search || params.stage ? "No Customers match." : "No Customers yet."}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="min-w-[760px]">
+              <div className="flex items-center border-b border-border-subtle py-1.5 text-xs font-medium text-muted-foreground">
                 {COLUMNS.map((col) => {
+                  if (!col.key) {
+                    return (
+                      <div key="stage" className={cn("shrink-0", col.className)}>
+                        {col.header}
+                      </div>
+                    );
+                  }
+
                   const active = params.sort === col.key;
                   const direction = active && params.direction === "desc" ? "asc" : "desc";
 
                   return (
-                    <TableHead key={col.key} className={col.className}>
+                    <div key={col.key} className={cn("shrink-0", col.className)}>
                       <Link
                         href={href(params, { sort: col.key, direction, page: 1 })}
                         className="inline-flex items-center gap-1"
@@ -114,88 +119,78 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                             <ArrowDown className="size-3" />
                           ))}
                       </Link>
-                    </TableHead>
+                    </div>
                   );
                 })}
-                <TableHead>Stage</TableHead>
-                <TableHead>Cart</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+              </div>
               {list.rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-medium">
+                <div key={row.id} className="flex items-center border-b border-border-subtle last:border-0">
+                  <div className={cn(CELL, COLUMNS[0].className, "font-medium text-primary")}>
                     <Link href={`/customer-profiles/${encodeURIComponent(row.id)}`} className="hover:underline">
                       {row.name}
                     </Link>
-                  </TableCell>
-                  <TableCell>{row.email}</TableCell>
-                  <TableCell>{row.contactNumber}</TableCell>
-                  <TableCell className="text-right">{row.orders}</TableCell>
-                  <TableCell className="text-right">{formatPesos(row.totalSpent)}</TableCell>
-                  <TableCell>
+                  </div>
+                  <div className={cn(CELL, COLUMNS[1].className)}>
+                    {row.email} · {row.contactNumber}
+                  </div>
+                  <div className={cn("shrink-0", COLUMNS[2].className)}>
+                    <StageBadge stage={row.stage} />
+                  </div>
+                  <div className={cn(CELL, COLUMNS[3].className)}>{row.orders}</div>
+                  <div className={cn(CELL, COLUMNS[4].className)}>{formatPesos(row.totalSpent)}</div>
+                  <div className={cn(CELL, COLUMNS[5].className)}>
                     {row.lastOrder ? formatDate(row.lastOrder) : "No orders yet"}
-                  </TableCell>
-                  <TableCell>{formatDate(row.customerSince)}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{STAGE_LABELS[row.stage]}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {row.cartHasItems ? <Badge>Has items</Badge> : (
-                      <span className="text-muted-foreground">Empty</span>
-                    )}
-                  </TableCell>
-                </TableRow>
+                  </div>
+                </div>
               ))}
-            </TableBody>
-          </Table>
-        </ScrollableTable>
-      )}
+            </div>
+          </div>
+        )}
 
-      <div className="flex items-center justify-between pt-2">
-        <p className="text-sm text-muted-foreground">
-          {list.matching === 0
-            ? "No profiles"
-            : `Showing ${(list.page - 1) * list.pageSize + 1}–${Math.min(
-                list.page * list.pageSize,
-                list.matching,
-              )} of ${list.matching} profiles`}
-        </p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" asChild={list.page > 1} disabled={list.page <= 1}>
-            {list.page > 1 ? (
-              <Link aria-label="Previous page" href={href(params, { page: list.page - 1 })}>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            {list.matching === 0
+              ? "No profiles"
+              : `Showing ${(list.page - 1) * list.pageSize + 1}–${Math.min(
+                  list.page * list.pageSize,
+                  list.matching,
+                )} of ${list.matching} profiles`}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild={list.page > 1} disabled={list.page <= 1}>
+              {list.page > 1 ? (
+                <Link aria-label="Previous page" href={href(params, { page: list.page - 1 })}>
+                  <ChevronLeft className="size-4" />
+                </Link>
+              ) : (
                 <ChevronLeft className="size-4" />
-              </Link>
-            ) : (
-              <ChevronLeft className="size-4" />
-            )}
-          </Button>
-          <span className="text-sm font-medium">
-            {list.page} / {list.totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            asChild={list.page < list.totalPages}
-            disabled={list.page >= list.totalPages}
-          >
-            {list.page < list.totalPages ? (
-              <Link aria-label="Next page" href={href(params, { page: list.page + 1 })}>
+              )}
+            </Button>
+            <span className="text-sm font-medium">
+              {list.page} / {list.totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              asChild={list.page < list.totalPages}
+              disabled={list.page >= list.totalPages}
+            >
+              {list.page < list.totalPages ? (
+                <Link aria-label="Next page" href={href(params, { page: list.page + 1 })}>
+                  <ChevronRight className="size-4" />
+                </Link>
+              ) : (
                 <ChevronRight className="size-4" />
-              </Link>
-            ) : (
-              <ChevronRight className="size-4" />
-            )}
-          </Button>
+              )}
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <p className="text-sm text-muted-foreground">
-        Stage comes from a Customer&apos;s Orders, ignoring cancelled ones: New has none, First
-        order has one, Repeat has two or more. If the last Order was 60 or more days ago they are
-        At risk, and 120 or more days ago, Lost, which take precedence.
-      </p>
+        <p className="rounded-lg bg-secondary px-3 py-2.5 text-xs text-muted-foreground">
+          Lifecycle stage is calculated from orders, ignoring cancelled ones: New = no order, First
+          order = 1, Repeat = 2+, At risk = no order in 60 days, Lost = no order in 120 days.
+        </p>
+      </div>
     </div>
   );
 }

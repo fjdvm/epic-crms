@@ -47,6 +47,7 @@
   --badge-neutral: #eeecf2;
   --badge-neutral-foreground: #5a5368;
   --border: #e6e1ee;
+  --border-subtle: #efebf4;
   --input: #e6e1ee;
   --ring: var(--primary);
   --chart-1: oklch(0.646 0.222 41.116);
@@ -114,6 +115,7 @@
   --color-badge-notification: var(--badge-notification);
   --color-badge-notification-foreground: var(--badge-notification-foreground);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
   --color-input: var(--input);
   --color-ring: var(--ring);
 

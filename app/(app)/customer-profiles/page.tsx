@@ -48,12 +48,12 @@ export default async function CustomerProfilesPage({
   const { list } = result;
 
   return (
-    <div className="p-md sm:p-lg space-y-md">
-      <div>
-        <h1 className="text-headline-md text-foreground">
-          Customer Profiles{" "}
-          <span className="text-muted-foreground font-normal">({list.profileCount})</span>
-        </h1>
+    <div className="space-y-5 px-xl py-7">
+      <div className="space-y-1">
+        <h1 className="text-headline-md text-foreground">Customer Profiles</h1>
+        <p className="text-sm text-muted-foreground">
+          {list.profileCount} customers · one profile per person
+        </p>
       </div>
       <CustomerListView list={list} params={{ search, stage, sort, direction, page: list.page }} />
     </div>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OrdersTab } from "@/features/customer-profiles/orders-tab";
 import type { CustomerOrder } from "@/features/customer-profiles/orders";
@@ -29,18 +29,35 @@ const order = (over: Partial<CustomerOrder>): CustomerOrder => ({
   ...over,
 });
 
+const none = new Set<number>();
+const open = new Set([1]);
+
 describe("OrdersTab", () => {
   it("shows the empty state and the Sales hint for a Customer with no Orders", () => {
-    render(<OrdersTab orders={[]} />);
+    render(<OrdersTab orders={[]} expanded={none} onToggle={() => {}} />);
 
     expect(screen.getByText(/no orders yet/i)).toBeTruthy();
     expect(screen.getByText(/managed in Sales/i)).toBeTruthy();
   });
 
-  it("shows lines, totals, the checkout Address and feedback for a delivered Order", () => {
-    render(<OrdersTab orders={[order({ feedback: { rating: 4, comment: "Tasty" } })]} />);
+  it("summarises each Order in a row and opens its details on request", () => {
+    const toggle = vi.fn();
+    render(<OrdersTab orders={[order({})]} expanded={none} onToggle={toggle} />);
 
-    expect(screen.getByText("#1")).toBeTruthy();
+    expect(screen.getByText("Sourdough ×2")).toBeTruthy();
+    expect(screen.getByText("₱600.00")).toBeTruthy();
+    expect(screen.getByText("Paid")).toBeTruthy();
+    expect(screen.queryByText(/1 Old St/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "#1" }));
+    expect(toggle).toHaveBeenCalledWith(1);
+  });
+
+  it("shows lines, totals, the checkout Address and feedback for an open Order", () => {
+    render(
+      <OrdersTab orders={[order({ feedback: { rating: 4, comment: "Tasty" } })]} expanded={open} onToggle={() => {}} />,
+    );
+
     expect(screen.getByText("Sourdough")).toBeTruthy();
     expect(screen.getAllByText("₱600.00").length).toBeGreaterThan(0);
     expect(screen.getByText(/1 Old St/)).toBeTruthy();
@@ -58,6 +75,8 @@ describe("OrdersTab", () => {
             paymentProof: { reference: "REF123", screenshot: "proofs/a.png", submittedAt: null },
           }),
         ]}
+        expanded={open}
+        onToggle={() => {}}
       />,
     );
 
