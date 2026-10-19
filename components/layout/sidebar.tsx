@@ -49,7 +49,7 @@ export function Sidebar() {
           className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[55] animate-in fade-in duration-200"
         />
       )}
-      <aside className="fixed left-0 top-0 h-full w-64 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground z-[60] transition-all duration-300 shadow-xl md:shadow-none animate-in slide-in-from-left duration-300">
+      <aside className="fixed left-0 top-0 h-full w-(--sidebar-width) flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground z-[60] transition-all duration-300 shadow-xl md:shadow-none animate-in slide-in-from-left duration-300">
         <SidebarEnterpriseHeader isMobile={isMobile} />
 
         <SidebarContent className="px-3 py-4 overflow-y-auto">
