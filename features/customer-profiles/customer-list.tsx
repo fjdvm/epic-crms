@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { CustomerList, SortKey } from "./customers";
 import { STAGES } from "./customers";
 import { STAGE_LABELS, type Stage } from "./rules";
+import { LiveRow } from "./live-row";
 import { StageBadge } from "./stage-badge";
 import { formatDate, formatWholePesos } from "./format";
 
@@ -124,8 +125,9 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                 })}
               </div>
               {list.rows.map((row) => (
-                <div
+                <LiveRow
                   key={row.id}
+                  customerId={row.id}
                   className="relative flex items-center border-b border-border-subtle last:border-0 hover:bg-secondary"
                 >
                   <div className={cn(CELL, COLUMNS[0].className, "font-medium text-primary")}>
@@ -144,7 +146,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                   <div className={cn(CELL, COLUMNS[5].className)}>
                     {row.lastOrder ? formatDate(row.lastOrder) : "No orders yet"}
                   </div>
-                </div>
+                </LiveRow>
               ))}
             </div>
           </div>
