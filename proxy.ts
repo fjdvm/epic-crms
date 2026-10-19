@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { devBypassEnabled } from "@/lib/portal/dev-bypass";
 import { LOGIN_PATH, SESSION_COOKIE } from "@/lib/portal/config";
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const returnTo = `${pathname}${search}`;
 
-  if (!request.cookies.get(SESSION_COOKIE)?.value) {
+  if (!devBypassEnabled() && !request.cookies.get(SESSION_COOKIE)?.value) {
     const login = new URL(LOGIN_PATH, request.url);
     login.searchParams.set("returnTo", returnTo);
 
