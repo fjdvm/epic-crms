@@ -28,7 +28,7 @@ export interface ListParams {
   page: number;
 }
 
-const STAGE_LABELS: Record<Stage, string> = {
+export const STAGE_LABELS: Record<Stage, string> = {
   new: "New",
   "first-order": "First order",
   repeat: "Repeat",
@@ -132,7 +132,11 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
             <TableBody>
               {list.rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/customer-profiles/${encodeURIComponent(row.id)}`} className="hover:underline">
+                      {row.name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{row.email}</TableCell>
                   <TableCell>{row.contactNumber}</TableCell>
                   <TableCell className="text-right">{row.orders}</TableCell>
