@@ -2,7 +2,10 @@ import type postgres from "postgres";
 
 import { getCustomerCart, type Cart } from "./cart";
 import { getCustomerOrders, type CustomerOrder } from "./orders";
+import { crmsDatabase } from "@/lib/crms-db";
+
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "./rules";
+import { getWalkIn, isWalkInId, type WalkInProfileData } from "./walk-ins";
 
 export interface CustomerAddress {
   id: number;
@@ -42,6 +45,8 @@ export interface CustomerProfile {
   /** Newest first. */
   orderHistory: CustomerOrder[];
   cart: Cart;
+  /** Set for a Walk-in Customer: the fields Staff entered. Such a profile has no storefront Orders or Cart. */
+  walkIn: WalkInProfileData | null;
 }
 
 /** One verified Customer's Profile, or null for a Lead or an id that does not exist. */
@@ -122,6 +127,34 @@ export async function getCustomerProfile(
     addresses: mapped,
     orderHistory,
     cart,
+    walkIn: null,
+  };
+}
+
+/** A Walk-in Customer's profile: the entered fields, a New Stage, and empty Orders, Cart and Feedback. */
+export function walkInProfile(w: WalkInProfileData): CustomerProfile {
+  return {
+    id: w.id,
+    name: w.name,
+    firstName: w.firstName,
+    middleName: null,
+    lastName: w.lastName,
+    email: w.email ?? "No email",
+    contactNumber: w.mobile,
+    marketingOptIn: w.emailConsent,
+    customerSince: w.createdAt,
+    stage: stageOf({ orders: 0, lastOrder: null }, new Date()),
+    defaultCity: w.address?.city || null,
+    orders: 0,
+    totalSpent: 0,
+    averageOrder: null,
+    lastOrder: null,
+    feedbackCount: 0,
+    averageRating: null,
+    addresses: [],
+    orderHistory: [],
+    cart: { lines: [], total: 0 },
+    walkIn: w,
   };
 }
 
@@ -132,8 +165,15 @@ export type CustomerProfileResult =
 export async function loadCustomerProfile(
   connect: () => postgres.Sql,
   id: string,
+  connectCrms: () => postgres.Sql = crmsDatabase,
 ): Promise<CustomerProfileResult> {
   try {
+    if (isWalkInId(id)) {
+      const walkIn = await getWalkIn(connectCrms(), id);
+
+      return { ok: true, profile: walkIn ? walkInProfile(walkIn) : null };
+    }
+
     return { ok: true, profile: await getCustomerProfile(connect(), id) };
   } catch (error) {
     console.error("Customer Profile could not read the ecommerce database", error);

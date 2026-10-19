@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -49,18 +50,25 @@ const CELL = "py-[11px] pr-3 text-sm text-foreground";
 export function CustomerListView({ list, params }: { list: CustomerList; params: ListParams }) {
   return (
     <div className="space-y-5">
-      <form action="/customer-profiles" className="relative max-w-[24rem]">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-        <Input
-          name="q"
-          defaultValue={params.search}
-          placeholder="Search name, email or contact number"
-          className="pl-9"
-        />
-        {params.stage && <input type="hidden" name="stage" value={params.stage} />}
-        <input type="hidden" name="sort" value={params.sort} />
-        <input type="hidden" name="dir" value={params.direction} />
-      </form>
+      <div className="flex items-center justify-between gap-3">
+        <form action="/customer-profiles" className="relative w-full max-w-[24rem]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            name="q"
+            defaultValue={params.search}
+            placeholder="Search name, email or contact number"
+            className="pl-9"
+          />
+          {params.stage && <input type="hidden" name="stage" value={params.stage} />}
+          <input type="hidden" name="sort" value={params.sort} />
+          <input type="hidden" name="dir" value={params.direction} />
+        </form>
+        <Button asChild>
+          <Link href="/customer-profiles/new">
+            <Plus className="size-4" /> Add customer
+          </Link>
+        </Button>
+      </div>
 
       <nav aria-label="Stage" className="flex flex-wrap gap-1">
         {[undefined, ...STAGES].map((stage) => {
@@ -130,13 +138,14 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                   customerId={row.id}
                   className="relative flex items-center border-b border-border-subtle last:border-0 hover:bg-secondary"
                 >
-                  <div className={cn(CELL, COLUMNS[0].className, "font-medium text-primary")}>
-                    <Link href={`/customer-profiles/${encodeURIComponent(row.id)}`} className="after:absolute after:inset-0">
+                  <div className={cn(CELL, COLUMNS[0].className, "flex items-center gap-2 font-medium text-primary")}>
+                    <Link href={`/customer-profiles/${encodeURIComponent(row.id)}`} className="truncate after:absolute after:inset-0">
                       {row.name}
                     </Link>
+                    {row.walkIn && <Badge variant="secondary">Walk-in</Badge>}
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className, "truncate")}>
-                    {row.email} · {row.contactNumber}
+                    {row.email ? `${row.email} · ${row.contactNumber}` : row.contactNumber}
                   </div>
                   <div className={cn(COLUMNS[2].className)}>
                     <StageBadge stage={row.stage} />
