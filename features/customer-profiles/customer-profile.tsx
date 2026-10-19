@@ -19,6 +19,7 @@ import { OrdersTab } from "./orders-tab";
 import type { CustomerProfile } from "./profile";
 import { StageBadge } from "./stage-badge";
 import { TabCard } from "./tab-card";
+import { WalkInDetails } from "./walk-in-details";
 
 function Stat({
   title,
@@ -82,9 +83,10 @@ export function CustomerProfileView({
             {p.name}
           </h1>
           <StageBadge stage={p.stage} />
+          {p.walkIn && <Badge variant="secondary">Walk-in</Badge>}
         </div>
         <p className="text-sm text-muted-foreground">
-          Customer since {formatMonthYear(p.customerSince)} · {p.email} ·{" "}
+          {p.walkIn ? "Added" : "Customer since"} {formatMonthYear(p.customerSince)} · {p.email} ·{" "}
           {p.contactNumber} · {p.defaultCity ?? "No default city"}
         </p>
       </div>
@@ -161,6 +163,10 @@ export function CustomerProfileView({
             </TabsContent>
 
             <TabsContent value="details" className="mt-0 space-y-5">
+              {p.walkIn ? (
+                <WalkInDetails walkIn={p.walkIn} />
+              ) : (
+              <>
               <TabCard title="Details">
                 <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="First name">{p.firstName}</Field>
@@ -206,6 +212,8 @@ export function CustomerProfileView({
                   </ul>
                 )}
               </TabCard>
+              </>
+              )}
             </TabsContent>
           </div>
 

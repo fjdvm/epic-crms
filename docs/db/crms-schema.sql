@@ -35,3 +35,31 @@ CREATE TABLE crms.notifications (
 );
 
 CREATE INDEX notifications_unread ON crms.notifications (created_at DESC) WHERE read_at IS NULL;
+
+-- Walk-in Customers: people Staff add by hand, with no storefront account. Never written to the
+-- storefront. mobile is stored normalised (11 digits, 09XXXXXXXXX); email is stored lower-case.
+CREATE TABLE crms.walk_in_customers (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  first_name        text NOT NULL,
+  last_name         text NOT NULL,
+  mobile            text NOT NULL CHECK (mobile ~ '^09[0-9]{9}$'),
+  email             text CHECK (email = lower(email)),
+  birthday          date,
+  preferred_contact text,
+  source            text,
+  tags              text[] NOT NULL DEFAULT '{}',
+  email_consent     boolean NOT NULL DEFAULT false,
+  sms_consent       boolean NOT NULL DEFAULT false,
+  notes             text,
+  address_street    text,
+  address_province  text,
+  address_city      text,
+  address_barangay  text,
+  address_zip       text,
+  address_landmark  text,
+  created_at        timestamptz NOT NULL DEFAULT now()
+);
+
+-- One profile per person: the backstop for the duplicate check under concurrent saves.
+CREATE UNIQUE INDEX walk_in_customers_mobile ON crms.walk_in_customers (mobile);
+CREATE UNIQUE INDEX walk_in_customers_email ON crms.walk_in_customers (email) WHERE email IS NOT NULL;
