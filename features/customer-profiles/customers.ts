@@ -144,6 +144,13 @@ export async function listCustomers(
         contact_number: w.contactNumber,
         created_at: w.createdAt.toISOString(),
       })))}) as w(id text, name text, email text, contact_number text, created_at timestamptz)
+      -- A Walk-in whose email has verified is that Customer now: listed once, as the Customer.
+      where not exists (
+        select 1
+        from public.customers vc
+        join neon_auth."user" vu on vu.id::text = vc.id and vu."emailVerified"
+        where w.email <> '' and lower(vc.email) = lower(w.email)
+      )
     ),
     staged as (
       select agg.*,

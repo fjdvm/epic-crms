@@ -5,7 +5,7 @@ import { getCustomerOrders, type CustomerOrder } from "./orders";
 import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "./rules";
-import { getWalkIn, isWalkInId, type WalkInProfileData } from "./walk-ins";
+import { getMergedWalkIn, getWalkIn, isWalkInId, type MergedWalkIn, type WalkInProfileData } from "./walk-ins";
 
 export interface CustomerAddress {
   id: number;
@@ -47,6 +47,8 @@ export interface CustomerProfile {
   cart: Cart;
   /** Set for a Walk-in Customer: the fields Staff entered. Such a profile has no storefront Orders or Cart. */
   walkIn: WalkInProfileData | null;
+  /** Tags and internal notes carried over from the Walk-in Customer this Customer used to be. */
+  mergedWalkIn: MergedWalkIn | null;
 }
 
 /** One verified Customer's Profile, or null for a Lead or an id that does not exist. */
@@ -128,6 +130,7 @@ export async function getCustomerProfile(
     orderHistory,
     cart,
     walkIn: null,
+    mergedWalkIn: null,
   };
 }
 
@@ -155,6 +158,7 @@ export function walkInProfile(w: WalkInProfileData): CustomerProfile {
     orderHistory: [],
     cart: { lines: [], total: 0 },
     walkIn: w,
+    mergedWalkIn: null,
   };
 }
 
@@ -174,9 +178,22 @@ export async function loadCustomerProfile(
       return { ok: true, profile: walkIn ? walkInProfile(walkIn) : null };
     }
 
-    return { ok: true, profile: await getCustomerProfile(connect(), id) };
+    const profile = await getCustomerProfile(connect(), id);
+    if (profile) profile.mergedWalkIn = await readMergedWalkIn(connectCrms, profile.email);
+
+    return { ok: true, profile };
   } catch (error) {
     console.error("Customer Profile could not read the ecommerce database", error);
     return { ok: false };
+  }
+}
+
+/** Walk-in data is CREOMS's own: if it cannot be read, the Customer's profile still opens without it. */
+async function readMergedWalkIn(connectCrms: () => postgres.Sql, email: string): Promise<MergedWalkIn | null> {
+  try {
+    return await getMergedWalkIn(connectCrms(), email);
+  } catch (error) {
+    console.error("Customer Profile could not read the merged Walk-in Customer", error);
+    return null;
   }
 }

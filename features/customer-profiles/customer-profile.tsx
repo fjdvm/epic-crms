@@ -180,8 +180,27 @@ export function CustomerProfileView({
                   <Field label="Customer since">
                     {formatDate(p.customerSince)}
                   </Field>
+                  {p.mergedWalkIn && (
+                    <Field label="Tags">
+                      {p.mergedWalkIn.tags.length === 0 ? (
+                        "—"
+                      ) : (
+                        <span className="flex flex-wrap gap-1.5">
+                          {p.mergedWalkIn.tags.map((tag) => (
+                            <Badge key={tag} variant="purple">{tag}</Badge>
+                          ))}
+                        </span>
+                      )}
+                    </Field>
+                  )}
                 </dl>
               </TabCard>
+
+              {p.mergedWalkIn && (
+                <TabCard title="Internal notes" note="Visible to Staff only">
+                  <p className="whitespace-pre-wrap text-sm text-foreground">{p.mergedWalkIn.notes ?? "No notes."}</p>
+                </TabCard>
+              )}
 
               <TabCard title="Addresses">
                 {p.addresses.length === 0 ? (
