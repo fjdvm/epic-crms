@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { Field } from "./field";
 import { formatAgo, formatDate, formatPesos } from "./format";
+import { OrdersTab } from "./orders-tab";
 import type { CustomerProfile } from "./profile";
 import { STAGE_LABELS } from "./rules";
 
@@ -18,15 +20,6 @@ function Stat({ title, value, note }: { title: string; value: string; note?: str
         {note && <p className="text-body-sm text-muted-foreground">{note}</p>}
       </CardContent>
     </Card>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <dt className="text-label-md text-muted-foreground">{label}</dt>
-      <dd className="text-body-md text-foreground">{children}</dd>
-    </div>
   );
 }
 
@@ -79,13 +72,17 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
           <TabsTrigger value="details">Details</TabsTrigger>
         </TabsList>
 
-        {["orders", "cart", "feedback", "emails"].map((tab) => (
+        {["cart", "feedback", "emails"].map((tab) => (
           <TabsContent key={tab} value={tab}>
             <div className="p-xl text-center text-muted-foreground border border-border rounded-lg">
               Nothing to show here yet.
             </div>
           </TabsContent>
         ))}
+
+        <TabsContent value="orders">
+          <OrdersTab orders={p.orderHistory} />
+        </TabsContent>
 
         <TabsContent value="details" className="space-y-md">
           <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">

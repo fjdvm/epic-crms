@@ -38,6 +38,9 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
     const orders = await sql`select id, customer_id, status, subtotal_in_centavos, delivery_fee_in_centavos, created_at from public.orders`;
     const feedback = await sql`select order_id, rating from public.order_feedback`;
     const addresses = await sql`select * from public.addresses order by id`;
+    const lines = await sql`select * from public.order_lines`;
+    const snapshots = await sql`select * from public.order_delivery_addresses`;
+    const allOrders = await sql`select * from public.orders`;
 
     const verified = customers.filter((c) => users.find((u) => u.id === c.id)?.verified);
     expect(verified.length, "needs at least one Customer").toBeGreaterThan(0);
@@ -76,6 +79,40 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
       expect(p.averageRating).toBe(
         ratings.length ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null,
       );
+
+      const wantOrders = [...mine].sort((a, b) => b.created_at.getTime() - a.created_at.getTime() || b.id - a.id);
+      expect(p.orderHistory.map((o) => o.id)).toEqual(wantOrders.map((o) => o.id));
+      for (const o of p.orderHistory) {
+        const w = mine.find((x) => x.id === o.id)!;
+        expect(o.total).toBe(total(w));
+        expect(o.subtotal).toBe(w.subtotal_in_centavos);
+        expect(o.deliveryFee).toBe(w.delivery_fee_in_centavos ?? null);
+        expect(o.status).toBe(w.status);
+        expect(o.createdAt.getTime()).toBe(w.created_at.getTime());
+        const src = allOrders.find((x) => x.id === o.id)!;
+        expect(o.fulfillmentMethod).toBe(src.fulfillment_method);
+        expect(o.paymentMethod).toBe(src.payment_method);
+        expect(o.paymentProof?.screenshot ?? null).toBe(
+          src.payment_method === "gcash" ? (src.payment_proof_screenshot_pathname ?? null) : null,
+        );
+        expect(o.lines.map((l) => [l.product, l.size, l.quantity, l.price])).toEqual(
+          lines.filter((l) => l.order_id === o.id).sort((a, b) => a.id - b.id)
+            .map((l) => [l.product_name, l.size_label, l.quantity, l.price_in_centavos]),
+        );
+        const snap = snapshots.find((s) => s.order_id === o.id);
+        expect(o.address).toEqual(
+          snap
+            ? { label: snap.label, street: snap.street, barangay: snap.barangay, city: snap.city,
+                province: snap.province, postalCode: snap.postal_code, country: snap.country }
+            : null,
+        );
+        const fb = feedback.find((f) => f.order_id === o.id);
+        expect(o.feedback?.rating ?? null).toBe(fb?.rating ?? null);
+        const pr = allOrders.find((x) => x.id === o.id)!;
+        expect(o.paymentProof?.reference ?? null).toBe(
+          pr.payment_method === "gcash" ? pr.gcash_reference_number : null,
+        );
+      }
 
       expect(p.addresses.map((a) => a.id)).toEqual(mineAddresses.map((a) => a.id));
       for (const a of p.addresses) {
