@@ -97,7 +97,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
 
       {list.rows.length === 0 ? (
         <div className="p-xl text-center text-muted-foreground border border-border rounded-lg">
-          {params.search ? "No Customers match your search." : "No Customers yet."}
+          {params.search || params.stage ? "No Customers match." : "No Customers yet."}
         </div>
       ) : (
         <ScrollableTable>
@@ -194,7 +194,8 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           </Button>
         </div>
       </div>
-    <p className="text-sm text-muted-foreground">
+
+      <p className="text-sm text-muted-foreground">
         Stage comes from a Customer&apos;s Orders, ignoring cancelled ones: New has none, First
         order has one, Repeat has two or more. If the last Order was 60 or more days ago they are
         At risk, and 120 or more days ago, Lost, which take precedence.

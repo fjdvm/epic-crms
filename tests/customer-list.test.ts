@@ -2,7 +2,6 @@ import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { listCustomers, STAGES } from "@/features/customer-profiles/customers";
-import { stageOf } from "@/features/customer-profiles/rules";
 
 // Runs against the real shared database through the read-only role. Skipped when no
 // connection string is supplied. Every statement here is a SELECT; nothing is written.
@@ -17,6 +16,15 @@ const NOW = new Date();
 
 /** Written out here on purpose, so a wrong status list in the module cannot pass both sides. */
 const COUNTS_TOWARD_TOTAL_SPENT = new Set(["paid", "preparing", "dispatched", "delivered"]);
+
+/** Written out here too, not imported: whole days since the last non-cancelled Order. */
+function stageFor(orders: number, lastOrder: Date | null): string {
+  if (orders === 0 || !lastOrder) return "new";
+  const days = (NOW.getTime() - lastOrder.getTime()) / (24 * 60 * 60 * 1000);
+  if (days >= 120) return "lost";
+  if (days >= 60) return "at-risk";
+  return orders === 1 ? "first-order" : "repeat";
+}
 
 /** Independent expectation: plain per-table reads, aggregated in JS with the domain rules. */
 async function expected() {
@@ -44,7 +52,7 @@ async function expected() {
           .filter((o) => COUNTS_TOWARD_TOTAL_SPENT.has(o.status))
           .reduce((sum, o) => sum + o.subtotal_in_centavos + (o.delivery_fee_in_centavos ?? 0), 0),
         lastOrder: lastOrder?.getTime() ?? null,
-        stage: stageOf({ orders: counted.length, lastOrder }, NOW),
+        stage: stageFor(counted.length, lastOrder),
         cartHasItems: carts.some((x) => x.customer_id === c.id),
         customerSince: user.created.getTime(),
       };

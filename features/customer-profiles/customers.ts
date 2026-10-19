@@ -87,7 +87,7 @@ export async function listCustomers(
       : sql`name ilike ${pattern} or email ilike ${pattern} or contact_number ilike ${pattern}`;
 
   const { atRiskBefore, lostBefore } = stageCutoffs(query.now ?? new Date());
-  const stageFilter = query.stage && STAGES.includes(query.stage) ? sql`stage = ${query.stage}` : sql`true`;
+  const stageFilter = query.stage ? sql`stage = ${query.stage}` : sql`true`;
 
   const withCustomers = sql`
     with agg as (
