@@ -44,3 +44,5 @@ CREOMS has no login of its own. A request without a session is sent to the Porta
 - `CREOMS_APP_URL`: this app's public origin. `<origin>/api/portal/callback` must be a callback registered at the Portal.
 
 Route tests run against a shared fake Portal (`tests/fake-portal.ts`) that follows the Portal's handoff contract (`docs/integrations/system-handoff.md` in the Portal repo). The Portal's positive validate response is extended with a `staff` profile (`name`, `username`, `email`, `role`); that addition is proposed to the Portal.
+
+Sign out posts to `/api/portal/logout`, which forgets the session cookie and sends the browser to `<PORTAL_URL>/logout`. That address is proposed, not yet part of the Portal's handoff contract: it must end the one central session (so every System's handle is denied on its next validation) and land on the Portal login.
