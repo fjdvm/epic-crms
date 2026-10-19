@@ -52,16 +52,20 @@ export function SidebarProfileFooter() {
             Log out
           </Button>
         </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Log out of CREOMS?</AlertDialogTitle>
+        <AlertDialogContent className="w-[calc(100%-2rem)] max-w-[24rem] sm:max-w-[24rem] md:max-w-[24rem] lg:max-w-[24rem] gap-4 p-6 sm:p-6 rounded-xl">
+          <AlertDialogHeader className="gap-2 text-left">
+            <AlertDialogTitle className="text-lg font-semibold">Log out?</AlertDialogTitle>
             <AlertDialogDescription>
-              This signs you out of all Bren Raphael&apos;s systems.
+              Are you sure you want to log out of the Enterprise Suite?
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction type="submit" form="logout-form">
+          <AlertDialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
+            <AlertDialogCancel className="mt-0 sm:mt-0">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              type="submit"
+              form="logout-form"
+              className="bg-zinc-900 text-white hover:bg-zinc-800"
+            >
               Log out
             </AlertDialogAction>
           </AlertDialogFooter>

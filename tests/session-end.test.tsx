@@ -184,12 +184,12 @@ describe("signing out", () => {
 
     const form = document.querySelector('form[action="/api/portal/logout"]')!;
     expect(form.getAttribute("method")).toBe("post");
-    expect(screen.queryByText("Log out of CREOMS?")).toBeNull();
+    expect(screen.queryByText("Log out?")).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Log out" }));
 
-    expect(screen.getByText("Log out of CREOMS?")).toBeTruthy();
-    expect(screen.getByText(/all Bren Raphael's systems/)).toBeTruthy();
+    expect(screen.getByText("Log out?")).toBeTruthy();
+    expect(screen.getByText(/log out of the Enterprise Suite/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
     const confirm = screen.getAllByRole("button", { name: "Log out" }).find((b) => b.getAttribute("form") === "logout-form")!;
     expect(confirm.getAttribute("type")).toBe("submit");
