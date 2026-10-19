@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
+import { StaffProvider } from "./staff-context";
+import type { Staff } from "@/lib/portal/client";
 
 function MainContent({ children }: { children: React.ReactNode }) {
   const { open } = useSidebar();
@@ -32,13 +34,21 @@ function MainContent({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  staff,
+  children,
+}: {
+  staff: Staff;
+  children: React.ReactNode;
+}) {
   return (
-    <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen w-full bg-background text-foreground relative">
-        <Sidebar />
-        <MainContent>{children}</MainContent>
-      </div>
-    </SidebarProvider>
+    <StaffProvider staff={staff}>
+      <SidebarProvider defaultOpen={true}>
+        <div className="flex min-h-screen w-full bg-background text-foreground relative">
+          <Sidebar />
+          <MainContent>{children}</MainContent>
+        </div>
+      </SidebarProvider>
+    </StaffProvider>
   );
 }

@@ -34,3 +34,13 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Signing in through the Portal
+
+CREOMS has no login of its own. A request without a session is sent to the Portal and returns to the page asked for. Copy `.env.example` to `.env.local` and set:
+
+- `PORTAL_URL`: base address of the Portal.
+- `PORTAL_SYSTEM_NAME` / `PORTAL_SYSTEM_SECRET`: the System credential the Portal registered for CREOMS (its `SYSTEM_SECRET_CRMS`). Never commit a real value.
+- `CREOMS_APP_URL`: this app's public origin. `<origin>/api/portal/callback` must be a callback registered at the Portal.
+
+Route tests run against a shared fake Portal (`tests/fake-portal.ts`) that follows the Portal's handoff contract (`docs/integrations/system-handoff.md` in the Portal repo). The Portal's positive validate response is extended with a `staff` profile (`name`, `username`, `email`, `role`); that addition is proposed to the Portal.
