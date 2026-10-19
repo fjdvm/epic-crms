@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 
 import { formatDate, formatPesos } from "./format";
 import { Field } from "./field";
-import type { CustomerOrder } from "./orders";
+import { orderAnchor, type CustomerOrder } from "./orders";
 import { orderLabel as label, paymentStatusOf } from "./rules";
 
 function OrderCard({ order }: { order: CustomerOrder }) {
@@ -14,7 +14,7 @@ function OrderCard({ order }: { order: CustomerOrder }) {
   const proof = order.paymentProof;
 
   return (
-    <li id={`order-${order.id}`}>
+    <li id={orderAnchor(order.id)}>
       <Card>
         <CardContent className="space-y-md">
           <div className="grid gap-sm sm:grid-cols-3 lg:grid-cols-6">

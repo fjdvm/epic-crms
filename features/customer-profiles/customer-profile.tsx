@@ -14,6 +14,7 @@ import { FeedbackTab } from "./feedback-tab";
 import { Field } from "./field";
 import { formatAgo, formatDate, formatPesos } from "./format";
 import { OrdersTab } from "./orders-tab";
+import { orderAnchor } from "./orders";
 import type { CustomerProfile } from "./profile";
 import { STAGE_LABELS } from "./rules";
 
@@ -35,7 +36,7 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
 
   function openOrder(id: number) {
     setTab("orders");
-    requestAnimationFrame(() => document.getElementById(`order-${id}`)?.scrollIntoView({ block: "start" }));
+    requestAnimationFrame(() => document.getElementById(orderAnchor(id))?.scrollIntoView({ block: "start" }));
   }
 
   return (

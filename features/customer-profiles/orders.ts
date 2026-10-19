@@ -38,6 +38,9 @@ export interface CustomerOrder {
   paymentProof: { reference: string | null; screenshot: string | null; submittedAt: Date | null } | null;
 }
 
+/** The element id an Order card is rendered under, so other tabs can link to it. */
+export const orderAnchor = (orderId: number) => `order-${orderId}`;
+
 /** A Customer's Orders, newest first. */
 export async function getCustomerOrders(sql: postgres.Sql, customerId: string): Promise<CustomerOrder[]> {
   const orders = await sql<Record<string, unknown>[]>`

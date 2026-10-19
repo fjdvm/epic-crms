@@ -3,7 +3,7 @@ import { Star } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 import { formatDate } from "./format";
-import type { CustomerOrder } from "./orders";
+import { orderAnchor, type CustomerOrder } from "./orders";
 
 export function FeedbackTab({
   orders,
@@ -12,7 +12,7 @@ export function FeedbackTab({
   orders: CustomerOrder[];
   onOpenOrder: (orderId: number) => void;
 }) {
-  const entries = orders.filter((o) => o.feedback);
+  const entries = orders.flatMap((o) => (o.feedback ? [{ order: o, feedback: o.feedback }] : []));
 
   if (entries.length === 0) {
     return (
@@ -24,13 +24,13 @@ export function FeedbackTab({
 
   return (
     <ul className="space-y-md">
-      {entries.map((o) => (
+      {entries.map(({ order: o, feedback }) => (
         <li key={o.id}>
           <Card>
             <CardContent className="space-y-1">
               <div className="flex items-center justify-between gap-2">
                 <a
-                  href={`#order-${o.id}`}
+                  href={`#${orderAnchor(o.id)}`}
                   onClick={(e) => {
                     e.preventDefault();
                     onOpenOrder(o.id);
@@ -42,9 +42,9 @@ export function FeedbackTab({
                 <span className="text-body-sm text-muted-foreground">{formatDate(o.createdAt)}</span>
               </div>
               <p className="flex items-center gap-1 text-body-md text-foreground">
-                <Star className="size-4" /> {o.feedback!.rating} / 5
+                <Star className="size-4" /> {feedback.rating} / 5
               </p>
-              {o.feedback!.comment && <p className="text-body-md text-foreground">{o.feedback!.comment}</p>}
+              {feedback.comment && <p className="text-body-md text-foreground">{feedback.comment}</p>}
             </CardContent>
           </Card>
         </li>
