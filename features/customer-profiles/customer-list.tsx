@@ -16,7 +16,7 @@ import { ScrollableTable } from "@/components/shared/scrollable-table";
 
 import type { CustomerList, SortKey } from "./customers";
 import { STAGES } from "./customers";
-import type { Stage } from "./rules";
+import { STAGE_LABELS, type Stage } from "./rules";
 import { formatDate, formatPesos } from "./format";
 
 export interface ListParams {
@@ -27,14 +27,6 @@ export interface ListParams {
   direction: "asc" | "desc";
   page: number;
 }
-
-const STAGE_LABELS: Record<Stage, string> = {
-  new: "New",
-  "first-order": "First order",
-  repeat: "Repeat",
-  "at-risk": "At risk",
-  lost: "Lost",
-};
 
 const COLUMNS: { key: SortKey; header: string; className?: string }[] = [
   { key: "name", header: "Name" },
@@ -132,7 +124,11 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
             <TableBody>
               {list.rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/customer-profiles/${encodeURIComponent(row.id)}`} className="hover:underline">
+                      {row.name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{row.email}</TableCell>
                   <TableCell>{row.contactNumber}</TableCell>
                   <TableCell className="text-right">{row.orders}</TableCell>
