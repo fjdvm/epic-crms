@@ -41,6 +41,12 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
     const lines = await sql`select * from public.order_lines`;
     const snapshots = await sql`select * from public.order_delivery_addresses`;
     const allOrders = await sql`select * from public.orders`;
+    const cartLines = await sql`
+      select cl.customer_id, cl.id, cl.quantity, s.price_in_centavos, s.label, p.name
+      from public.cart_lines cl
+      join public.sizes s on s.id = cl.size_id
+      join public.products p on p.slug = s.product_slug
+      order by cl.id`;
 
     const verified = customers.filter((c) => users.find((u) => u.id === c.id)?.verified);
     expect(verified.length, "needs at least one Customer").toBeGreaterThan(0);
@@ -113,6 +119,12 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
           pr.payment_method === "gcash" ? pr.gcash_reference_number : null,
         );
       }
+
+      const mineCart = cartLines.filter((l) => l.customer_id === c.id);
+      expect(p.cart.lines.map((l) => [l.product, l.size, l.quantity, l.price])).toEqual(
+        mineCart.map((l) => [l.name, l.label, l.quantity, l.price_in_centavos]),
+      );
+      expect(p.cart.total).toBe(mineCart.reduce((sum, l) => sum + l.quantity * l.price_in_centavos, 0));
 
       expect(p.addresses.map((a) => a.id)).toEqual(mineAddresses.map((a) => a.id));
       for (const a of p.addresses) {

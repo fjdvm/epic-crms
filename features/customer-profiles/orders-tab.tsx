@@ -14,7 +14,7 @@ function OrderCard({ order }: { order: CustomerOrder }) {
   const proof = order.paymentProof;
 
   return (
-    <li>
+    <li id={`order-${order.id}`}>
       <Card>
         <CardContent className="space-y-md">
           <div className="grid gap-sm sm:grid-cols-3 lg:grid-cols-6">

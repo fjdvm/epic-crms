@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { Star } from "lucide-react";
 
 import { BackButton } from "@/components/shared/back-button";
@@ -5,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { CartTab } from "./cart-tab";
+import { EmailsTab } from "./emails-tab";
+import { FeedbackTab } from "./feedback-tab";
 import { Field } from "./field";
 import { formatAgo, formatDate, formatPesos } from "./format";
 import { OrdersTab } from "./orders-tab";
@@ -25,6 +31,12 @@ function Stat({ title, value, note }: { title: string; value: string; note?: str
 
 export function CustomerProfileView({ profile, now = new Date() }: { profile: CustomerProfile; now?: Date }) {
   const p = profile;
+  const [tab, setTab] = useState("details");
+
+  function openOrder(id: number) {
+    setTab("orders");
+    requestAnimationFrame(() => document.getElementById(`order-${id}`)?.scrollIntoView({ block: "start" }));
+  }
 
   return (
     <div className="space-y-md">
@@ -63,7 +75,7 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
         />
       </div>
 
-      <Tabs defaultValue="details">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="cart">Cart</TabsTrigger>
@@ -72,13 +84,17 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
           <TabsTrigger value="details">Details</TabsTrigger>
         </TabsList>
 
-        {["cart", "feedback", "emails"].map((tab) => (
-          <TabsContent key={tab} value={tab}>
-            <div className="p-xl text-center text-muted-foreground border border-border rounded-lg">
-              Nothing to show here yet.
-            </div>
-          </TabsContent>
-        ))}
+        <TabsContent value="cart">
+          <CartTab cart={p.cart} />
+        </TabsContent>
+
+        <TabsContent value="feedback">
+          <FeedbackTab orders={p.orderHistory} onOpenOrder={openOrder} />
+        </TabsContent>
+
+        <TabsContent value="emails">
+          <EmailsTab marketingOptIn={p.marketingOptIn} />
+        </TabsContent>
 
         <TabsContent value="orders">
           <OrdersTab orders={p.orderHistory} />
