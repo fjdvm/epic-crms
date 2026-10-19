@@ -34,7 +34,7 @@ describe("AddCustomerForm", () => {
     expect(screen.getByText("First name is required.")).toBeTruthy();
     expect(screen.getByText("Last name is required.")).toBeTruthy();
     expect(screen.getByText("Mobile number is required.")).toBeTruthy();
-    expect(screen.getByText("Fields marked * are required")).toBeTruthy();
+    expect(screen.getByText("Fields marked * are required.")).toBeTruthy();
   });
 
   it("shows an inline error for a mobile number that is not 11 digits and an incomplete email", async () => {
@@ -84,8 +84,8 @@ describe("AddCustomerForm", () => {
     render(<AddCustomerForm save={save} />);
 
     await fillRequired(user);
-    await user.type(screen.getByPlaceholderText(/Add a tag/), "wedding{Enter}");
-    await user.type(screen.getByPlaceholderText(/Add a tag/), "vip");
+    await user.type(screen.getByPlaceholderText(/Add tag/), "wedding{Enter}");
+    await user.type(screen.getByPlaceholderText(/Add tag/), "vip");
     await user.click(screen.getByRole("button", { name: "Remove tag wedding" }));
     await user.click(screen.getByRole("switch", { name: "SMS promos" }));
     await user.type(screen.getByRole("textbox", { name: "Internal notes" }), "June wedding");

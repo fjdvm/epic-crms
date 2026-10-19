@@ -7,17 +7,15 @@ export default async function AddCustomerPage() {
   await requireModule(CUSTOMER_PROFILES_MODULE);
 
   return (
-    <div className="space-y-5 px-xl py-7">
+    <div className="space-y-4 px-xl py-7">
       <BackButton fallbackHref="/customer-profiles" label="Customer Profiles" />
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold leading-[normal] text-foreground">Add customer</h1>
         <p className="text-sm text-muted-foreground">
-          For people who order by chat, phone or in person and have no storefront account.
+          For people who order by chat, phone or walk-in. Website shoppers get a profile automatically at checkout.
         </p>
       </div>
-      <div className="max-w-3xl">
-        <AddCustomerForm />
-      </div>
+      <AddCustomerForm />
     </div>
   );
 }
