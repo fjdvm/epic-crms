@@ -15,14 +15,26 @@ import {
 import { ScrollableTable } from "@/components/shared/scrollable-table";
 
 import type { CustomerList, SortKey } from "./customers";
+import { STAGES } from "./customers";
+import type { Stage } from "./rules";
 import { formatDate, formatPesos } from "./format";
 
 export interface ListParams {
   search: string;
+  /** Undefined shows All. */
+  stage?: Stage;
   sort: SortKey;
   direction: "asc" | "desc";
   page: number;
 }
+
+const STAGE_LABELS: Record<Stage, string> = {
+  new: "New",
+  "first-order": "First order",
+  repeat: "Repeat",
+  "at-risk": "At risk",
+  lost: "Lost",
+};
 
 const COLUMNS: { key: SortKey; header: string; className?: string }[] = [
   { key: "name", header: "Name" },
@@ -39,6 +51,7 @@ function href(params: ListParams, change: Partial<ListParams>): string {
   const query = new URLSearchParams();
 
   if (next.search) query.set("q", next.search);
+  if (next.stage) query.set("stage", next.stage);
   query.set("sort", next.sort);
   query.set("dir", next.direction);
   if (next.page > 1) query.set("page", String(next.page));
@@ -57,9 +70,30 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           placeholder="Search name, email or contact number"
           className="pl-9"
         />
+        {params.stage && <input type="hidden" name="stage" value={params.stage} />}
         <input type="hidden" name="sort" value={params.sort} />
         <input type="hidden" name="dir" value={params.direction} />
       </form>
+
+      <nav aria-label="Stage" className="flex flex-wrap gap-2">
+        {[undefined, ...STAGES].map((stage) => {
+          const count = stage
+            ? list.stageCounts[stage]
+            : STAGES.reduce((sum, s) => sum + list.stageCounts[s], 0);
+          const active = params.stage === stage;
+
+          return (
+            <Button key={stage ?? "all"} variant={active ? "default" : "outline"} size="sm" asChild>
+              <Link
+                href={href(params, { stage, page: 1 })}
+                aria-current={active ? "page" : undefined}
+              >
+                {stage ? STAGE_LABELS[stage] : "All"} ({count})
+              </Link>
+            </Button>
+          );
+        })}
+      </nav>
 
       {list.rows.length === 0 ? (
         <div className="p-xl text-center text-muted-foreground border border-border rounded-lg">
@@ -91,6 +125,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                     </TableHead>
                   );
                 })}
+                <TableHead>Stage</TableHead>
                 <TableHead>Cart</TableHead>
               </TableRow>
             </TableHeader>
@@ -106,6 +141,9 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                     {row.lastOrder ? formatDate(row.lastOrder) : "No orders yet"}
                   </TableCell>
                   <TableCell>{formatDate(row.customerSince)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{STAGE_LABELS[row.stage]}</Badge>
+                  </TableCell>
                   <TableCell>
                     {row.cartHasItems ? <Badge>Has items</Badge> : (
                       <span className="text-muted-foreground">Empty</span>
@@ -156,6 +194,11 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           </Button>
         </div>
       </div>
+    <p className="text-sm text-muted-foreground">
+        Stage comes from a Customer&apos;s Orders, ignoring cancelled ones: New has none, First
+        order has one, Repeat has two or more. If the last Order was 60 or more days ago they are
+        At risk, and 120 or more days ago, Lost, which take precedence.
+      </p>
     </div>
   );
 }

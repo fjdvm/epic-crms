@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isCustomer, totalSpent } from "./rules";
+import { isCustomer, stageCutoffs, stageOf, totalSpent } from "./rules";
 
 const order = (status: string, subtotal: number, fee: number | null) => ({
   status,
@@ -44,5 +44,45 @@ describe("isCustomer", () => {
 
   it("is false when there is no matching auth user", () => {
     expect(isCustomer(null)).toBe(false);
+  });
+});
+
+describe("stageOf", () => {
+  const now = new Date("2026-10-20T00:00:00Z");
+  const daysAgo = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+  it("is New with no Orders", () => {
+    expect(stageOf({ orders: 0, lastOrder: null }, now)).toBe("new");
+  });
+
+  it("is First order with one recent Order and Repeat with two or more", () => {
+    expect(stageOf({ orders: 1, lastOrder: daysAgo(1) }, now)).toBe("first-order");
+    expect(stageOf({ orders: 2, lastOrder: daysAgo(1) }, now)).toBe("repeat");
+    expect(stageOf({ orders: 9, lastOrder: daysAgo(1) }, now)).toBe("repeat");
+  });
+
+  it.each([
+    [59, "repeat"],
+    [60, "at-risk"],
+    [61, "at-risk"],
+    [119, "at-risk"],
+    [120, "lost"],
+    [121, "lost"],
+  ])("with the last Order %i days ago is %s", (days, stage) => {
+    expect(stageOf({ orders: 3, lastOrder: daysAgo(days) }, now)).toBe(stage);
+  });
+
+  it("lets At risk and Lost take precedence over First order", () => {
+    expect(stageOf({ orders: 1, lastOrder: daysAgo(70) }, now)).toBe("at-risk");
+    expect(stageOf({ orders: 1, lastOrder: daysAgo(200) }, now)).toBe("lost");
+  });
+});
+
+describe("stageCutoffs", () => {
+  it("is the instant 60 and 120 days before now", () => {
+    const now = new Date("2026-10-20T00:00:00Z");
+    const { atRiskBefore, lostBefore } = stageCutoffs(now);
+    expect(atRiskBefore.toISOString()).toBe("2026-08-21T00:00:00.000Z");
+    expect(lostBefore.toISOString()).toBe("2026-06-22T00:00:00.000Z");
   });
 });
