@@ -30,9 +30,9 @@ function Stat({
   note?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-4">
+    <div className="flex min-w-[180px] flex-1 flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-4">
       <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
-      <p className="text-headline-md text-foreground">{value}</p>
+      <p className="text-2xl font-semibold leading-[normal] text-foreground">{value}</p>
       {note && <p className="text-xs text-muted-foreground">{note}</p>}
     </div>
   );
@@ -76,7 +76,7 @@ export function CustomerProfileView({
 
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-headline-md text-foreground">{p.name}</h1>
+          <h1 className="text-2xl font-semibold leading-[normal] text-foreground">{p.name}</h1>
           <StageBadge stage={p.stage} />
         </div>
         <p className="text-sm text-muted-foreground">
@@ -85,7 +85,7 @@ export function CustomerProfileView({
         </p>
       </div>
 
-      <div className="grid gap-md sm:grid-cols-2 lg:grid-cols-4">
+      <div className="flex flex-wrap items-start gap-4">
         <Stat
           title="Total spent"
           value={formatPesos(p.totalSpent)}
@@ -115,9 +115,8 @@ export function CustomerProfileView({
         />
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <Tabs value={tab} onValueChange={setTab} className="space-y-5">
-          <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-5">
+        <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
             <TabsTrigger className={TAB_TRIGGER} value="orders">
               Orders ({p.orders})
             </TabsTrigger>
@@ -134,6 +133,9 @@ export function CustomerProfileView({
               Details
             </TabsTrigger>
           </TabsList>
+
+        <div className="flex flex-col items-start gap-4 xl:flex-row">
+          <div className="min-w-0 w-full flex-1">
 
           <TabsContent value="orders" className="mt-0">
             <OrdersTab
@@ -202,10 +204,13 @@ export function CustomerProfileView({
               )}
             </TabCard>
           </TabsContent>
-        </Tabs>
+          </div>
 
-        <ActivityTimeline orders={p.orderHistory} onOpenOrder={openOrder} />
-      </div>
+          <aside className="w-full shrink-0 space-y-4 xl:w-[380px]">
+            <ActivityTimeline orders={p.orderHistory} onOpenOrder={openOrder} />
+          </aside>
+        </div>
+      </Tabs>
     </div>
   );
 }

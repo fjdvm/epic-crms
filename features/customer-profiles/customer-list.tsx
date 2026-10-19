@@ -23,7 +23,7 @@ export interface ListParams {
 /** Column widths follow the design: fixed, with Last order taking the rest. */
 const COLUMNS: { key: SortKey | null; header: string; className: string }[] = [
   { key: "name", header: "Customer", className: "w-[180px]" },
-  { key: "email", header: "Contact", className: "w-[380px]" },
+  { key: "email", header: "Contact", className: "w-[320px]" },
   { key: null, header: "Stage", className: "w-[120px]" },
   { key: "orders", header: "Orders", className: "w-[90px]" },
   { key: "totalSpent", header: "Total spent", className: "w-[140px]" },
@@ -91,7 +91,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[820px]">
+            <div className="min-w-[970px]">
               <div className="flex items-center border-b border-border-subtle py-1.5 text-xs font-medium text-muted-foreground">
                 {COLUMNS.map((col) => {
                   if (!col.key) {
@@ -124,13 +124,16 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                 })}
               </div>
               {list.rows.map((row) => (
-                <div key={row.id} className="flex items-center border-b border-border-subtle last:border-0">
+                <div
+                  key={row.id}
+                  className="relative flex items-center border-b border-border-subtle last:border-0 hover:bg-secondary"
+                >
                   <div className={cn(CELL, COLUMNS[0].className, "font-medium text-primary")}>
-                    <Link href={`/customer-profiles/${encodeURIComponent(row.id)}`} className="hover:underline">
+                    <Link href={`/customer-profiles/${encodeURIComponent(row.id)}`} className="after:absolute after:inset-0">
                       {row.name}
                     </Link>
                   </div>
-                  <div className={cn(CELL, COLUMNS[1].className)}>
+                  <div className={cn(CELL, COLUMNS[1].className, "truncate")}>
                     {row.email} · {row.contactNumber}
                   </div>
                   <div className={cn("shrink-0", COLUMNS[2].className)}>
@@ -187,8 +190,8 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
         </div>
 
         <p className="rounded-lg bg-secondary px-3 py-2.5 text-xs text-muted-foreground">
-          Lifecycle stage is calculated from orders, ignoring cancelled ones: New = no order, First
-          order = 1, Repeat = 2+, At risk = no order in 60 days, Lost = no order in 120 days.
+          Lifecycle stage is calculated from orders: New = no order, First order = 1, Repeat = 2+, At
+          risk = no order in 60 days, Lost = no order in 120 days.
         </p>
       </div>
     </div>

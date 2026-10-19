@@ -8,8 +8,15 @@ import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { StaffProvider } from "./staff-context";
 import type { Staff } from "@/lib/portal/client";
+import type { NotificationFeed } from "@/features/notifications/notifications";
 
-function MainContent({ children }: { children: React.ReactNode }) {
+function MainContent({
+  children,
+  notifications,
+}: {
+  children: React.ReactNode;
+  notifications: NotificationFeed | null;
+}) {
   const { open } = useSidebar();
   const pathname = usePathname();
   const mounted = useMounted();
@@ -22,7 +29,7 @@ function MainContent({ children }: { children: React.ReactNode }) {
     <div
       className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-300 ${marginClass}`}
     >
-      <Header />
+      <Header notifications={notifications} />
 
       <main
         key={pathname}
@@ -37,10 +44,12 @@ function MainContent({ children }: { children: React.ReactNode }) {
 export function AppShell({
   staff,
   permittedPages,
+  notifications = null,
   children,
 }: {
   staff: Staff;
   permittedPages: string[];
+  notifications?: NotificationFeed | null;
   children: React.ReactNode;
 }) {
   return (
@@ -48,7 +57,7 @@ export function AppShell({
       <SidebarProvider defaultOpen={true}>
         <div className="flex min-h-screen w-full bg-background text-foreground relative">
           <Sidebar />
-          <MainContent>{children}</MainContent>
+          <MainContent notifications={notifications}>{children}</MainContent>
         </div>
       </SidebarProvider>
     </StaffProvider>

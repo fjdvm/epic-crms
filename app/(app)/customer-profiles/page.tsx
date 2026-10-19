@@ -33,7 +33,7 @@ export default async function CustomerProfilesPage({
   if (!result.ok) {
     return (
       <div className="p-md sm:p-lg space-y-md">
-        <h1 className="text-headline-md text-foreground">Customer Profiles</h1>
+        <h1 className="text-2xl font-semibold leading-[normal] text-foreground">Customer Profiles</h1>
         <Alert variant="destructive">
           <AlertTitle>Customers are temporarily unavailable</AlertTitle>
           <AlertDescription>
@@ -50,9 +50,9 @@ export default async function CustomerProfilesPage({
   return (
     <div className="space-y-5 px-xl py-7">
       <div className="space-y-1">
-        <h1 className="text-headline-md text-foreground">Customer Profiles</h1>
+        <h1 className="text-2xl font-semibold leading-[normal] text-foreground">Customer Profiles</h1>
         <p className="text-sm text-muted-foreground">
-          {list.profileCount} customers · one profile per person
+          {list.profileCount} customers · one profile per person, matched by email or phone at checkout
         </p>
       </div>
       <CustomerListView list={list} params={{ search, stage, sort, direction, page: list.page }} />
