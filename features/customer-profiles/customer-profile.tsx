@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
+import { ActivityTimeline } from "./activity-timeline";
 import { CartTab } from "./cart-tab";
 import { EmailsTab } from "./emails-tab";
 import { FeedbackTab } from "./feedback-tab";
@@ -19,7 +20,15 @@ import type { CustomerProfile } from "./profile";
 import { StageBadge } from "./stage-badge";
 import { TabCard } from "./tab-card";
 
-function Stat({ title, value, note }: { title: string; value: string; note?: string }) {
+function Stat({
+  title,
+  value,
+  note,
+}: {
+  title: string;
+  value: string;
+  note?: string;
+}) {
   return (
     <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-4">
       <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
@@ -32,7 +41,13 @@ function Stat({ title, value, note }: { title: string; value: string; note?: str
 const TAB_TRIGGER =
   "rounded-lg px-3.5 py-2 text-sm text-muted-foreground data-[state=active]:bg-accent data-[state=active]:text-primary data-[state=active]:shadow-none";
 
-export function CustomerProfileView({ profile, now = new Date() }: { profile: CustomerProfile; now?: Date }) {
+export function CustomerProfileView({
+  profile,
+  now = new Date(),
+}: {
+  profile: CustomerProfile;
+  now?: Date;
+}) {
   const p = profile;
   const [tab, setTab] = useState("orders");
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
@@ -48,7 +63,11 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
   function openOrder(id: number) {
     setExpanded((open) => new Set(open).add(id));
     setTab("orders");
-    requestAnimationFrame(() => document.getElementById(orderAnchor(id))?.scrollIntoView({ block: "start" }));
+    requestAnimationFrame(() =>
+      document
+        .getElementById(orderAnchor(id))
+        ?.scrollIntoView({ block: "start" }),
+    );
   }
 
   return (
@@ -61,8 +80,8 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
           <StageBadge stage={p.stage} />
         </div>
         <p className="text-sm text-muted-foreground">
-          Customer since {formatMonthYear(p.customerSince)} · {p.email} · {p.contactNumber} ·{" "}
-          {p.defaultCity ?? "No default city"}
+          Customer since {formatMonthYear(p.customerSince)} · {p.email} ·{" "}
+          {p.contactNumber} · {p.defaultCity ?? "No default city"}
         </p>
       </div>
 
@@ -74,7 +93,11 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
         />
         <Stat
           title="Average order"
-          value={p.averageOrder === null ? "No paid orders" : formatPesos(p.averageOrder)}
+          value={
+            p.averageOrder === null
+              ? "No paid orders"
+              : formatPesos(p.averageOrder)
+          }
         />
         <Stat
           title="Last order"
@@ -83,74 +106,106 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
         />
         <Stat
           title="Feedback given"
-          value={p.averageRating === null ? "No feedback" : `${p.averageRating.toFixed(1)} ★`}
+          value={
+            p.averageRating === null
+              ? "No feedback"
+              : `${p.averageRating.toFixed(1)} ★`
+          }
           note={`${p.feedbackCount} ${p.feedbackCount === 1 ? "review" : "reviews"}`}
         />
       </div>
 
-      <Tabs value={tab} onValueChange={setTab} className="space-y-5">
-        <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
-          <TabsTrigger className={TAB_TRIGGER} value="orders">Orders ({p.orders})</TabsTrigger>
-          <TabsTrigger className={TAB_TRIGGER} value="cart">Cart</TabsTrigger>
-          <TabsTrigger className={TAB_TRIGGER} value="feedback">Feedback ({p.feedbackCount})</TabsTrigger>
-          <TabsTrigger className={TAB_TRIGGER} value="emails">Emails</TabsTrigger>
-          <TabsTrigger className={TAB_TRIGGER} value="details">Details</TabsTrigger>
-        </TabsList>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <Tabs value={tab} onValueChange={setTab} className="space-y-5">
+          <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+            <TabsTrigger className={TAB_TRIGGER} value="orders">
+              Orders ({p.orders})
+            </TabsTrigger>
+            <TabsTrigger className={TAB_TRIGGER} value="cart">
+              Cart
+            </TabsTrigger>
+            <TabsTrigger className={TAB_TRIGGER} value="feedback">
+              Feedback ({p.feedbackCount})
+            </TabsTrigger>
+            <TabsTrigger className={TAB_TRIGGER} value="emails">
+              Emails
+            </TabsTrigger>
+            <TabsTrigger className={TAB_TRIGGER} value="details">
+              Details
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="orders" className="mt-0">
-          <OrdersTab orders={p.orderHistory} expanded={expanded} onToggle={toggleOrder} />
-        </TabsContent>
+          <TabsContent value="orders" className="mt-0">
+            <OrdersTab
+              orders={p.orderHistory}
+              expanded={expanded}
+              onToggle={toggleOrder}
+            />
+          </TabsContent>
 
-        <TabsContent value="cart" className="mt-0">
-          <CartTab cart={p.cart} />
-        </TabsContent>
+          <TabsContent value="cart" className="mt-0">
+            <CartTab cart={p.cart} />
+          </TabsContent>
 
-        <TabsContent value="feedback" className="mt-0">
-          <FeedbackTab orders={p.orderHistory} onOpenOrder={openOrder} />
-        </TabsContent>
+          <TabsContent value="feedback" className="mt-0">
+            <FeedbackTab orders={p.orderHistory} onOpenOrder={openOrder} />
+          </TabsContent>
 
-        <TabsContent value="emails" className="mt-0">
-          <EmailsTab marketingOptIn={p.marketingOptIn} />
-        </TabsContent>
+          <TabsContent value="emails" className="mt-0">
+            <EmailsTab marketingOptIn={p.marketingOptIn} />
+          </TabsContent>
 
-        <TabsContent value="details" className="mt-0 space-y-5">
-          <TabCard title="Details">
-            <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="First name">{p.firstName}</Field>
-              <Field label="Middle name">{p.middleName ?? "—"}</Field>
-              <Field label="Last name">{p.lastName}</Field>
-              <Field label="Email">{p.email}</Field>
-              <Field label="Contact number">{p.contactNumber}</Field>
-              <Field label="Marketing emails">{p.marketingOptIn ? "Opted in" : "Not opted in"}</Field>
-              <Field label="Customer since">{formatDate(p.customerSince)}</Field>
-            </dl>
-          </TabCard>
+          <TabsContent value="details" className="mt-0 space-y-5">
+            <TabCard title="Details">
+              <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="First name">{p.firstName}</Field>
+                <Field label="Middle name">{p.middleName ?? "—"}</Field>
+                <Field label="Last name">{p.lastName}</Field>
+                <Field label="Email">{p.email}</Field>
+                <Field label="Contact number">{p.contactNumber}</Field>
+                <Field label="Marketing emails">
+                  {p.marketingOptIn ? "Opted in" : "Not opted in"}
+                </Field>
+                <Field label="Customer since">
+                  {formatDate(p.customerSince)}
+                </Field>
+              </dl>
+            </TabCard>
 
-          <TabCard title="Addresses">
-            {p.addresses.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No addresses saved.</p>
-            ) : (
-              <ul className="grid gap-md sm:grid-cols-2">
-                {p.addresses.map((a) => (
-                  <li key={a.id} className={cn("space-y-1 rounded-lg bg-secondary p-md")}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{a.label}</span>
-                      {a.isDefault && (
-                        <Badge variant="purple">
-                          <Star className="mr-1 size-3" /> Default address
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-foreground">
-                      {a.street}, {a.barangay}, {a.city}, {a.province} {a.postalCode}, {a.country}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </TabCard>
-        </TabsContent>
-      </Tabs>
+            <TabCard title="Addresses">
+              {p.addresses.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No addresses saved.
+                </p>
+              ) : (
+                <ul className="grid gap-md sm:grid-cols-2">
+                  {p.addresses.map((a) => (
+                    <li
+                      key={a.id}
+                      className={cn("space-y-1 rounded-lg bg-secondary p-md")}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{a.label}</span>
+                        {a.isDefault && (
+                          <Badge variant="purple">
+                            <Star className="mr-1 size-3" /> Default address
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-foreground">
+                        {a.street}, {a.barangay}, {a.city}, {a.province}{" "}
+                        {a.postalCode}, {a.country}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </TabCard>
+          </TabsContent>
+        </Tabs>
+
+        <ActivityTimeline orders={p.orderHistory} onOpenOrder={openOrder} />
+      </div>
     </div>
   );
 }
