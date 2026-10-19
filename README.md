@@ -46,3 +46,12 @@ CREOMS has no login of its own. A request without a session is sent to the Porta
 Route tests run against a shared fake Portal (`tests/fake-portal.ts`) that follows the Portal's handoff contract (`docs/integrations/system-handoff.md` in the Portal repo). The Portal's positive validate response is extended with a `staff` profile (`name`, `username`, `email`, `role`); that addition is proposed to the Portal.
 
 Sign out posts to `/api/portal/logout`, which forgets the session cookie and sends the browser to `<PORTAL_URL>/logout`. That address is proposed, not yet part of the Portal's handoff contract: it must end the one central session (so every System's handle is denied on its next validation) and land on the Portal login.
+
+## Running locally
+
+Two ways, both on `http://localhost:3000`:
+
+1. **Real Portal (default).** Set the variables above and run `npm run dev`. Sign-in goes through the deployed Portal via the registered `localhost` callback.
+2. **Dev bypass (offline work and automated tests).** Set `CREOMS_DEV_BYPASS=true` in `.env.local`. Every page opens as a fully-permitted Staff member ("Dev Staff"); no Portal, session or `PORTAL_*` variables are needed, and sign out just returns to `/`.
+
+The bypass is for development and tests only. CREOMS refuses to start (`instrumentation.ts`) if `CREOMS_DEV_BYPASS=true` is set when `NODE_ENV=production` on Vercel, or when `CREOMS_APP_URL` is not a `localhost` address, so it cannot open a deployed CREOMS to the public. Never set it in a deployment's environment.
