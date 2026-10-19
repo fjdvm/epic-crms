@@ -1,12 +1,19 @@
 const pesos = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
 const months = new Intl.DateTimeFormat("en-PH", { month: "short", year: "numeric", timeZone: "Asia/Manila" });
-const dates = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" });
+const dates = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Manila" });
+const wholePesos = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 
 /** Centavos shown as pesos. */
 export function formatPesos(centavos: number): string {
   return pesos.format(centavos / 100);
 }
 
+/** Centavos shown as whole pesos, as the Customer list does. */
+export function formatWholePesos(centavos: number): string {
+  return wholePesos.format(centavos / 100);
+}
+
+/** "12 Oct 2026". */
 export function formatDate(date: Date): string {
   return dates.format(date);
 }

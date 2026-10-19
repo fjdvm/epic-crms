@@ -36,7 +36,7 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
     const customers = await sql`select * from public.customers`;
     const users = await sql`select id::text as id, "emailVerified" as verified, "createdAt" as created from neon_auth."user"`;
     const orders = await sql`select id, customer_id, status, subtotal_in_centavos, delivery_fee_in_centavos, created_at from public.orders`;
-    const feedback = await sql`select order_id, rating from public.order_feedback`;
+    const feedback = await sql`select order_id, rating, created_at from public.order_feedback`;
     const addresses = await sql`select * from public.addresses order by id`;
     const lines = await sql`select * from public.order_lines`;
     const snapshots = await sql`select * from public.order_delivery_addresses`;
@@ -114,6 +114,7 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
         );
         const fb = feedback.find((f) => f.order_id === o.id);
         expect(o.feedback?.rating ?? null).toBe(fb?.rating ?? null);
+        expect(o.feedback?.createdAt.getTime() ?? null).toBe(fb?.created_at.getTime() ?? null);
         const pr = allOrders.find((x) => x.id === o.id)!;
         expect(o.paymentProof?.reference ?? null).toBe(
           pr.payment_method === "gcash" ? pr.gcash_reference_number : null,

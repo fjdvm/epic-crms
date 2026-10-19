@@ -60,9 +60,9 @@ describe("FeedbackTab", () => {
     render(
       <FeedbackTab
         orders={[
-          order({ id: 7, feedback: { rating: 5, comment: "Great" } }),
+          order({ id: 7, feedback: { rating: 5, comment: "Great", createdAt: new Date("2026-03-02T00:00:00Z") } }),
           order({ id: 6 }),
-          order({ id: 4, feedback: { rating: 2, comment: null } }),
+          order({ id: 4, feedback: { rating: 2, comment: null, createdAt: new Date("2026-03-02T00:00:00Z") } }),
         ]}
         onOpenOrder={open}
       />,
