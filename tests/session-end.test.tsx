@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as logout } from "@/app/api/portal/logout/route";
 import { SidebarProfileFooter } from "@/components/layout/sidebar-profile-footer";
@@ -169,7 +170,7 @@ describe("signing out", () => {
     expect((await accessFor(handle).check(CUSTOMER_PROFILES)).decision).toBe("invalid");
   });
 
-  it("shows the Staff profile above a Log out button that POSTs to sign out", async () => {
+  it("shows the Staff profile above a Log out button that asks before signing out", async () => {
     render(
       <StaffProvider staff={ada}>
         <SidebarProfileFooter />
@@ -180,12 +181,18 @@ describe("signing out", () => {
     expect(screen.getByText("ada.okafor")).toBeTruthy();
     expect(screen.getByText("ada@brenraphaels.test")).toBeTruthy();
     expect(screen.getByText("Customer Support")).toBeTruthy();
-    const logOut = screen.getByRole("button", { name: "Log out" });
-    expect(logOut.getAttribute("title")).toMatch(/all Bren Raphael's systems/);
+
     const form = document.querySelector('form[action="/api/portal/logout"]')!;
     expect(form.getAttribute("method")).toBe("post");
-    for (const gone of ["Profile Settings", "Security Options", "Activity Logs"]) {
-      expect(screen.queryByText(gone)).toBeNull();
-    }
+    expect(screen.queryByText("Log out of CREOMS?")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Log out" }));
+
+    expect(screen.getByText("Log out of CREOMS?")).toBeTruthy();
+    expect(screen.getByText(/all Bren Raphael's systems/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    const confirm = screen.getAllByRole("button", { name: "Log out" }).find((b) => b.getAttribute("form") === "logout-form")!;
+    expect(confirm.getAttribute("type")).toBe("submit");
   });
+
 });

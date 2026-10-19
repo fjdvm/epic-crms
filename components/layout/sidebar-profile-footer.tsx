@@ -4,6 +4,17 @@ import React from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { LOGOUT_PATH } from "@/lib/portal/config";
 import { useStaff } from "./staff-context";
 
@@ -34,16 +45,28 @@ export function SidebarProfileFooter() {
         </div>
       </div>
 
-      <form action={LOGOUT_PATH} method="post">
-        <Button
-          type="submit"
-          variant="outline"
-          className="w-full"
-          title="Signs you out of all Bren Raphael's systems"
-        >
-          Log out
-        </Button>
-      </form>
+      <form id="logout-form" action={LOGOUT_PATH} method="post" />
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button type="button" variant="outline" className="w-full">
+            Log out
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Log out of CREOMS?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This signs you out of all Bren Raphael&apos;s systems.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction type="submit" form="logout-form">
+              Log out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
