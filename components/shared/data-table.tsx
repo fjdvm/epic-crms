@@ -82,7 +82,7 @@ export function DataTable<T>({
         <div className="p-xl text-muted-foreground">No results match your search.</div>
       ) : (
         <>
-          <div className="max-h-[600px] overflow-y-auto border border-border rounded-lg">
+          <div className="max-h-[600px] overflow-auto border border-border rounded-lg">
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>

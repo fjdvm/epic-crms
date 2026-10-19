@@ -34,7 +34,8 @@ function OrderDetails({ order }: { order: CustomerOrder }) {
         <Field label="Payment method">{label(order.paymentMethod)}</Field>
       </dl>
 
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+<table className="w-full min-w-max whitespace-nowrap text-sm">
         <thead>
           <tr className="text-left text-xs text-muted-foreground">
             <th className="py-1 font-medium">Product</th>
@@ -54,6 +55,7 @@ function OrderDetails({ order }: { order: CustomerOrder }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       <dl className="ml-auto max-w-xs space-y-1 text-sm">
         <div className="flex justify-between">
@@ -127,12 +129,13 @@ export function OrdersTab({
       {orders.length === 0 ? (
         <div className="p-xl text-center text-muted-foreground">This customer has no orders yet.</div>
       ) : (
-        <table className="w-full">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-max whitespace-nowrap">
           <thead>
             <tr className="border-b border-border-subtle">
               <th className={`${HEAD} w-[90px]`}>Order</th>
               <th className={`${HEAD} w-[110px]`}>Date</th>
-              <th className={HEAD}>Items</th>
+              <th className={`${HEAD} min-w-[240px]`}>Items</th>
               <th className={`${HEAD} w-[90px]`}>Total</th>
               <th className={`${HEAD} w-[100px]`}>Payment</th>
               <th className={`${HEAD} w-[110px]`}>Status</th>
@@ -175,6 +178,7 @@ export function OrdersTab({
             );
           })}
         </table>
+        </div>
       )}
     </div>
   );
