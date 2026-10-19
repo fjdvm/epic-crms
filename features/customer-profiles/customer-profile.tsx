@@ -30,7 +30,7 @@ function Stat({
   note?: string;
 }) {
   return (
-    <div className="flex min-w-[180px] flex-1 flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-4">
+    <div className="flex h-full min-w-0 flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-4">
       <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
       <p className="text-2xl font-semibold leading-[normal] text-foreground">
         {value}
@@ -89,7 +89,7 @@ export function CustomerProfileView({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-start gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           title="Total spent"
           value={formatPesos(p.totalSpent)}
@@ -138,8 +138,8 @@ export function CustomerProfileView({
           </TabsTrigger>
         </TabsList>
 
-        <div className="flex flex-col items-start gap-4 xl:flex-row">
-          <div className="min-w-0 w-full flex-1">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
+          <div className="min-w-0 w-full flex-1 [&>[role=tabpanel]>div]:h-full [&>[role=tabpanel]]:h-full">
             <TabsContent value="orders" className="mt-0">
               <OrdersTab
                 orders={p.orderHistory}
@@ -209,7 +209,7 @@ export function CustomerProfileView({
             </TabsContent>
           </div>
 
-          <aside className="w-full shrink-0 space-y-4 xl:w-[380px]">
+          <aside className="w-full shrink-0 xl:w-[380px] [&>div]:h-full">
             <ActivityTimeline orders={p.orderHistory} onOpenOrder={openOrder} />
           </aside>
         </div>
