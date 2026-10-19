@@ -1,42 +1,67 @@
+"use client";
+
+import { useState } from "react";
 import { Star } from "lucide-react";
 
 import { BackButton } from "@/components/shared/back-button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
+import { CartTab } from "./cart-tab";
+import { EmailsTab } from "./emails-tab";
+import { FeedbackTab } from "./feedback-tab";
 import { Field } from "./field";
-import { formatAgo, formatDate, formatPesos } from "./format";
+import { formatAgo, formatDate, formatMonthYear, formatPesos } from "./format";
+import { orderAnchor } from "./orders";
 import { OrdersTab } from "./orders-tab";
 import type { CustomerProfile } from "./profile";
-import { STAGE_LABELS } from "./rules";
+import { StageBadge } from "./stage-badge";
+import { TabCard } from "./tab-card";
 
 function Stat({ title, value, note }: { title: string; value: string; note?: string }) {
   return (
-    <Card>
-      <CardContent className="space-y-1">
-        <p className="text-label-md text-muted-foreground">{title}</p>
-        <p className="text-title-lg text-foreground">{value}</p>
-        {note && <p className="text-body-sm text-muted-foreground">{note}</p>}
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-4">
+      <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
+      <p className="text-headline-md text-foreground">{value}</p>
+      {note && <p className="text-xs text-muted-foreground">{note}</p>}
+    </div>
   );
 }
 
+const TAB_TRIGGER =
+  "rounded-lg px-3.5 py-2 text-sm text-muted-foreground data-[state=active]:bg-accent data-[state=active]:text-primary data-[state=active]:shadow-none";
+
 export function CustomerProfileView({ profile, now = new Date() }: { profile: CustomerProfile; now?: Date }) {
   const p = profile;
+  const [tab, setTab] = useState("orders");
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
+
+  function toggleOrder(id: number) {
+    setExpanded((open) => {
+      const next = new Set(open);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
+
+  function openOrder(id: number) {
+    setExpanded((open) => new Set(open).add(id));
+    setTab("orders");
+    requestAnimationFrame(() => document.getElementById(orderAnchor(id))?.scrollIntoView({ block: "start" }));
+  }
 
   return (
-    <div className="space-y-md">
+    <div className="space-y-5">
       <BackButton fallbackHref="/customer-profiles" label="Customer Profiles" />
 
       <div className="space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="text-headline-md text-foreground">{p.name}</h1>
-          <Badge variant="outline">{STAGE_LABELS[p.stage]}</Badge>
+          <StageBadge stage={p.stage} />
         </div>
-        <p className="text-body-md text-muted-foreground">
-          Customer since {formatDate(p.customerSince)} · {p.email} · {p.contactNumber} ·{" "}
+        <p className="text-sm text-muted-foreground">
+          Customer since {formatMonthYear(p.customerSince)} · {p.email} · {p.contactNumber} ·{" "}
           {p.defaultCity ?? "No default city"}
         </p>
       </div>
@@ -45,7 +70,7 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
         <Stat
           title="Total spent"
           value={formatPesos(p.totalSpent)}
-          note={`${p.orders} ${p.orders === 1 ? "order" : "orders"}`}
+          note={`From ${p.orders} ${p.orders === 1 ? "order" : "orders"}`}
         />
         <Stat
           title="Average order"
@@ -58,72 +83,72 @@ export function CustomerProfileView({ profile, now = new Date() }: { profile: Cu
         />
         <Stat
           title="Feedback given"
-          value={p.averageRating === null ? "No feedback" : `${p.averageRating.toFixed(1)} / 5`}
+          value={p.averageRating === null ? "No feedback" : `${p.averageRating.toFixed(1)} ★`}
           note={`${p.feedbackCount} ${p.feedbackCount === 1 ? "review" : "reviews"}`}
         />
       </div>
 
-      <Tabs defaultValue="details">
-        <TabsList>
-          <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="cart">Cart</TabsTrigger>
-          <TabsTrigger value="feedback">Feedback</TabsTrigger>
-          <TabsTrigger value="emails">Emails</TabsTrigger>
-          <TabsTrigger value="details">Details</TabsTrigger>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-5">
+        <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+          <TabsTrigger className={TAB_TRIGGER} value="orders">Orders ({p.orders})</TabsTrigger>
+          <TabsTrigger className={TAB_TRIGGER} value="cart">Cart</TabsTrigger>
+          <TabsTrigger className={TAB_TRIGGER} value="feedback">Feedback ({p.feedbackCount})</TabsTrigger>
+          <TabsTrigger className={TAB_TRIGGER} value="emails">Emails</TabsTrigger>
+          <TabsTrigger className={TAB_TRIGGER} value="details">Details</TabsTrigger>
         </TabsList>
 
-        {["cart", "feedback", "emails"].map((tab) => (
-          <TabsContent key={tab} value={tab}>
-            <div className="p-xl text-center text-muted-foreground border border-border rounded-lg">
-              Nothing to show here yet.
-            </div>
-          </TabsContent>
-        ))}
-
-        <TabsContent value="orders">
-          <OrdersTab orders={p.orderHistory} />
+        <TabsContent value="orders" className="mt-0">
+          <OrdersTab orders={p.orderHistory} expanded={expanded} onToggle={toggleOrder} />
         </TabsContent>
 
-        <TabsContent value="details" className="space-y-md">
-          <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="First name">{p.firstName}</Field>
-            <Field label="Middle name">{p.middleName ?? "—"}</Field>
-            <Field label="Last name">{p.lastName}</Field>
-            <Field label="Email">{p.email}</Field>
-            <Field label="Contact number">{p.contactNumber}</Field>
-            <Field label="Marketing emails">{p.marketingOptIn ? "Opted in" : "Not opted in"}</Field>
-            <Field label="Customer since">{formatDate(p.customerSince)}</Field>
-          </dl>
+        <TabsContent value="cart" className="mt-0">
+          <CartTab cart={p.cart} />
+        </TabsContent>
 
-          <section className="space-y-sm">
-            <h2 className="text-title-lg text-foreground">Addresses</h2>
+        <TabsContent value="feedback" className="mt-0">
+          <FeedbackTab orders={p.orderHistory} onOpenOrder={openOrder} />
+        </TabsContent>
+
+        <TabsContent value="emails" className="mt-0">
+          <EmailsTab marketingOptIn={p.marketingOptIn} />
+        </TabsContent>
+
+        <TabsContent value="details" className="mt-0 space-y-5">
+          <TabCard title="Details">
+            <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="First name">{p.firstName}</Field>
+              <Field label="Middle name">{p.middleName ?? "—"}</Field>
+              <Field label="Last name">{p.lastName}</Field>
+              <Field label="Email">{p.email}</Field>
+              <Field label="Contact number">{p.contactNumber}</Field>
+              <Field label="Marketing emails">{p.marketingOptIn ? "Opted in" : "Not opted in"}</Field>
+              <Field label="Customer since">{formatDate(p.customerSince)}</Field>
+            </dl>
+          </TabCard>
+
+          <TabCard title="Addresses">
             {p.addresses.length === 0 ? (
-              <p className="text-muted-foreground">No addresses saved.</p>
+              <p className="text-sm text-muted-foreground">No addresses saved.</p>
             ) : (
               <ul className="grid gap-md sm:grid-cols-2">
                 {p.addresses.map((a) => (
-                  <li key={a.id}>
-                    <Card>
-                      <CardContent className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{a.label}</span>
-                          {a.isDefault && (
-                            <Badge>
-                              <Star className="size-3" /> Default address
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-body-md text-foreground">
-                          {a.street}, {a.barangay}, {a.city}, {a.province} {a.postalCode},{" "}
-                          {a.country}
-                        </p>
-                      </CardContent>
-                    </Card>
+                  <li key={a.id} className={cn("space-y-1 rounded-lg bg-secondary p-md")}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{a.label}</span>
+                      {a.isDefault && (
+                        <Badge variant="purple">
+                          <Star className="mr-1 size-3" /> Default address
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-foreground">
+                      {a.street}, {a.barangay}, {a.city}, {a.province} {a.postalCode}, {a.country}
+                    </p>
                   </li>
                 ))}
               </ul>
             )}
-          </section>
+          </TabCard>
         </TabsContent>
       </Tabs>
     </div>

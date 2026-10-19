@@ -30,7 +30,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
   if (!result.profile) notFound();
 
   return (
-    <div className="p-md sm:p-lg">
+    <div className="px-xl py-7">
       <CustomerProfileView profile={result.profile} />
     </div>
   );
