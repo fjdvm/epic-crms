@@ -20,14 +20,14 @@ export interface ListParams {
   page: number;
 }
 
-/** Column widths follow the design: fixed, with Last order taking the rest. */
+/** Column widths follow the design: fixed, with Contact taking the rest so the table fills the card. */
 const COLUMNS: { key: SortKey | null; header: string; className: string }[] = [
-  { key: "name", header: "Customer", className: "w-[180px]" },
-  { key: "email", header: "Contact", className: "w-[320px]" },
-  { key: null, header: "Stage", className: "w-[120px]" },
-  { key: "orders", header: "Orders", className: "w-[90px]" },
-  { key: "totalSpent", header: "Total spent", className: "w-[140px]" },
-  { key: "lastOrder", header: "Last order", className: "flex-1 min-w-[120px]" },
+  { key: "name", header: "Customer", className: "shrink-0 w-[220px]" },
+  { key: "email", header: "Contact", className: "flex-1 min-w-[340px]" },
+  { key: null, header: "Stage", className: "shrink-0 w-[120px]" },
+  { key: "orders", header: "Orders", className: "shrink-0 w-[90px]" },
+  { key: "totalSpent", header: "Total spent", className: "shrink-0 w-[140px]" },
+  { key: "lastOrder", header: "Last order", className: "shrink-0 w-[140px]" },
 ];
 
 function href(params: ListParams, change: Partial<ListParams>): string {
@@ -43,7 +43,7 @@ function href(params: ListParams, change: Partial<ListParams>): string {
   return `/customer-profiles?${query}`;
 }
 
-const CELL = "shrink-0 py-[11px] text-sm text-foreground";
+const CELL = "py-[11px] pr-3 text-sm text-foreground";
 
 export function CustomerListView({ list, params }: { list: CustomerList; params: ListParams }) {
   return (
@@ -91,12 +91,12 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[970px]">
+            <div className="min-w-[1010px]">
               <div className="flex items-center border-b border-border-subtle py-1.5 text-xs font-medium text-muted-foreground">
                 {COLUMNS.map((col) => {
                   if (!col.key) {
                     return (
-                      <div key="stage" className={cn("shrink-0", col.className)}>
+                      <div key="stage" className={cn(col.className)}>
                         {col.header}
                       </div>
                     );
@@ -106,7 +106,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                   const direction = active && params.direction === "desc" ? "asc" : "desc";
 
                   return (
-                    <div key={col.key} className={cn("shrink-0", col.className)}>
+                    <div key={col.key} className={cn(col.className)}>
                       <Link
                         href={href(params, { sort: col.key, direction, page: 1 })}
                         className="inline-flex items-center gap-1"
@@ -136,7 +136,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                   <div className={cn(CELL, COLUMNS[1].className, "truncate")}>
                     {row.email} · {row.contactNumber}
                   </div>
-                  <div className={cn("shrink-0", COLUMNS[2].className)}>
+                  <div className={cn(COLUMNS[2].className)}>
                     <StageBadge stage={row.stage} />
                   </div>
                   <div className={cn(CELL, COLUMNS[3].className)}>{row.orders}</div>

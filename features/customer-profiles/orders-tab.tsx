@@ -35,7 +35,7 @@ function OrderDetails({ order }: { order: CustomerOrder }) {
       </dl>
 
       <div className="overflow-x-auto">
-<table className="w-full min-w-max whitespace-nowrap text-sm">
+<table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-muted-foreground">
             <th className="py-1 font-medium">Product</th>
@@ -169,8 +169,11 @@ export function OrdersTab({
                 </tr>
                 {open && (
                   <tr>
-                    <td colSpan={6} className="pb-3">
-                      <OrderDetails order={o} />
+                    <td colSpan={6} className="whitespace-normal pb-3 text-left">
+                      {/* inline-size containment: the details never widen the table's columns. */}
+                      <div className="[contain:inline-size]">
+                        <OrderDetails order={o} />
+                      </div>
                     </td>
                   </tr>
                 )}
