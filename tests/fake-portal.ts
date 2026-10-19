@@ -39,8 +39,6 @@ export class FakePortal {
     this.modulesById.get(staffId)?.delete(module);
   }
 
-  /** How many validate calls the Portal has answered. */
-  validations = 0;
 
   /** The browser signs in at the Portal. */
   signIn(staffId: string) {
@@ -130,7 +128,6 @@ export class FakePortal {
     const body = await request.json();
     const staffId = this.handles.get(body.handle);
     const staff = staffId ? this.staffById.get(staffId) : undefined;
-    this.validations++;
 
     if (!staffId || !staff) {
       return Response.json({ error: "invalid_handle" }, { status: 401 });

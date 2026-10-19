@@ -1,5 +1,11 @@
-import { validateSession, type Validation } from "./client";
+import { validateSession, type Staff, type Validation } from "./client";
 import { pages } from "./pages";
+
+export type Overview =
+  | { decision: "allowed"; staff: Staff; pages: string[] }
+  | { decision: "denied" }
+  | { decision: "invalid" }
+  | { decision: "unavailable" };
 
 /**
  * Access for one page load. The Portal is asked once per Module and the answer is
@@ -23,17 +29,24 @@ export function accessFor(sessionHandle: string | undefined) {
     return answer;
   }
 
-  async function permittedPages(): Promise<string[]> {
+  /** Every page's Module at once: who the Staff member is and which pages they may open. */
+  async function overview(): Promise<Overview> {
     const results = await Promise.all(pages.map((page) => check(page.module)));
 
-    return pages.filter((_, i) => results[i].decision === "allowed").map((page) => page.href);
+    for (const blocker of ["unavailable", "invalid"] as const) {
+      if (results.some((result) => result.decision === blocker)) {
+        return { decision: blocker };
+      }
+    }
+
+    const allowed = results.flatMap((result, i) =>
+      result.decision === "allowed" ? [{ staff: result.staff, href: pages[i].href }] : [],
+    );
+
+    return allowed.length === 0
+      ? { decision: "denied" }
+      : { decision: "allowed", staff: allowed[0].staff, pages: allowed.map((a) => a.href) };
   }
 
-  return {
-    check,
-    permittedPages,
-    async firstPermittedPage(): Promise<string | null> {
-      return (await permittedPages())[0] ?? null;
-    },
-  };
+  return { check, overview };
 }

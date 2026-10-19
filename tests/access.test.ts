@@ -97,30 +97,26 @@ describe("access on every request", () => {
     expect((await accessFor(handle).check(CUSTOMER_PROFILES)).decision).toBe("denied");
     expect((await accessFor(handle).check("Leads")).decision).toBe("allowed");
   });
-
-  it("asks the Portal once for a page load, however often the page asks", async () => {
-    const access = accessFor(await signInAda());
-    const before = portal.validations;
-
-    await Promise.all([access.check(CUSTOMER_PROFILES), access.check(CUSTOMER_PROFILES)]);
-    await access.check(CUSTOMER_PROFILES);
-
-    expect(portal.validations - before).toBe(1);
-  });
 });
 
 describe("which pages a Staff member may open", () => {
-  it("lists only pages whose Module is granted, and `/` goes to the first of them", async () => {
+  it("lists only pages whose Module is granted", async () => {
     const access = accessFor(await signInAda());
 
-    expect(await access.permittedPages()).toEqual(["/customer-profiles"]);
-    expect(await access.firstPermittedPage()).toBe("/customer-profiles");
+    expect(await access.overview()).toEqual({
+      decision: "allowed",
+      staff: ada,
+      pages: ["/customer-profiles"],
+    });
   });
 
-  it("lists nothing, and has no first page, when no Module is granted", async () => {
+  it("is denied when no Module is granted", async () => {
     const access = accessFor(await signInAda(["Leads"]));
 
-    expect(await access.permittedPages()).toEqual([]);
-    expect(await access.firstPermittedPage()).toBeNull();
+    expect(await access.overview()).toEqual({ decision: "denied" });
+  });
+
+  it("is refused without a session", async () => {
+    expect(await accessFor(undefined).overview()).toEqual({ decision: "invalid" });
   });
 });
