@@ -173,6 +173,9 @@ describe.skipIf(!enabled)("Walk-in Customers", () => {
 
     const found = await listCustomers(reader, { pageSize: 1000, walkIns, search: "09171234567", stage: "new" });
     expect(found.rows.map((r) => r.id)).toEqual([saved.id]);
+
+    const spaced = await listCustomers(reader, { pageSize: 1000, walkIns, search: "0917 123 4567" });
+    expect(spaced.rows.map((r) => r.id)).toEqual([saved.id]);
   });
 
   it("produces no New Customer notification", async () => {

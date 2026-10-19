@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageCutoffs, type Stage } from "./rules";
+import { normaliseMobile } from "./walk-in-rules";
 import { listWalkIns, type WalkInSummary } from "./walk-ins";
 
 export const PAGE_SIZE = 20;
@@ -92,7 +93,8 @@ export async function listCustomers(
   const searchFilter =
     search === ""
       ? sql`true`
-      : sql`name ilike ${pattern} or email ilike ${pattern} or contact_number ilike ${pattern}`;
+      : sql`name ilike ${pattern} or email ilike ${pattern} or contact_number ilike ${pattern}
+          or contact_number = ${normaliseMobile(search) ?? ""}`;
 
   const { atRiskBefore, lostBefore } = stageCutoffs(query.now ?? new Date());
   const stageFilter = query.stage ? sql`stage = ${query.stage}` : sql`true`;

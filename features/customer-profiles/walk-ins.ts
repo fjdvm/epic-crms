@@ -58,7 +58,7 @@ async function findExisting(
     from public.customers c
     join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
     where (${email}::text is not null and lower(c.email) = ${email}::text)
-       or regexp_replace(regexp_replace(c.contact_number, '[^0-9]', '', 'g'), '^63', '0') = ${mobile}
+       or regexp_replace(regexp_replace(regexp_replace(c.contact_number, '[^0-9]', '', 'g'), '^63', '0'), '^9', '09') = ${mobile}
     order by by_email desc
     limit 1`;
 

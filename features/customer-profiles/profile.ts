@@ -143,7 +143,7 @@ export function walkInProfile(w: WalkInProfileData): CustomerProfile {
     contactNumber: w.mobile,
     marketingOptIn: w.emailConsent,
     customerSince: w.createdAt,
-    stage: "new",
+    stage: stageOf({ orders: 0, lastOrder: null }, new Date()),
     defaultCity: w.address?.city || null,
     orders: 0,
     totalSpent: 0,
