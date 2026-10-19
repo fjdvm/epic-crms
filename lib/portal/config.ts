@@ -2,7 +2,9 @@ export const SESSION_COOKIE = "creoms_session";
 export const HANDOFF_COOKIE = "creoms_handoff";
 export const CALLBACK_PATH = "/api/portal/callback";
 export const LOGIN_PATH = "/api/portal/login";
+export const LOGOUT_PATH = "/api/portal/logout";
 export const NO_ACCESS_PATH = "/no-access";
+export const UNAVAILABLE_PATH = "/unavailable";
 export const CUSTOMER_PROFILES_MODULE = "Customer Profiles";
 
 function required(name: string): string {
@@ -18,10 +20,13 @@ function required(name: string): string {
 export function portalConfig() {
   const appUrl = (process.env.CREOMS_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
+  const portalUrl = required("PORTAL_URL").replace(/\/$/, "");
+
   return {
-    portalUrl: required("PORTAL_URL").replace(/\/$/, ""),
+    portalUrl,
     systemName: process.env.PORTAL_SYSTEM_NAME ?? "CRMS",
     systemSecret: required("PORTAL_SYSTEM_SECRET"),
+    logoutUrl: `${portalUrl}/logout`,
     callbackUrl: `${appUrl}${CALLBACK_PATH}`,
   };
 }

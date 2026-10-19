@@ -21,8 +21,11 @@ type Code = {
 export class FakePortal {
   private staffById = new Map<string, Staff>();
   private centralSession: string | null = null;
+  private nextSessionId = 1;
   private codes = new Map<string, Code>();
-  private handles = new Map<string, string>();
+  private handles = new Map<string, { staffId: string; sessionId: number }>();
+  private liveSessions = new Set<number>();
+  private currentSessionId: number | null = null;
   private modulesById = new Map<string, Set<string>>();
 
   addStaff(id: string, staff: Staff, modules: string[] = ["Customer Profiles"]) {
@@ -43,11 +46,28 @@ export class FakePortal {
   /** The browser signs in at the Portal. */
   signIn(staffId: string) {
     this.centralSession = staffId;
+    this.currentSessionId = this.nextSessionId++;
+    this.liveSessions.add(this.currentSessionId);
   }
 
+  /** Central logout: the one session ends, and with it every handle issued from it. */
   signOut() {
     this.centralSession = null;
+
+    if (this.currentSessionId !== null) {
+      this.liveSessions.delete(this.currentSessionId);
+    }
+
+    this.currentSessionId = null;
   }
+
+  /** An administrator deletes the Staff member. */
+  remove(staffId: string) {
+    this.staffById.delete(staffId);
+  }
+
+  /** The Portal cannot decide: it answers 503 until restored. */
+  unavailable = false;
 
   /** Every issued code is past its 60 second life. */
   expireCodes() {
@@ -57,12 +77,19 @@ export class FakePortal {
   handle = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
 
+    if (url.pathname === "/logout") return this.logout();
     if (url.pathname === "/api/integrations/authorize") return this.authorize(url);
     if (url.pathname === "/api/integrations/exchange") return this.token(request);
     if (url.pathname === "/api/integrations/validate") return this.validate(request);
 
     return new Response("not found", { status: 404 });
   };
+
+  private logout(): Response {
+    this.signOut();
+
+    return Response.redirect(`${FAKE_PORTAL_URL}/login`, 302);
+  }
 
   private authorize(url: URL): Response {
     const p = url.searchParams;
@@ -119,18 +146,27 @@ export class FakePortal {
     }
 
     const handle = randomBytes(32).toString("base64url");
-    this.handles.set(handle, stored.staffId);
+    this.handles.set(handle, { staffId: stored.staffId, sessionId: this.currentSessionId! });
 
     return Response.json({ handle, token_type: "opaque", expires_in: 28800 });
   }
 
   private async validate(request: Request): Promise<Response> {
     const body = await request.json();
-    const staffId = this.handles.get(body.handle);
+    if (this.unavailable) {
+      return Response.json({ error: "temporarily_unavailable" }, { status: 503 });
+    }
+
+    const issued = this.handles.get(body.handle);
+    const staffId = issued?.staffId;
     const staff = staffId ? this.staffById.get(staffId) : undefined;
 
-    if (!staffId || !staff) {
+    if (!issued || !this.liveSessions.has(issued.sessionId)) {
       return Response.json({ error: "invalid_handle" }, { status: 401 });
+    }
+
+    if (!staffId || !staff) {
+      return Response.json({ error: "access_denied" }, { status: 403 });
     }
 
     if (!this.modulesById.get(staffId)?.has(body.module)) {

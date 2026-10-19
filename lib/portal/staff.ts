@@ -3,7 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { accessFor } from "./access";
 import type { Staff } from "./client";
-import { LOGIN_PATH, NO_ACCESS_PATH, SESSION_COOKIE } from "./config";
+import { LOGIN_PATH, NO_ACCESS_PATH, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
 import { safeReturnTo } from "./return-to";
 
 /** One access checker per page load, so the Portal is asked once however many callers there are. */
@@ -16,7 +16,8 @@ async function proceed<T extends { decision: string }>(
   result: T,
 ): Promise<Exclude<T, { decision: "invalid" | "unavailable" }>> {
   if (result.decision === "unavailable") {
-    throw new Error("The Portal is temporarily unavailable");
+    const returnTo = safeReturnTo((await headers()).get("x-return-to"));
+    redirect(`${UNAVAILABLE_PATH}?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
   if (result.decision === "invalid") {

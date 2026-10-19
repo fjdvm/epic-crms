@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
-import { MoreVertical, User, Shield, Activity, LogOut } from "lucide-react";
+import { MoreVertical, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { LOGOUT_PATH } from "@/lib/portal/config";
 import { useStaff } from "./staff-context";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -83,26 +83,6 @@ export function SidebarProfileFooter() {
 
           <DropdownMenuSeparator className="bg-border" />
 
-          <DropdownMenuItem
-            asChild
-            className="cursor-pointer text-xs font-medium gap-sm p-sm hover:bg-accent"
-          >
-            <Link href="/customer-profiles">
-              <User className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>Profile Settings</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem className="cursor-pointer text-xs font-medium gap-sm p-sm hover:bg-accent">
-            <Shield className="w-3.5 h-3.5 text-muted-foreground" />
-            <span>Security Options</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem className="cursor-pointer text-xs font-medium gap-sm p-sm hover:bg-accent">
-            <Activity className="w-3.5 h-3.5 text-muted-foreground" />
-            <span>Activity Logs</span>
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator className="bg-border" />
-
           <div className="px-sm py-xs flex flex-col min-w-0 overflow-hidden">
             <span className="text-xs font-bold text-foreground truncate">
               {username}
@@ -112,12 +92,23 @@ export function SidebarProfileFooter() {
             </span>
           </div>
 
-          <DropdownMenuItem
-            className="cursor-pointer text-xs font-medium gap-sm p-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Sign out</span>
-          </DropdownMenuItem>
+          <form action={LOGOUT_PATH} method="post">
+            <DropdownMenuItem
+              asChild
+              onSelect={(event) => event.preventDefault()}
+              className="cursor-pointer text-xs font-medium gap-sm p-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              <button type="submit" className="w-full">
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="flex flex-col items-start text-left">
+                  <span>Sign out</span>
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    Signs you out of all Bren Raphael&apos;s systems
+                  </span>
+                </span>
+              </button>
+            </DropdownMenuItem>
+          </form>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
