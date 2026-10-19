@@ -24,7 +24,7 @@ export function TableSkeleton({ rows = 8, columns = 5 }: TableSkeletonProps) {
     >
       {/* Search / toolbar row */}
       <div className="flex items-center justify-between gap-md">
-        <Skeleton className="h-9 w-full max-w-xs rounded-md" />
+        <Skeleton className="h-9 w-full max-w-[20rem] rounded-md" />
         <Skeleton className="h-9 w-24 rounded-md" />
       </div>
 
