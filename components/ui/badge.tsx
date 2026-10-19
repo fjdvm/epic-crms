@@ -4,29 +4,29 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 hover:opacity-80",
+  "inline-flex items-center rounded-full border px-2.5 py-[3px] text-xs font-medium transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 hover:opacity-80",
   {
     variants: {
       variant: {
         default:
-          "border-transparent bg-violet-100 text-violet-700",
+          "border-transparent bg-badge-purple text-badge-purple-foreground",
         secondary:
-          "border-transparent bg-slate-100 text-slate-700",
+          "border-transparent bg-badge-neutral text-badge-neutral-foreground",
         destructive:
-          "border-transparent bg-rose-100 text-rose-700",
-        outline: "border-border bg-sky-50 text-sky-700",
+          "border-transparent bg-badge-destructive text-badge-destructive-foreground",
+        outline: "border-border bg-badge-info text-badge-info-foreground",
         success:
-          "border-transparent bg-emerald-100 text-emerald-700",
+          "border-transparent bg-badge-success text-badge-success-foreground",
         warning:
-          "border-transparent bg-amber-100 text-amber-700",
+          "border-transparent bg-badge-warning text-badge-warning-foreground",
         info:
-          "border-transparent bg-cyan-100 text-cyan-700",
+          "border-transparent bg-badge-info text-badge-info-foreground",
         purple:
-          "border-transparent bg-purple-100 text-purple-700",
+          "border-transparent bg-badge-purple text-badge-purple-foreground",
         indigo:
-          "border-transparent bg-indigo-100 text-indigo-700",
+          "border-transparent bg-badge-indigo text-badge-indigo-foreground",
         notification:
-          "border-transparent bg-pink-100 text-pink-700",
+          "border-transparent bg-badge-notification text-badge-notification-foreground",
       },
     },
     defaultVariants: {
