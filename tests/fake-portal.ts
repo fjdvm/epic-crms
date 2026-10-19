@@ -23,10 +23,22 @@ export class FakePortal {
   private centralSession: string | null = null;
   private codes = new Map<string, Code>();
   private handles = new Map<string, string>();
+  private modulesById = new Map<string, Set<string>>();
 
-  addStaff(id: string, staff: Staff) {
+  addStaff(id: string, staff: Staff, modules: string[] = ["Customer Profiles"]) {
     this.staffById.set(id, staff);
+    this.modulesById.set(id, new Set(modules));
   }
+
+  grant(staffId: string, module: string) {
+    this.modulesById.get(staffId)?.add(module);
+  }
+
+  /** An administrator removes a Module; the Staff member's open session is untouched. */
+  revoke(staffId: string, module: string) {
+    this.modulesById.get(staffId)?.delete(module);
+  }
+
 
   /** The browser signs in at the Portal. */
   signIn(staffId: string) {
@@ -117,8 +129,12 @@ export class FakePortal {
     const staffId = this.handles.get(body.handle);
     const staff = staffId ? this.staffById.get(staffId) : undefined;
 
-    if (!staff) {
+    if (!staffId || !staff) {
       return Response.json({ error: "invalid_handle" }, { status: 401 });
+    }
+
+    if (!this.modulesById.get(staffId)?.has(body.module)) {
+      return Response.json({ error: "module_not_granted" }, { status: 403 });
     }
 
     return Response.json({ active: true, user_id: staffId, system: FAKE_SYSTEM, module: body.module, staff });
