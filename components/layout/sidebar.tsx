@@ -16,6 +16,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { sidebarItems } from "./sidebar-nav";
+import { usePermittedPages } from "./staff-context";
 import { SidebarProfileFooter } from "./sidebar-profile-footer";
 import { SidebarNavSkeleton } from "./sidebar-nav-skeleton";
 import { SidebarEnterpriseHeader } from "./sidebar-enterprise-header";
@@ -25,6 +26,8 @@ export function Sidebar() {
   const { open, openMobile, setOpenMobile, toggleSidebar, isMobile } =
     useSidebar();
   const mounted = useMounted();
+  const permittedPages = usePermittedPages();
+  const items = sidebarItems.filter((item) => permittedPages.includes(item.href));
 
   const isOpen = isMobile ? openMobile : open;
 
@@ -56,7 +59,7 @@ export function Sidebar() {
                 <SidebarNavSkeleton rows={1} />
               ) : (
                 <SidebarMenu className="space-y-xs">
-                  {sidebarItems.map((item) => {
+                  {items.map((item) => {
                     const ItemIcon = item.icon;
                     const isActive =
                       pathname === item.href ||

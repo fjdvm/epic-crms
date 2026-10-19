@@ -36,13 +36,15 @@ function MainContent({ children }: { children: React.ReactNode }) {
 
 export function AppShell({
   staff,
+  permittedPages,
   children,
 }: {
   staff: Staff;
+  permittedPages: string[];
   children: React.ReactNode;
 }) {
   return (
-    <StaffProvider staff={staff}>
+    <StaffProvider staff={staff} permittedPages={permittedPages}>
       <SidebarProvider defaultOpen={true}>
         <div className="flex min-h-screen w-full bg-background text-foreground relative">
           <Sidebar />

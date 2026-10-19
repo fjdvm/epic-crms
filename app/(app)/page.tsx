@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { firstPermittedPageOrNoAccess } from "@/lib/portal/staff";
 
-export default function Home() {
-  redirect("/customer-profiles");
+export default async function Home() {
+  redirect(await firstPermittedPageOrNoAccess());
 }
