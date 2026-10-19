@@ -3,7 +3,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { listCustomers } from "@/features/customer-profiles/customers";
-import { addWalkIn, getWalkIn, listWalkIns } from "@/features/customer-profiles/walk-ins";
+import { addWalkIn, getMergedWalkIn, getWalkIn, listWalkIns } from "@/features/customer-profiles/walk-ins";
 import { listNotifications, syncNewCustomers } from "@/features/notifications/notifications";
 
 // Walk-in writes go only to a throwaway schema mirroring crms, created and dropped here. The
@@ -176,6 +176,68 @@ describe.skipIf(!enabled)("Walk-in Customers", () => {
 
     const spaced = await listCustomers(reader, { pageSize: 1000, walkIns, search: "0917 123 4567" });
     expect(spaced.rows.map((r) => r.id)).toEqual([saved.id]);
+  });
+
+  describe("when the same email verifies", () => {
+    async function aCustomer() {
+      const [customer] = await reader<{ id: string; email: string; contact_number: string }[]>`
+        select c.id, c.email, c.contact_number
+        from public.customers c join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
+        limit 1`;
+
+      return customer;
+    }
+
+    /** A Walk-in saved before the person verified: inserted directly, as the add form refuses a Customer's email. */
+    async function walkInWithEmail(email: string, mobile: string) {
+      await writer.unsafe(
+        `insert into ${schema}.walk_in_customers (first_name, last_name, mobile, email, tags, notes)
+         values ('Pre', 'Verified', $1, $2, '{wedding,vip}', 'Prefers pickup')`,
+        [mobile, email.toLowerCase()],
+      );
+    }
+
+    it("lists the person once and counts them once in the Stage tabs", async () => {
+      const customer = await aCustomer();
+      if (!customer) return;
+
+      const before = await listCustomers(reader, { pageSize: 1000 });
+      await walkInWithEmail(customer.email, "09170001111");
+
+      const after = await listCustomers(reader, { pageSize: 1000, walkIns: await listWalkIns(writer, schema) });
+
+      expect(after.profileCount).toBe(before.profileCount);
+      expect(after.stageCounts).toEqual(before.stageCounts);
+      expect(after.rows.filter((r) => r.walkIn)).toHaveLength(0);
+      expect(after.rows.filter((r) => r.id === customer.id)).toHaveLength(1);
+    });
+
+    it("gives the Customer's profile the Walk-in's tags and notes, matched by email", async () => {
+      const customer = await aCustomer();
+      if (!customer) return;
+
+      expect(await getMergedWalkIn(writer, customer.email, schema)).toBeNull();
+
+      await walkInWithEmail(customer.email, "09170001111");
+
+      expect(await getMergedWalkIn(writer, customer.email.toUpperCase(), schema)).toEqual({
+        tags: ["wedding", "vip"],
+        notes: "Prefers pickup",
+      });
+    });
+
+    it("does not merge a Walk-in that shares only the mobile number", async () => {
+      const customer = await aCustomer();
+      const mobile = customer?.contact_number.replace(/\D/g, "").replace(/^63/, "0");
+      if (!customer || !/^09\d{9}$/.test(mobile)) return;
+
+      await walkInWithEmail("someone.else@example.com", mobile);
+
+      const list = await listCustomers(reader, { pageSize: 1000, walkIns: await listWalkIns(writer, schema) });
+
+      expect(list.rows.filter((r) => r.walkIn)).toHaveLength(1);
+      expect(await getMergedWalkIn(writer, customer.email, schema)).toBeNull();
+    });
   });
 
   it("produces no New Customer notification", async () => {

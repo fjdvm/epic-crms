@@ -183,3 +183,23 @@ export async function getWalkIn(
     createdAt: r.created_at as Date,
   };
 }
+
+/** What a verified Customer keeps from the Walk-in Customer that merged into them. */
+export interface MergedWalkIn {
+  tags: string[];
+  notes: string | null;
+}
+
+/** The Walk-in Customer with this email, matched by email only, or null if there is none. */
+export async function getMergedWalkIn(
+  writer: postgres.Sql,
+  email: string,
+  schema: string = DEFAULT_SCHEMA,
+): Promise<MergedWalkIn | null> {
+  const s = schemaIdent(writer, schema);
+
+  const [r] = await writer<{ tags: string[]; notes: string | null }[]>`
+    select tags, notes from ${s}.walk_in_customers where email = ${email.trim().toLowerCase()}`;
+
+  return r ? { tags: r.tags, notes: r.notes } : null;
+}
