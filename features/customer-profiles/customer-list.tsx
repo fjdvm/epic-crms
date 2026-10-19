@@ -16,7 +16,7 @@ import { ScrollableTable } from "@/components/shared/scrollable-table";
 
 import type { CustomerList, SortKey } from "./customers";
 import { STAGES } from "./customers";
-import type { Stage } from "./rules";
+import { STAGE_LABELS, type Stage } from "./rules";
 import { formatDate, formatPesos } from "./format";
 
 export interface ListParams {
@@ -27,14 +27,6 @@ export interface ListParams {
   direction: "asc" | "desc";
   page: number;
 }
-
-export const STAGE_LABELS: Record<Stage, string> = {
-  new: "New",
-  "first-order": "First order",
-  repeat: "Repeat",
-  "at-risk": "At risk",
-  lost: "Lost",
-};
 
 const COLUMNS: { key: SortKey; header: string; className?: string }[] = [
   { key: "name", header: "Name" },

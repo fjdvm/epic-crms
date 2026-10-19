@@ -47,3 +47,11 @@ export function stageOf(customer: { orders: number; lastOrder: Date | null }, no
 
   return customer.orders === 1 ? "first-order" : "repeat";
 }
+
+export const STAGE_LABELS: Record<Stage, string> = {
+  new: "New",
+  "first-order": "First order",
+  repeat: "Repeat",
+  "at-risk": "At risk",
+  lost: "Lost",
+};

@@ -11,7 +11,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
   await requireModule(CUSTOMER_PROFILES_MODULE);
 
   const { id } = await params;
-  const result = await loadCustomerProfile(database, decodeURIComponent(id));
+  const result = await loadCustomerProfile(database, id);
 
   if (!result.ok) {
     return (
