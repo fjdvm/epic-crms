@@ -30,9 +30,11 @@ function Stat({
   note?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-4">
+    <div className="flex min-w-[180px] flex-1 flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-4">
       <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
-      <p className="text-headline-md text-foreground">{value}</p>
+      <p className="text-2xl font-semibold leading-[normal] text-foreground">
+        {value}
+      </p>
       {note && <p className="text-xs text-muted-foreground">{note}</p>}
     </div>
   );
@@ -76,7 +78,9 @@ export function CustomerProfileView({
 
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-headline-md text-foreground">{p.name}</h1>
+          <h1 className="text-2xl font-semibold leading-[normal] text-foreground">
+            {p.name}
+          </h1>
           <StageBadge stage={p.stage} />
         </div>
         <p className="text-sm text-muted-foreground">
@@ -85,7 +89,7 @@ export function CustomerProfileView({
         </p>
       </div>
 
-      <div className="grid gap-md sm:grid-cols-2 lg:grid-cols-4">
+      <div className="flex flex-wrap items-start gap-4">
         <Stat
           title="Total spent"
           value={formatPesos(p.totalSpent)}
@@ -115,97 +119,101 @@ export function CustomerProfileView({
         />
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <Tabs value={tab} onValueChange={setTab} className="space-y-5">
-          <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
-            <TabsTrigger className={TAB_TRIGGER} value="orders">
-              Orders ({p.orders})
-            </TabsTrigger>
-            <TabsTrigger className={TAB_TRIGGER} value="cart">
-              Cart
-            </TabsTrigger>
-            <TabsTrigger className={TAB_TRIGGER} value="feedback">
-              Feedback ({p.feedbackCount})
-            </TabsTrigger>
-            <TabsTrigger className={TAB_TRIGGER} value="emails">
-              Emails
-            </TabsTrigger>
-            <TabsTrigger className={TAB_TRIGGER} value="details">
-              Details
-            </TabsTrigger>
-          </TabsList>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-5">
+        <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+          <TabsTrigger className={TAB_TRIGGER} value="orders">
+            Orders ({p.orders})
+          </TabsTrigger>
+          <TabsTrigger className={TAB_TRIGGER} value="cart">
+            Cart
+          </TabsTrigger>
+          <TabsTrigger className={TAB_TRIGGER} value="feedback">
+            Feedback ({p.feedbackCount})
+          </TabsTrigger>
+          <TabsTrigger className={TAB_TRIGGER} value="emails">
+            Emails
+          </TabsTrigger>
+          <TabsTrigger className={TAB_TRIGGER} value="details">
+            Details
+          </TabsTrigger>
+        </TabsList>
 
-          <TabsContent value="orders" className="mt-0">
-            <OrdersTab
-              orders={p.orderHistory}
-              expanded={expanded}
-              onToggle={toggleOrder}
-            />
-          </TabsContent>
+        <div className="flex flex-col items-start gap-4 xl:flex-row">
+          <div className="min-w-0 w-full flex-1">
+            <TabsContent value="orders" className="mt-0">
+              <OrdersTab
+                orders={p.orderHistory}
+                expanded={expanded}
+                onToggle={toggleOrder}
+              />
+            </TabsContent>
 
-          <TabsContent value="cart" className="mt-0">
-            <CartTab cart={p.cart} />
-          </TabsContent>
+            <TabsContent value="cart" className="mt-0">
+              <CartTab cart={p.cart} />
+            </TabsContent>
 
-          <TabsContent value="feedback" className="mt-0">
-            <FeedbackTab orders={p.orderHistory} onOpenOrder={openOrder} />
-          </TabsContent>
+            <TabsContent value="feedback" className="mt-0">
+              <FeedbackTab orders={p.orderHistory} onOpenOrder={openOrder} />
+            </TabsContent>
 
-          <TabsContent value="emails" className="mt-0">
-            <EmailsTab marketingOptIn={p.marketingOptIn} />
-          </TabsContent>
+            <TabsContent value="emails" className="mt-0">
+              <EmailsTab marketingOptIn={p.marketingOptIn} />
+            </TabsContent>
 
-          <TabsContent value="details" className="mt-0 space-y-5">
-            <TabCard title="Details">
-              <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
-                <Field label="First name">{p.firstName}</Field>
-                <Field label="Middle name">{p.middleName ?? "—"}</Field>
-                <Field label="Last name">{p.lastName}</Field>
-                <Field label="Email">{p.email}</Field>
-                <Field label="Contact number">{p.contactNumber}</Field>
-                <Field label="Marketing emails">
-                  {p.marketingOptIn ? "Opted in" : "Not opted in"}
-                </Field>
-                <Field label="Customer since">
-                  {formatDate(p.customerSince)}
-                </Field>
-              </dl>
-            </TabCard>
+            <TabsContent value="details" className="mt-0 space-y-5">
+              <TabCard title="Details">
+                <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
+                  <Field label="First name">{p.firstName}</Field>
+                  <Field label="Middle name">{p.middleName ?? "—"}</Field>
+                  <Field label="Last name">{p.lastName}</Field>
+                  <Field label="Email">{p.email}</Field>
+                  <Field label="Contact number">{p.contactNumber}</Field>
+                  <Field label="Marketing emails">
+                    {p.marketingOptIn ? "Opted in" : "Not opted in"}
+                  </Field>
+                  <Field label="Customer since">
+                    {formatDate(p.customerSince)}
+                  </Field>
+                </dl>
+              </TabCard>
 
-            <TabCard title="Addresses">
-              {p.addresses.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No addresses saved.
-                </p>
-              ) : (
-                <ul className="grid gap-md sm:grid-cols-2">
-                  {p.addresses.map((a) => (
-                    <li
-                      key={a.id}
-                      className={cn("space-y-1 rounded-lg bg-secondary p-md")}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{a.label}</span>
-                        {a.isDefault && (
-                          <Badge variant="purple">
-                            <Star className="mr-1 size-3" /> Default address
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-foreground">
-                        {a.street}, {a.barangay}, {a.city}, {a.province}{" "}
-                        {a.postalCode}, {a.country}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </TabCard>
-          </TabsContent>
-        </Tabs>
+              <TabCard title="Addresses">
+                {p.addresses.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No addresses saved.
+                  </p>
+                ) : (
+                  <ul className="grid gap-md sm:grid-cols-2">
+                    {p.addresses.map((a) => (
+                      <li
+                        key={a.id}
+                        className={cn("space-y-1 rounded-lg bg-secondary p-md")}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{a.label}</span>
+                          {a.isDefault && (
+                            <Badge variant="purple">
+                              <Star className="mr-1 size-3" /> Default address
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-foreground">
+                          {a.street}, {a.barangay}, {a.city}, {a.province}{" "}
+                          {a.postalCode}, {a.country}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </TabCard>
+            </TabsContent>
+          </div>
 
-        <ActivityTimeline orders={p.orderHistory} onOpenOrder={openOrder} />
-      </div>
+          <aside className="w-full shrink-0 space-y-4 xl:w-[380px]">
+            <ActivityTimeline orders={p.orderHistory} onOpenOrder={openOrder} />
+          </aside>
+        </div>
+      </Tabs>
     </div>
   );
 }
