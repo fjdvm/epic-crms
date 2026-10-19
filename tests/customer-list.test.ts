@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { listCustomers } from "@/features/customer-profiles/customers";
+import { listCustomers, STAGES } from "@/features/customer-profiles/customers";
 
 // Runs against the real shared database through the read-only role. Skipped when no
 // connection string is supplied. Every statement here is a SELECT; nothing is written.
@@ -12,8 +12,19 @@ afterAll(async () => {
   if (url) await sql.end();
 });
 
+const NOW = new Date();
+
 /** Written out here on purpose, so a wrong status list in the module cannot pass both sides. */
 const COUNTS_TOWARD_TOTAL_SPENT = new Set(["paid", "preparing", "dispatched", "delivered"]);
+
+/** Written out here too, not imported: whole days since the last non-cancelled Order. */
+function stageFor(orders: number, lastOrder: Date | null): string {
+  if (orders === 0 || !lastOrder) return "new";
+  const days = (NOW.getTime() - lastOrder.getTime()) / (24 * 60 * 60 * 1000);
+  if (days >= 120) return "lost";
+  if (days >= 60) return "at-risk";
+  return orders === 1 ? "first-order" : "repeat";
+}
 
 /** Independent expectation: plain per-table reads, aggregated in JS with the domain rules. */
 async function expected() {
@@ -29,6 +40,8 @@ async function expected() {
     })
     .map(({ c, user }) => {
       const mine = orders.filter((o) => o.customer_id === c.id);
+      const counted = mine.filter((o) => o.status !== "cancelled");
+      const lastOrder = counted.length ? new Date(Math.max(...counted.map((o) => o.created_at.getTime()))) : null;
       return {
         id: c.id as string,
         name: c.full_name as string,
@@ -38,7 +51,8 @@ async function expected() {
         totalSpent: mine
           .filter((o) => COUNTS_TOWARD_TOTAL_SPENT.has(o.status))
           .reduce((sum, o) => sum + o.subtotal_in_centavos + (o.delivery_fee_in_centavos ?? 0), 0),
-        lastOrder: mine.length ? Math.max(...mine.map((o) => o.created_at.getTime())) : null,
+        lastOrder: lastOrder?.getTime() ?? null,
+        stage: stageFor(counted.length, lastOrder),
         cartHasItems: carts.some((x) => x.customer_id === c.id),
         customerSince: user.created.getTime(),
       };
@@ -48,7 +62,7 @@ async function expected() {
 describe.skipIf(!url)("listCustomers (real database)", () => {
   it("lists exactly the verified Customers with every column matching an independent query", async () => {
     const want = await expected();
-    const got = await listCustomers(sql, { pageSize: 1000 });
+    const got = await listCustomers(sql, { pageSize: 1000, now: NOW });
 
     expect(got.profileCount).toBe(want.length);
     expect(got.rows).toHaveLength(want.length);
@@ -108,5 +122,19 @@ describe.skipIf(!url)("listCustomers (real database)", () => {
 
     const beyond = await listCustomers(sql, { pageSize: 2, page: 999 });
     expect(beyond.page).toBe(first.totalPages);
+  });
+
+  it("tabs filter the list server-side and each count matches its rows", async () => {
+    const want = await expected();
+    const all = await listCustomers(sql, { pageSize: 1000, now: NOW });
+
+    for (const stage of STAGES) {
+      const tab = await listCustomers(sql, { stage, pageSize: 1000, now: NOW });
+      const ids = want.filter((w) => w.stage === stage).map((w) => w.id).sort();
+
+      expect(tab.rows.map((r) => r.id).sort()).toEqual(ids);
+      expect(tab.matching).toBe(ids.length);
+      expect(all.stageCounts[stage]).toBe(ids.length);
+    }
   });
 });

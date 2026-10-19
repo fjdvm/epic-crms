@@ -18,3 +18,32 @@ export function totalSpent(orders: OrderAmounts[]): number {
 export function isCustomer(authUser: { emailVerified: boolean } | null): boolean {
   return authUser?.emailVerified === true;
 }
+
+export type Stage = "new" | "first-order" | "repeat" | "at-risk" | "lost";
+
+export const AT_RISK_AFTER_DAYS = 60;
+export const LOST_AFTER_DAYS = 120;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A Customer whose last Order is at or before these instants is At risk / Lost. */
+export function stageCutoffs(now: Date): { atRiskBefore: Date; lostBefore: Date } {
+  return {
+    atRiskBefore: new Date(now.getTime() - AT_RISK_AFTER_DAYS * DAY_MS),
+    lostBefore: new Date(now.getTime() - LOST_AFTER_DAYS * DAY_MS),
+  };
+}
+
+/**
+ * Stage of a Customer. `orders` and `lastOrder` ignore cancelled Orders: a cancelled Order is
+ * not an Order the Customer made for Stage purposes.
+ */
+export function stageOf(customer: { orders: number; lastOrder: Date | null }, now: Date): Stage {
+  if (customer.orders === 0 || !customer.lastOrder) return "new";
+
+  const { atRiskBefore, lostBefore } = stageCutoffs(now);
+  if (customer.lastOrder <= lostBefore) return "lost";
+  if (customer.lastOrder <= atRiskBefore) return "at-risk";
+
+  return customer.orders === 1 ? "first-order" : "repeat";
+}
