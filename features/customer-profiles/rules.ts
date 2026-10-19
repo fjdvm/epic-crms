@@ -62,3 +62,18 @@ export function paymentStatusOf(status: string): "Paid" | "Unpaid" | "Cancelled"
 
   return PAID_OR_FULFILLED.includes(status) ? "Paid" : "Unpaid";
 }
+
+const ORDER_LABELS: Record<string, string> = {
+  pickup: "Pickup",
+  delivery: "Delivery",
+  gcash: "GCash",
+  "cash-on-delivery": "Cash on delivery",
+};
+
+/** Display text for an Order status, fulfillment method or payment method. */
+export function orderLabel(value: string): string {
+  if (ORDER_LABELS[value]) return ORDER_LABELS[value];
+
+  const spaced = value.replace(/-/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}

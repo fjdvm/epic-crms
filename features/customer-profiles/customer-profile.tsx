@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { Field } from "./field";
 import { formatAgo, formatDate, formatPesos } from "./format";
 import { OrdersTab } from "./orders-tab";
 import type { CustomerProfile } from "./profile";
@@ -19,15 +20,6 @@ function Stat({ title, value, note }: { title: string; value: string; note?: str
         {note && <p className="text-body-sm text-muted-foreground">{note}</p>}
       </CardContent>
     </Card>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <dt className="text-label-md text-muted-foreground">{label}</dt>
-      <dd className="text-body-md text-foreground">{children}</dd>
-    </div>
   );
 }
 
