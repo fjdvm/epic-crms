@@ -9,7 +9,7 @@ export default async function UnavailablePage({
 
   return (
     <main className="min-h-screen flex items-center justify-center p-md">
-      <div className="max-w-md space-y-sm text-center">
+      <div className="max-w-[28rem] space-y-sm text-center">
         <h1 className="text-headline-md text-foreground">CREOMS is temporarily unavailable</h1>
         <p className="text-body-sm text-muted-foreground">
           CREOMS could not reach the Portal to check your access, so nothing can be opened right
