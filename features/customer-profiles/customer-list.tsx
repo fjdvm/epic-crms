@@ -9,7 +9,7 @@ import type { CustomerList, SortKey } from "./customers";
 import { STAGES } from "./customers";
 import { STAGE_LABELS, type Stage } from "./rules";
 import { StageBadge } from "./stage-badge";
-import { formatDate, formatPesos } from "./format";
+import { formatDate, formatWholePesos } from "./format";
 
 export interface ListParams {
   search: string;
@@ -23,7 +23,7 @@ export interface ListParams {
 /** Column widths follow the design: fixed, with Last order taking the rest. */
 const COLUMNS: { key: SortKey | null; header: string; className: string }[] = [
   { key: "name", header: "Customer", className: "w-[180px]" },
-  { key: "email", header: "Contact", className: "w-[320px]" },
+  { key: "email", header: "Contact", className: "w-[380px]" },
   { key: null, header: "Stage", className: "w-[120px]" },
   { key: "orders", header: "Orders", className: "w-[90px]" },
   { key: "totalSpent", header: "Total spent", className: "w-[140px]" },
@@ -91,7 +91,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[760px]">
+            <div className="min-w-[820px]">
               <div className="flex items-center border-b border-border-subtle py-1.5 text-xs font-medium text-muted-foreground">
                 {COLUMNS.map((col) => {
                   if (!col.key) {
@@ -137,7 +137,7 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                     <StageBadge stage={row.stage} />
                   </div>
                   <div className={cn(CELL, COLUMNS[3].className)}>{row.orders}</div>
-                  <div className={cn(CELL, COLUMNS[4].className)}>{formatPesos(row.totalSpent)}</div>
+                  <div className={cn(CELL, COLUMNS[4].className)}>{formatWholePesos(row.totalSpent)}</div>
                   <div className={cn(CELL, COLUMNS[5].className)}>
                     {row.lastOrder ? formatDate(row.lastOrder) : "No orders yet"}
                   </div>

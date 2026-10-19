@@ -60,10 +60,11 @@ describe("ActivityTimeline", () => {
       />,
     );
 
-    const links = screen.getAllByRole("link", { name: "Order #9" });
-    expect(links).toHaveLength(2);
-    expect(links[0].getAttribute("href")).toBe("#order-9");
-    fireEvent.click(links[1]);
+    const [feedbackLink, placedLink] = screen.getAllByRole("link", { name: "Order #9" });
+    expect(feedbackLink.parentElement?.textContent).toMatch(/^Left 4 \/ 5 feedback on/);
+    expect(placedLink.parentElement?.textContent).toMatch(/^Placed /);
+    expect(feedbackLink.getAttribute("href")).toBe("#order-9");
+    fireEvent.click(placedLink);
     expect(open).toHaveBeenCalledWith(9);
     expect(screen.getByText(/left 4 \/ 5 feedback/i)).toBeTruthy();
   });

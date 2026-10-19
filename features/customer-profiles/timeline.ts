@@ -1,12 +1,12 @@
 import type { CustomerOrder } from "./orders";
 
-export interface ActivityEntry {
-  kind: "placed" | "payment-proof" | "feedback";
-  orderId: number;
-  at: Date;
-  /** Only for feedback. */
-  rating?: number;
-}
+export type ActivityEntry = { orderId: number; at: Date } & (
+  | { kind: "placed" }
+  | { kind: "payment-proof" }
+  | { kind: "feedback"; rating: number }
+);
+
+const KIND_ORDER: Record<ActivityEntry["kind"], number> = { feedback: 0, "payment-proof": 1, placed: 2 };
 
 /**
  * A Customer's activity, newest first. The store keeps no history of Order status changes, so
@@ -21,5 +21,5 @@ export function activityOf(orders: CustomerOrder[]): ActivityEntry[] {
     ...(o.feedback ? [{ kind: "feedback" as const, orderId: o.id, at: o.feedback.createdAt, rating: o.feedback.rating }] : []),
   ]);
 
-  return entries.sort((a, b) => b.at.getTime() - a.at.getTime() || b.orderId - a.orderId);
+  return entries.sort((a, b) => b.at.getTime() - a.at.getTime() || b.orderId - a.orderId || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
 }

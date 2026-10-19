@@ -4,10 +4,14 @@ import { TabCard } from "./tab-card";
 import { activityOf, type ActivityEntry } from "./timeline";
 
 function lead(entry: ActivityEntry): string {
-  if (entry.kind === "placed") return "Placed ";
-  if (entry.kind === "payment-proof") return "Payment proof for ";
-
-  return `Left ${entry.rating} / 5 feedback on `;
+  switch (entry.kind) {
+    case "placed":
+      return "Placed ";
+    case "payment-proof":
+      return "Payment proof for ";
+    case "feedback":
+      return `Left ${entry.rating} / 5 feedback on `;
+  }
 }
 
 export function ActivityTimeline({
