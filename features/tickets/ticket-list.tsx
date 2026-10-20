@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -31,20 +30,29 @@ const PRIORITY_LABELS: Record<TicketPriority, string> = {
   urgent: "Urgent",
 };
 
-const PRIORITY_VARIANTS: Record<TicketPriority, BadgeProps["variant"]> = {
-  low: "secondary",
-  normal: "info",
-  high: "warning",
-  urgent: "destructive",
+/** Pill colours from the Figma badges: Open and High share one, Low follows Normal and Urgent follows High. */
+const PILL = {
+  red: "bg-[#fbe6e0] text-[#9a3412]",
+  grey: "bg-[#eeecf2] text-[#5a5368]",
+  amber: "bg-[#fdf1d8] text-[#8a5a00]",
+  green: "bg-[#e3f4e8] text-[#1e6b3a]",
+} as const;
+
+const PRIORITY_PILLS: Record<TicketPriority, string> = {
+  low: PILL.grey,
+  normal: PILL.grey,
+  high: PILL.red,
+  urgent: PILL.red,
 };
 
+/** The Figma frame's columns, minus Channel: a Ticket has no Channel. Status takes the rest. */
 const COLUMNS: { header: string; className: string }[] = [
-  { header: "Ticket", className: "shrink-0 w-[100px]" },
-  { header: "Subject", className: "flex-1 min-w-[260px]" },
-  { header: "Customer", className: "shrink-0 w-[180px]" },
-  { header: "Linked order", className: "shrink-0 w-[120px]" },
-  { header: "Priority", className: "shrink-0 w-[110px]" },
-  { header: "Status", className: "shrink-0 w-[130px]" },
+  { header: "Ticket", className: "w-[100px] shrink-0" },
+  { header: "Subject", className: "w-[270px] shrink-0" },
+  { header: "Customer", className: "w-[150px] shrink-0" },
+  { header: "Linked order", className: "w-[120px] shrink-0" },
+  { header: "Priority", className: "w-[100px] shrink-0" },
+  { header: "Status", className: "min-w-0 flex-1" },
 ];
 
 function href(params: TicketListParams, change: Partial<TicketListParams>): string {
@@ -59,16 +67,31 @@ function href(params: TicketListParams, change: Partial<TicketListParams>): stri
   return text ? `/tickets?${text}` : "/tickets";
 }
 
-function StatusBadge({ row }: { row: TicketRow }) {
-  if (row.status === "resolved") return <Badge variant="success">Resolved</Badge>;
-  if (row.status === "completed") return <Badge variant="purple">Completed</Badge>;
-  if (row.overdue) return <Badge variant="destructive">Overdue</Badge>;
-  if (row.waiting) return <Badge variant="secondary">Waiting on customer</Badge>;
-
-  return <Badge variant="info">Open</Badge>;
+function Pill({ className, children }: { className: string; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-[10px] py-[3px] text-xs font-medium leading-[normal] whitespace-nowrap",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
 }
 
-const CELL = "py-[11px] pr-3 text-sm text-foreground";
+function StatusPill({ row }: { row: TicketRow }) {
+  if (row.status === "resolved" || row.status === "completed") {
+    return <Pill className={PILL.green}>Resolved</Pill>;
+  }
+  if (row.overdue) return <Pill className={PILL.red}>Overdue</Pill>;
+  if (row.waiting) return <Pill className={PILL.amber}>Waiting</Pill>;
+
+  return <Pill className={PILL.red}>Open</Pill>;
+}
+
+const HEAD = "flex items-start overflow-clip";
+const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
 export function TicketListView({ list, params }: { list: TicketList; params: TicketListParams }) {
   return (
@@ -83,8 +106,8 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
               href={href(params, { tab, page: 1 })}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "rounded-lg px-3.5 py-2 text-sm font-medium",
-                active ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted",
+                "rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal]",
+                active ? "bg-[#efe6f8] text-[#5b2a86]" : "text-[#6e6680]",
               )}
             >
               {TAB_LABELS[tab]} {list.counts[tab]}
@@ -93,42 +116,44 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
         })}
       </nav>
 
-      <div className="space-y-[14px] rounded-xl border border-border bg-card p-5">
+      <div className="space-y-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
         {list.rows.length === 0 ? (
-          <div className="p-xl text-center text-muted-foreground">No Tickets here.</div>
+          <div className="p-8 text-center text-sm text-[#6e6680]">No Tickets here.</div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[900px]">
-              <div className="flex items-center border-b border-border-subtle py-1.5 text-xs font-medium text-muted-foreground">
+            <div className="min-w-[740px]">
+              <div className="flex items-center border-b border-[#efebf4] py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
                 {COLUMNS.map((col) => (
-                  <div key={col.header} className={col.className}>
+                  <div key={col.header} className={cn(HEAD, col.className)}>
                     {col.header}
                   </div>
                 ))}
               </div>
               {list.rows.map((row) => (
-                <div
-                  key={row.id}
-                  className="flex items-center border-b border-border-subtle last:border-0 hover:bg-secondary"
-                >
-                  <div className={cn(COLUMNS[0].className, CELL, "font-medium")}>TKT-{row.id}</div>
-                  <div className={cn(COLUMNS[1].className, CELL, "truncate")}>{row.subject}</div>
-                  <div className={cn(COLUMNS[2].className, CELL, "truncate")}>{row.customerName}</div>
-                  <div className={cn(COLUMNS[3].className, CELL, row.orderId === null && "text-muted-foreground")}>
+                <div key={row.id} className="flex items-center border-b border-[#efebf4] py-[11px]">
+                  <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
+                    TKT-{row.id}
+                  </div>
+                  <div className={cn(CELL, COLUMNS[1].className)}>
+                    <span className="truncate pr-3">{row.subject}</span>
+                  </div>
+                  <div className={cn(CELL, COLUMNS[2].className)}>
+                    <span className="truncate pr-3">{row.customerName}</span>
+                  </div>
+                  <div className={cn(CELL, COLUMNS[3].className)}>
                     {row.orderId === null ? "None yet" : `#${row.orderId}`}
                   </div>
-                  <div className={cn(COLUMNS[4].className, CELL)}>
-                    <Badge variant={PRIORITY_VARIANTS[row.priority]}>{PRIORITY_LABELS[row.priority]}</Badge>
+                  <div className={cn(CELL, COLUMNS[4].className)}>
+                    <Pill className={PRIORITY_PILLS[row.priority]}>{PRIORITY_LABELS[row.priority]}</Pill>
                   </div>
-                  <div className={cn(COLUMNS[5].className, CELL)}>
-                    <StatusBadge row={row} />
+                  <div className={cn(CELL, COLUMNS[5].className)}>
+                    <StatusPill row={row} />
                   </div>
                 </div>
               ))}
             </div>
           </div>
         )}
-
         {list.totalPages > 1 && (
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>
