@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  gatewayFileStorage,
   liveConversationUrl,
   sendAppEmail,
   storefrontTicketUrl,
@@ -51,8 +52,27 @@ export async function release(id: number) {
   return act(id, (actor) => releaseTicket(ticketsWriterDatabase(), id, actor));
 }
 
-export async function reply(id: number, body: string) {
-  return act(id, (actor) => replyToTicket(ticketsWriterDatabase(), id, actor, body));
+/** The reply form: a `body` and, optionally, one `image` file. */
+export async function reply(id: number, form: FormData) {
+  const body = String(form.get("body") ?? "");
+  const file = form.get("image");
+  // An empty file input still posts a nameless, empty File; that is "no image", not an empty image.
+  const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
+
+  return act(id, async (actor) =>
+    replyToTicket(
+      ticketsWriterDatabase(),
+      id,
+      actor,
+      body,
+      picked
+        ? {
+            image: { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) },
+            storage: gatewayFileStorage,
+          }
+        : undefined,
+    ),
+  );
 }
 
 export async function resolve(id: number) {

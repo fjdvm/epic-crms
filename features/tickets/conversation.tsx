@@ -153,11 +153,25 @@ export function Conversation({
                 fromStaff ? "bg-[#efe6f8]" : "bg-[#f3f1f6]",
               )}
             >
-              <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
-                {message.body}
-              </p>
-              {message.hasAttachment && (
-                <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
+              {message.body && (
+                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
+                  {message.body}
+                </p>
+              )}
+              {message.attachmentUrl ? (
+                <a href={message.attachmentUrl} target="_blank" rel="noreferrer" className="block">
+                  {/* A short-lived signed address from file-storage, so next/image's optimizer cannot cache it. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={message.attachmentUrl}
+                    alt={`Image attached by ${message.senderName}`}
+                    className="max-h-64 max-w-full rounded-lg object-contain"
+                  />
+                </a>
+              ) : (
+                message.hasAttachment && (
+                  <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
+                )
               )}
               <p className="text-[11px] leading-[normal] text-[#6e6680]">{byline(message, shown[i - 1])}</p>
             </div>

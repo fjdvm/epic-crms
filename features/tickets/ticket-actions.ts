@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 
+import { checkImage, type FileStorage, type ImageRefusal, type ImageUpload } from "./attachments";
+
 /** The Staff member acting: the Portal username is their opaque id, and the name is snapshotted onto the Ticket. */
 export interface Actor {
   id: string;
@@ -15,7 +17,10 @@ export type TicketActionFailure =
   /** Completed is final. */
   | "completed"
   | "already-resolved"
-  | "empty-message";
+  | "empty-message"
+  | ImageRefusal
+  /** file-storage could not take the image; nothing was saved. */
+  | "storage-unavailable";
 
 export type TicketActionResult = { ok: true } | { ok: false; reason: TicketActionFailure };
 
@@ -67,18 +72,81 @@ export async function releaseTicket(
 }
 
 /**
- * A Staff text Message. Replying to an Unclaimed Ticket Claims it for the replier; a Ticket someone
- * else Claimed cannot be replied to. The Claim and the Message land together or not at all.
+ * A Staff Message: text, one JPG or PNG image, or both. Replying to an Unclaimed Ticket Claims it
+ * for the replier; a Ticket someone else Claimed cannot be replied to. The Claim and the Message
+ * land together or not at all, and an image is stored first and removed again if the Message is
+ * not saved, so file-storage never keeps an image no Message shows.
  */
 export async function replyToTicket(
   sql: postgres.Sql,
   id: number,
   actor: Actor,
   body: string,
+  attachment?: { image: ImageUpload; storage: FileStorage },
 ): Promise<ReplyResult> {
   const text = body.trim();
-  if (!text) return { ok: false, reason: "empty-message" };
+  if (!text && !attachment) return { ok: false, reason: "empty-message" };
 
+  let fileId: string | null = null;
+
+  if (attachment) {
+    const checked = checkImage(attachment.image);
+    if (!checked.ok) return checked;
+
+    try {
+      fileId = await attachment.storage.upload({
+        filename: attachment.image.filename,
+        contentType: checked.contentType,
+        bytes: attachment.image.bytes,
+      });
+    } catch (error) {
+      console.error(`Ticket TKT-${id} image could not be stored in file-storage`, error);
+
+      return { ok: false, reason: "storage-unavailable" };
+    }
+  }
+
+  let result: ReplyResult;
+
+  try {
+    result = await saveReply(sql, id, actor, text, fileId);
+  } catch (error) {
+    await discard(attachment?.storage, fileId);
+
+    throw error;
+  }
+
+  if (!result.ok) {
+    await discard(attachment?.storage, fileId);
+  } else if (attachment && fileId !== null) {
+    try {
+      await attachment.storage.linkToMessage(fileId, result.messageId);
+    } catch (error) {
+      // The Message already shows the image through its file id; the Link only helps record lookups.
+      console.error(`Ticket TKT-${id} image was saved but could not be Linked to its Message`, error);
+    }
+  }
+
+  return result;
+}
+
+async function discard(storage: FileStorage | undefined, fileId: string | null) {
+  if (!storage || !fileId) return;
+
+  try {
+    await storage.remove(fileId);
+  } catch (error) {
+    console.error("An image for an unsaved Message could not be removed from file-storage", error);
+  }
+}
+
+function saveReply(
+  sql: postgres.Sql,
+  id: number,
+  actor: Actor,
+  text: string,
+  fileId: string | null,
+): Promise<ReplyResult> {
   return sql.begin(async (tx): Promise<ReplyResult> => {
     const rows = await tx`
       update tickets set claimed_by_id = ${actor.id}, claimed_by_name = ${actor.name}
@@ -95,7 +163,8 @@ export async function replyToTicket(
     }
 
     const [message] = await tx<{ id: number }[]>`
-      insert into ticket_messages (ticket_id, sender, body) values (${id}, 'staff', ${text}) returning id`;
+      insert into ticket_messages (ticket_id, sender, body, file_id)
+      values (${id}, 'staff', ${text}, ${fileId}) returning id`;
 
     return { ok: true, messageId: message.id };
   });

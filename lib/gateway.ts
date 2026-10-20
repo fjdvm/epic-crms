@@ -1,3 +1,4 @@
+import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
 
@@ -54,4 +55,66 @@ export const liveConversationUrl: LiveConversationUrl = async (ticketId, staffId
   const { ticket } = (await response.json()) as { ticket: string };
 
   return `${base.replace(/^http/, "ws")}/notifications/conversations/${ticketId}/live?ticket=${encodeURIComponent(ticket)}`;
+};
+
+/** Calls file-storage through the gateway as the "crms" Caller, which the gateway maps to the CRMS Client System. */
+async function storage<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { base, key } = gateway();
+
+  const response = await fetch(`${base}/files${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) throw new Error(`file-storage refused ${init.method ?? "GET"} ${path}: ${response.status}`);
+
+  return (response.status === 204 ? undefined : await response.json()) as T;
+}
+
+/** Images are Private and Permanent Files, Linked to the Message they belong to. */
+export const gatewayFileStorage: FileStorage = {
+  async upload({ filename, contentType, bytes }) {
+    const pending = await storage<{ id: string; uploadUrl: string }>("", {
+      method: "POST",
+      body: JSON.stringify({
+        filename,
+        contentType,
+        size: bytes.length,
+        visibility: "private",
+        retentionType: "permanent",
+      }),
+    });
+
+    // The signed address is file-storage's own, so it takes no gateway key.
+    const put = await fetch(pending.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: bytes as BodyInit,
+    });
+    if (!put.ok) throw new Error(`The image upload was refused: ${put.status}`);
+
+    await storage(`/${pending.id}/confirm`, { method: "POST" });
+
+    return pending.id;
+  },
+
+  async linkToMessage(fileId, messageId) {
+    await storage(`/${fileId}/links`, {
+      method: "POST",
+      body: JSON.stringify({
+        system: "CRMS",
+        entityType: "ticket-message",
+        entityId: String(messageId),
+        role: "attachment",
+      }),
+    });
+  },
+
+  async viewUrl(fileId) {
+    return (await storage<{ url: string }>(`/${fileId}`)).url;
+  },
+
+  async remove(fileId) {
+    await storage(`/${fileId}`, { method: "DELETE" });
+  },
 };

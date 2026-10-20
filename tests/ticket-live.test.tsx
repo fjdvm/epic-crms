@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Conversation } from "@/features/tickets/conversation";
@@ -15,6 +16,7 @@ vi.mock("@/features/tickets/actions", () => ({
   resolve: vi.fn(),
   liveUrl: vi.fn(),
 }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 afterEach(cleanup);
@@ -117,5 +119,33 @@ describe("live Conversation", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(screen.getByText("Still here")).toBeTruthy());
+  });
+
+  it("sends the picked image with the reply", async () => {
+    vi.mocked(reply).mockClear();
+    vi.mocked(reply).mockResolvedValue({ ok: true, messageId: 9 });
+    renderConversation(fakeRelay().connect);
+
+    const photo = new File([new Uint8Array([0xff, 0xd8, 0xff])], "box.jpg", { type: "image/jpeg" });
+    await userEvent.upload(screen.getByLabelText("Attach an image"), photo);
+    expect(screen.getByText("box.jpg")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(reply).toHaveBeenCalled());
+    const form = vi.mocked(reply).mock.calls[0][1];
+    expect((form.get("image") as File).name).toBe("box.jpg");
+    await waitFor(() => expect(screen.queryByText("box.jpg")).toBeNull());
+  });
+
+  it("refuses a file that is not a JPG or PNG before sending it", async () => {
+    vi.mocked(reply).mockClear();
+    renderConversation(fakeRelay().connect);
+
+    const pdf = new File(["%PDF"], "receipt.pdf", { type: "application/pdf" });
+    await userEvent.upload(screen.getByLabelText("Attach an image"), pdf, { applyAccept: false });
+
+    expect(toast.error).toHaveBeenCalledWith("Only JPG or PNG images can be attached.");
+    expect(screen.queryByText("receipt.pdf")).toBeNull();
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

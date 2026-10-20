@@ -8,6 +8,7 @@ import {
   type Actor,
 } from "@/features/tickets/ticket-actions";
 
+import { FakeFileStorage, JPEG, PDF, PNG } from "./fake-file-storage";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 let db: TestDatabase;
@@ -212,5 +213,85 @@ describe("Mark resolved", () => {
     expect((await db.sql<{ status: string }[]>`select status from tickets where id = ${id}`)[0].status).toBe(
       "resolved",
     );
+  });
+});
+
+describe("image attachments", () => {
+  const storage = new FakeFileStorage();
+
+  beforeEach(() => {
+    storage.reset();
+  });
+
+  const attach = (bytes: Uint8Array, filename = "pouch.jpg") => ({ image: { filename, bytes }, storage });
+  const saved = (id: number) =>
+    db.sql<{ body: string; file_id: string | null }[]>`
+      select body, file_id from ticket_messages where ticket_id = ${id} order by id`;
+
+  it("a reply carries one JPG, stored as a Private File Linked to the Message", async () => {
+    const id = await ticket();
+
+    const result = await replyToTicket(db.sql, id, bernice, "Here is the replacement", attach(JPEG));
+
+    expect(result).toMatchObject({ ok: true });
+    const [message] = await saved(id);
+    expect(message.file_id).toBe("file-1");
+    expect(storage.files.get("file-1")).toMatchObject({ contentType: "image/jpeg", filename: "pouch.jpg", link: (result as { messageId: number }).messageId });
+  });
+
+  it("a PNG is accepted, and an image alone is a Message", async () => {
+    const id = await ticket();
+
+    expect(await replyToTicket(db.sql, id, bernice, "  ", attach(PNG, "box.png"))).toMatchObject({ ok: true });
+    expect(await saved(id)).toEqual([{ body: "", file_id: "file-1" }]);
+    expect(storage.files.get("file-1")?.contentType).toBe("image/png");
+  });
+
+  it.each([
+    ["another file type, even renamed .jpg", PDF, "invalid-image-type"],
+    ["an empty file", new Uint8Array(), "empty-image"],
+    ["a file over 5 MB", new Uint8Array(5 * 1024 * 1024 + 1).fill(0xff), "image-too-large"],
+  ])("refuses %s and saves nothing", async (_name, bytes, reason) => {
+    const id = await ticket();
+
+    expect(await replyToTicket(db.sql, id, bernice, "Hello", attach(bytes))).toEqual({ ok: false, reason });
+    expect(await saved(id)).toEqual([]);
+    expect(storage.files.size).toBe(0);
+  });
+
+  it("exactly 5 MB is accepted", async () => {
+    const id = await ticket();
+    const bytes = new Uint8Array(5 * 1024 * 1024).fill(0);
+    bytes.set(PNG);
+
+    expect(await replyToTicket(db.sql, id, bernice, "Big one", attach(bytes))).toMatchObject({ ok: true });
+  });
+
+  it("saves nothing when file-storage is down", async () => {
+    const id = await ticket();
+    storage.failUpload = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await replyToTicket(db.sql, id, bernice, "Hello", attach(JPEG))).toEqual({
+      ok: false,
+      reason: "storage-unavailable",
+    });
+    expect(await saved(id)).toEqual([]);
+  });
+
+  it("removes the stored image when someone else's Claim refuses the reply", async () => {
+    const id = await ticket({ claimedBy: carlo });
+
+    expect(await replyToTicket(db.sql, id, bernice, "Hello", attach(JPEG))).toEqual({ ok: false, reason: "claimed" });
+    expect(storage.files.size).toBe(0);
+  });
+
+  it("keeps the Message when only the Link fails", async () => {
+    const id = await ticket();
+    storage.failLink = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await replyToTicket(db.sql, id, bernice, "Hello", attach(JPEG))).toMatchObject({ ok: true });
+    expect((await saved(id))[0].file_id).toBe("file-1");
   });
 });
