@@ -69,7 +69,7 @@ describe("the Ticket page data", () => {
       subject: "Halaya pouch arrived leaking",
       status: "open",
       priority: "high",
-      claimedByName: "Bernice",
+      claimerName: "Bernice",
       openedAt: hoursAgo(30),
     });
   });
@@ -77,7 +77,7 @@ describe("the Ticket page data", () => {
   it("has no Claimer on an Unclaimed Ticket", async () => {
     const id = await ticket();
 
-    expect((await getTicket(db.sql, id, NOW))?.claimedByName).toBeNull();
+    expect((await getTicket(db.sql, id, NOW))?.claimerName).toBeNull();
   });
 
   it("lists every Message oldest first with its sender, and names Staff after the Claimer", async () => {

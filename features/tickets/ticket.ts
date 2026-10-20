@@ -40,7 +40,7 @@ export interface TicketDetail {
   priority: TicketPriority;
   openedAt: Date;
   /** The Claimer's name; null while Unclaimed. */
-  claimedByName: string | null;
+  claimerName: string | null;
   /** Oldest first. */
   messages: TicketMessage[];
   /** The Linked order; null when the Ticket has none. */
@@ -66,7 +66,7 @@ export async function getTicket(
   if (!t) return null;
 
   const customerId = t.customer_id as string;
-  const claimedByName = (t.claimed_by_name as string | null) ?? null;
+  const claimerName = (t.claimed_by_name as string | null) ?? null;
   const customerFirstName = (t.first_name as string) || (t.full_name as string);
 
   const messages = await sql<Record<string, unknown>[]>`
@@ -106,11 +106,11 @@ export async function getTicket(
     status: t.status as TicketStatus,
     priority: t.priority as TicketPriority,
     openedAt: t.created_at as Date,
-    claimedByName,
+    claimerName,
     messages: messages.map((m) => ({
       id: m.id as number,
       sender: m.sender as "customer" | "staff",
-      senderName: m.sender === "customer" ? customerFirstName : (claimedByName ?? "Staff"),
+      senderName: m.sender === "customer" ? customerFirstName : (claimerName ?? "Staff"),
       body: m.body as string,
       hasAttachment: m.file_id !== null || m.attachment_pathname !== null,
       createdAt: m.created_at as Date,

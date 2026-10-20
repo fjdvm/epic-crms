@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { formatWholePesos } from "@/features/customer-profiles/format";
+import { formatDate, formatWholePesos } from "@/features/customer-profiles/format";
 import { orderAnchor } from "@/features/customer-profiles/orders";
 import { orderLabel, paymentStatusOf, STAGE_LABELS, type Stage } from "@/features/customer-profiles/rules";
 import { cn } from "@/lib/utils";
@@ -37,17 +37,16 @@ const ORDER_PILLS: Record<string, string> = {
   cancelled: PILL.grey,
 };
 
-const LONG_DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Manila" });
 const TIME = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" });
 
-const sameDay = (a: Date, b: Date) => LONG_DATE.format(a) === LONG_DATE.format(b);
+const sameDay = (a: Date, b: Date) => formatDate(a) === formatDate(b);
 
 /** "Maria · 10:12 AM"; the date comes first when the Message is not from the day of the one before it. */
 function byline(message: TicketMessage, previous: TicketMessage | undefined): string {
   const time = TIME.format(message.createdAt);
   const when =
     previous && !sameDay(previous.createdAt, message.createdAt)
-      ? `${LONG_DATE.format(message.createdAt)}, ${time}`
+      ? `${formatDate(message.createdAt)}, ${time}`
       : time;
 
   return `${message.senderName} · ${when}`;
@@ -71,8 +70,8 @@ export function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
           <Pill className={STATUS_PILLS[ticket.status]}>{STATUS_LABELS[ticket.status]}</Pill>
         </div>
         <p className="text-sm leading-[normal] text-[#6e6680]">
-          Opened {LONG_DATE.format(ticket.openedAt)} ·{" "}
-          {ticket.claimedByName ? `Claimed by ${ticket.claimedByName}` : "Unclaimed"} ·{" "}
+          Opened {formatDate(ticket.openedAt)} ·{" "}
+          {ticket.claimerName ? `Claimed by ${ticket.claimerName}` : "Unclaimed"} ·{" "}
           {PRIORITY_LABELS[ticket.priority]} priority
         </p>
       </div>

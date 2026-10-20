@@ -13,7 +13,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   status: "open",
   priority: "high",
   openedAt: new Date("2026-10-19T02:00:00Z"),
-  claimedByName: "Bernice",
+  claimerName: "Bernice",
   messages: [
     {
       id: 1,
@@ -63,7 +63,7 @@ describe("the Ticket page as designed", () => {
   });
 
   it("says Unclaimed when nobody has Claimed the Ticket", () => {
-    render(<TicketDetailView ticket={ticket({ claimedByName: null })} />);
+    render(<TicketDetailView ticket={ticket({ claimerName: null })} />);
 
     expect(screen.getByText(/· Unclaimed ·/)).toBeTruthy();
   });
