@@ -60,4 +60,19 @@ describe("the sidebar", () => {
 
     expect(screen.queryByText("CUSTOMERS")).toBeNull();
   });
+
+  it("shows the Tickets and Conversations tabs only with the Tickets pages permitted", async () => {
+    renderSidebar(["/customer-profiles", "/tickets", "/conversations"]);
+
+    expect(await screen.findByRole("link", { name: "Tickets" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Conversations" })).toBeTruthy();
+  });
+
+  it("hides the Tickets and Conversations tabs without the Tickets Module", async () => {
+    renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+
+    expect(screen.queryByRole("link", { name: "Tickets" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Conversations" })).toBeNull();
+  });
 });

@@ -5,6 +5,8 @@ import {
   CreditCard,
   Truck,
   LayoutGrid,
+  LifeBuoy,
+  MessageSquare,
   Users2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -31,7 +33,19 @@ export const customerProfilesItem: NavItem = {
   icon: Users,
 };
 
-export const sidebarItems: NavItem[] = [customerProfilesItem];
+export const ticketsItem: NavItem = {
+  name: "Tickets",
+  href: "/tickets",
+  icon: LifeBuoy,
+};
+
+export const conversationsItem: NavItem = {
+  name: "Conversations",
+  href: "/conversations",
+  icon: MessageSquare,
+};
+
+export const sidebarItems: NavItem[] = [customerProfilesItem, ticketsItem, conversationsItem];
 
 export const systems: SystemItem[] = [
   {

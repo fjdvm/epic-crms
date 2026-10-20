@@ -6,6 +6,7 @@ export const LOGOUT_PATH = "/api/portal/logout";
 export const NO_ACCESS_PATH = "/no-access";
 export const UNAVAILABLE_PATH = "/unavailable";
 export const CUSTOMER_PROFILES_MODULE = "Customer Profiles";
+export const TICKETS_MODULE = "Tickets";
 
 function required(name: string): string {
   const value = process.env[name];

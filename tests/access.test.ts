@@ -17,6 +17,7 @@ const ada = {
   role: "Customer Support",
 };
 const CUSTOMER_PROFILES = "Customer Profiles";
+const TICKETS = "Tickets";
 
 let portal: FakePortal;
 
@@ -87,6 +88,18 @@ describe("access to the Customer Profiles pages", () => {
   });
 });
 
+describe("access to the Tickets pages", () => {
+  it("is allowed with the Tickets Module", async () => {
+    expect((await accessFor(await signInAda([TICKETS])).check(TICKETS)).decision).toBe("allowed");
+  });
+
+  it("is denied without it, even with Customer Profiles", async () => {
+    const access = accessFor(await signInAda([CUSTOMER_PROFILES]));
+
+    expect((await access.check(TICKETS)).decision).toBe("denied");
+  });
+});
+
 describe("access on every request", () => {
   it("denies the next request once the Module is revoked at the Portal", async () => {
     const handle = await signInAda(["Customer Profiles", "Leads"]);
@@ -114,6 +127,24 @@ describe("which pages a Staff member may open", () => {
     const access = accessFor(await signInAda(["Leads"]));
 
     expect(await access.overview()).toEqual({ decision: "denied" });
+  });
+
+  it("opens both the Tickets and Conversations pages with the Tickets Module alone", async () => {
+    const access = accessFor(await signInAda([TICKETS]));
+
+    expect(await access.overview()).toEqual({
+      decision: "allowed",
+      staff: ada,
+      pages: ["/tickets", "/conversations"],
+    });
+  });
+
+  it("lists every page when both Modules are granted", async () => {
+    const access = accessFor(await signInAda([CUSTOMER_PROFILES, TICKETS]));
+
+    expect(await access.overview()).toMatchObject({
+      pages: ["/customer-profiles", "/tickets", "/conversations"],
+    });
   });
 
   it("is refused without a session", async () => {
