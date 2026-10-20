@@ -32,5 +32,5 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 
   if (!result.ticket) notFound();
 
-  return <TicketDetailView ticket={result.ticket} viewerId={staff.username} viewerName={staff.name} />;
+  return <TicketDetailView ticket={result.ticket} viewerId={staff.username} />;
 }

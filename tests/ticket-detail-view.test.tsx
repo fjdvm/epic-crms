@@ -71,7 +71,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
 
 describe("the Ticket page as designed", () => {
   it("has the TKT number, subject and status in the title, and the opened date, Claimer and Priority beneath", () => {
-    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     expect(
       screen.getByRole("heading", {
@@ -83,13 +83,13 @@ describe("the Ticket page as designed", () => {
   });
 
   it("says Unclaimed when nobody has Claimed the Ticket", () => {
-    render(<TicketDetailView ticket={ticket({ claimerName: null })} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket({ claimerName: null })} viewerId="bernice" />);
 
     expect(screen.getByText(/· Unclaimed ·/)).toBeTruthy();
   });
 
   it("shows every Message in order with sender and time", () => {
-    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     const conversation = screen.getByRole("region", { name: "Conversation" });
     const bodies = within(conversation).getAllByText(/leaking|So sorry|Here it is/);
@@ -104,20 +104,20 @@ describe("the Ticket page as designed", () => {
   });
 
   it("adds the date to a Message sent on a later day, and notes an attached photo", () => {
-    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     expect(screen.getByText("Maria · 20 Oct 2026, 10:21 AM")).toBeTruthy();
     expect(screen.getByText("Photo attached")).toBeTruthy();
   });
 
   it("has no Resolve with card, since replacement, refund and return actions are out of v1", () => {
-    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     expect(screen.queryByText("Resolve with")).toBeNull();
   });
 
   it("shows the Linked order card with its link to the Order", () => {
-    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     const card = screen.getByRole("region", { name: "Linked order" });
 
@@ -131,13 +131,13 @@ describe("the Ticket page as designed", () => {
   });
 
   it("hides the Linked order card when the Ticket has no Order", () => {
-    render(<TicketDetailView ticket={ticket({ order: null })} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket({ order: null })} viewerId="bernice" />);
 
     expect(screen.queryByRole("region", { name: "Linked order" })).toBeNull();
   });
 
   it("shows the Customer card with Stage, order count, Total spent and a link to the Customer Profile", () => {
-    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     const card = screen.getByRole("region", { name: "Customer" });
 
@@ -160,7 +160,7 @@ describe("the Ticket page as designed", () => {
             totalSpent: 0,
           },
         })}
-        viewerId="bernice" viewerName="Bernice"
+        viewerId="bernice"
       />,
     );
 
@@ -172,38 +172,47 @@ describe("working the Ticket", () => {
   const buttons = () => screen.getAllByRole("button").map((b) => b.textContent);
 
   it("offers Release and Mark resolved to the Claimer, and not Claim", () => {
-    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
-    expect(buttons()).toEqual(expect.arrayContaining(["Release", "Mark resolved", "Send"]));
-    expect(buttons()).not.toContain("Claim");
-    expect(screen.getByRole("link", { name: "Reply" }).getAttribute("href")).toBe("#reply");
+    expect(buttons()).toEqual(["Release", "Mark resolved"]);
   });
 
   it("offers Claim on an Unclaimed Ticket, and no Release", () => {
-    render(<TicketDetailView ticket={ticket({ claimerId: null, claimerName: null })} viewerId="carlo" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket({ claimerId: null, claimerName: null })} viewerId="carlo" />);
 
     expect(buttons()).toContain("Claim");
     expect(buttons()).not.toContain("Release");
-    expect(screen.getByRole("textbox", { name: "Write a reply" })).toBeTruthy();
   });
 
-  it("gives another Staff member no Claim, Release or composer on a Claimed Ticket", () => {
-    render(<TicketDetailView ticket={ticket()} viewerId="carlo" viewerName="Bernice" />);
+  it("gives another Staff member no Claim or Release on a Claimed Ticket", () => {
+    render(<TicketDetailView ticket={ticket()} viewerId="carlo" />);
 
     expect(buttons()).not.toContain("Claim");
     expect(buttons()).not.toContain("Release");
-    expect(screen.queryByRole("textbox", { name: "Write a reply" })).toBeNull();
-    expect(screen.getByText("Bernice claimed this Ticket, so only they can reply.")).toBeTruthy();
   });
 
-  it("offers no Mark resolved once Resolved, and nothing at all once Completed", () => {
-    render(<TicketDetailView ticket={ticket({ status: "resolved" })} viewerId="bernice" viewerName="Bernice" />);
+  it("offers no Mark resolved once Resolved, and no buttons at all once Completed", () => {
+    render(<TicketDetailView ticket={ticket({ status: "resolved" })} viewerId="bernice" />);
     expect(buttons()).not.toContain("Mark resolved");
     cleanup();
 
-    render(<TicketDetailView ticket={ticket({ status: "completed" })} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={ticket({ status: "completed" })} viewerId="bernice" />);
     expect(screen.queryAllByRole("button")).toEqual([]);
+  });
+});
+
+describe("chatting from the Ticket page", () => {
+  it("has no reply box; a Chat button opens this Ticket's chat in Conversations", () => {
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
+
     expect(screen.queryByRole("textbox", { name: "Write a reply" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Chat" }).getAttribute("href")).toBe("/conversations?ticket=208");
+  });
+
+  it("offers no Chat once the Ticket is Completed", () => {
+    render(<TicketDetailView ticket={ticket({ status: "completed" })} viewerId="bernice" />);
+
+    expect(screen.queryByRole("link", { name: "Chat" })).toBeNull();
   });
 });
 
@@ -224,7 +233,7 @@ describe("images on Messages", () => {
     });
 
   it("shows the image from its short-lived address, even without text", () => {
-    render(<TicketDetailView ticket={withImage("https://files.test/f1?signature=x")} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={withImage("https://files.test/f1?signature=x")} viewerId="bernice" />);
 
     expect(screen.getByRole("img", { name: "Image attached by Maria" }).getAttribute("src")).toBe(
       "https://files.test/f1?signature=x",
@@ -232,7 +241,7 @@ describe("images on Messages", () => {
   });
 
   it("still says a photo is attached when the image cannot be shown here", () => {
-    render(<TicketDetailView ticket={withImage(null)} viewerId="bernice" viewerName="Bernice" />);
+    render(<TicketDetailView ticket={withImage(null)} viewerId="bernice" />);
 
     expect(screen.getByText("Photo attached")).toBeTruthy();
     expect(screen.queryByRole("img")).toBeNull();

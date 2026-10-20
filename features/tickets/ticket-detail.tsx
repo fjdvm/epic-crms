@@ -6,7 +6,7 @@ import { orderLabel, paymentStatusOf, STAGE_LABELS, type Stage } from "@/feature
 import { cn } from "@/lib/utils";
 
 import { PILL, Pill, PRIORITY_LABELS } from "./pill";
-import { Conversation } from "./conversation";
+import { Bubbles } from "./conversation";
 import { TicketActions } from "./ticket-controls";
 import type { TicketDetail } from "./ticket";
 import type { TicketStatus } from "./tickets";
@@ -51,16 +51,12 @@ export const CARD_LINK =
 export function TicketDetailView({
   ticket,
   viewerId,
-  viewerName,
 }: {
   ticket: TicketDetail;
   viewerId: string;
-  viewerName: string;
 }) {
   const { order, customer } = ticket;
   const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
-  const customerFirstName = ticket.customer.name.split(" ")[0];
-  const claimedByOther = ticket.claimerId !== null && !isClaimer;
 
   return (
     <div className="space-y-5 px-8 py-7">
@@ -83,24 +79,23 @@ export function TicketDetailView({
           status={ticket.status}
           claimed={ticket.claimerId !== null}
           isClaimer={isClaimer}
+          withReply={false}
         />
       </div>
 
       <div className="flex flex-col items-start gap-4 lg:flex-row">
         <section aria-label="Conversation" className={cn(CARD, "w-full min-w-0 space-y-3 lg:flex-1")}>
           <h2 className={CARD_TITLE}>Conversation</h2>
-          <Conversation
-            ticketId={ticket.id}
-            messages={ticket.messages}
-            viewerName={viewerName}
-            customerName={customerFirstName}
-            canReply={ticket.status !== "completed" && !claimedByOther}
-            note={
-              ticket.status === "completed"
-                ? "The Customer completed this Ticket, so it can no longer be replied to."
-                : `${ticket.claimerName} claimed this Ticket, so only they can reply.`
-            }
-          />
+          {ticket.messages.length > 0 ? (
+            <Bubbles messages={ticket.messages} />
+          ) : (
+            <p className="text-sm leading-[normal] text-[#6e6680]">No Messages yet.</p>
+          )}
+          {ticket.status !== "completed" && (
+            <Link href={`/conversations?ticket=${ticket.id}`} className={CARD_LINK}>
+              Chat
+            </Link>
+          )}
         </section>
 
         <div className="w-full space-y-4 lg:w-[380px] lg:shrink-0">

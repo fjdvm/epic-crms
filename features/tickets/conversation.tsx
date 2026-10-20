@@ -32,6 +32,50 @@ function byline(message: TicketMessage, previous: TicketMessage | undefined): st
   return `${message.senderName} · ${when}`;
 }
 
+/** Messages as chat bubbles, Customer on the left and Staff on the right. */
+export function Bubbles({ messages }: { messages: TicketMessage[] }) {
+  return (
+    <>
+      {messages.map((message, i) => {
+        const fromStaff = message.sender === "staff";
+
+        return (
+          <div key={message.id} className={cn("flex", fromStaff && "justify-end")}>
+            <div
+              className={cn(
+                "flex w-[460px] max-w-full flex-col gap-1 rounded-xl px-[14px] py-[10px]",
+                fromStaff ? "bg-[#efe6f8]" : "bg-[#f3f1f6]",
+              )}
+            >
+              {message.body && (
+                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
+                  {message.body}
+                </p>
+              )}
+              {message.attachmentUrl ? (
+                <a href={message.attachmentUrl} target="_blank" rel="noreferrer" className="block">
+                  {/* A short-lived signed address from file-storage, so next/image's optimizer cannot cache it. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={message.attachmentUrl}
+                    alt={`Image attached by ${message.senderName}`}
+                    className="max-h-64 max-w-full rounded-lg object-contain"
+                  />
+                </a>
+              ) : (
+                message.hasAttachment && (
+                  <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
+                )
+              )}
+              <p className="text-[11px] leading-[normal] text-[#6e6680]">{byline(message, messages[i - 1])}</p>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /**
  * The Ticket's Messages, kept current without a refresh. The database is the source of truth: the
  * page's saved Messages always show, and live ones are added to them, matched by id so a Message
@@ -151,42 +195,7 @@ export function Conversation({
     if (box) box.scrollTop = box.scrollHeight;
   }, [shown.length]);
 
-  const bubbles = shown.map((message, i) => {
-        const fromStaff = message.sender === "staff";
-
-        return (
-          <div key={message.id} className={cn("flex", fromStaff && "justify-end")}>
-            <div
-              className={cn(
-                "flex w-[460px] max-w-full flex-col gap-1 rounded-xl px-[14px] py-[10px]",
-                fromStaff ? "bg-[#efe6f8]" : "bg-[#f3f1f6]",
-              )}
-            >
-              {message.body && (
-                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
-                  {message.body}
-                </p>
-              )}
-              {message.attachmentUrl ? (
-                <a href={message.attachmentUrl} target="_blank" rel="noreferrer" className="block">
-                  {/* A short-lived signed address from file-storage, so next/image's optimizer cannot cache it. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={message.attachmentUrl}
-                    alt={`Image attached by ${message.senderName}`}
-                    className="max-h-64 max-w-full rounded-lg object-contain"
-                  />
-                </a>
-              ) : (
-                message.hasAttachment && (
-                  <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
-                )
-              )}
-              <p className="text-[11px] leading-[normal] text-[#6e6680]">{byline(message, shown[i - 1])}</p>
-            </div>
-          </div>
-        );
-      });
+  const bubbles = <Bubbles messages={shown} />;
 
   const footer = canReply ? (
     <Composer ticketId={ticketId} onSent={sent} />
