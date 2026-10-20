@@ -14,7 +14,7 @@ function crmsStatements(): string[] {
     .replace(/^--.*$/gm, "")
     .split(";")
     .map((s) => s.trim())
-    .filter((s) => s && !/^create role/i.test(s))
+    .filter((s) => s && !/^(create role|grant|set role|reset role|revoke)/i.test(s))
     .map((s) => s.replace(/^(create schema \w+) authorization \w+/i, "$1"));
 }
 

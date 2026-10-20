@@ -10,7 +10,14 @@
 CREATE ROLE creoms_writer LOGIN PASSWORD '<PASSWORD>'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
 
+-- Run as the database owner on a managed Postgres: the creating role can administer creoms_writer
+-- but not act as it unless granted. The grant is dropped again at the end of this file.
+GRANT creoms_writer TO CURRENT_USER WITH SET TRUE;
+
 CREATE SCHEMA crms AUTHORIZATION creoms_writer;
+
+-- Everything below is created as creoms_writer, so it owns every table in crms.
+SET ROLE creoms_writer;
 
 -- Customers CREOMS has already seen become Customers, with or without an alert. The first sync
 -- fills this with everyone who is already a Customer, so the bell starts empty.
@@ -85,3 +92,6 @@ CREATE TABLE crms.ticket_sync_state (
   singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
   baselined_at timestamptz NOT NULL DEFAULT now()
 );
+
+RESET ROLE;
+REVOKE creoms_writer FROM CURRENT_USER;
