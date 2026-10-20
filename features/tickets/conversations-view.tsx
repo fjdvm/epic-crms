@@ -45,10 +45,10 @@ export function ConversationsView({
         </p>
       </div>
 
-      <div className="flex flex-col items-start gap-4 lg:flex-row">
+      <div className="flex flex-col items-start gap-4 lg:h-[calc(100vh-12rem)] lg:min-h-[480px] lg:flex-row">
         <nav
           aria-label="Chats"
-          className="flex max-h-[calc(100vh-14rem)] w-full flex-col gap-1 overflow-y-auto rounded-xl border border-[#e6e1ee] bg-white px-2 py-3 lg:w-[300px] lg:shrink-0"
+          className="flex h-[40vh] w-full flex-col gap-1 overflow-y-auto rounded-xl border border-[#e6e1ee] bg-white px-2 py-3 lg:h-full lg:w-[300px] lg:shrink-0"
         >
           {chats.length === 0 && (
             <p className="px-3 py-2 text-[13px] leading-[normal] text-[#6e6680]">No chats yet.</p>
@@ -108,7 +108,7 @@ function SelectedChat({
 
   return (
     <>
-      <section aria-label="Chat" className={cn(CARD, "w-full min-w-0 space-y-3 lg:flex-1")}>
+      <section aria-label="Chat" className={cn(CARD, "flex h-[70vh] min-h-0 w-full min-w-0 flex-col space-y-0 gap-3 lg:h-full lg:flex-1")}>
         <div className="flex items-center gap-2">
           <h2 className={cn(CARD_TITLE, "min-w-0 flex-1 truncate")}>{customer.name}</h2>
           <span className="shrink-0 text-[13px] leading-[normal] font-medium text-[#5b2a86]">
@@ -122,6 +122,7 @@ function SelectedChat({
           messages={ticket.messages}
           viewerName={viewerName}
           customerName={customer.name.split(" ")[0]}
+          scrollable
           canReply={ticket.status !== "completed" && !claimedByOther}
           note={
             ticket.status === "completed"
@@ -131,7 +132,7 @@ function SelectedChat({
         />
       </section>
 
-      <div className="w-full space-y-4 lg:w-[320px] lg:shrink-0">
+      <div className="w-full space-y-4 lg:h-full lg:w-[320px] lg:shrink-0 lg:overflow-y-auto">
         <section aria-label="Customer" className={CARD}>
           <div className="flex items-center gap-2">
             <h2 className={cn(CARD_TITLE, "flex-1")}>Customer</h2>

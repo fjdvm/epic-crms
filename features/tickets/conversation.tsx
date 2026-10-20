@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/features/customer-profiles/format";
@@ -44,6 +44,7 @@ export function Conversation({
   customerName,
   note,
   canReply,
+  scrollable = false,
   connect = connectLive,
 }: {
   ticketId: number;
@@ -53,6 +54,8 @@ export function Conversation({
   /** Why the Staff member cannot reply, when they cannot. */
   note: string | null;
   canReply: boolean;
+  /** Fill the parent's height: the Messages scroll inside it and the reply box stays in view. */
+  scrollable?: boolean;
   connect?: ConnectLive;
 }) {
   const router = useRouter();
@@ -140,9 +143,15 @@ export function Conversation({
     }
   };
 
-  return (
-    <>
-      {shown.map((message, i) => {
+  const scroller = useRef<HTMLDivElement>(null);
+
+  // Show the newest Message: on opening the chat, and whenever one arrives.
+  useLayoutEffect(() => {
+    const box = scroller.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [shown.length]);
+
+  const bubbles = shown.map((message, i) => {
         const fromStaff = message.sender === "staff";
 
         return (
@@ -177,12 +186,29 @@ export function Conversation({
             </div>
           </div>
         );
-      })}
-      {canReply ? (
-        <Composer ticketId={ticketId} onSent={sent} />
-      ) : (
-        <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
-      )}
-    </>
+      });
+
+  const footer = canReply ? (
+    <Composer ticketId={ticketId} onSent={sent} />
+  ) : (
+    <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
+  );
+
+  if (!scrollable) {
+    return (
+      <>
+        {bubbles}
+        {footer}
+      </>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+        {bubbles}
+      </div>
+      {footer}
+    </div>
   );
 }
