@@ -19,8 +19,9 @@ let writer: postgres.Sql | undefined;
 
 /**
  * Connection for changing Tickets and adding Messages, as the `creoms_tickets` role (see the
- * ecommerce repo's docs/sql/creoms-tickets-role.sql). That role can read and update Tickets and
- * read and add Messages, and nothing else.
+ * ecommerce repo's docs/sql/creoms-tickets-role.sql). That role can read, update and open Tickets
+ * (opening needs INSERT on tickets and its id sequence, which that file must grant) and read and
+ * add Messages, and nothing else.
  */
 export function ticketsWriterDatabase(): postgres.Sql {
   const url = process.env.CREOMS_TICKETS_DATABASE_URL;

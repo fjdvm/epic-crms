@@ -8,6 +8,12 @@ import postgres from "postgres";
  * (drizzle 0014 and 0015). CREOMS never migrates these tables; this mirrors them for tests only.
  */
 const SCHEMA = `
+  create schema neon_auth;
+  create table neon_auth."user" (
+    id text primary key,
+    "emailVerified" boolean not null default false,
+    "createdAt" timestamptz not null default now()
+  );
   create table customers (
     id text primary key,
     full_name text not null,
