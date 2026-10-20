@@ -75,4 +75,36 @@ describe("the sidebar", () => {
     expect(screen.queryByRole("link", { name: "Tickets" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Conversations" })).toBeNull();
   });
+
+  it("puts Tickets and Conversations under their own SERVICE label, after CUSTOMERS", async () => {
+    renderSidebar(["/customer-profiles", "/tickets", "/conversations"]);
+
+    const customers = await screen.findByText("CUSTOMERS");
+    const service = screen.getByText("SERVICE");
+
+    expect(customers.compareDocumentPosition(service) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Customer Profiles",
+      "Tickets",
+      "Conversations",
+    ]);
+  });
+
+  it("shows only the SERVICE label with just the Tickets Module", async () => {
+    renderSidebar(["/tickets", "/conversations"]);
+
+    expect(await screen.findByText("SERVICE")).toBeTruthy();
+    expect(screen.queryByText("CUSTOMERS")).toBeNull();
+  });
+
+  it("lists the rest of the design as dimmed entries that are not links", async () => {
+    renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+
+    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns", "Feedback", "Email campaigns", "Segments"]) {
+      expect(screen.getByText(name).closest("[aria-disabled]")?.getAttribute("aria-disabled")).toBe("true");
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
+    for (const label of ["SALES", "SERVICE", "MARKETING"]) expect(screen.getByText(label)).toBeTruthy();
+  });
 });

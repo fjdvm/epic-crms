@@ -5,15 +5,23 @@ import {
   CreditCard,
   Truck,
   LayoutGrid,
-  LifeBuoy,
-  MessageSquare,
+  LayoutDashboard,
+  ListFilter,
+  Mail,
+  MessageCircle,
+  RotateCcw,
+  Star,
+  Ticket,
   Users2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
+  /** The label above its section of the sidebar, as in the Figma. */
+  group: string;
   name: string;
-  href: string;
+  /** Null for an entry whose page does not exist yet: shown dimmed, not clickable. */
+  href: string | null;
   icon: LucideIcon;
 }
 
@@ -28,24 +36,45 @@ export interface SystemItem {
 export type SystemChild = SystemItem;
 
 export const customerProfilesItem: NavItem = {
+  group: "CUSTOMERS",
   name: "Customer Profiles",
   href: "/customer-profiles",
   icon: Users,
 };
 
 export const ticketsItem: NavItem = {
+  group: "SERVICE",
   name: "Tickets",
   href: "/tickets",
-  icon: LifeBuoy,
+  icon: Ticket,
 };
 
 export const conversationsItem: NavItem = {
+  group: "SERVICE",
   name: "Conversations",
   href: "/conversations",
-  icon: MessageSquare,
+  icon: MessageCircle,
 };
 
-export const sidebarItems: NavItem[] = [customerProfilesItem, ticketsItem, conversationsItem];
+/** An entry from the Figma sidebar whose page is still to come. */
+function comingSoon(group: string, name: string, icon: LucideIcon): NavItem {
+  return { group, name, href: null, icon };
+}
+
+/** The Figma sidebar, top to bottom. Entries with no page yet are dimmed and do nothing. */
+export const sidebarItems: NavItem[] = [
+  comingSoon("", "Dashboard", LayoutDashboard),
+  customerProfilesItem,
+  comingSoon("SALES", "Orders", ShoppingCart),
+  comingSoon("SALES", "Payments", CreditCard),
+  comingSoon("SALES", "Fulfilment", Truck),
+  comingSoon("SALES", "Returns", RotateCcw),
+  ticketsItem,
+  conversationsItem,
+  comingSoon("SERVICE", "Feedback", Star),
+  comingSoon("MARKETING", "Email campaigns", Mail),
+  comingSoon("MARKETING", "Segments", ListFilter),
+];
 
 export const systems: SystemItem[] = [
   {

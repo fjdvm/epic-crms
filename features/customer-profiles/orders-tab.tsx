@@ -133,12 +133,12 @@ export function OrdersTab({
         <table className="w-full min-w-max whitespace-nowrap">
           <thead>
             <tr className="border-b border-border-subtle">
-              <th className={`${HEAD} w-[90px]`}>Order</th>
-              <th className={`${HEAD} w-[110px]`}>Date</th>
-              <th className={`${HEAD} min-w-[240px]`}>Items</th>
-              <th className={`${HEAD} w-[90px]`}>Total</th>
-              <th className={`${HEAD} w-[100px]`}>Payment</th>
-              <th className={`${HEAD} w-[110px]`}>Status</th>
+              <th className={`${HEAD} w-[10%]`}>Order</th>
+              <th className={`${HEAD} w-[13%]`}>Date</th>
+              <th className={`${HEAD} w-[34%] min-w-[240px]`}>Items</th>
+              <th className={`${HEAD} w-[13%]`}>Total</th>
+              <th className={`${HEAD} w-[15%]`}>Payment</th>
+              <th className={`${HEAD} w-[15%]`}>Status</th>
             </tr>
           </thead>
           {orders.map((o) => {
