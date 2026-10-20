@@ -90,16 +90,19 @@ export function LiveUpdatesProvider({
         toast(describeNotification(n).text);
       }
 
+      // Only a New Customer shows as New in the list; Ticket alerts name no Customer row.
       const ids = arrived.filter((n) => n.kind === "new-customer").map((n) => n.customerId);
-      refreshRef.current();
-      if (ids.length === 0) return;
 
-      setFresh((current) => new Set([...current, ...ids]));
-      const expire = setTimeout(() => {
-        highlightTimers.delete(expire);
-        setFresh((current) => new Set([...current].filter((id) => !ids.includes(id))));
-      }, HIGHLIGHT_MS);
-      highlightTimers.add(expire);
+      if (ids.length > 0) {
+        setFresh((current) => new Set([...current, ...ids]));
+        const expire = setTimeout(() => {
+          highlightTimers.delete(expire);
+          setFresh((current) => new Set([...current].filter((id) => !ids.includes(id))));
+        }, HIGHLIGHT_MS);
+        highlightTimers.add(expire);
+      }
+
+      refreshRef.current();
     };
 
     const tick = async () => {
