@@ -4,10 +4,10 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
 import {
   TICKET_TABS,
   type TicketList,
-  type TicketPriority,
   type TicketRow,
   type TicketTab,
 } from "./tickets";
@@ -21,28 +21,6 @@ const TAB_LABELS: Record<TicketTab, string> = {
   open: "Open",
   waiting: "Waiting on customer",
   resolved: "Resolved",
-};
-
-const PRIORITY_LABELS: Record<TicketPriority, string> = {
-  low: "Low",
-  normal: "Normal",
-  high: "High",
-  urgent: "Urgent",
-};
-
-/** Pill colours from the Figma badges: Open and High share one, Low follows Normal and Urgent follows High. */
-const PILL = {
-  red: "bg-[#fbe6e0] text-[#9a3412]",
-  grey: "bg-[#eeecf2] text-[#5a5368]",
-  amber: "bg-[#fdf1d8] text-[#8a5a00]",
-  green: "bg-[#e3f4e8] text-[#1e6b3a]",
-} as const;
-
-const PRIORITY_PILLS: Record<TicketPriority, string> = {
-  low: PILL.grey,
-  normal: PILL.grey,
-  high: PILL.red,
-  urgent: PILL.red,
 };
 
 /** The Figma frame's columns, minus Channel: a Ticket has no Channel. They share the table width in proportion, so the rows fill the card. */
@@ -65,19 +43,6 @@ function href(params: TicketListParams, change: Partial<TicketListParams>): stri
   const text = query.toString();
 
   return text ? `/tickets?${text}` : "/tickets";
-}
-
-function Pill({ className, children }: { className: string; children: React.ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex rounded-full px-[10px] py-[3px] text-xs font-medium leading-[normal] whitespace-nowrap",
-        className,
-      )}
-    >
-      {children}
-    </span>
-  );
 }
 
 function StatusPill({ row }: { row: TicketRow }) {
@@ -132,7 +97,7 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
               {list.rows.map((row) => (
                 <div key={row.id} className="flex items-center border-b border-[#efebf4] py-[11px]">
                   <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
-                    TKT-{row.id}
+                    <Link href={`/tickets/${row.id}`}>TKT-{row.id}</Link>
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className)}>
                     <span className="truncate pr-3">{row.subject}</span>
