@@ -5,14 +5,12 @@ import { revalidatePath } from "next/cache";
 import {
   liveConversationUrl,
   sendAppEmail,
-  sendStorefrontNotification,
   storefrontTicketUrl,
 } from "@/lib/gateway";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
-import { notifyOfflineCustomer } from "./live";
 import {
   claimTicket,
   markResolved,
@@ -76,26 +74,5 @@ export async function liveUrl(id: number): Promise<string | null> {
     console.error("Live ticket could not be issued", error);
 
     return null;
-  }
-}
-
-/** Tells an offline Customer a Staff reply is waiting, after the relay reached nobody. */
-export async function notifyOffline(id: number): Promise<boolean> {
-  const staff = await requireModule(TICKETS_MODULE);
-
-  try {
-    const result = await notifyOfflineCustomer(
-      ticketsDatabase(),
-      id,
-      { id: staff.username, name: staff.name },
-      storefrontTicketUrl,
-      sendStorefrontNotification,
-    );
-
-    return result.ok;
-  } catch (error) {
-    console.error(`TKT-${id} reply saved but the Customer could not be notified`, error);
-
-    return false;
   }
 }

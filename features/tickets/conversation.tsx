@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/features/customer-profiles/format";
 
-import { notifyOffline } from "./actions";
 import type { ConnectLive, LiveConnection, LiveEvent } from "./live";
 import { connectLive } from "./live-socket";
 import type { TicketMessage } from "./ticket";
@@ -60,8 +59,6 @@ export function Conversation({
   const [live, setLive] = useState<TicketMessage[]>([]);
   const line = useRef<LiveConnection | null>(null);
   const refresh = useRef(router.refresh);
-  /** Ids of replies relayed from here and not yet accounted for; each gets at most one Notification. */
-  const awaiting = useRef(new Set<string>());
 
   useEffect(() => {
     refresh.current = router.refresh;
@@ -82,10 +79,6 @@ export function Conversation({
     let retry: ReturnType<typeof setTimeout> | undefined;
     let wasDown = false;
 
-    const tellOffline = (id: string) => {
-      if (awaiting.current.delete(id)) void notifyOffline(ticketId);
-    };
-
     const open = () => {
       line.current = connect(ticketId, {
         // Anything relayed while the line was down is gone, so a reconnect reloads the saved Messages.
@@ -94,10 +87,6 @@ export function Conversation({
           wasDown = false;
         },
         onEvent: (event: LiveEvent) => {
-          // Nobody else was connected to receive the reply, or the relay refused it: tell the Customer.
-          if (event.type === "message.delivered" && event.delivered === 0) tellOffline(event.id);
-          if (event.type === "error" && event.id) tellOffline(event.id);
-          if (event.type === "message.delivered" && event.delivered > 0) awaiting.current.delete(event.id);
           if (event.type !== "message") return;
 
           const id = Number(event.id);
@@ -132,7 +121,7 @@ export function Conversation({
     };
   }, [ticketId, connect, add, customerName, viewerName]);
 
-  /** After a reply is saved: show it, relay it, and tell an offline Customer. */
+  /** After a reply is saved: show it and relay it. */
   const sent = (message: { id: number; body: string }) => {
     add({
       id: message.id,
@@ -143,17 +132,11 @@ export function Conversation({
       createdAt: new Date(),
     });
 
-    const id = String(message.id);
-
+    // Saved first; a line that is down or refuses the frame loses nothing, the Customer sees it on reload.
     try {
-      if (!line.current) throw new Error("The live line is not open");
-
-      awaiting.current.add(id);
-      line.current.send({ type: "message", id, text: message.body });
-    } catch {
-      // Saved but not relayed: the Customer sees it on reload, and is told it is waiting.
-      awaiting.current.delete(id);
-      void notifyOffline(ticketId);
+      line.current?.send({ type: "message", id: String(message.id), text: message.body });
+    } catch (error) {
+      console.error("Reply saved but could not be relayed live", error);
     }
   };
 

@@ -1,4 +1,4 @@
-import type { LiveConversationUrl, SendStorefrontNotification } from "@/features/tickets/live";
+import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
 
 /** Queues an App email through the api-gateway's notifications service, as the "crms" Caller. */
@@ -54,22 +54,4 @@ export const liveConversationUrl: LiveConversationUrl = async (ticketId, staffId
   const { ticket } = (await response.json()) as { ticket: string };
 
   return `${base.replace(/^http/, "ws")}/notifications/conversations/${ticketId}/live?ticket=${encodeURIComponent(ticket)}`;
-};
-
-/** Stores a Notification for a Customer in the storefront, as the "crms" Caller. */
-export const sendStorefrontNotification: SendStorefrontNotification = async (notification) => {
-  const { base, key } = gateway();
-
-  const response = await fetch(`${base}/notifications/notifications`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...notification,
-      type: "ticket.reply",
-      sendingApp: "crms",
-      targetApp: process.env.CREOMS_STOREFRONT_APP ?? "ecom",
-    }),
-  });
-
-  if (!response.ok) throw new Error(`The gateway refused the Notification: ${response.status}`);
 };

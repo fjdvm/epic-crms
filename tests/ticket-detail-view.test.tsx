@@ -11,7 +11,6 @@ vi.mock("@/features/tickets/actions", () => ({
   reply: vi.fn(),
   resolve: vi.fn(),
   liveUrl: vi.fn(async () => null),
-  notifyOffline: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
