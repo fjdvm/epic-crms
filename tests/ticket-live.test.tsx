@@ -176,6 +176,36 @@ describe("live Conversation", () => {
     );
   });
 
+  it("clears the box once the reply is sending, and puts it back when the reply is refused", async () => {
+    vi.mocked(reply).mockClear();
+    let finish!: (outcome: { ok: false; reason: "unavailable" }) => void;
+    vi.mocked(reply).mockReturnValue(
+      new Promise((resolve) => (finish = resolve)),
+    );
+    renderConversation(fakeRelay().connect);
+
+    const photo = new File([new Uint8Array([0xff, 0xd8, 0xff])], "box.jpg", {
+      type: "image/jpeg",
+    });
+    await userEvent.upload(screen.getByLabelText("Attach an image"), photo);
+    await userEvent.type(screen.getByLabelText("Write a reply"), "Try me");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await screen.findByRole("button", { name: "Sending…" });
+    expect(
+      (screen.getByLabelText("Write a reply") as HTMLTextAreaElement).value,
+    ).toBe("");
+    expect(screen.queryByAltText("Selected image: box.jpg")).toBeNull();
+
+    await act(async () => finish({ ok: false, reason: "unavailable" }));
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("Write a reply") as HTMLTextAreaElement).value,
+      ).toBe("Try me"),
+    );
+    expect(screen.getByAltText("Selected image: box.jpg")).toBeTruthy();
+  });
+
   it("refuses a file that is not a JPG or PNG before sending it", async () => {
     vi.mocked(reply).mockClear();
     renderConversation(fakeRelay().connect);
