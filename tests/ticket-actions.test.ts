@@ -113,11 +113,18 @@ describe("Claim and Release", () => {
 });
 
 describe("replying", () => {
-  it("replying to an Unclaimed Ticket Claims it for the replier and saves the Message", async () => {
+  it("an Unclaimed Ticket takes no reply until it is Claimed, and a reply does not Claim it", async () => {
     const id = await ticket();
 
+    expect(await replyToTicket(db.sql, id, bernice, "Hello")).toEqual({ ok: false, reason: "not-claimed" });
+    expect(await messages(id)).toEqual([]);
+    expect((await claimer(id)).claimed_by_id).toBeNull();
+  });
+
+  it("the Claimer's reply is saved trimmed", async () => {
+    const id = await ticket({ claimedBy: bernice });
+
     expect(await replyToTicket(db.sql, id, bernice, "  So sorry about that!  ")).toMatchObject({ ok: true });
-    expect((await claimer(id)).claimed_by_id).toBe("bernice");
     expect(await messages(id)).toEqual([{ sender: "staff", body: "So sorry about that!" }]);
   });
 
@@ -141,7 +148,7 @@ describe("replying", () => {
     expect((await claimer(id)).claimed_by_id).toBe("bernice");
   });
 
-  it("a blank reply is refused and does not Claim", async () => {
+  it("a blank reply is refused", async () => {
     const id = await ticket();
 
     expect(await replyToTicket(db.sql, id, bernice, "   ")).toEqual({
@@ -229,7 +236,7 @@ describe("image attachments", () => {
       select body, file_id from ticket_messages where ticket_id = ${id} order by id`;
 
   it("a reply carries one JPG, stored as a Private File Linked to the Message", async () => {
-    const id = await ticket();
+    const id = await ticket({ claimedBy: bernice });
 
     const result = await replyToTicket(db.sql, id, bernice, "Here is the replacement", attach(JPEG));
 
@@ -240,7 +247,7 @@ describe("image attachments", () => {
   });
 
   it("a PNG is accepted, and an image alone is a Message", async () => {
-    const id = await ticket();
+    const id = await ticket({ claimedBy: bernice });
 
     expect(await replyToTicket(db.sql, id, bernice, "  ", attach(PNG, "box.png"))).toMatchObject({ ok: true });
     expect(await saved(id)).toEqual([{ body: "", file_id: "file-1" }]);
@@ -252,7 +259,7 @@ describe("image attachments", () => {
     ["an empty file", new Uint8Array(), "empty-image"],
     ["a file over 5 MB", new Uint8Array(5 * 1024 * 1024 + 1).fill(0xff), "image-too-large"],
   ])("refuses %s and saves nothing", async (_name, bytes, reason) => {
-    const id = await ticket();
+    const id = await ticket({ claimedBy: bernice });
 
     expect(await replyToTicket(db.sql, id, bernice, "Hello", attach(bytes))).toEqual({ ok: false, reason });
     expect(await saved(id)).toEqual([]);
@@ -260,7 +267,7 @@ describe("image attachments", () => {
   });
 
   it("exactly 5 MB is accepted", async () => {
-    const id = await ticket();
+    const id = await ticket({ claimedBy: bernice });
     const bytes = new Uint8Array(5 * 1024 * 1024).fill(0);
     bytes.set(PNG);
 
@@ -268,7 +275,7 @@ describe("image attachments", () => {
   });
 
   it("saves nothing when file-storage is down", async () => {
-    const id = await ticket();
+    const id = await ticket({ claimedBy: bernice });
     storage.failUpload = true;
     vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -287,7 +294,7 @@ describe("image attachments", () => {
   });
 
   it("keeps the Message when only the Link fails", async () => {
-    const id = await ticket();
+    const id = await ticket({ claimedBy: bernice });
     storage.failLink = true;
     vi.spyOn(console, "error").mockImplementation(() => {});
 

@@ -39,8 +39,8 @@ export default async function TicketsPage({ searchParams }: { searchParams: Sear
   const { list } = result;
 
   return (
-    <div className="space-y-5 px-8 py-7">
-      <div className="flex items-center gap-2">
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
+      <div className="flex shrink-0 items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Tickets</h1>
           <p className="text-sm leading-[normal] text-[#6e6680]">

@@ -246,4 +246,11 @@ describe("images on Messages", () => {
     expect(screen.getByText("Photo attached")).toBeTruthy();
     expect(screen.queryByRole("img")).toBeNull();
   });
+
+  it("shows only the opening image, not a chat, until both sides have spoken", () => {
+    render(<TicketDetailView ticket={withImage("https://files.test/f1?signature=x")} viewerId="bernice" />);
+
+    expect(screen.queryByText(/Maria · /)).toBeNull();
+    expect(screen.getByRole("img", { name: "Image attached by Maria" })).toBeTruthy();
+  });
 });

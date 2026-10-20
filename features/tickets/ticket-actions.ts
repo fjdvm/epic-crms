@@ -72,10 +72,10 @@ export async function releaseTicket(
 }
 
 /**
- * A Staff Message: text, one JPG or PNG image, or both. Replying to an Unclaimed Ticket Claims it
- * for the replier; a Ticket someone else Claimed cannot be replied to. The Claim and the Message
- * land together or not at all, and an image is stored first and removed again if the Message is
- * not saved, so file-storage never keeps an image no Message shows.
+ * A Staff Message: text, one JPG or PNG image, or both. Only the Claimer can reply: an Unclaimed
+ * Ticket must be Claimed first, and a Ticket someone else Claimed cannot be replied to. An image is
+ * stored first and removed again if the Message is not saved, so file-storage never keeps an image
+ * no Message shows.
  */
 export async function replyToTicket(
   sql: postgres.Sql,
@@ -149,18 +149,11 @@ function saveReply(
 ): Promise<ReplyResult> {
   return sql.begin(async (tx): Promise<ReplyResult> => {
     const rows = await tx`
-      update tickets set claimed_by_id = ${actor.id}, claimed_by_name = ${actor.name}
-      where id = ${id} and status <> 'completed' and (claimed_by_id is null or claimed_by_id = ${actor.id})
-      returning id`;
+      select 1 from tickets
+      where id = ${id} and status <> 'completed' and claimed_by_id = ${actor.id}
+      for update`;
 
-    if (!rows.length) {
-      const reason = await whyNot(tx as unknown as postgres.Sql, id, actor);
-
-      return {
-        ok: false,
-        reason: reason === "not-claimed" ? "claimed" : reason,
-      };
-    }
+    if (!rows.length) return { ok: false, reason: await whyNot(tx as unknown as postgres.Sql, id, actor) };
 
     const [message] = await tx<{ id: number }[]>`
       insert into ticket_messages (ticket_id, sender, body, file_id)

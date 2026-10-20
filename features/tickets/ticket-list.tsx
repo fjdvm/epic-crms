@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { ClaimButton } from "./ticket-controls";
 import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
 import {
   TICKET_TABS,
@@ -31,6 +32,7 @@ const COLUMNS: { header: string; className: string }[] = [
   { header: "Linked order", className: "flex-[1_1_120px]" },
   { header: "Priority", className: "flex-[1_1_100px]" },
   { header: "Status", className: "flex-[1_1_110px]" },
+  { header: "", className: "flex-[0_0_90px] justify-end" },
 ];
 
 function href(params: TicketListParams, change: Partial<TicketListParams>): string {
@@ -60,8 +62,8 @@ const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1
 
 export function TicketListView({ list, params }: { list: TicketList; params: TicketListParams }) {
   return (
-    <div className="space-y-5">
-      <nav className="flex gap-1" aria-label="Ticket tabs">
+    <div className="flex min-h-0 flex-1 flex-col gap-5">
+      <nav className="flex shrink-0 gap-1" aria-label="Ticket tabs">
         {TICKET_TABS.map((tab) => {
           const active = tab === params.tab;
 
@@ -81,13 +83,13 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
         })}
       </nav>
 
-      <div className="space-y-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
         {list.rows.length === 0 ? (
           <div className="p-8 text-center text-sm text-[#6e6680]">No Tickets here.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <div className="min-w-[740px]">
-              <div className="flex items-center border-b border-[#efebf4] py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
+              <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
                 {COLUMNS.map((col) => (
                   <div key={col.header} className={cn(HEAD, col.className)}>
                     {col.header}
@@ -114,13 +116,16 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
                   <div className={cn(CELL, COLUMNS[5].className)}>
                     <StatusPill row={row} />
                   </div>
+                  <div className={cn(CELL, COLUMNS[6].className)}>
+                    {row.status !== "completed" && <ClaimButton ticketId={row.id} />}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
         {list.totalPages > 1 && (
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <div className="flex shrink-0 items-center justify-between text-sm text-muted-foreground">
             <span>
               Page {list.page} of {list.totalPages}
             </span>

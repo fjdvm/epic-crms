@@ -51,7 +51,8 @@ export interface TicketList {
 export type TicketListResult = { ok: true; list: TicketList } | { ok: false };
 
 /**
- * The Tickets list. "Waiting on customer" and Overdue are derived from the last Message, never
+ * The Tickets list: only Unclaimed Tickets, since a Claimed one is its Claimer's to work from the
+ * Conversations inbox. "Waiting on customer" and Overdue are derived from the last Message, never
  * stored; a Ticket with no Messages counts from when it was opened.
  */
 export async function listTickets(
@@ -85,6 +86,7 @@ export async function listTickets(
         order by created_at desc, id desc
         limit 1
       ) m on true
+      where t.claimed_by_id is null
     )`;
 
   const [counts] = await sql<Record<string, number>[]>`
