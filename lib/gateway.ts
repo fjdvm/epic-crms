@@ -3,13 +3,9 @@ import type { SendAppEmail } from "@/features/tickets/ticket-actions";
 
 /** Queues an App email through the api-gateway's notifications service, as the "crms" Caller. */
 export const sendAppEmail: SendAppEmail = async (email) => {
-  const base = process.env.CREOMS_GATEWAY_URL;
-  const key = process.env.CREOMS_GATEWAY_CALLER_KEY;
+  const { base, key } = gateway();
 
-  if (!base || !key)
-    throw new Error("CREOMS_GATEWAY_URL and CREOMS_GATEWAY_CALLER_KEY must be set; see .env.example");
-
-  const response = await fetch(`${base.replace(/\/$/, "")}/notifications/emails/app`, {
+  const response = await fetch(`${base}/notifications/emails/app`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,

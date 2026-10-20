@@ -105,20 +105,48 @@ describe("live Conversation", () => {
     expect(notifyOffline).not.toHaveBeenCalled();
   });
 
-  it("tells an offline Customer when the relay reached nobody", async () => {
-    const relay = fakeRelay();
+  async function sendReply(relay: ReturnType<typeof fakeRelay>) {
+    vi.mocked(reply).mockResolvedValue({ ok: true, messageId: 7 });
     renderConversation(relay.connect);
+    await userEvent.type(screen.getByLabelText("Write a reply"), "On it!");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(relay.sent).toHaveLength(1));
+  }
+
+  it("tells an offline Customer, once, when the relay reached nobody", async () => {
+    const relay = fakeRelay();
+    await sendReply(relay);
 
     await relay.receive({ type: "message.delivered", id: "7", delivered: 0 });
+    await relay.receive({ type: "message.delivered", id: "7", delivered: 0 });
 
+    expect(notifyOffline).toHaveBeenCalledTimes(1);
     expect(notifyOffline).toHaveBeenCalledWith(208);
   });
 
   it("does not notify a Customer who received the reply", async () => {
     const relay = fakeRelay();
-    renderConversation(relay.connect);
+    await sendReply(relay);
 
     await relay.receive({ type: "message.delivered", id: "7", delivered: 1 });
+
+    expect(notifyOffline).not.toHaveBeenCalled();
+  });
+
+  it("tells the Customer when the relay refuses the reply", async () => {
+    const relay = fakeRelay();
+    await sendReply(relay);
+
+    await relay.receive({ type: "error", code: "rate_limited", message: "Too many messages", id: "7" });
+
+    expect(notifyOffline).toHaveBeenCalledWith(208);
+  });
+
+  it("ignores an ack for a Message this tab did not send", async () => {
+    const relay = fakeRelay();
+    renderConversation(relay.connect);
+
+    await relay.receive({ type: "message.delivered", id: "99", delivered: 0 });
 
     expect(notifyOffline).not.toHaveBeenCalled();
   });

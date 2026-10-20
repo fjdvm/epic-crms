@@ -60,6 +60,8 @@ export function Conversation({
   const [live, setLive] = useState<TicketMessage[]>([]);
   const line = useRef<LiveConnection | null>(null);
   const refresh = useRef(router.refresh);
+  /** Ids of replies relayed from here and not yet accounted for; each gets at most one Notification. */
+  const awaiting = useRef(new Set<string>());
 
   useEffect(() => {
     refresh.current = router.refresh;
@@ -80,6 +82,10 @@ export function Conversation({
     let retry: ReturnType<typeof setTimeout> | undefined;
     let wasDown = false;
 
+    const tellOffline = (id: string) => {
+      if (awaiting.current.delete(id)) void notifyOffline(ticketId);
+    };
+
     const open = () => {
       line.current = connect(ticketId, {
         // Anything relayed while the line was down is gone, so a reconnect reloads the saved Messages.
@@ -88,8 +94,10 @@ export function Conversation({
           wasDown = false;
         },
         onEvent: (event: LiveEvent) => {
-          // Nobody else was connected to receive a reply: the Customer is offline.
-          if (event.type === "message.delivered" && event.delivered === 0) void notifyOffline(ticketId);
+          // Nobody else was connected to receive the reply, or the relay refused it: tell the Customer.
+          if (event.type === "message.delivered" && event.delivered === 0) tellOffline(event.id);
+          if (event.type === "error" && event.id) tellOffline(event.id);
+          if (event.type === "message.delivered" && event.delivered > 0) awaiting.current.delete(event.id);
           if (event.type !== "message") return;
 
           const id = Number(event.id);
@@ -135,12 +143,16 @@ export function Conversation({
       createdAt: new Date(),
     });
 
+    const id = String(message.id);
+
     try {
       if (!line.current) throw new Error("The live line is not open");
 
-      line.current.send({ type: "message", id: String(message.id), text: message.body });
+      awaiting.current.add(id);
+      line.current.send({ type: "message", id, text: message.body });
     } catch {
       // Saved but not relayed: the Customer sees it on reload, and is told it is waiting.
+      awaiting.current.delete(id);
       void notifyOffline(ticketId);
     }
   };
