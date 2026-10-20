@@ -6,8 +6,9 @@ import { orderLabel, paymentStatusOf, STAGE_LABELS, type Stage } from "@/feature
 import { cn } from "@/lib/utils";
 
 import { PILL, Pill, PRIORITY_LABELS } from "./pill";
-import { Composer, TicketActions } from "./ticket-controls";
-import type { TicketDetail, TicketMessage } from "./ticket";
+import { Conversation } from "./conversation";
+import { TicketActions } from "./ticket-controls";
+import type { TicketDetail } from "./ticket";
 import type { TicketStatus } from "./tickets";
 
 const STATUS_LABELS: Record<TicketStatus, string> = {
@@ -42,33 +43,23 @@ const ORDER_PILLS: Record<string, string> = {
   cancelled: PILL.grey,
 };
 
-const TIME = new Intl.DateTimeFormat("en-US", {
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: "Asia/Manila",
-});
-
-const sameDay = (a: Date, b: Date) => formatDate(a) === formatDate(b);
-
-/** "Maria · 10:12 AM"; the date comes first when the Message is not from the day of the one before it. */
-function byline(message: TicketMessage, previous: TicketMessage | undefined): string {
-  const time = TIME.format(message.createdAt);
-  const when =
-    previous && !sameDay(previous.createdAt, message.createdAt)
-      ? `${formatDate(message.createdAt)}, ${time}`
-      : time;
-
-  return `${message.senderName} · ${when}`;
-}
-
 const CARD = "space-y-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5";
 const CARD_TITLE = "text-base font-semibold leading-[normal] text-[#1f1a2e]";
 const CARD_LINK =
   "flex justify-center rounded-lg bg-[#efe6f8] px-3 py-2 text-sm font-medium leading-[normal] text-[#5b2a86]";
 
-export function TicketDetailView({ ticket, viewerId }: { ticket: TicketDetail; viewerId: string }) {
+export function TicketDetailView({
+  ticket,
+  viewerId,
+  viewerName,
+}: {
+  ticket: TicketDetail;
+  viewerId: string;
+  viewerName: string;
+}) {
   const { order, customer } = ticket;
   const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
+  const customerFirstName = ticket.customer.name.split(" ")[0];
   const claimedByOther = ticket.claimerId !== null && !isClaimer;
 
   return (
@@ -98,41 +89,18 @@ export function TicketDetailView({ ticket, viewerId }: { ticket: TicketDetail; v
       <div className="flex flex-col items-start gap-4 lg:flex-row">
         <section aria-label="Conversation" className={cn(CARD, "w-full min-w-0 space-y-3 lg:flex-1")}>
           <h2 className={CARD_TITLE}>Conversation</h2>
-          {ticket.messages.map((message, i) => {
-            const fromStaff = message.sender === "staff";
-
-            return (
-              <div key={message.id} className={cn("flex", fromStaff && "justify-end")}>
-                <div
-                  className={cn(
-                    "flex w-[460px] max-w-full flex-col gap-1 rounded-xl px-[14px] py-[10px]",
-                    fromStaff ? "bg-[#efe6f8]" : "bg-[#f3f1f6]",
-                  )}
-                >
-                  <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
-                    {message.body}
-                  </p>
-                  {message.hasAttachment && (
-                    <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
-                  )}
-                  <p className="text-[11px] leading-[normal] text-[#6e6680]">
-                    {byline(message, ticket.messages[i - 1])}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
-          {ticket.status === "completed" ? (
-            <p className="text-sm leading-[normal] text-[#6e6680]">
-              The Customer completed this Ticket, so it can no longer be replied to.
-            </p>
-          ) : claimedByOther ? (
-            <p className="text-sm leading-[normal] text-[#6e6680]">
-              {ticket.claimerName} claimed this Ticket, so only they can reply.
-            </p>
-          ) : (
-            <Composer ticketId={ticket.id} />
-          )}
+          <Conversation
+            ticketId={ticket.id}
+            messages={ticket.messages}
+            viewerName={viewerName}
+            customerName={customerFirstName}
+            canReply={ticket.status !== "completed" && !claimedByOther}
+            note={
+              ticket.status === "completed"
+                ? "The Customer completed this Ticket, so it can no longer be replied to."
+                : `${ticket.claimerName} claimed this Ticket, so only they can reply.`
+            }
+          />
         </section>
 
         <div className="w-full space-y-4 lg:w-[380px] lg:shrink-0">
