@@ -1,4 +1,5 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { NewTicketDialog } from "@/features/tickets/new-ticket-dialog";
 import { TicketListView } from "@/features/tickets/ticket-list";
 import { loadTickets, TICKET_TABS } from "@/features/tickets/tickets";
 import { TICKETS_MODULE } from "@/lib/portal/config";
@@ -39,12 +40,15 @@ export default async function TicketsPage({ searchParams }: { searchParams: Sear
 
   return (
     <div className="space-y-5 px-8 py-7">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Tickets</h1>
-        <p className="text-sm leading-[normal] text-[#6e6680]">
-          {list.counts.open} open · {list.overdue} overdue · each ticket links to a customer, and to
-          an order when it is about one
-        </p>
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 space-y-1">
+          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Tickets</h1>
+          <p className="text-sm leading-[normal] text-[#6e6680]">
+            {list.counts.open} open · {list.overdue} overdue · each ticket links to a customer, and to
+            an order when it is about one
+          </p>
+        </div>
+        <NewTicketDialog />
       </div>
       <TicketListView list={list} params={{ tab, page: list.page }} />
     </div>

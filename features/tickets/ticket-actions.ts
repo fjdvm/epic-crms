@@ -130,7 +130,7 @@ export async function replyToTicket(
   return result;
 }
 
-async function discard(storage: FileStorage | undefined, fileId: string | null) {
+export async function discard(storage: FileStorage | undefined, fileId: string | null) {
   if (!storage || !fileId) return;
 
   try {
