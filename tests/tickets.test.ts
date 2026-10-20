@@ -176,6 +176,14 @@ describe("Ticket rows", () => {
   });
 });
 
+describe("Ticket status as shown", () => {
+  it("marks a Ticket waiting on the Customer the same way on the Open tab", async () => {
+    await ticket({ messages: [["customer", 5], ["staff", 3]] });
+
+    expect((await listTickets(db.sql, { tab: "open", now: NOW })).rows[0].waiting).toBe(true);
+  });
+});
+
 describe("loadTickets", () => {
   it("says so instead of throwing when the database cannot be read", async () => {
     const result = await loadTickets(() => {

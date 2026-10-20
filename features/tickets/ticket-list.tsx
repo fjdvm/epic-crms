@@ -59,11 +59,11 @@ function href(params: TicketListParams, change: Partial<TicketListParams>): stri
   return text ? `/tickets?${text}` : "/tickets";
 }
 
-function StatusBadge({ row, tab }: { row: TicketRow; tab: TicketTab }) {
+function StatusBadge({ row }: { row: TicketRow }) {
   if (row.status === "resolved") return <Badge variant="success">Resolved</Badge>;
   if (row.status === "completed") return <Badge variant="purple">Completed</Badge>;
   if (row.overdue) return <Badge variant="destructive">Overdue</Badge>;
-  if (tab === "waiting") return <Badge variant="secondary">Waiting on customer</Badge>;
+  if (row.waiting) return <Badge variant="secondary">Waiting on customer</Badge>;
 
   return <Badge variant="info">Open</Badge>;
 }
@@ -121,7 +121,7 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
                     <Badge variant={PRIORITY_VARIANTS[row.priority]}>{PRIORITY_LABELS[row.priority]}</Badge>
                   </div>
                   <div className={cn(COLUMNS[5].className, CELL)}>
-                    <StatusBadge row={row} tab={params.tab} />
+                    <StatusBadge row={row} />
                   </div>
                 </div>
               ))}

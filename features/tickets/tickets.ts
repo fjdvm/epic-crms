@@ -30,6 +30,8 @@ export interface TicketRow {
   orderId: number | null;
   priority: TicketPriority;
   status: TicketStatus;
+  /** Open, and the last Message came from Staff. */
+  waiting: boolean;
   overdue: boolean;
   lastActivity: Date;
 }
@@ -118,6 +120,7 @@ export async function listTickets(
       orderId: (r.order_id as number | null) ?? null,
       priority: r.priority as TicketPriority,
       status: r.status as TicketStatus,
+      waiting: r.waiting as boolean,
       overdue: r.overdue as boolean,
       lastActivity: r.last_activity as Date,
     })),
