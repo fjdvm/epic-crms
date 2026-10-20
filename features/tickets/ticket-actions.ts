@@ -19,6 +19,9 @@ export type TicketActionFailure =
 
 export type TicketActionResult = { ok: true } | { ok: false; reason: TicketActionFailure };
 
+/** A saved reply, with the id the live relay echoes so each side can match its copy. */
+export type ReplyResult = { ok: true; messageId: number } | { ok: false; reason: TicketActionFailure };
+
 /** Why a guarded update touched no row. */
 async function whyNot(sql: postgres.Sql, id: number, actor: Actor): Promise<TicketActionFailure> {
   const [t] = await sql<{ status: string; claimed_by_id: string | null }[]>`
@@ -72,11 +75,11 @@ export async function replyToTicket(
   id: number,
   actor: Actor,
   body: string,
-): Promise<TicketActionResult> {
+): Promise<ReplyResult> {
   const text = body.trim();
   if (!text) return { ok: false, reason: "empty-message" };
 
-  return sql.begin(async (tx): Promise<TicketActionResult> => {
+  return sql.begin(async (tx): Promise<ReplyResult> => {
     const rows = await tx`
       update tickets set claimed_by_id = ${actor.id}, claimed_by_name = ${actor.name}
       where id = ${id} and status <> 'completed' and (claimed_by_id is null or claimed_by_id = ${actor.id})
@@ -91,9 +94,10 @@ export async function replyToTicket(
       };
     }
 
-    await tx`insert into ticket_messages (ticket_id, sender, body) values (${id}, 'staff', ${text})`;
+    const [message] = await tx<{ id: number }[]>`
+      insert into ticket_messages (ticket_id, sender, body) values (${id}, 'staff', ${text}) returning id`;
 
-    return { ok: true };
+    return { ok: true, messageId: message.id };
   });
 }
 

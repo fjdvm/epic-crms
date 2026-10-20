@@ -115,7 +115,7 @@ describe("replying", () => {
   it("replying to an Unclaimed Ticket Claims it for the replier and saves the Message", async () => {
     const id = await ticket();
 
-    expect(await replyToTicket(db.sql, id, bernice, "  So sorry about that!  ")).toEqual({ ok: true });
+    expect(await replyToTicket(db.sql, id, bernice, "  So sorry about that!  ")).toMatchObject({ ok: true });
     expect((await claimer(id)).claimed_by_id).toBe("bernice");
     expect(await messages(id)).toEqual([{ sender: "staff", body: "So sorry about that!" }]);
   });

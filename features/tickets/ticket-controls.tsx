@@ -7,9 +7,9 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 import type { TicketStatus } from "./tickets";
-import { claim, release, reply, resolve, type TicketActionOutcome } from "./actions";
+import { claim, release, reply, resolve, type ReplyOutcome, type TicketActionOutcome } from "./actions";
 
-const REASONS: Record<Exclude<TicketActionOutcome, { ok: true }>["reason"], string> = {
+const REASONS: Record<Exclude<TicketActionOutcome | ReplyOutcome, { ok: true }>["reason"], string> = {
   "not-found": "This Ticket no longer exists.",
   claimed: "Another Staff member has already claimed this Ticket.",
   "not-claimer": "Only the Staff member who claimed a Ticket can release it.",
@@ -30,7 +30,10 @@ function useTicketAction() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const run = (action: () => Promise<TicketActionOutcome>, onDone?: (r: TicketActionOutcome) => void) =>
+  const run = <R extends TicketActionOutcome | ReplyOutcome>(
+    action: () => Promise<R>,
+    onDone?: (r: R) => void,
+  ) =>
     startTransition(async () => {
       const result = await action();
 
@@ -109,7 +112,14 @@ export function TicketActions({
   );
 }
 
-export function Composer({ ticketId }: { ticketId: number }) {
+export function Composer({
+  ticketId,
+  onSent,
+}: {
+  ticketId: number;
+  /** Called once the reply is saved, so it can be relayed live. */
+  onSent?: (message: { id: number; body: string }) => void;
+}) {
   const [text, setText] = useState("");
   const { pending, run } = useTicketAction();
 
@@ -118,7 +128,12 @@ export function Composer({ ticketId }: { ticketId: number }) {
 
     run(
       () => reply(ticketId, text),
-      (r) => r.ok && setText(""),
+      (r) => {
+        if (!r.ok) return;
+
+        setText("");
+        if ("messageId" in r) onSent?.({ id: r.messageId, body: text.trim() });
+      },
     );
   };
 
