@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TicketDetailView } from "@/features/tickets/ticket-detail";
 import type { TicketDetail } from "@/features/tickets/ticket";
+
+vi.mock("@/features/tickets/actions", () => ({
+  claim: vi.fn(),
+  release: vi.fn(),
+  reply: vi.fn(),
+  resolve: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 afterEach(cleanup);
 
@@ -14,6 +22,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   priority: "high",
   openedAt: new Date("2026-10-19T02:00:00Z"),
   claimerName: "Bernice",
+  claimerId: "bernice",
   messages: [
     {
       id: 1,
@@ -49,27 +58,37 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
       { product: "Powder", quantity: 1 },
     ],
   },
-  customer: { id: "c1", name: "Maria Santos", stage: "repeat", orders: 6, totalSpent: 473_400 },
+  customer: {
+    id: "c1",
+    name: "Maria Santos",
+    stage: "repeat",
+    orders: 6,
+    totalSpent: 473_400,
+  },
   ...overrides,
 });
 
 describe("the Ticket page as designed", () => {
   it("has the TKT number, subject and status in the title, and the opened date, Claimer and Priority beneath", () => {
-    render(<TicketDetailView ticket={ticket()} />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
-    expect(screen.getByRole("heading", { name: /TKT-208 · Halaya pouch arrived leaking/ })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", {
+        name: /TKT-208 · Halaya pouch arrived leaking/,
+      }),
+    ).toBeTruthy();
     expect(screen.getByText("Open")).toBeTruthy();
     expect(screen.getByText("Opened 19 Oct 2026 · Claimed by Bernice · High priority")).toBeTruthy();
   });
 
   it("says Unclaimed when nobody has Claimed the Ticket", () => {
-    render(<TicketDetailView ticket={ticket({ claimerName: null })} />);
+    render(<TicketDetailView ticket={ticket({ claimerName: null })} viewerId="bernice" />);
 
     expect(screen.getByText(/· Unclaimed ·/)).toBeTruthy();
   });
 
   it("shows every Message in order with sender and time", () => {
-    render(<TicketDetailView ticket={ticket()} />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     const conversation = screen.getByRole("region", { name: "Conversation" });
     const bodies = within(conversation).getAllByText(/leaking|So sorry|Here it is/);
@@ -84,22 +103,20 @@ describe("the Ticket page as designed", () => {
   });
 
   it("adds the date to a Message sent on a later day, and notes an attached photo", () => {
-    render(<TicketDetailView ticket={ticket()} />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     expect(screen.getByText("Maria · 20 Oct 2026, 10:21 AM")).toBeTruthy();
     expect(screen.getByText("Photo attached")).toBeTruthy();
   });
 
-  it("has no actions yet: no reply box, Mark resolved or Resolve with card", () => {
-    render(<TicketDetailView ticket={ticket()} />);
+  it("has no Resolve with card, since replacement, refund and return actions are out of v1", () => {
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
-    expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("Resolve with")).toBeNull();
   });
 
   it("shows the Linked order card with its link to the Order", () => {
-    render(<TicketDetailView ticket={ticket()} />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     const card = screen.getByRole("region", { name: "Linked order" });
 
@@ -113,13 +130,13 @@ describe("the Ticket page as designed", () => {
   });
 
   it("hides the Linked order card when the Ticket has no Order", () => {
-    render(<TicketDetailView ticket={ticket({ order: null })} />);
+    render(<TicketDetailView ticket={ticket({ order: null })} viewerId="bernice" />);
 
     expect(screen.queryByRole("region", { name: "Linked order" })).toBeNull();
   });
 
   it("shows the Customer card with Stage, order count, Total spent and a link to the Customer Profile", () => {
-    render(<TicketDetailView ticket={ticket()} />);
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     const card = screen.getByRole("region", { name: "Customer" });
 
@@ -131,8 +148,60 @@ describe("the Ticket page as designed", () => {
   });
 
   it("says order, not orders, for a single Order", () => {
-    render(<TicketDetailView ticket={ticket({ customer: { id: "c1", name: "Maria Santos", stage: "first-order", orders: 1, totalSpent: 0 } })} />);
+    render(
+      <TicketDetailView
+        ticket={ticket({
+          customer: {
+            id: "c1",
+            name: "Maria Santos",
+            stage: "first-order",
+            orders: 1,
+            totalSpent: 0,
+          },
+        })}
+        viewerId="bernice"
+      />,
+    );
 
     expect(screen.getByText("Maria Santos · 1 order · ₱0")).toBeTruthy();
+  });
+});
+
+describe("working the Ticket", () => {
+  const buttons = () => screen.getAllByRole("button").map((b) => b.textContent);
+
+  it("offers Release and Mark resolved to the Claimer, and not Claim", () => {
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
+
+    expect(buttons()).toEqual(expect.arrayContaining(["Release", "Mark resolved", "Send"]));
+    expect(buttons()).not.toContain("Claim");
+    expect(screen.getByRole("link", { name: "Reply" }).getAttribute("href")).toBe("#reply");
+  });
+
+  it("offers Claim on an Unclaimed Ticket, and no Release", () => {
+    render(<TicketDetailView ticket={ticket({ claimerId: null, claimerName: null })} viewerId="carlo" />);
+
+    expect(buttons()).toContain("Claim");
+    expect(buttons()).not.toContain("Release");
+    expect(screen.getByRole("textbox", { name: "Write a reply" })).toBeTruthy();
+  });
+
+  it("gives another Staff member no Claim, Release or composer on a Claimed Ticket", () => {
+    render(<TicketDetailView ticket={ticket()} viewerId="carlo" />);
+
+    expect(buttons()).not.toContain("Claim");
+    expect(buttons()).not.toContain("Release");
+    expect(screen.queryByRole("textbox", { name: "Write a reply" })).toBeNull();
+    expect(screen.getByText("Bernice claimed this Ticket, so only they can reply.")).toBeTruthy();
+  });
+
+  it("offers no Mark resolved once Resolved, and nothing at all once Completed", () => {
+    render(<TicketDetailView ticket={ticket({ status: "resolved" })} viewerId="bernice" />);
+    expect(buttons()).not.toContain("Mark resolved");
+    cleanup();
+
+    render(<TicketDetailView ticket={ticket({ status: "completed" })} viewerId="bernice" />);
+    expect(screen.queryAllByRole("button")).toEqual([]);
+    expect(screen.queryByRole("textbox", { name: "Write a reply" })).toBeNull();
   });
 });

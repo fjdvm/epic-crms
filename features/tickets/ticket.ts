@@ -41,6 +41,8 @@ export interface TicketDetail {
   openedAt: Date;
   /** The Claimer's name; null while Unclaimed. */
   claimerName: string | null;
+  /** The Claimer's opaque Staff id; null while Unclaimed. */
+  claimerId: string | null;
   /** Oldest first. */
   messages: TicketMessage[];
   /** The Linked order; null when the Ticket has none. */
@@ -57,7 +59,7 @@ export async function getTicket(
   now: Date = new Date(),
 ): Promise<TicketDetail | null> {
   const [t] = await sql<Record<string, unknown>[]>`
-    select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.order_id,
+    select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id,
       c.id as customer_id, c.full_name, c.first_name
     from tickets t
     join customers c on c.id = t.customer_id
@@ -96,7 +98,10 @@ export async function getTicket(
       id: o.id as number,
       total: (o.subtotal_in_centavos as number) + ((o.delivery_fee_in_centavos as number | null) ?? 0),
       status: o.status as string,
-      lines: lines.map((l) => ({ product: l.product_name as string, quantity: l.quantity as number })),
+      lines: lines.map((l) => ({
+        product: l.product_name as string,
+        quantity: l.quantity as number,
+      })),
     };
   }
 
@@ -107,6 +112,7 @@ export async function getTicket(
     priority: t.priority as TicketPriority,
     openedAt: t.created_at as Date,
     claimerName,
+    claimerId: (t.claimed_by_id as string | null) ?? null,
     messages: messages.map((m) => ({
       id: m.id as number,
       sender: m.sender as "customer" | "staff",
@@ -120,7 +126,10 @@ export async function getTicket(
       id: customerId,
       name: t.full_name as string,
       stage: stageOf(
-        { orders: totals.stage_orders as number, lastOrder: (totals.last_order as Date | null) ?? null },
+        {
+          orders: totals.stage_orders as number,
+          lastOrder: (totals.last_order as Date | null) ?? null,
+        },
         now,
       ),
       orders: totals.orders as number,
