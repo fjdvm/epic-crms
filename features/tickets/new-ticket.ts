@@ -2,9 +2,7 @@ import type postgres from "postgres";
 
 import { checkImage, type FileStorage, type ImageRefusal, type ImageUpload } from "./attachments";
 import { discard, type Actor, type SendAppEmail } from "./ticket-actions";
-import type { TicketPriority } from "./tickets";
-
-export const PRIORITIES: TicketPriority[] = ["low", "normal", "high", "urgent"];
+import { TICKET_PRIORITIES } from "./tickets";
 
 const SEARCH_LIMIT = 8;
 
@@ -56,7 +54,8 @@ export interface NewTicketInput {
   subject: string;
   customerId: string;
   orderId: number | null;
-  priority: TicketPriority;
+  /** As received from the form; checked against the Priorities by openTicket. */
+  priority: string;
   /** Becomes the first Message, written for the Customer to read. */
   description: string;
   image?: ImageUpload;
@@ -100,7 +99,7 @@ export async function openTicket(
   const description = input.description.trim();
 
   if (!subject) return { ok: false, reason: "empty-subject" };
-  if (!PRIORITIES.includes(input.priority)) return { ok: false, reason: "invalid-priority" };
+  if (!(TICKET_PRIORITIES as string[]).includes(input.priority)) return { ok: false, reason: "invalid-priority" };
   if (!description && !input.image) return { ok: false, reason: "empty-message" };
 
   const [customer] = await reader<{ email: string; first_name: string; full_name: string }[]>`

@@ -13,9 +13,7 @@ import { findCustomerOrders, findCustomers, openNewTicket, type OpenTicketOutcom
 import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "./attachments";
 import type { CustomerChoice, OrderChoice } from "./new-ticket";
 import { PRIORITY_LABELS } from "./pill";
-import type { TicketPriority } from "./tickets";
-
-const PRIORITY_ORDER: TicketPriority[] = ["low", "normal", "high", "urgent"];
+import { TICKET_PRIORITIES, type TicketPriority } from "./tickets";
 
 const REASONS: Record<Exclude<OpenTicketOutcome, { ok: true }>["reason"], string> = {
   "empty-subject": "Give the Ticket a subject.",
@@ -269,7 +267,7 @@ export function NewTicketDialog({ actions = REAL_ACTIONS }: { actions?: NewTicke
                   aria-labelledby={`${ids}-priority`}
                   className="flex gap-0.5 rounded-lg bg-[#f4f4f5] p-[3px]"
                 >
-                  {PRIORITY_ORDER.map((p) => (
+                  {TICKET_PRIORITIES.map((p) => (
                     <button
                       key={p}
                       type="button"

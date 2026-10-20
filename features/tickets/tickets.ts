@@ -13,6 +13,8 @@ export type TicketStatus = "open" | "resolved" | "completed";
 
 export type TicketPriority = "low" | "normal" | "high" | "urgent";
 
+export const TICKET_PRIORITIES: TicketPriority[] = ["low", "normal", "high", "urgent"];
+
 export interface TicketQuery {
   tab?: TicketTab;
   page?: number;

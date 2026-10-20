@@ -12,8 +12,7 @@ import { TICKETS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
-import { customerOrders, openTicket, PRIORITIES, searchCustomers, type CustomerChoice, type OpenTicketResult, type OrderChoice } from "./new-ticket";
-import type { TicketPriority } from "./tickets";
+import { customerOrders, openTicket, searchCustomers, type CustomerChoice, type OpenTicketResult, type OrderChoice } from "./new-ticket";
 import {
   claimTicket,
   markResolved,
@@ -108,7 +107,6 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
   const file = form.get("image");
   const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
   const orderId = String(form.get("orderId") ?? "");
-  const priority = String(form.get("priority") ?? "normal");
 
   try {
     const result = await openTicket(
@@ -119,7 +117,7 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
         subject: String(form.get("subject") ?? ""),
         customerId: String(form.get("customerId") ?? ""),
         orderId: /^\d+$/.test(orderId) ? Number(orderId) : null,
-        priority: (PRIORITIES as string[]).includes(priority) ? (priority as TicketPriority) : ("" as TicketPriority),
+        priority: String(form.get("priority") ?? "normal"),
         description: String(form.get("description") ?? ""),
         image: picked
           ? { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) }
