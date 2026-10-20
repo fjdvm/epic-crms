@@ -188,16 +188,27 @@ export function Composer({
     form.set("body", text);
     if (image) form.set("image", image);
 
+    // The box clears as soon as the reply is on its way; a refused reply puts it back.
+    const sentText = text;
+    const sentImage = image;
+    setText("");
+    setImage(null);
+
     run(
       () => reply(ticketId, form),
       (r) => {
         sending.current = false;
-        if (!r.ok) return;
+        if (!r.ok) {
+          setText((current) => current || sentText);
+          if (sentImage) setImage(sentImage);
+          return;
+        }
 
-        setText("");
-        setImage(null);
         if ("messageId" in r)
-          onSent?.({ id: r.messageId, body: text.trim() || "Sent a photo" });
+          onSent?.({
+            id: r.messageId,
+            body: sentText.trim() || "Sent a photo",
+          });
       },
     );
   };
@@ -211,33 +222,21 @@ export function Composer({
             <img
               src={preview}
               alt={`Selected image: ${image.name}`}
-              className={cn(
-                "size-16 rounded-lg object-cover",
-                pending && "opacity-50",
-              )}
+              className="size-16 rounded-lg object-cover"
             />
           ) : (
             <span className="flex size-16 items-center justify-center rounded-lg bg-[#f3f1f6] p-1 text-center text-[10px] leading-[normal] break-all text-[#5b2a86]">
               {image.name}
             </span>
           )}
-          {pending ? (
-            <span className="absolute inset-0 flex items-center justify-center">
-              <Loader2
-                aria-hidden
-                className="size-5 animate-spin text-[#5b2a86]"
-              />
-            </span>
-          ) : (
-            <button
-              type="button"
-              aria-label={`Remove ${image.name}`}
-              className="absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full border border-[#e6e1ee] bg-white text-[#1f1a2e] shadow"
-              onClick={() => setImage(null)}
-            >
-              <X aria-hidden className="size-4" />
-            </button>
-          )}
+          <button
+            type="button"
+            aria-label={`Remove ${image.name}`}
+            className="absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full border border-[#e6e1ee] bg-white text-[#1f1a2e] shadow"
+            onClick={() => setImage(null)}
+          >
+            <X aria-hidden className="size-4" />
+          </button>
         </div>
       )}
       <div
