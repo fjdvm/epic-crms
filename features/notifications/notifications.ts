@@ -7,13 +7,39 @@ export interface NewCustomer {
   name: string;
 }
 
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed";
+
 export interface Notification {
   id: string;
+  kind: NotificationKind;
   customerId: string;
   customerName: string;
-  /** When CREOMS first saw the person had become a Customer. */
+  /** The Ticket a Ticket notification is about; null for a New Customer. */
+  ticketId: number | null;
+  /** When CREOMS first saw the event, such as the person becoming a Customer. */
   createdAt: Date;
   read: boolean;
+}
+
+/**
+ * Whose bell is being read. New Customer alerts go to Staff with the Customer Profiles Module.
+ * Ticket alerts go to Staff with the Tickets Module (`ticketsStaffId` is their Portal id, null
+ * without the Module): to everyone when addressed to no one, otherwise to the Claimer alone.
+ */
+export interface Viewer {
+  customerProfiles: boolean;
+  ticketsStaffId: string | null;
+}
+
+const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null };
+
+/** The rows of `crms.notifications` this viewer may see and mark read. */
+function visibleTo(sql: postgres.Sql, viewer: Viewer) {
+  return sql`(
+    (kind = 'new-customer' and ${viewer.customerProfiles})
+    or (kind <> 'new-customer' and ${viewer.ticketsStaffId !== null}
+      and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))
+  )`;
 }
 
 export interface NotificationFeed {
@@ -28,7 +54,7 @@ export interface SyncResult {
 }
 
 /** The schema name goes into SQL text, so it must be a plain identifier. */
-function schemaIdent(sql: postgres.Sql, schema: string) {
+export function schemaIdent(sql: postgres.Sql, schema: string) {
   if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error(`Invalid schema name: ${schema}`);
 
   return sql(schema);
@@ -76,29 +102,40 @@ export async function syncNewCustomers(
     const created = await tx`
       insert into ${s}.notifications (customer_id, customer_name)
       select * from unnest(${freshIds}::text[], ${freshNames}::text[])
-      on conflict (customer_id) do nothing
+      on conflict (customer_id) where kind = 'new-customer' do nothing
       returning id`;
 
     return { baselined: false, created: created.length };
   });
 }
 
-/** Unread count and the most recent notifications, newest first. Read state is shared by all Staff. */
+/** Unread count and the most recent notifications the viewer may see, newest first. Read state is shared. */
 export async function listNotifications(
   writer: postgres.Sql,
   schema: string = DEFAULT_SCHEMA,
   limit = 20,
+  viewer: Viewer = NEW_CUSTOMER_VIEWER,
 ): Promise<NotificationFeed> {
   const s = schemaIdent(writer, schema);
 
   const [{ unread }] = await writer<{ unread: number }[]>`
-    select count(*)::int as unread from ${s}.notifications where read_at is null`;
+    select count(*)::int as unread from ${s}.notifications
+    where read_at is null and ${visibleTo(writer, viewer)}`;
 
   const rows = await writer<
-    { id: string; customer_id: string; customer_name: string; created_at: Date; read_at: Date | null }[]
+    {
+      id: string;
+      kind: NotificationKind;
+      customer_id: string;
+      customer_name: string;
+      ticket_id: number | null;
+      created_at: Date;
+      read_at: Date | null;
+    }[]
   >`
-    select id::text, customer_id, customer_name, created_at, read_at
+    select id::text, kind, customer_id, customer_name, ticket_id, created_at, read_at
     from ${s}.notifications
+    where ${visibleTo(writer, viewer)}
     order by created_at desc, id desc
     limit ${limit}`;
 
@@ -106,8 +143,10 @@ export async function listNotifications(
     unread,
     notifications: rows.map((r) => ({
       id: r.id,
+      kind: r.kind,
       customerId: r.customer_id,
       customerName: r.customer_name,
+      ticketId: r.ticket_id,
       createdAt: r.created_at,
       read: r.read_at !== null,
     })),
@@ -118,18 +157,28 @@ export async function markRead(
   writer: postgres.Sql,
   id: string,
   schema: string = DEFAULT_SCHEMA,
+  viewer: Viewer = NEW_CUSTOMER_VIEWER,
 ): Promise<void> {
   if (!/^\d+$/.test(id)) return;
 
   const s = schemaIdent(writer, schema);
 
-  await writer`update ${s}.notifications set read_at = now() where id = ${id}::bigint and read_at is null`;
+  await writer`
+    update ${s}.notifications set read_at = now()
+    where id = ${id}::bigint and read_at is null and ${visibleTo(writer, viewer)}`;
 }
 
-export async function markAllRead(writer: postgres.Sql, schema: string = DEFAULT_SCHEMA): Promise<void> {
+/** Marks read only what the viewer can see, so one Module's Staff never clear another's alerts. */
+export async function markAllRead(
+  writer: postgres.Sql,
+  schema: string = DEFAULT_SCHEMA,
+  viewer: Viewer = NEW_CUSTOMER_VIEWER,
+): Promise<void> {
   const s = schemaIdent(writer, schema);
 
-  await writer`update ${s}.notifications set read_at = now() where read_at is null`;
+  await writer`
+    update ${s}.notifications set read_at = now()
+    where read_at is null and ${visibleTo(writer, viewer)}`;
 }
 
 /** Every verified Customer in the storefront, via the read-only role. Leads are excluded. */

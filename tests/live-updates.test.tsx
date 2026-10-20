@@ -14,7 +14,7 @@ vi.mock("sonner", () => ({ toast }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 function note(id: string, name: string): Notification {
-  return { id, customerId: `u-${id}`, customerName: name, createdAt: new Date(), read: false };
+  return { id, kind: "new-customer" as const, ticketId: null, customerId: `u-${id}`, customerName: name, createdAt: new Date(), read: false };
 }
 
 const ada = note("1", "Ada Lim");
@@ -113,6 +113,18 @@ describe("live updates", () => {
     await elapse(5_000);
     expect(toast).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("toasts a Ticket alert once without marking any Customer as New", async () => {
+    const alert: Notification = { ...note("3", "Cy Tan"), kind: "ticket-message", ticketId: 208 };
+    mount(vi.fn().mockResolvedValue(feedOf(alert, ada)));
+
+    await elapse(5_000);
+    await elapse(5_000);
+
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith("Cy Tan sent a message on TKT-208");
+    expect(screen.getByText("unread:2 new:")).toBeTruthy();
   });
 
   it("drops the New highlight after a while", async () => {

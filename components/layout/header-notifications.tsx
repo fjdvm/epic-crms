@@ -17,6 +17,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from "@/features/notifications/actions";
+import { describeNotification } from "@/features/notifications/describe";
 import type { NotificationFeed } from "@/features/notifications/notifications";
 
 export function HeaderNotifications({ feed }: { feed: NotificationFeed | null }) {
@@ -70,10 +71,13 @@ export function HeaderNotifications({ feed }: { feed: NotificationFeed | null })
             <p className="p-md text-center text-label-sm text-muted-foreground">No notifications yet.</p>
           ) : (
             <ul>
-              {feed.notifications.map((n) => (
+              {feed.notifications.map((n) => {
+                const { text, href } = describeNotification(n);
+
+                return (
                 <li key={n.id} className="border-b border-border last:border-b-0">
                   <Link
-                    href={`/customer-profiles/${encodeURIComponent(n.customerId)}`}
+                    href={href}
                     onClick={() => {
                       if (!n.read) startTransition(() => markNotificationRead(n.id));
                     }}
@@ -85,7 +89,7 @@ export function HeaderNotifications({ feed }: { feed: NotificationFeed | null })
                     />
                     <span className="min-w-0">
                       <span className={`block truncate text-body-sm ${n.read ? "" : "font-semibold"}`}>
-                        {n.customerName} became a Customer
+                        {text}
                       </span>
                       <span className="block text-label-sm text-muted-foreground">
                         {formatAgo(n.createdAt)}
@@ -93,7 +97,8 @@ export function HeaderNotifications({ feed }: { feed: NotificationFeed | null })
                     </span>
                   </Link>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </div>
