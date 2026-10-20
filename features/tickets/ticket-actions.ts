@@ -1,0 +1,157 @@
+import type postgres from "postgres";
+
+/** The Staff member acting: the Portal username is their opaque id, and the name is snapshotted onto the Ticket. */
+export interface Actor {
+  id: string;
+  name: string;
+}
+
+export type TicketActionFailure =
+  | "not-found"
+  /** Someone else holds the Claim; nobody takes a Claimed Ticket from its Claimer. */
+  | "claimed"
+  | "not-claimer"
+  | "not-claimed"
+  /** Completed is final. */
+  | "completed"
+  | "already-resolved"
+  | "empty-message";
+
+export type TicketActionResult = { ok: true } | { ok: false; reason: TicketActionFailure };
+
+/** Why a guarded update touched no row. */
+async function whyNot(sql: postgres.Sql, id: number, actor: Actor): Promise<TicketActionFailure> {
+  const [t] = await sql<{ status: string; claimed_by_id: string | null }[]>`
+    select status, claimed_by_id from tickets where id = ${id}`;
+
+  if (!t) return "not-found";
+  if (t.status === "completed") return "completed";
+  if (t.claimed_by_id === null) return "not-claimed";
+
+  return t.claimed_by_id === actor.id ? "not-claimed" : "claimed";
+}
+
+/** Staff take an Unclaimed Ticket for themselves. */
+export async function claimTicket(sql: postgres.Sql, id: number, actor: Actor): Promise<TicketActionResult> {
+  const rows = await sql`
+    update tickets set claimed_by_id = ${actor.id}, claimed_by_name = ${actor.name}
+    where id = ${id} and claimed_by_id is null and status <> 'completed'
+    returning id`;
+
+  if (rows.length) return { ok: true };
+
+  const reason = await whyNot(sql, id, actor);
+
+  return { ok: false, reason: reason === "not-claimed" ? "claimed" : reason };
+}
+
+/** Only the Claimer can release a Ticket back to Unclaimed. */
+export async function releaseTicket(
+  sql: postgres.Sql,
+  id: number,
+  actor: Actor,
+): Promise<TicketActionResult> {
+  const rows = await sql`
+    update tickets set claimed_by_id = null, claimed_by_name = null
+    where id = ${id} and claimed_by_id = ${actor.id} and status <> 'completed'
+    returning id`;
+
+  if (rows.length) return { ok: true };
+
+  const reason = await whyNot(sql, id, actor);
+
+  return { ok: false, reason: reason === "claimed" ? "not-claimer" : reason };
+}
+
+/**
+ * A Staff text Message. Replying to an Unclaimed Ticket Claims it for the replier; a Ticket someone
+ * else Claimed cannot be replied to. The Claim and the Message land together or not at all.
+ */
+export async function replyToTicket(
+  sql: postgres.Sql,
+  id: number,
+  actor: Actor,
+  body: string,
+): Promise<TicketActionResult> {
+  const text = body.trim();
+  if (!text) return { ok: false, reason: "empty-message" };
+
+  return sql.begin(async (tx): Promise<TicketActionResult> => {
+    const rows = await tx`
+      update tickets set claimed_by_id = ${actor.id}, claimed_by_name = ${actor.name}
+      where id = ${id} and status <> 'completed' and (claimed_by_id is null or claimed_by_id = ${actor.id})
+      returning id`;
+
+    if (!rows.length) {
+      const reason = await whyNot(tx as unknown as postgres.Sql, id, actor);
+
+      return {
+        ok: false,
+        reason: reason === "not-claimed" ? "claimed" : reason,
+      };
+    }
+
+    await tx`insert into ticket_messages (ticket_id, sender, body) values (${id}, 'staff', ${text})`;
+
+    return { ok: true };
+  });
+}
+
+export interface ResolvedTicket {
+  subject: string;
+  customerId: string;
+}
+
+/** Sends the App email asking the Customer to confirm; see lib/gateway.ts. */
+export type SendAppEmail = (email: {
+  to: string;
+  title: string;
+  body: string;
+  button: { label: string; link: string };
+}) => Promise<void>;
+
+/**
+ * Staff mark an Open Ticket Resolved and the Customer is emailed once, asking them to confirm.
+ * Staff can never set Completed. `reader` reaches the Customer's email, which the writer role cannot.
+ */
+export async function markResolved(
+  writer: postgres.Sql,
+  reader: postgres.Sql,
+  id: number,
+  storefrontTicketUrl: (id: number) => string,
+  sendEmail: SendAppEmail,
+): Promise<TicketActionResult & { emailed?: boolean }> {
+  const [t] = await writer<{ subject: string; customer_id: string }[]>`
+    update tickets set status = 'resolved', resolved_at = now()
+    where id = ${id} and status = 'open'
+    returning subject, customer_id`;
+
+  if (!t) {
+    const [existing] = await writer<{ status: string }[]>`select status from tickets where id = ${id}`;
+
+    if (!existing) return { ok: false, reason: "not-found" };
+
+    return {
+      ok: false,
+      reason: existing.status === "completed" ? "completed" : "already-resolved",
+    };
+  }
+
+  try {
+    const [customer] = await reader<{ email: string; first_name: string; full_name: string }[]>`
+      select email, first_name, full_name from customers where id = ${t.customer_id}`;
+
+    await sendEmail({
+      to: customer.email,
+      title: `Is your ticket TKT-${id} fixed?`,
+      body: `Hi ${customer.first_name || customer.full_name}, we think we have dealt with "${t.subject}". Please let us know whether it is fixed.`,
+      button: { label: "Review your ticket", link: storefrontTicketUrl(id) },
+    });
+  } catch (error) {
+    console.error(`Ticket TKT-${id} was marked Resolved but the confirmation email was not sent`, error);
+
+    return { ok: true, emailed: false };
+  }
+
+  return { ok: true, emailed: true };
+}

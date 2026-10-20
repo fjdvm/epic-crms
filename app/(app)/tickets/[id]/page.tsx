@@ -8,7 +8,7 @@ import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 export default async function TicketPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireModule(TICKETS_MODULE);
+  const staff = await requireModule(TICKETS_MODULE);
 
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
@@ -21,8 +21,8 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
         <Alert variant="destructive">
           <AlertTitle>This Ticket is temporarily unavailable</AlertTitle>
           <AlertDescription>
-            CREOMS could not read the store&apos;s Tickets. Reload to try again; if it keeps
-            happening, tell whoever maintains CREOMS.
+            CREOMS could not read the store&apos;s Tickets. Reload to try again; if it keeps happening, tell
+            whoever maintains CREOMS.
           </AlertDescription>
         </Alert>
       </div>
@@ -31,5 +31,5 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 
   if (!result.ticket) notFound();
 
-  return <TicketDetailView ticket={result.ticket} />;
+  return <TicketDetailView ticket={result.ticket} viewerId={staff.username} />;
 }

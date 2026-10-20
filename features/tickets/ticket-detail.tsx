@@ -6,6 +6,7 @@ import { orderLabel, paymentStatusOf, STAGE_LABELS, type Stage } from "@/feature
 import { cn } from "@/lib/utils";
 
 import { PILL, Pill, PRIORITY_LABELS } from "./pill";
+import { Composer, TicketActions } from "./ticket-controls";
 import type { TicketDetail, TicketMessage } from "./ticket";
 import type { TicketStatus } from "./tickets";
 
@@ -29,7 +30,11 @@ const STAGE_PILLS: Record<Stage, string> = {
   lost: PILL.grey,
 };
 
-const PAYMENT_PILLS = { Paid: PILL.green, Unpaid: PILL.amber, Cancelled: PILL.grey } as const;
+const PAYMENT_PILLS = {
+  Paid: PILL.green,
+  Unpaid: PILL.amber,
+  Cancelled: PILL.grey,
+} as const;
 
 const ORDER_PILLS: Record<string, string> = {
   dispatched: PILL.blue,
@@ -37,7 +42,11 @@ const ORDER_PILLS: Record<string, string> = {
   cancelled: PILL.grey,
 };
 
-const TIME = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" });
+const TIME = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "Asia/Manila",
+});
 
 const sameDay = (a: Date, b: Date) => formatDate(a) === formatDate(b);
 
@@ -57,23 +66,33 @@ const CARD_TITLE = "text-base font-semibold leading-[normal] text-[#1f1a2e]";
 const CARD_LINK =
   "flex justify-center rounded-lg bg-[#efe6f8] px-3 py-2 text-sm font-medium leading-[normal] text-[#5b2a86]";
 
-export function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
+export function TicketDetailView({ ticket, viewerId }: { ticket: TicketDetail; viewerId: string }) {
   const { order, customer } = ticket;
+  const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
+  const claimedByOther = ticket.claimerId !== null && !isClaimer;
 
   return (
     <div className="space-y-5 px-8 py-7">
-      <div className="space-y-1">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
-            TKT-{ticket.id} · {ticket.subject}
-          </h1>
-          <Pill className={STATUS_PILLS[ticket.status]}>{STATUS_LABELS[ticket.status]}</Pill>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
+              TKT-{ticket.id} · {ticket.subject}
+            </h1>
+            <Pill className={STATUS_PILLS[ticket.status]}>{STATUS_LABELS[ticket.status]}</Pill>
+          </div>
+          <p className="text-sm leading-[normal] text-[#6e6680]">
+            Opened {formatDate(ticket.openedAt)} ·{" "}
+            {ticket.claimerName ? `Claimed by ${ticket.claimerName}` : "Unclaimed"} ·{" "}
+            {PRIORITY_LABELS[ticket.priority]} priority
+          </p>
         </div>
-        <p className="text-sm leading-[normal] text-[#6e6680]">
-          Opened {formatDate(ticket.openedAt)} ·{" "}
-          {ticket.claimerName ? `Claimed by ${ticket.claimerName}` : "Unclaimed"} ·{" "}
-          {PRIORITY_LABELS[ticket.priority]} priority
-        </p>
+        <TicketActions
+          ticketId={ticket.id}
+          status={ticket.status}
+          claimed={ticket.claimerId !== null}
+          isClaimer={isClaimer}
+        />
       </div>
 
       <div className="flex flex-col items-start gap-4 lg:flex-row">
@@ -103,6 +122,17 @@ export function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
               </div>
             );
           })}
+          {ticket.status === "completed" ? (
+            <p className="text-sm leading-[normal] text-[#6e6680]">
+              The Customer completed this Ticket, so it can no longer be replied to.
+            </p>
+          ) : claimedByOther ? (
+            <p className="text-sm leading-[normal] text-[#6e6680]">
+              {ticket.claimerName} claimed this Ticket, so only they can reply.
+            </p>
+          ) : (
+            <Composer ticketId={ticket.id} />
+          )}
         </section>
 
         <div className="w-full space-y-4 lg:w-[380px] lg:shrink-0">
@@ -113,7 +143,9 @@ export function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
                 #{order.id} · {formatWholePesos(order.total)}
               </p>
               <div className="flex gap-1.5">
-                <Pill className={PAYMENT_PILLS[paymentStatusOf(order.status)]}>{paymentStatusOf(order.status)}</Pill>
+                <Pill className={PAYMENT_PILLS[paymentStatusOf(order.status)]}>
+                  {paymentStatusOf(order.status)}
+                </Pill>
                 <Pill className={ORDER_PILLS[order.status] ?? PILL.grey}>{orderLabel(order.status)}</Pill>
               </div>
               <p className="text-[13px] leading-[normal] text-[#6e6680]">
