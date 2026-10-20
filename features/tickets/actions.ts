@@ -37,14 +37,20 @@ async function act(
   }
 }
 
-export const claim = (id: number) => act(id, (actor) => claimTicket(ticketsWriterDatabase(), id, actor));
+export async function claim(id: number) {
+  return act(id, (actor) => claimTicket(ticketsWriterDatabase(), id, actor));
+}
 
-export const release = (id: number) => act(id, (actor) => releaseTicket(ticketsWriterDatabase(), id, actor));
+export async function release(id: number) {
+  return act(id, (actor) => releaseTicket(ticketsWriterDatabase(), id, actor));
+}
 
-export const reply = (id: number, body: string) =>
-  act(id, (actor) => replyToTicket(ticketsWriterDatabase(), id, actor, body));
+export async function reply(id: number, body: string) {
+  return act(id, (actor) => replyToTicket(ticketsWriterDatabase(), id, actor, body));
+}
 
-export const resolve = (id: number) =>
-  act(id, () =>
+export async function resolve(id: number) {
+  return act(id, () =>
     markResolved(ticketsWriterDatabase(), ticketsDatabase(), id, storefrontTicketUrl, sendAppEmail),
   );
+}
