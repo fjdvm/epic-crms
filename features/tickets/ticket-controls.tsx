@@ -62,6 +62,17 @@ function useTicketAction() {
   return { pending, run };
 }
 
+/** Claim from the Tickets list; the Ticket then leaves the list for the Claimer's Conversations inbox. */
+export function ClaimButton({ ticketId }: { ticketId: number }) {
+  const { pending, run } = useTicketAction();
+
+  return (
+    <button type="button" className={OUTLINE} disabled={pending} onClick={() => run(() => claim(ticketId))}>
+      Claim
+    </button>
+  );
+}
+
 export function TicketActions({
   ticketId,
   status,

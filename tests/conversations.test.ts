@@ -6,6 +6,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 let db: TestDatabase;
 
+const ME = "staff-1";
 const NOW = new Date("2026-10-20T12:00:00Z");
 const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000);
 
@@ -28,10 +29,11 @@ async function chat(
   subject: string,
   messages: { body: string; minutes: number; file?: boolean }[],
   openedMinutesAgo = 1_000,
+  claimedBy: string | null = ME,
 ) {
   const [row] = await db.sql<{ id: number }[]>`
-    insert into tickets (customer_id, subject, created_at)
-    values (${customer}, ${subject}, ${minutesAgo(openedMinutesAgo)}) returning id`;
+    insert into tickets (customer_id, subject, created_at, claimed_by_id)
+    values (${customer}, ${subject}, ${minutesAgo(openedMinutesAgo)}, ${claimedBy}) returning id`;
 
   for (const m of messages) {
     await db.sql`insert into ticket_messages (ticket_id, sender, body, file_id, created_at)
@@ -46,7 +48,7 @@ describe("the Conversations list", () => {
     const older = await chat("c2", "Receipt", [{ body: "first", minutes: 300 }, { body: "My receipt was rejected", minutes: 180 }]);
     const newer = await chat("c1", "Leak", [{ body: "Replacement please", minutes: 5 }]);
 
-    const rows = await listConversations(db.sql);
+    const rows = await listConversations(db.sql, ME);
 
     expect(rows.map((r) => [r.ticketId, r.customerName, r.preview])).toEqual([
       [newer, "Maria Santos", "Replacement please"],
@@ -55,18 +57,26 @@ describe("the Conversations list", () => {
     expect(rows[0].lastActivity).toEqual(minutesAgo(5));
   });
 
+  it("lists only the Tickets this Staff member Claimed", async () => {
+    const mine = await chat("c1", "Mine", [{ body: "hi", minutes: 5 }]);
+    await chat("c2", "Theirs", [{ body: "hi", minutes: 5 }], 1_000, "staff-2");
+    await chat("c2", "Nobody's", [{ body: "hi", minutes: 5 }], 1_000, null);
+
+    expect((await listConversations(db.sql, ME)).map((r) => r.ticketId)).toEqual([mine]);
+  });
+
   it("includes Resolved and Completed Tickets' chats", async () => {
     const id = await chat("c1", "Done", [{ body: "thanks", minutes: 5 }]);
     await db.sql`update tickets set status = 'completed' where id = ${id}`;
 
-    expect((await listConversations(db.sql)).map((r) => r.ticketId)).toEqual([id]);
+    expect((await listConversations(db.sql, ME)).map((r) => r.ticketId)).toEqual([id]);
   });
 
   it("previews an image alone as a photo, and a Ticket with no Message by its subject", async () => {
     const photo = await chat("c1", "Leak", [{ body: "", minutes: 5, file: true }]);
     const empty = await chat("c2", "Where is my order?", [], 60);
 
-    const rows = await listConversations(db.sql);
+    const rows = await listConversations(db.sql, ME);
 
     expect(rows.find((r) => r.ticketId === photo)?.preview).toBe("Sent a photo");
     expect(rows.find((r) => r.ticketId === empty)?.preview).toBe("Where is my order?");
@@ -79,7 +89,7 @@ describe("the open chat", () => {
     await chat("c1", "Leak", [{ body: "hello", minutes: 5 }]);
     const asked = await chat("c2", "Receipt", [{ body: "my receipt", minutes: 50 }]);
 
-    const result = await loadConversations(() => db.sql, asked);
+    const result = await loadConversations(() => db.sql, ME, asked);
 
     expect(result.ok && result.conversations.selected?.id).toBe(asked);
     expect(result.ok && result.conversations.selected?.messages.map((m) => m.body)).toEqual(["my receipt"]);
@@ -90,13 +100,13 @@ describe("the open chat", () => {
     const newest = await chat("c1", "Leak", [{ body: "new", minutes: 5 }]);
 
     for (const asked of [undefined, 9999]) {
-      const result = await loadConversations(() => db.sql, asked);
+      const result = await loadConversations(() => db.sql, ME, asked);
       expect(result.ok && result.conversations.selected?.id).toBe(newest);
     }
   });
 
   it("is nothing when there are no chats", async () => {
-    const result = await loadConversations(() => db.sql);
+    const result = await loadConversations(() => db.sql, ME);
 
     expect(result).toEqual({ ok: true, conversations: { chats: [], selected: null } });
   });
@@ -104,7 +114,7 @@ describe("the open chat", () => {
   it("reports an unreachable database instead of throwing", async () => {
     const result = await loadConversations(() => {
       throw new Error("down");
-    });
+    }, ME);
 
     expect(result).toEqual({ ok: false });
   });

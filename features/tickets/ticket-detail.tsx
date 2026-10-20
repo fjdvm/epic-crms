@@ -6,9 +6,9 @@ import { orderLabel, paymentStatusOf, STAGE_LABELS, type Stage } from "@/feature
 import { cn } from "@/lib/utils";
 
 import { PILL, Pill, PRIORITY_LABELS } from "./pill";
-import { Conversation } from "./conversation";
+import { Bubbles } from "./conversation";
 import { TicketActions } from "./ticket-controls";
-import type { TicketDetail } from "./ticket";
+import type { TicketDetail, TicketMessage } from "./ticket";
 import type { TicketStatus } from "./tickets";
 
 export const STATUS_LABELS: Record<TicketStatus, string> = {
@@ -51,20 +51,18 @@ export const CARD_LINK =
 export function TicketDetailView({
   ticket,
   viewerId,
-  viewerName,
 }: {
   ticket: TicketDetail;
   viewerId: string;
-  viewerName: string;
 }) {
   const { order, customer } = ticket;
   const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
-  const customerFirstName = ticket.customer.name.split(" ")[0];
-  const claimedByOther = ticket.claimerId !== null && !isClaimer;
+  // Until both sides have spoken there is no chat history to read, only what the Ticket was opened with.
+  const hasExchange = new Set(ticket.messages.map((m) => m.sender)).size > 1;
 
   return (
-    <div className="space-y-5 px-8 py-7">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
@@ -83,27 +81,40 @@ export function TicketDetailView({
           status={ticket.status}
           claimed={ticket.claimerId !== null}
           isClaimer={isClaimer}
+          withReply={false}
         />
       </div>
 
-      <div className="flex flex-col items-start gap-4 lg:flex-row">
-        <section aria-label="Conversation" className={cn(CARD, "w-full min-w-0 space-y-3 lg:flex-1")}>
+      <div className="flex flex-col items-start gap-4 lg:min-h-0 lg:w-full lg:flex-1 lg:flex-row">
+        <section
+          aria-label="Conversation"
+          className={cn(CARD, "flex h-[60vh] min-h-0 w-full min-w-0 flex-col space-y-0 gap-3 lg:h-full lg:flex-1")}
+        >
           <h2 className={CARD_TITLE}>Conversation</h2>
-          <Conversation
-            ticketId={ticket.id}
-            messages={ticket.messages}
-            viewerName={viewerName}
-            customerName={customerFirstName}
-            canReply={ticket.status !== "completed" && !claimedByOther}
-            note={
-              ticket.status === "completed"
-                ? "The Customer completed this Ticket, so it can no longer be replied to."
-                : `${ticket.claimerName} claimed this Ticket, so only they can reply.`
-            }
-          />
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+            {ticket.messages.length === 0 ? (
+              <p className="text-sm leading-[normal] text-[#6e6680]">No Messages yet.</p>
+            ) : hasExchange ? (
+              <Bubbles messages={ticket.messages} />
+            ) : (
+              <Attachments messages={ticket.messages} />
+            )}
+          </div>
+          {ticket.status !== "completed" &&
+            (isClaimer ? (
+              <Link href={`/conversations?ticket=${ticket.id}`} className={CARD_LINK}>
+                Chat
+              </Link>
+            ) : (
+              <p className="text-sm leading-[normal] text-[#6e6680]">
+                {ticket.claimerName
+                  ? `${ticket.claimerName} claimed this Ticket, so only they can chat.`
+                  : "Claim this Ticket to chat with the Customer."}
+              </p>
+            ))}
         </section>
 
-        <div className="w-full space-y-4 lg:w-[380px] lg:shrink-0">
+        <div className="w-full space-y-4 lg:h-full lg:w-[380px] lg:shrink-0 lg:overflow-y-auto">
           {order && (
             <section aria-label="Linked order" className={CARD}>
               <h2 className={CARD_TITLE}>Linked order</h2>
@@ -141,5 +152,33 @@ export function TicketDetailView({
         </div>
       </div>
     </div>
+  );
+}
+
+/** What the Ticket was opened with, shown in place of a chat while nobody has answered: the text and any image. */
+function Attachments({ messages }: { messages: TicketMessage[] }) {
+  return (
+    <>
+      {messages.map((m) => (
+        <div key={m.id} className="space-y-2">
+          {m.body && (
+            <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">{m.body}</p>
+          )}
+          {m.attachmentUrl ? (
+            <a href={m.attachmentUrl} target="_blank" rel="noreferrer" className="block">
+              {/* A short-lived signed address from file-storage, so next/image's optimizer cannot cache it. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={m.attachmentUrl}
+                alt={`Image attached by ${m.senderName}`}
+                className="max-h-96 max-w-full rounded-lg object-contain"
+              />
+            </a>
+          ) : (
+            m.hasAttachment && <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
+          )}
+        </div>
+      ))}
+    </>
   );
 }

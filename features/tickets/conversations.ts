@@ -14,8 +14,8 @@ export interface ConversationRow {
   lastActivity: Date;
 }
 
-/** Every Ticket's chat, newest activity first. A chat is a Ticket's Conversation; there is none without a Ticket. */
-export async function listConversations(sql: postgres.Sql): Promise<ConversationRow[]> {
+/** The chats of the Tickets this Staff member Claimed, newest activity first. A chat is a Ticket's Conversation; there is none without a Ticket. */
+export async function listConversations(sql: postgres.Sql, viewerId: string): Promise<ConversationRow[]> {
   const rows = await sql<Record<string, unknown>[]>`
     select
       t.id,
@@ -32,6 +32,7 @@ export async function listConversations(sql: postgres.Sql): Promise<Conversation
       order by created_at desc, id desc
       limit 1
     ) m on true
+    where t.claimed_by_id = ${viewerId}
     order by last_activity desc, t.id desc`;
 
   return rows.map((r) => ({
@@ -71,11 +72,12 @@ export type ConversationsResult = { ok: true; conversations: Conversations } | {
  */
 export async function loadConversations(
   connect: () => postgres.Sql,
+  viewerId: string,
   selectedId?: number,
   storage?: FileStorage,
 ): Promise<ConversationsResult> {
   try {
-    const chats = await listConversations(connect());
+    const chats = await listConversations(connect(), viewerId);
     const id = chats.find((c) => c.ticketId === selectedId)?.ticketId ?? chats[0]?.ticketId;
     if (id === undefined) return { ok: true, conversations: { chats, selected: null } };
 

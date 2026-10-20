@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/features/customer-profiles/format";
@@ -32,6 +32,50 @@ function byline(message: TicketMessage, previous: TicketMessage | undefined): st
   return `${message.senderName} · ${when}`;
 }
 
+/** Messages as chat bubbles, Customer on the left and Staff on the right. */
+export function Bubbles({ messages }: { messages: TicketMessage[] }) {
+  return (
+    <>
+      {messages.map((message, i) => {
+        const fromStaff = message.sender === "staff";
+
+        return (
+          <div key={message.id} className={cn("flex", fromStaff && "justify-end")}>
+            <div
+              className={cn(
+                "flex w-[460px] max-w-full flex-col gap-1 rounded-xl px-[14px] py-[10px]",
+                fromStaff ? "bg-[#efe6f8]" : "bg-[#f3f1f6]",
+              )}
+            >
+              {message.body && (
+                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
+                  {message.body}
+                </p>
+              )}
+              {message.attachmentUrl ? (
+                <a href={message.attachmentUrl} target="_blank" rel="noreferrer" className="block">
+                  {/* A short-lived signed address from file-storage, so next/image's optimizer cannot cache it. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={message.attachmentUrl}
+                    alt={`Image attached by ${message.senderName}`}
+                    className="max-h-64 max-w-full rounded-lg object-contain"
+                  />
+                </a>
+              ) : (
+                message.hasAttachment && (
+                  <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
+                )
+              )}
+              <p className="text-[11px] leading-[normal] text-[#6e6680]">{byline(message, messages[i - 1])}</p>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /**
  * The Ticket's Messages, kept current without a refresh. The database is the source of truth: the
  * page's saved Messages always show, and live ones are added to them, matched by id so a Message
@@ -44,6 +88,7 @@ export function Conversation({
   customerName,
   note,
   canReply,
+  scrollable = false,
   connect = connectLive,
 }: {
   ticketId: number;
@@ -53,6 +98,8 @@ export function Conversation({
   /** Why the Staff member cannot reply, when they cannot. */
   note: string | null;
   canReply: boolean;
+  /** Fill the parent's height: the Messages scroll inside it and the reply box stays in view. */
+  scrollable?: boolean;
   connect?: ConnectLive;
 }) {
   const router = useRouter();
@@ -140,49 +187,37 @@ export function Conversation({
     }
   };
 
-  return (
-    <>
-      {shown.map((message, i) => {
-        const fromStaff = message.sender === "staff";
+  const scroller = useRef<HTMLDivElement>(null);
 
-        return (
-          <div key={message.id} className={cn("flex", fromStaff && "justify-end")}>
-            <div
-              className={cn(
-                "flex w-[460px] max-w-full flex-col gap-1 rounded-xl px-[14px] py-[10px]",
-                fromStaff ? "bg-[#efe6f8]" : "bg-[#f3f1f6]",
-              )}
-            >
-              {message.body && (
-                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
-                  {message.body}
-                </p>
-              )}
-              {message.attachmentUrl ? (
-                <a href={message.attachmentUrl} target="_blank" rel="noreferrer" className="block">
-                  {/* A short-lived signed address from file-storage, so next/image's optimizer cannot cache it. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={message.attachmentUrl}
-                    alt={`Image attached by ${message.senderName}`}
-                    className="max-h-64 max-w-full rounded-lg object-contain"
-                  />
-                </a>
-              ) : (
-                message.hasAttachment && (
-                  <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
-                )
-              )}
-              <p className="text-[11px] leading-[normal] text-[#6e6680]">{byline(message, shown[i - 1])}</p>
-            </div>
-          </div>
-        );
-      })}
-      {canReply ? (
-        <Composer ticketId={ticketId} onSent={sent} />
-      ) : (
-        <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
-      )}
-    </>
+  // Show the newest Message: on opening the chat, and whenever one arrives.
+  useLayoutEffect(() => {
+    const box = scroller.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [shown.length]);
+
+  const bubbles = <Bubbles messages={shown} />;
+
+  const footer = canReply ? (
+    <Composer ticketId={ticketId} onSent={sent} />
+  ) : (
+    <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
+  );
+
+  if (!scrollable) {
+    return (
+      <>
+        {bubbles}
+        {footer}
+      </>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+        {bubbles}
+      </div>
+      {footer}
+    </div>
   );
 }

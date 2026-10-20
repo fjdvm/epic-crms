@@ -49,6 +49,19 @@ async function ticket(
 
 const subjects = (rows: { subject: string }[]) => rows.map((r) => r.subject);
 
+describe("the Tickets list", () => {
+  it("leaves out Claimed Tickets, in the tabs and in the counts", async () => {
+    await ticket({ subject: "free", messages: [["customer", 2]] });
+    const taken = await ticket({ subject: "taken", messages: [["customer", 2]] });
+    await db.sql`update tickets set claimed_by_id = 'staff-1', claimed_by_name = 'Staff One' where id = ${taken}`;
+
+    const list = await listTickets(db.sql, { tab: "open", now: NOW });
+
+    expect(subjects(list.rows)).toEqual(["free"]);
+    expect(list.counts.open).toBe(1);
+  });
+});
+
 describe("the Tickets list tabs", () => {
   it("Open lists every Open Ticket, including those waiting on the Customer", async () => {
     await ticket({ subject: "unanswered", messages: [["customer", 2]] });

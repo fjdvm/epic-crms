@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TicketListView } from "@/features/tickets/ticket-list";
 import type { TicketList, TicketRow } from "@/features/tickets/tickets";
+
+vi.mock("@/features/tickets/actions", () => ({
+  claim: vi.fn(),
+  release: vi.fn(),
+  reply: vi.fn(),
+  resolve: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 afterEach(cleanup);
 
@@ -34,6 +42,12 @@ function view(rows: TicketRow[]) {
 }
 
 describe("the Tickets list as designed", () => {
+  it("has a Claim button on each Ticket", () => {
+    view([row({ id: 208 }), row({ id: 207 })]);
+
+    expect(screen.getAllByRole("button", { name: "Claim" })).toHaveLength(2);
+  });
+
   it("has the three tabs with their counts and no Channel column", () => {
     view([row({})]);
 

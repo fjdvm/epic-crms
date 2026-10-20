@@ -37,18 +37,18 @@ export function ConversationsView({
   const { chats, selected } = conversations;
 
   return (
-    <div className="space-y-5 px-8 py-7">
-      <div className="space-y-1">
+    <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
+      <div className="shrink-0 space-y-1">
         <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Conversations</h1>
         <p className="text-sm leading-[normal] text-[#6e6680]">
           One inbox for every Ticket chat, newest activity first. Each chat belongs to a Ticket.
         </p>
       </div>
 
-      <div className="flex flex-col items-start gap-4 lg:flex-row">
+      <div className="flex flex-col items-start gap-4 lg:min-h-0 lg:w-full lg:flex-1 lg:flex-row">
         <nav
           aria-label="Chats"
-          className="flex max-h-[calc(100vh-14rem)] w-full flex-col gap-1 overflow-y-auto rounded-xl border border-[#e6e1ee] bg-white px-2 py-3 lg:w-[300px] lg:shrink-0"
+          className="flex h-[40vh] w-full flex-col gap-1 overflow-y-auto rounded-xl border border-[#e6e1ee] bg-white px-2 py-3 lg:h-full lg:w-[300px] lg:shrink-0"
         >
           {chats.length === 0 && (
             <p className="px-3 py-2 text-[13px] leading-[normal] text-[#6e6680]">No chats yet.</p>
@@ -104,11 +104,10 @@ function SelectedChat({
 }) {
   const { order, customer } = ticket;
   const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
-  const claimedByOther = ticket.claimerId !== null && !isClaimer;
 
   return (
     <>
-      <section aria-label="Chat" className={cn(CARD, "w-full min-w-0 space-y-3 lg:flex-1")}>
+      <section aria-label="Chat" className={cn(CARD, "flex h-[70vh] min-h-0 w-full min-w-0 flex-col space-y-0 gap-3 lg:h-full lg:flex-1")}>
         <div className="flex items-center gap-2">
           <h2 className={cn(CARD_TITLE, "min-w-0 flex-1 truncate")}>{customer.name}</h2>
           <span className="shrink-0 text-[13px] leading-[normal] font-medium text-[#5b2a86]">
@@ -122,16 +121,19 @@ function SelectedChat({
           messages={ticket.messages}
           viewerName={viewerName}
           customerName={customer.name.split(" ")[0]}
-          canReply={ticket.status !== "completed" && !claimedByOther}
+          scrollable
+          canReply={ticket.status !== "completed" && isClaimer}
           note={
             ticket.status === "completed"
               ? "The Customer completed this Ticket, so it can no longer be replied to."
-              : `${ticket.claimerName} claimed this Ticket, so only they can reply.`
+              : ticket.claimerName
+                ? `${ticket.claimerName} claimed this Ticket, so only they can reply.`
+                : "Claim this Ticket to reply."
           }
         />
       </section>
 
-      <div className="w-full space-y-4 lg:w-[320px] lg:shrink-0">
+      <div className="w-full space-y-4 lg:h-full lg:w-[320px] lg:shrink-0 lg:overflow-y-auto">
         <section aria-label="Customer" className={CARD}>
           <div className="flex items-center gap-2">
             <h2 className={cn(CARD_TITLE, "flex-1")}>Customer</h2>

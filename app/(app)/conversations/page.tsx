@@ -15,7 +15,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
   const asked = Array.isArray(raw) ? raw[0] : raw;
   const selectedId = asked && /^\d{1,9}$/.test(asked) ? Number(asked) : undefined;
 
-  const result = await loadConversations(ticketsDatabase, selectedId, gatewayFileStorage);
+  const result = await loadConversations(ticketsDatabase, staff.username, selectedId, gatewayFileStorage);
 
   if (!result.ok) {
     return (
