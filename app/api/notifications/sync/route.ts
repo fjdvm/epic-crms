@@ -2,8 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { readCustomers, syncNewCustomers } from "@/features/notifications/notifications";
+import { syncTicketEvents } from "@/features/notifications/ticket-events";
 import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
+import { ticketsDatabase } from "@/lib/tickets-db";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +17,7 @@ function authorised(header: string | null, secret: string): boolean {
 }
 
 /**
- * Finds Customers CREOMS has not seen yet and creates their New Customer notifications.
+ * Finds Customers and Ticket events CREOMS has not seen yet and creates their notifications.
  * Called by a scheduler, not by a browser, so it is outside the Portal session and
  * authenticated by a bearer secret instead.
  */
@@ -27,11 +29,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await syncNewCustomers(crmsDatabase(), await readCustomers(database()));
+    const customers = await syncNewCustomers(crmsDatabase(), await readCustomers(database()));
+    // The reply keeps the New Customer fields at the top level, as before.
+    const tickets = await syncTicketEvents(crmsDatabase(), ticketsDatabase());
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...customers, tickets });
   } catch (error) {
-    console.error("New Customer sync failed", error);
+    console.error("Notification sync failed", error);
 
     return NextResponse.json({ error: "sync failed" }, { status: 500 });
   }

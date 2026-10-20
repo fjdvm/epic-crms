@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { describeNotification } from "./describe";
 import type { NotificationFeed } from "./notifications";
 
 export const POLL_INTERVAL_MS = 5_000;
@@ -86,18 +87,19 @@ export function LiveUpdatesProvider({
 
       for (const n of arrived) {
         seen.current.add(n.id);
-        toast(`${n.customerName} became a Customer`);
+        toast(describeNotification(n).text);
       }
 
-      const ids = arrived.map((n) => n.customerId);
+      const ids = arrived.filter((n) => n.kind === "new-customer").map((n) => n.customerId);
+      refreshRef.current();
+      if (ids.length === 0) return;
+
       setFresh((current) => new Set([...current, ...ids]));
       const expire = setTimeout(() => {
         highlightTimers.delete(expire);
         setFresh((current) => new Set([...current].filter((id) => !ids.includes(id))));
       }, HIGHLIGHT_MS);
       highlightTimers.add(expire);
-
-      refreshRef.current();
     };
 
     const tick = async () => {

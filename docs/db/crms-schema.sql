@@ -25,14 +25,22 @@ CREATE TABLE crms.sync_state (
   baselined_at timestamptz NOT NULL DEFAULT now()
 );
 
--- New Customer notifications: at most one per Customer. read_at is shared by all Staff.
+-- Bell notifications. kind says what happened: a New Customer (at most one per Customer) or a
+-- Ticket event. recipient_id is the Claimer's Portal id; NULL means every Staff member who may see
+-- that kind (Customer Profiles for new-customer, Tickets for the rest). read_at is shared.
 CREATE TABLE crms.notifications (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  customer_id   text NOT NULL UNIQUE,
+  kind          text NOT NULL DEFAULT 'new-customer'
+                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed')),
+  customer_id   text NOT NULL,
   customer_name text NOT NULL,
+  ticket_id     integer,
+  recipient_id  text,
   created_at    timestamptz NOT NULL DEFAULT now(),
   read_at       timestamptz
 );
+
+CREATE UNIQUE INDEX notifications_new_customer ON crms.notifications (customer_id) WHERE kind = 'new-customer';
 
 CREATE INDEX notifications_unread ON crms.notifications (created_at DESC) WHERE read_at IS NULL;
 
@@ -63,3 +71,17 @@ CREATE TABLE crms.walk_in_customers (
 -- One profile per person: the backstop for the duplicate check under concurrent saves.
 CREATE UNIQUE INDEX walk_in_customers_mobile ON crms.walk_in_customers (mobile);
 CREATE UNIQUE INDEX walk_in_customers_email ON crms.walk_in_customers (email) WHERE email IS NOT NULL;
+
+-- Ticket events CREOMS has already seen, one row per event (ticket-new:<id>, ticket-message:<id>,
+-- ticket-not-fixed:<id>:<resolved_at>). The first sync fills this with every event already in
+-- the window, so the bell starts empty; the unique key makes an alert appear once per event.
+CREATE TABLE crms.seen_ticket_events (
+  event_key text PRIMARY KEY,
+  seen_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- One row, set by the first Ticket sync.
+CREATE TABLE crms.ticket_sync_state (
+  singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  baselined_at timestamptz NOT NULL DEFAULT now()
+);

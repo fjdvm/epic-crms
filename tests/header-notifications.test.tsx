@@ -19,8 +19,8 @@ afterEach(() => {
 const feed = {
   unread: 1,
   notifications: [
-    { id: "2", customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
-    { id: "1", customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(Date.now() - 3 * 86_400_000), read: true },
+    { id: "2", kind: "new-customer" as const, ticketId: null, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
+    { id: "1", kind: "new-customer" as const, ticketId: null, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(Date.now() - 3 * 86_400_000), read: true },
   ],
 };
 
@@ -62,5 +62,26 @@ describe("the header bell", () => {
     await userEvent.click(screen.getByTitle("Notifications"));
 
     expect(await screen.findByText("Notifications are temporarily unavailable.")).toBeTruthy();
+  });
+
+  it("words each Ticket alert and links it to its Ticket", async () => {
+    const ticketFeed = {
+      unread: 3,
+      notifications: (["ticket-new", "ticket-message", "ticket-not-fixed"] as const).map((kind, i) => ({
+        id: String(10 + i),
+        kind,
+        ticketId: 208,
+        customerId: "u-ada",
+        customerName: "Ada Lim",
+        createdAt: new Date(),
+        read: false,
+      })),
+    };
+    render(<HeaderNotifications feed={ticketFeed} />);
+    await userEvent.click(screen.getByTitle("Notifications"));
+
+    for (const text of [/Ada Lim raised TKT-208/, /Ada Lim sent a message on TKT-208/, /Ada Lim says TKT-208 is not fixed/]) {
+      expect((await screen.findByRole("link", { name: text })).getAttribute("href")).toBe("/tickets/208");
+    }
   });
 });
