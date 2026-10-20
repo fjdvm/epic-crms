@@ -15,7 +15,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { sidebarItems } from "./sidebar-nav";
+import { sidebarItems, type NavItem } from "./sidebar-nav";
 import { usePermittedPages } from "./staff-context";
 import { SidebarProfileFooter } from "./sidebar-profile-footer";
 import { SidebarNavSkeleton } from "./sidebar-nav-skeleton";
@@ -27,7 +27,16 @@ export function Sidebar() {
     useSidebar();
   const mounted = useMounted();
   const permittedPages = usePermittedPages();
-  const items = sidebarItems.filter((item) => permittedPages.includes(item.href));
+  const groups = sidebarItems
+    .filter((item) => permittedPages.includes(item.href))
+    .reduce<{ label: string; items: NavItem[] }[]>((acc, item) => {
+      const group = acc.find((g) => g.label === item.group);
+
+      if (group) group.items.push(item);
+      else acc.push({ label: item.group, items: [item] });
+
+      return acc;
+    }, []);
 
   const isOpen = isMobile ? openMobile : open;
 
@@ -59,35 +68,39 @@ export function Sidebar() {
                 <SidebarNavSkeleton rows={1} />
               ) : (
                 <SidebarMenu className="gap-0.5">
-                  {items.length > 0 && (
-                    <li
-                      aria-hidden
-                      className="pb-1.5 pl-2.5 pt-1 text-[11px] font-semibold tracking-wide text-zinc-400 list-none"
-                    >
-                      CUSTOMERS
-                    </li>
-                  )}
-                  {items.map((item) => {
-                    const ItemIcon = item.icon;
-                    const isActive =
-                      pathname === item.href ||
-                      pathname.startsWith(item.href + "/");
+                  {groups.map((group, index) => (
+                    <React.Fragment key={group.label}>
+                      <li
+                        aria-hidden
+                        className={`pb-1.5 pl-2.5 text-[11px] font-semibold tracking-wide text-zinc-400 list-none ${
+                          index === 0 ? "pt-1" : "pt-[18px]"
+                        }`}
+                      >
+                        {group.label}
+                      </li>
+                      {group.items.map((item) => {
+                        const ItemIcon = item.icon;
+                        const isActive =
+                          pathname === item.href ||
+                          pathname.startsWith(item.href + "/");
 
-                    return (
-                      <SidebarMenuItem key={item.name}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={isActive}
-                          className="h-auto w-full flex items-center gap-3 px-2.5 py-[9px] rounded-lg text-[15px] font-medium text-sidebar-foreground transition-colors data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
-                        >
-                          <Link href={item.href} onClick={handleNavClick}>
-                            <ItemIcon className="size-[18px] shrink-0" />
-                            <span>{item.name}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
+                        return (
+                          <SidebarMenuItem key={item.name}>
+                            <SidebarMenuButton
+                              asChild
+                              isActive={isActive}
+                              className="h-auto w-full flex items-center gap-3 px-2.5 py-[9px] rounded-lg text-[15px] font-medium text-sidebar-foreground transition-colors data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
+                            >
+                              <Link href={item.href} onClick={handleNavClick}>
+                                <ItemIcon className="size-[18px] shrink-0" />
+                                <span>{item.name}</span>
+                              </Link>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
                 </SidebarMenu>
               )}
             </SidebarGroupContent>

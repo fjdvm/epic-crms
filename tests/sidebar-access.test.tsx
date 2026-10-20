@@ -75,4 +75,25 @@ describe("the sidebar", () => {
     expect(screen.queryByRole("link", { name: "Tickets" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Conversations" })).toBeNull();
   });
+
+  it("puts Tickets and Conversations under their own SERVICE label, after CUSTOMERS", async () => {
+    renderSidebar(["/customer-profiles", "/tickets", "/conversations"]);
+
+    const customers = await screen.findByText("CUSTOMERS");
+    const service = screen.getByText("SERVICE");
+
+    expect(customers.compareDocumentPosition(service) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Customer Profiles",
+      "Tickets",
+      "Conversations",
+    ]);
+  });
+
+  it("shows only the SERVICE label with just the Tickets Module", async () => {
+    renderSidebar(["/tickets", "/conversations"]);
+
+    expect(await screen.findByText("SERVICE")).toBeTruthy();
+    expect(screen.queryByText("CUSTOMERS")).toBeNull();
+  });
 });

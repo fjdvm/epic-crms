@@ -19,10 +19,10 @@ export function CartTab({ cart }: { cart: Cart }) {
         <table className="w-full min-w-max whitespace-nowrap text-sm">
           <thead>
             <tr className="text-left text-xs text-muted-foreground">
-              <th className="py-1 font-medium">Product</th>
-              <th className="py-1 font-medium">Size</th>
-              <th className="py-1 text-right font-medium">Qty</th>
-              <th className="py-1 text-right font-medium">Price</th>
+              <th className="w-[40%] py-1 font-medium">Product</th>
+              <th className="w-[20%] py-1 font-medium">Size</th>
+              <th className="w-[15%] py-1 text-right font-medium">Qty</th>
+              <th className="w-[25%] py-1 text-right font-medium">Price</th>
             </tr>
           </thead>
           <tbody>

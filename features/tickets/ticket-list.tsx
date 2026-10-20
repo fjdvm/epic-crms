@@ -45,14 +45,14 @@ const PRIORITY_PILLS: Record<TicketPriority, string> = {
   urgent: PILL.red,
 };
 
-/** The Figma frame's columns, minus Channel: a Ticket has no Channel. Status takes the rest. */
+/** The Figma frame's columns, minus Channel: a Ticket has no Channel. They share the table width in proportion, so the rows fill the card. */
 const COLUMNS: { header: string; className: string }[] = [
-  { header: "Ticket", className: "w-[100px] shrink-0" },
-  { header: "Subject", className: "w-[270px] shrink-0" },
-  { header: "Customer", className: "w-[150px] shrink-0" },
-  { header: "Linked order", className: "w-[120px] shrink-0" },
-  { header: "Priority", className: "w-[100px] shrink-0" },
-  { header: "Status", className: "min-w-0 flex-1" },
+  { header: "Ticket", className: "flex-[1_1_100px]" },
+  { header: "Subject", className: "min-w-0 flex-[3_1_270px]" },
+  { header: "Customer", className: "min-w-0 flex-[2_1_150px]" },
+  { header: "Linked order", className: "flex-[1_1_120px]" },
+  { header: "Priority", className: "flex-[1_1_100px]" },
+  { header: "Status", className: "flex-[1_1_110px]" },
 ];
 
 function href(params: TicketListParams, change: Partial<TicketListParams>): string {

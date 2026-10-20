@@ -5,13 +5,15 @@ import {
   CreditCard,
   Truck,
   LayoutGrid,
-  LifeBuoy,
-  MessageSquare,
+  MessageCircle,
+  Ticket,
   Users2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
+  /** The label above its section of the sidebar, as in the Figma. */
+  group: string;
   name: string;
   href: string;
   icon: LucideIcon;
@@ -28,21 +30,24 @@ export interface SystemItem {
 export type SystemChild = SystemItem;
 
 export const customerProfilesItem: NavItem = {
+  group: "CUSTOMERS",
   name: "Customer Profiles",
   href: "/customer-profiles",
   icon: Users,
 };
 
 export const ticketsItem: NavItem = {
+  group: "SERVICE",
   name: "Tickets",
   href: "/tickets",
-  icon: LifeBuoy,
+  icon: Ticket,
 };
 
 export const conversationsItem: NavItem = {
+  group: "SERVICE",
   name: "Conversations",
   href: "/conversations",
-  icon: MessageSquare,
+  icon: MessageCircle,
 };
 
 export const sidebarItems: NavItem[] = [customerProfilesItem, ticketsItem, conversationsItem];

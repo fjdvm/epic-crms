@@ -22,14 +22,14 @@ export interface ListParams {
   page: number;
 }
 
-/** Column widths follow the design: fixed, with Contact taking the rest so the table fills the card. */
+/** Column widths follow the design: proportional, so every column shares the card width. */
 const COLUMNS: { key: SortKey | null; header: string; className: string }[] = [
-  { key: "name", header: "Customer", className: "shrink-0 w-[220px]" },
-  { key: "email", header: "Contact", className: "flex-1 min-w-[340px]" },
-  { key: null, header: "Stage", className: "shrink-0 w-[120px]" },
-  { key: "orders", header: "Orders", className: "shrink-0 w-[90px]" },
-  { key: "totalSpent", header: "Total spent", className: "shrink-0 w-[140px]" },
-  { key: "lastOrder", header: "Last order", className: "shrink-0 w-[140px]" },
+  { key: "name", header: "Customer", className: "min-w-0 flex-[2_1_220px]" },
+  { key: "email", header: "Contact", className: "min-w-0 flex-[3_1_340px]" },
+  { key: null, header: "Stage", className: "flex-[1_1_120px]" },
+  { key: "orders", header: "Orders", className: "flex-[1_1_90px]" },
+  { key: "totalSpent", header: "Total spent", className: "flex-[1_1_140px]" },
+  { key: "lastOrder", header: "Last order", className: "flex-[1_1_140px]" },
 ];
 
 function href(params: ListParams, change: Partial<ListParams>): string {
