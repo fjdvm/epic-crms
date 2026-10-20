@@ -11,19 +11,19 @@ import { TicketActions } from "./ticket-controls";
 import type { TicketDetail } from "./ticket";
 import type { TicketStatus } from "./tickets";
 
-const STATUS_LABELS: Record<TicketStatus, string> = {
+export const STATUS_LABELS: Record<TicketStatus, string> = {
   open: "Open",
   resolved: "Resolved",
   completed: "Completed",
 };
 
-const STATUS_PILLS: Record<TicketStatus, string> = {
+export const STATUS_PILLS: Record<TicketStatus, string> = {
   open: PILL.red,
   resolved: PILL.green,
   completed: PILL.green,
 };
 
-const STAGE_PILLS: Record<Stage, string> = {
+export const STAGE_PILLS: Record<Stage, string> = {
   new: PILL.blue,
   "first-order": PILL.blue,
   repeat: PILL.purple,
@@ -31,21 +31,21 @@ const STAGE_PILLS: Record<Stage, string> = {
   lost: PILL.grey,
 };
 
-const PAYMENT_PILLS = {
+export const PAYMENT_PILLS = {
   Paid: PILL.green,
   Unpaid: PILL.amber,
   Cancelled: PILL.grey,
 } as const;
 
-const ORDER_PILLS: Record<string, string> = {
+export const ORDER_PILLS: Record<string, string> = {
   dispatched: PILL.blue,
   delivered: PILL.green,
   cancelled: PILL.grey,
 };
 
-const CARD = "space-y-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5";
-const CARD_TITLE = "text-base font-semibold leading-[normal] text-[#1f1a2e]";
-const CARD_LINK =
+export const CARD = "space-y-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5";
+export const CARD_TITLE = "text-base font-semibold leading-[normal] text-[#1f1a2e]";
+export const CARD_LINK =
   "flex justify-center rounded-lg bg-[#efe6f8] px-3 py-2 text-sm font-medium leading-[normal] text-[#5b2a86]";
 
 export function TicketDetailView({

@@ -67,16 +67,21 @@ export function TicketActions({
   status,
   claimed,
   isClaimer,
+  withReply = true,
+  className,
 }: {
   ticketId: number;
   status: TicketStatus;
   claimed: boolean;
   isClaimer: boolean;
+  /** Offer the Reply link to the composer; off where the composer sits beside the actions. */
+  withReply?: boolean;
+  className?: string;
 }) {
   const { pending, run } = useTicketAction();
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className={cn("flex shrink-0 items-center gap-2", className)}>
       {status !== "completed" && !claimed && (
         <button
           type="button"
@@ -122,7 +127,7 @@ export function TicketActions({
           Mark resolved
         </button>
       )}
-      {status !== "completed" && (!claimed || isClaimer) && (
+      {withReply && status !== "completed" && (!claimed || isClaimer) && (
         <a href="#reply" className={PRIMARY}>
           Reply
         </a>
