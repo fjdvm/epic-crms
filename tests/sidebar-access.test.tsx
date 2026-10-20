@@ -96,4 +96,15 @@ describe("the sidebar", () => {
     expect(await screen.findByText("SERVICE")).toBeTruthy();
     expect(screen.queryByText("CUSTOMERS")).toBeNull();
   });
+
+  it("lists the rest of the design as dimmed entries that are not links", async () => {
+    renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+
+    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns", "Feedback", "Email campaigns", "Segments"]) {
+      expect(screen.getByText(name).closest("[aria-disabled]")?.getAttribute("aria-disabled")).toBe("true");
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
+    for (const label of ["SALES", "SERVICE", "MARKETING"]) expect(screen.getByText(label)).toBeTruthy();
+  });
 });

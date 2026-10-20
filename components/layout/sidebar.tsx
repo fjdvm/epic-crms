@@ -28,7 +28,7 @@ export function Sidebar() {
   const mounted = useMounted();
   const permittedPages = usePermittedPages();
   const groups = sidebarItems
-    .filter((item) => permittedPages.includes(item.href))
+    .filter((item) => item.href === null || permittedPages.includes(item.href))
     .reduce<{ label: string; items: NavItem[] }[]>((acc, item) => {
       const group = acc.find((g) => g.label === item.group);
 
@@ -70,19 +70,37 @@ export function Sidebar() {
                 <SidebarMenu className="gap-0.5">
                   {groups.map((group, index) => (
                     <React.Fragment key={group.label}>
-                      <li
-                        aria-hidden
-                        className={`pb-1.5 pl-2.5 text-[11px] font-semibold tracking-wide text-zinc-400 list-none ${
-                          index === 0 ? "pt-1" : "pt-[18px]"
-                        }`}
-                      >
-                        {group.label}
-                      </li>
+                      {group.label && (
+                        <li
+                          aria-hidden
+                          className={`pb-1.5 pl-2.5 text-[11px] font-semibold tracking-wide text-zinc-400 list-none ${
+                            index === 0 ? "pt-1" : "pt-[18px]"
+                          }`}
+                        >
+                          {group.label}
+                        </li>
+                      )}
                       {group.items.map((item) => {
                         const ItemIcon = item.icon;
-                        const isActive =
-                          pathname === item.href ||
-                          pathname.startsWith(item.href + "/");
+                        const { href } = item;
+
+                        if (href === null) {
+                          return (
+                            <SidebarMenuItem key={item.name}>
+                              <SidebarMenuButton
+                                asChild
+                                className="h-auto w-full flex items-center gap-3 px-2.5 py-[9px] rounded-lg text-[15px] font-medium text-sidebar-foreground opacity-50 cursor-not-allowed"
+                              >
+                                <span aria-disabled="true" title="Coming soon">
+                                  <ItemIcon className="size-[18px] shrink-0" />
+                                  <span>{item.name}</span>
+                                </span>
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                          );
+                        }
+
+                        const isActive = pathname === href || pathname.startsWith(href + "/");
 
                         return (
                           <SidebarMenuItem key={item.name}>
@@ -91,7 +109,7 @@ export function Sidebar() {
                               isActive={isActive}
                               className="h-auto w-full flex items-center gap-3 px-2.5 py-[9px] rounded-lg text-[15px] font-medium text-sidebar-foreground transition-colors data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
                             >
-                              <Link href={item.href} onClick={handleNavClick}>
+                              <Link href={href} onClick={handleNavClick}>
                                 <ItemIcon className="size-[18px] shrink-0" />
                                 <span>{item.name}</span>
                               </Link>
