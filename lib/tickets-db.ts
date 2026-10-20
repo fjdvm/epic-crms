@@ -8,7 +8,9 @@ let client: postgres.Sql | undefined;
  * Tickets and read and add Messages, and nothing else.
  */
 export function ticketsDatabase(): postgres.Sql {
-  const url = process.env.CREOMS_TICKETS_DATABASE_URL;
+  // Until the Ticket write slices ship the pages only read, so the read-only URL is enough. Drop
+  // this fallback once Claim, reply and Mark resolved need the `creoms_tickets` role.
+  const url = process.env.CREOMS_TICKETS_DATABASE_URL || process.env.CREOMS_DATABASE_URL;
 
   if (!url) {
     throw new Error("CREOMS_TICKETS_DATABASE_URL is not set; see .env.example");
