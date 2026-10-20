@@ -206,3 +206,35 @@ describe("working the Ticket", () => {
     expect(screen.queryByRole("textbox", { name: "Write a reply" })).toBeNull();
   });
 });
+
+describe("images on Messages", () => {
+  const withImage = (attachmentUrl: string | null) =>
+    ticket({
+      messages: [
+        {
+          id: 3,
+          sender: "customer",
+          senderName: "Maria",
+          body: "",
+          hasAttachment: true,
+          attachmentUrl,
+          createdAt: new Date("2026-10-20T02:21:00Z"),
+        },
+      ],
+    });
+
+  it("shows the image from its short-lived address, even without text", () => {
+    render(<TicketDetailView ticket={withImage("https://files.test/f1?signature=x")} viewerId="bernice" viewerName="Bernice" />);
+
+    expect(screen.getByRole("img", { name: "Image attached by Maria" }).getAttribute("src")).toBe(
+      "https://files.test/f1?signature=x",
+    );
+  });
+
+  it("still says a photo is attached when the image cannot be shown here", () => {
+    render(<TicketDetailView ticket={withImage(null)} viewerId="bernice" viewerName="Bernice" />);
+
+    expect(screen.getByText("Photo attached")).toBeTruthy();
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+});

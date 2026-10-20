@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 
+import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "./attachments";
 import type { TicketStatus } from "./tickets";
 import { claim, release, reply, resolve, type ReplyOutcome, type TicketActionOutcome } from "./actions";
 
@@ -16,7 +17,9 @@ const REASONS: Record<Exclude<TicketActionOutcome | ReplyOutcome, { ok: true }>[
   "not-claimed": "This Ticket is no longer claimed by you.",
   completed: "The Customer has completed this Ticket, so it can no longer change.",
   "already-resolved": "This Ticket is already resolved.",
-  "empty-message": "Write a reply first.",
+  "empty-message": "Write a reply or attach an image first.",
+  ...IMAGE_REFUSALS,
+  "storage-unavailable": "CREOMS could not store that image. Try again in a moment.",
   unavailable: "CREOMS could not save that. Try again in a moment.",
 };
 
@@ -121,43 +124,89 @@ export function Composer({
   onSent?: (message: { id: number; body: string }) => void;
 }) {
   const [text, setText] = useState("");
+  const [image, setImage] = useState<File | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const { pending, run } = useTicketAction();
 
+  const choose = (file: File | undefined) => {
+    if (!file) return;
+
+    // Said here as well as on the server, so a big file never travels just to be refused.
+    if (!/^image\/(jpeg|png)$/.test(file.type)) toast.error(IMAGE_REFUSALS["invalid-image-type"]);
+    else if (file.size === 0) toast.error(IMAGE_REFUSALS["empty-image"]);
+    else if (file.size > MAX_IMAGE_BYTES) toast.error(IMAGE_REFUSALS["image-too-large"]);
+    else setImage(file);
+
+    if (picker.current) picker.current.value = "";
+  };
+
   const send = () => {
-    if (pending || !text.trim()) return;
+    if (pending || (!text.trim() && !image)) return;
+
+    const form = new FormData();
+    form.set("body", text);
+    if (image) form.set("image", image);
 
     run(
-      () => reply(ticketId, text),
+      () => reply(ticketId, form),
       (r) => {
         if (!r.ok) return;
 
         setText("");
-        if ("messageId" in r) onSent?.({ id: r.messageId, body: text.trim() });
+        setImage(null);
+        if ("messageId" in r) onSent?.({ id: r.messageId, body: text.trim() || "Sent a photo" });
       },
     );
   };
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 rounded-[10px] border border-[#e6e1ee] bg-white py-1.5 pr-1.5 pl-[14px]",
+    <div className="space-y-2">
+      {image && (
+        <div className="flex items-center gap-2 text-xs leading-[normal] text-[#5b2a86]">
+          <span className="min-w-0 truncate font-medium">{image.name}</span>
+          <button
+            type="button"
+            className="shrink-0 text-[#6e6680] underline"
+            aria-label={`Remove ${image.name}`}
+            onClick={() => setImage(null)}
+          >
+            Remove
+          </button>
+        </div>
       )}
-    >
-      <textarea
-        id="reply"
-        rows={1}
-        aria-label="Write a reply"
-        placeholder="Write a reply…"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
-        }}
-        className="max-h-40 min-w-0 flex-1 resize-none bg-transparent text-sm leading-[normal] text-[#1f1a2e] outline-none placeholder:text-[#9a93a8]"
-      />
-      <button type="button" className={PRIMARY} disabled={pending || !text.trim()} onClick={send}>
-        Send
-      </button>
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-[10px] border border-[#e6e1ee] bg-white py-1.5 pr-1.5 pl-[14px]",
+        )}
+      >
+        <textarea
+          id="reply"
+          rows={1}
+          aria-label="Write a reply"
+          placeholder="Write a reply…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
+          }}
+          className="max-h-40 min-w-0 flex-1 resize-none bg-transparent text-sm leading-[normal] text-[#1f1a2e] outline-none placeholder:text-[#9a93a8]"
+        />
+        <input
+          ref={picker}
+          type="file"
+          accept="image/jpeg,image/png"
+          aria-label="Attach an image"
+          className="sr-only"
+          tabIndex={-1}
+          onChange={(e) => choose(e.target.files?.[0])}
+        />
+        <button type="button" className={OUTLINE} disabled={pending} onClick={() => picker.current?.click()}>
+          Attach image
+        </button>
+        <button type="button" className={PRIMARY} disabled={pending || (!text.trim() && !image)} onClick={send}>
+          Send
+        </button>
+      </div>
     </div>
   );
 }

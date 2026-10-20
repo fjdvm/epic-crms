@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { getTicket, loadTicket } from "@/features/tickets/ticket";
 
+import { FakeFileStorage } from "./fake-file-storage";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 let db: TestDatabase;
@@ -168,5 +169,41 @@ describe("loading a Ticket for the page", () => {
     }, 1);
 
     expect(result).toEqual({ ok: false });
+  });
+});
+
+describe("images on Messages", () => {
+  const storage = new FakeFileStorage();
+
+  it("shows each image through a short-lived address from file-storage", async () => {
+    const id = await ticket();
+    const fileId = await storage.upload({ filename: "pouch.jpg", contentType: "image/jpeg", bytes: new Uint8Array([1]) });
+    await message(id, "customer", "Here it is", 2, fileId);
+
+    const result = await loadTicket(() => db.sql, id, storage);
+
+    expect(result.ok && result.ticket?.messages[0]).toMatchObject({
+      hasAttachment: true,
+      attachmentUrl: `https://files.test/${fileId}?signature=short-lived`,
+    });
+  });
+
+  it("still shows the Message when file-storage cannot give an address", async () => {
+    const id = await ticket();
+    await message(id, "customer", "Here it is", 2, "gone");
+
+    const result = await loadTicket(() => db.sql, id, storage);
+
+    expect(result.ok && result.ticket?.messages[0]).toMatchObject({ hasAttachment: true, attachmentUrl: null });
+  });
+
+  it("leaves an old storefront attachment without an address", async () => {
+    const id = await ticket();
+    await db.sql`insert into ticket_messages (ticket_id, sender, body, attachment_pathname)
+      values (${id}, 'customer', 'Old photo', 'tickets/old.jpg')`;
+
+    const result = await loadTicket(() => db.sql, id, storage);
+
+    expect(result.ok && result.ticket?.messages[0]).toMatchObject({ hasAttachment: true, attachmentUrl: null });
   });
 });

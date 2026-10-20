@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "@/features/customer-profiles/rules";
 
+import type { FileStorage } from "./attachments";
 import type { TicketPriority, TicketStatus } from "./tickets";
 
 export interface TicketMessage {
@@ -12,6 +13,10 @@ export interface TicketMessage {
   body: string;
   /** The Message carries an image. */
   hasAttachment: boolean;
+  /** The file-storage id of the image, when it was stored there; old storefront images have none. */
+  fileId?: string | null;
+  /** A short-lived address to show the image from; null when there is none to show. */
+  attachmentUrl?: string | null;
   createdAt: Date;
 }
 
@@ -119,6 +124,8 @@ export async function getTicket(
       senderName: m.sender === "customer" ? customerFirstName : (claimerName ?? "Staff"),
       body: m.body as string,
       hasAttachment: m.file_id !== null || m.attachment_pathname !== null,
+      fileId: (m.file_id as string | null) ?? null,
+      attachmentUrl: null,
       createdAt: m.created_at as Date,
     })),
     order,
@@ -142,11 +149,33 @@ export async function getTicket(
  * Like getTicket, but an unreachable database becomes `{ ok: false }` so the page can say so in
  * place instead of crashing into the framework's generic error page.
  */
-export async function loadTicket(connect: () => postgres.Sql, id: number): Promise<TicketResult> {
+export async function loadTicket(
+  connect: () => postgres.Sql,
+  id: number,
+  storage?: FileStorage,
+): Promise<TicketResult> {
   try {
-    return { ok: true, ticket: await getTicket(connect(), id) };
+    const ticket = await getTicket(connect(), id);
+    if (ticket && storage) await addImageAddresses(ticket, storage);
+
+    return { ok: true, ticket };
   } catch (error) {
     console.error("Ticket could not be read from the ecommerce database", error);
     return { ok: false };
   }
+}
+
+/** A Message whose address cannot be fetched still shows; only its image is missing. */
+async function addImageAddresses(ticket: TicketDetail, storage: FileStorage) {
+  await Promise.all(
+    ticket.messages.map(async (m) => {
+      if (!m.fileId) return;
+
+      try {
+        m.attachmentUrl = await storage.viewUrl(m.fileId);
+      } catch (error) {
+        console.error(`The image on Ticket TKT-${ticket.id} Message ${m.id} could not be reached`, error);
+      }
+    }),
+  );
 }
