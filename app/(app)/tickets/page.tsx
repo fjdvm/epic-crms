@@ -38,11 +38,12 @@ export default async function TicketsPage({ searchParams }: { searchParams: Sear
   const { list } = result;
 
   return (
-    <div className="space-y-5 px-xl py-7">
+    <div className="space-y-5 px-8 py-7">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold leading-[normal] text-foreground">Tickets</h1>
-        <p className="text-sm text-muted-foreground">
-          {list.counts.open} open · {list.overdue} overdue
+        <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Tickets</h1>
+        <p className="text-sm leading-[normal] text-[#6e6680]">
+          {list.counts.open} open · {list.overdue} overdue · each ticket links to a customer, and to
+          an order when it is about one
         </p>
       </div>
       <TicketListView list={list} params={{ tab, page: list.page }} />

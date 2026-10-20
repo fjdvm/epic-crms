@@ -11,7 +11,7 @@ const hoursAgo = (hours: number) => new Date(NOW.getTime() - hours * 60 * 60 * 1
 
 beforeAll(async () => {
   db = await startTestDatabase();
-});
+}, 60_000);
 
 afterAll(async () => {
   await db.close();
