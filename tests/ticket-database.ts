@@ -11,11 +11,24 @@ const SCHEMA = `
   create table customers (
     id text primary key,
     full_name text not null,
+    first_name text not null default '',
     email text not null
   );
   create table orders (
     id integer primary key generated always as identity,
-    customer_id text not null references customers (id)
+    customer_id text not null references customers (id),
+    status text not null default 'placed',
+    subtotal_in_centavos integer not null default 0,
+    delivery_fee_in_centavos integer,
+    created_at timestamptz not null default now()
+  );
+  create table order_lines (
+    id integer primary key generated always as identity,
+    order_id integer not null references orders (id) on delete cascade,
+    product_name text not null,
+    size_label text not null default '',
+    price_in_centavos integer not null default 0,
+    quantity integer not null default 1
   );
   create table tickets (
     id integer primary key generated always as identity,
