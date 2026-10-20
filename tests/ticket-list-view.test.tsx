@@ -55,7 +55,7 @@ describe("the Tickets list as designed", () => {
       row({ id: 201, overdue: true }),
     ]);
 
-    expect(screen.getByRole("link", { name: "TKT-208" }).getAttribute("href")).toBe("/tickets/208");
+    expect(screen.getByRole("link", { name: "TKT-208" }).getAttribute("href")).toBe("/conversations?ticket=208");
     expect(screen.getByText("None yet")).toBeTruthy();
     expect(screen.getByText("Waiting")).toBeTruthy();
     expect(screen.getAllByText("Resolved")).toHaveLength(2);

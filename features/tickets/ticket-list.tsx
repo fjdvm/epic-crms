@@ -97,7 +97,7 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
               {list.rows.map((row) => (
                 <div key={row.id} className="flex items-center border-b border-[#efebf4] py-[11px]">
                   <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
-                    <Link href={`/tickets/${row.id}`}>TKT-{row.id}</Link>
+                    <Link href={`/conversations?ticket=${row.id}`}>TKT-{row.id}</Link>
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className)}>
                     <span className="truncate pr-3">{row.subject}</span>
