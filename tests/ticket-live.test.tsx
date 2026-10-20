@@ -16,7 +16,9 @@ vi.mock("@/features/tickets/actions", () => ({
   resolve: vi.fn(),
   liveUrl: vi.fn(),
 }));
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 afterEach(cleanup);
@@ -51,7 +53,10 @@ const saved: TicketMessage[] = [
   },
 ];
 
-const renderConversation = (connect: ConnectLive, props: { canReply?: boolean } = {}) =>
+const renderConversation = (
+  connect: ConnectLive,
+  props: { canReply?: boolean } = {},
+) =>
   render(
     <Conversation
       ticketId={208}
@@ -79,18 +84,26 @@ describe("live Conversation", () => {
     const relay = fakeRelay();
     renderConversation(relay.connect);
 
-    await relay.receive(fromCustomer(2, "Replacement please, it is for Undas."));
+    await relay.receive(
+      fromCustomer(2, "Replacement please, it is for Undas."),
+    );
 
-    expect(screen.getByText("Replacement please, it is for Undas.")).toBeTruthy();
+    expect(
+      screen.getByText("Replacement please, it is for Undas."),
+    ).toBeTruthy();
   });
 
   it("shows a Message that is both live and saved once", async () => {
     const relay = fakeRelay();
     renderConversation(relay.connect);
 
-    await relay.receive(fromCustomer(1, "One of the halaya pouches was leaking."));
+    await relay.receive(
+      fromCustomer(1, "One of the halaya pouches was leaking."),
+    );
 
-    expect(screen.getAllByText("One of the halaya pouches was leaking.")).toHaveLength(1);
+    expect(
+      screen.getAllByText("One of the halaya pouches was leaking."),
+    ).toHaveLength(1);
   });
 
   it("relays a saved reply and shows it", async () => {
@@ -126,15 +139,41 @@ describe("live Conversation", () => {
     vi.mocked(reply).mockResolvedValue({ ok: true, messageId: 9 });
     renderConversation(fakeRelay().connect);
 
-    const photo = new File([new Uint8Array([0xff, 0xd8, 0xff])], "box.jpg", { type: "image/jpeg" });
+    const photo = new File([new Uint8Array([0xff, 0xd8, 0xff])], "box.jpg", {
+      type: "image/jpeg",
+    });
     await userEvent.upload(screen.getByLabelText("Attach an image"), photo);
-    expect(screen.getByText("box.jpg")).toBeTruthy();
+    expect(screen.getByAltText("Selected image: box.jpg")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(reply).toHaveBeenCalled());
     const form = vi.mocked(reply).mock.calls[0][1];
     expect((form.get("image") as File).name).toBe("box.jpg");
-    await waitFor(() => expect(screen.queryByText("box.jpg")).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByAltText("Selected image: box.jpg")).toBeNull(),
+    );
+  });
+
+  it("shows the reply as sending and cannot be sent twice while it is on its way", async () => {
+    vi.mocked(reply).mockClear();
+    let finish!: (outcome: { ok: true; messageId: number }) => void;
+    vi.mocked(reply).mockReturnValue(
+      new Promise((resolve) => (finish = resolve)),
+    );
+    renderConversation(fakeRelay().connect);
+
+    await userEvent.type(screen.getByLabelText("Write a reply"), "Once only");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const sending = await screen.findByRole("button", { name: "Sending…" });
+    expect((sending as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(sending);
+    expect(reply).toHaveBeenCalledTimes(1);
+
+    await act(async () => finish({ ok: true, messageId: 11 }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send" })).toBeTruthy(),
+    );
   });
 
   it("refuses a file that is not a JPG or PNG before sending it", async () => {
@@ -142,10 +181,17 @@ describe("live Conversation", () => {
     renderConversation(fakeRelay().connect);
 
     const pdf = new File(["%PDF"], "receipt.pdf", { type: "application/pdf" });
-    await userEvent.upload(screen.getByLabelText("Attach an image"), pdf, { applyAccept: false });
+    await userEvent.upload(screen.getByLabelText("Attach an image"), pdf, {
+      applyAccept: false,
+    });
 
-    expect(toast.error).toHaveBeenCalledWith("Only JPG or PNG images can be attached.");
+    expect(toast.error).toHaveBeenCalledWith(
+      "Only JPG or PNG images can be attached.",
+    );
     expect(screen.queryByText("receipt.pdf")).toBeNull();
-    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 });

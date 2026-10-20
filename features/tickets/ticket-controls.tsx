@@ -1,5 +1,6 @@
 "use client";
 
+import { Loader2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -8,18 +9,30 @@ import { cn } from "@/lib/utils";
 
 import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "./attachments";
 import type { TicketStatus } from "./tickets";
-import { claim, release, reply, resolve, type ReplyOutcome, type TicketActionOutcome } from "./actions";
+import {
+  claim,
+  release,
+  reply,
+  resolve,
+  type ReplyOutcome,
+  type TicketActionOutcome,
+} from "./actions";
 
-const REASONS: Record<Exclude<TicketActionOutcome | ReplyOutcome, { ok: true }>["reason"], string> = {
+const REASONS: Record<
+  Exclude<TicketActionOutcome | ReplyOutcome, { ok: true }>["reason"],
+  string
+> = {
   "not-found": "This Ticket no longer exists.",
   claimed: "Another Staff member has already claimed this Ticket.",
   "not-claimer": "Only the Staff member who claimed a Ticket can release it.",
   "not-claimed": "This Ticket is no longer claimed by you.",
-  completed: "The Customer has completed this Ticket, so it can no longer change.",
+  completed:
+    "The Customer has completed this Ticket, so it can no longer change.",
   "already-resolved": "This Ticket is already resolved.",
   "empty-message": "Write a reply or attach an image first.",
   ...IMAGE_REFUSALS,
-  "storage-unavailable": "CREOMS could not store that image. Try again in a moment.",
+  "storage-unavailable":
+    "CREOMS could not store that image. Try again in a moment.",
   unavailable: "CREOMS could not save that. Try again in a moment.",
 };
 
@@ -98,7 +111,10 @@ export function TicketActions({
                   toast.warning(
                     "Marked resolved, but the confirmation email could not be sent to the Customer.",
                   );
-                else toast.success("Marked resolved. The Customer has been asked to confirm.");
+                else
+                  toast.success(
+                    "Marked resolved. The Customer has been asked to confirm.",
+                  );
               },
             )
           }
@@ -124,24 +140,49 @@ export function Composer({
   onSent?: (message: { id: number; body: string }) => void;
 }) {
   const [text, setText] = useState("");
-  const [image, setImage] = useState<File | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const { pending, run } = useTicketAction();
+  const [picked, setPicked] = useState<{ file: File; url?: string } | null>(
+    null,
+  );
+  const image = picked?.file ?? null;
+  const preview = picked?.url;
+
+  // The preview address is made when the file is picked, not in an effect, so it survives Strict Mode remounts.
+  const setImage = (file: File | null) =>
+    setPicked((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+
+      return file
+        ? {
+            file,
+            url:
+              typeof URL.createObjectURL === "function"
+                ? URL.createObjectURL(file)
+                : undefined,
+          }
+        : null;
+    });
 
   const choose = (file: File | undefined) => {
     if (!file) return;
 
     // Said here as well as on the server, so a big file never travels just to be refused.
-    if (!/^image\/(jpeg|png)$/.test(file.type)) toast.error(IMAGE_REFUSALS["invalid-image-type"]);
+    if (!/^image\/(jpeg|png)$/.test(file.type))
+      toast.error(IMAGE_REFUSALS["invalid-image-type"]);
     else if (file.size === 0) toast.error(IMAGE_REFUSALS["empty-image"]);
-    else if (file.size > MAX_IMAGE_BYTES) toast.error(IMAGE_REFUSALS["image-too-large"]);
+    else if (file.size > MAX_IMAGE_BYTES)
+      toast.error(IMAGE_REFUSALS["image-too-large"]);
     else setImage(file);
 
     if (picker.current) picker.current.value = "";
   };
 
+  const sending = useRef(false);
+
   const send = () => {
-    if (pending || (!text.trim() && !image)) return;
+    if (sending.current || pending || (!text.trim() && !image)) return;
+    sending.current = true;
 
     const form = new FormData();
     form.set("body", text);
@@ -150,11 +191,13 @@ export function Composer({
     run(
       () => reply(ticketId, form),
       (r) => {
+        sending.current = false;
         if (!r.ok) return;
 
         setText("");
         setImage(null);
-        if ("messageId" in r) onSent?.({ id: r.messageId, body: text.trim() || "Sent a photo" });
+        if ("messageId" in r)
+          onSent?.({ id: r.messageId, body: text.trim() || "Sent a photo" });
       },
     );
   };
@@ -162,16 +205,39 @@ export function Composer({
   return (
     <div className="space-y-2">
       {image && (
-        <div className="flex items-center gap-2 text-xs leading-[normal] text-[#5b2a86]">
-          <span className="min-w-0 truncate font-medium">{image.name}</span>
-          <button
-            type="button"
-            className="shrink-0 text-[#6e6680] underline"
-            aria-label={`Remove ${image.name}`}
-            onClick={() => setImage(null)}
-          >
-            Remove
-          </button>
+        <div className="relative size-16">
+          {preview ? (
+            // eslint-disable-next-line @next/next/no-img-element -- local preview of the picked file
+            <img
+              src={preview}
+              alt={`Selected image: ${image.name}`}
+              className={cn(
+                "size-16 rounded-lg object-cover",
+                pending && "opacity-50",
+              )}
+            />
+          ) : (
+            <span className="flex size-16 items-center justify-center rounded-lg bg-[#f3f1f6] p-1 text-center text-[10px] leading-[normal] break-all text-[#5b2a86]">
+              {image.name}
+            </span>
+          )}
+          {pending ? (
+            <span className="absolute inset-0 flex items-center justify-center">
+              <Loader2
+                aria-hidden
+                className="size-5 animate-spin text-[#5b2a86]"
+              />
+            </span>
+          ) : (
+            <button
+              type="button"
+              aria-label={`Remove ${image.name}`}
+              className="absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full border border-[#e6e1ee] bg-white text-[#1f1a2e] shadow"
+              onClick={() => setImage(null)}
+            >
+              <X aria-hidden className="size-4" />
+            </button>
+          )}
         </div>
       )}
       <div
@@ -185,6 +251,7 @@ export function Composer({
           aria-label="Write a reply"
           placeholder="Write a reply…"
           value={text}
+          readOnly={pending}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
@@ -200,11 +267,23 @@ export function Composer({
           tabIndex={-1}
           onChange={(e) => choose(e.target.files?.[0])}
         />
-        <button type="button" className={OUTLINE} disabled={pending} onClick={() => picker.current?.click()}>
+        <button
+          type="button"
+          className={OUTLINE}
+          disabled={pending}
+          onClick={() => picker.current?.click()}
+        >
           Attach image
         </button>
-        <button type="button" className={PRIMARY} disabled={pending || (!text.trim() && !image)} onClick={send}>
-          Send
+        <button
+          type="button"
+          className={cn(PRIMARY, "inline-flex items-center gap-1.5")}
+          disabled={pending || (!text.trim() && !image)}
+          aria-busy={pending}
+          onClick={send}
+        >
+          {pending && <Loader2 aria-hidden className="size-4 animate-spin" />}
+          {pending ? "Sending…" : "Send"}
         </button>
       </div>
     </div>
