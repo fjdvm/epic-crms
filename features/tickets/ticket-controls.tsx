@@ -6,9 +6,10 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 
+import type { TicketStatus } from "./tickets";
 import { claim, release, reply, resolve, type TicketActionOutcome } from "./actions";
 
-const REASONS: Record<string, string> = {
+const REASONS: Record<Exclude<TicketActionOutcome, { ok: true }>["reason"], string> = {
   "not-found": "This Ticket no longer exists.",
   claimed: "Another Staff member has already claimed this Ticket.",
   "not-claimer": "Only the Staff member who claimed a Ticket can release it.",
@@ -49,7 +50,7 @@ export function TicketActions({
   isClaimer,
 }: {
   ticketId: number;
-  status: "open" | "resolved" | "completed";
+  status: TicketStatus;
   claimed: boolean;
   isClaimer: boolean;
 }) {
@@ -85,7 +86,14 @@ export function TicketActions({
           onClick={() =>
             run(
               () => resolve(ticketId),
-              (r) => r.ok && toast.success("Marked resolved. The Customer has been asked to confirm."),
+              (r) => {
+                if (!r.ok) return;
+                if ("emailed" in r && r.emailed === false)
+                  toast.warning(
+                    "Marked resolved, but the confirmation email could not be sent to the Customer.",
+                  );
+                else toast.success("Marked resolved. The Customer has been asked to confirm.");
+              },
             )
           }
         >
@@ -106,7 +114,7 @@ export function Composer({ ticketId }: { ticketId: number }) {
   const { pending, run } = useTicketAction();
 
   const send = () => {
-    if (!text.trim()) return;
+    if (pending || !text.trim()) return;
 
     run(
       () => reply(ticketId, text),

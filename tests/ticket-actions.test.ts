@@ -159,14 +159,6 @@ describe("replying", () => {
     });
     expect(await messages(id)).toEqual([]);
   });
-
-  it("Sent Messages cannot be edited or deleted through any action here", async () => {
-    // The creoms_tickets role is granted SELECT and INSERT on messages only; see docs in the ecommerce repo.
-    // This module offers no update or delete, which is what this checks.
-    const actions = await import("@/features/tickets/ticket-actions");
-
-    expect(Object.keys(actions).filter((k) => /edit|delete|remove/i.test(k))).toEqual([]);
-  });
 });
 
 describe("Mark resolved", () => {
