@@ -19,8 +19,8 @@ afterEach(() => {
 const feed = {
   unread: 1,
   notifications: [
-    { id: "2", kind: "new-customer" as const, ticketId: null, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
-    { id: "1", kind: "new-customer" as const, ticketId: null, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(Date.now() - 3 * 86_400_000), read: true },
+    { id: "2", kind: "new-customer" as const, ticketId: null, orderId: null, rating: null, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
+    { id: "1", kind: "new-customer" as const, ticketId: null, orderId: null, rating: null, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(Date.now() - 3 * 86_400_000), read: true },
   ],
 };
 
@@ -71,6 +71,8 @@ describe("the header bell", () => {
         id: String(10 + i),
         kind,
         ticketId: 208,
+        orderId: null,
+        rating: null,
         customerId: "u-ada",
         customerName: "Ada Lim",
         createdAt: new Date(),
@@ -83,5 +85,22 @@ describe("the header bell", () => {
     for (const text of [/Ada Lim raised TKT-208/, /Ada Lim sent a message on TKT-208/, /Ada Lim says TKT-208 is not fixed/]) {
       expect((await screen.findByRole("link", { name: text })).getAttribute("href")).toBe("/tickets/208");
     }
+  });
+
+  it("words a low-rating Feedback alert and links it to that Feedback on the page", async () => {
+    const lowFeed = {
+      unread: 2,
+      notifications: [
+        { id: "21", kind: "feedback-low" as const, ticketId: null, orderId: 1042, rating: 1, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(), read: false },
+        { id: "20", kind: "feedback-low" as const, ticketId: null, orderId: 1040, rating: 3, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
+      ],
+    };
+    render(<HeaderNotifications feed={lowFeed} />);
+    await userEvent.click(screen.getByTitle("Notifications"));
+
+    const one = await screen.findByRole("link", { name: /Ada Lim rated Order #1042 1 star/ });
+    expect(one.getAttribute("href")).toBe("/feedback#feedback-1042");
+    const three = await screen.findByRole("link", { name: /Ben Cruz rated Order #1040 3 stars/ });
+    expect(three.getAttribute("href")).toBe("/feedback#feedback-1040");
   });
 });

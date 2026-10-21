@@ -14,7 +14,7 @@ vi.mock("sonner", () => ({ toast }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 function note(id: string, name: string): Notification {
-  return { id, kind: "new-customer" as const, ticketId: null, customerId: `u-${id}`, customerName: name, createdAt: new Date(), read: false };
+  return { id, kind: "new-customer" as const, ticketId: null, orderId: null, rating: null, customerId: `u-${id}`, customerName: name, createdAt: new Date(), read: false };
 }
 
 const ada = note("1", "Ada Lim");
