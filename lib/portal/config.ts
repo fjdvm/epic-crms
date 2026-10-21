@@ -2,6 +2,7 @@ export const SESSION_COOKIE = "creoms_session";
 export const HANDOFF_COOKIE = "creoms_handoff";
 export const CALLBACK_PATH = "/api/portal/callback";
 export const LOGIN_PATH = "/api/portal/login";
+export const SIGNING_IN_PATH = "/signing-in";
 export const LOGOUT_PATH = "/api/portal/logout";
 export const NO_ACCESS_PATH = "/no-access";
 export const UNAVAILABLE_PATH = "/unavailable";
