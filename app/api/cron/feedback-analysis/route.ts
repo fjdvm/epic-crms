@@ -18,9 +18,9 @@ function authorised(header: string | null, secret: string): boolean {
 }
 
 /**
- * The scheduled Feedback analysis, run five times a day by Vercel Cron (see vercel.json), which sends
- * `Authorization: Bearer $CRON_SECRET`. Called by a scheduler, not a browser, so it is outside the
- * Portal session.
+ * The scheduled Feedback analysis, run five times a day by the GitHub Actions workflow in
+ * .github/workflows/feedback-analysis.yml, which sends `Authorization: Bearer $CRON_SECRET`. Called by a
+ * scheduler, not a browser, so it is outside the Portal session.
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
