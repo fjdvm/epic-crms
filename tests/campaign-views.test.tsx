@@ -20,6 +20,7 @@ const row = (overrides: Partial<AnnouncementRow> = {}): AnnouncementRow => ({
   title: "Undas ube treats",
   description: "Back for Undas.",
   images: [],
+  imageLayout: null,
   state: "draft",
   scheduledFor: null,
   sentAt: null,
@@ -178,6 +179,70 @@ describe("the campaign form", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Send test" }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("test copy")));
+  });
+
+  describe("choosing an image layout", () => {
+    const photos = (count: number) => Array.from({ length: count }, (_, i) => `https://files.test/${i + 1}.jpg`);
+    const withImages = (count: number, imageLayout: AnnouncementRow["imageLayout"] = null) => ({
+      id: "d1",
+      title: "Old",
+      description: "Words.",
+      images: photos(count),
+      imageLayout,
+    });
+
+    it("offers the layouts that hold the number of images, with the current one selected", () => {
+      render(<CampaignForm draft={withImages(3, "three-row")} actions={fakeActions()} />);
+
+      const options = screen.getAllByRole("radio");
+      expect(options.map((o) => o.getAttribute("aria-label"))).toEqual([
+        "One large, two small",
+        "Large on top, two below",
+        "Three in a row",
+        "Stacked",
+      ]);
+      expect(options.map((o) => o.getAttribute("aria-checked"))).toEqual(["false", "false", "true", "false"]);
+    });
+
+    it("selects the default when none was chosen", () => {
+      render(<CampaignForm draft={withImages(4)} actions={fakeActions()} />);
+
+      expect(screen.getByRole("radio", { name: "Four in a grid" }).getAttribute("aria-checked")).toBe("true");
+    });
+
+    it("saves the chosen layout with the Draft", async () => {
+      const actions = fakeActions();
+      render(<CampaignForm draft={withImages(2)} actions={actions} />);
+
+      fireEvent.click(screen.getByRole("radio", { name: "Two stacked" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Old", description: "Words.", imageLayout: "two-rows" }),
+      );
+    });
+
+    it("shows every image in the preview, in the chosen layout", () => {
+      render(<CampaignForm draft={withImages(3)} actions={fakeActions()} />);
+
+      const shown = () => screen.getByTestId("inbox-preview").querySelectorAll("img[src^='https://files.test/']");
+      expect(Array.from(shown()).map((img) => img.getAttribute("src"))).toEqual(photos(3));
+
+      fireEvent.click(screen.getByRole("radio", { name: "Three in a row" }));
+
+      expect(screen.getByTestId("inbox-preview").querySelector("[data-layout='three-row']")).not.toBeNull();
+      expect(shown()).toHaveLength(3);
+    });
+
+    it("offers no choice for a text-only Draft or a single image", () => {
+      const { unmount } = render(<CampaignForm draft={withImages(0)} actions={fakeActions()} />);
+      expect(screen.queryAllByRole("radio")).toEqual([]);
+      unmount();
+
+      render(<CampaignForm draft={withImages(1)} actions={fakeActions()} />);
+      expect(screen.queryAllByRole("radio")).toEqual([]);
+    });
   });
 
   it("offers a test copy only once the Draft is saved", () => {

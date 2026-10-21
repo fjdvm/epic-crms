@@ -195,6 +195,92 @@ describe("editing a Draft", () => {
   });
 });
 
+describe("choosing how the images are laid out", () => {
+  const photos = (count: number) => Array.from({ length: count }, (_, i) => `https://files.test/${i + 1}.jpg`);
+
+  async function savedWithImages(count: number) {
+    const result = await saveDraft(db.sql, ada, draft, ports());
+    if (!result.ok) throw new Error("not saved");
+    await db.sql`update crms.announcements set images = ${photos(count)} where id = ${result.announcement.id}`;
+    audit.events = [];
+
+    return result.announcement.id;
+  }
+
+  it("keeps the layout Staff chose for the images the Draft has", async () => {
+    const id = await savedWithImages(3);
+
+    expect((await editDraft(db.sql, ada, id, { ...draft, imageLayout: "three-row" }, ports())).ok).toBe(true);
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "three-row" });
+  });
+
+  it("uses the first layout that suits the images when none was chosen", async () => {
+    const id = await savedWithImages(4);
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "four-grid" });
+  });
+
+  it("has no layout for a text-only Draft", async () => {
+    const result = await saveDraft(db.sql, ada, draft, ports());
+    if (!result.ok) throw new Error("not saved");
+
+    expect(await getAnnouncement(db.sql, result.announcement.id)).toMatchObject({ imageLayout: null });
+  });
+
+  it("refuses a layout that does not hold the number of images and changes nothing", async () => {
+    const id = await savedWithImages(3);
+
+    expect(await editDraft(db.sql, ada, id, { title: "Changed", description: "x", imageLayout: "four-grid" }, ports())).toEqual({
+      ok: false,
+      reason: "layout-mismatch",
+    });
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ title: "Undas ube treats", imageLayout: "three-feature-left" });
+    expect(audit.events).toEqual([]);
+  });
+
+  it("refuses a layout for a Draft with no images", async () => {
+    const result = await saveDraft(db.sql, ada, { ...draft, imageLayout: "single" }, ports());
+
+    expect(result).toEqual({ ok: false, reason: "layout-mismatch" });
+  });
+
+  it("leaves the choice alone when an edit does not mention it", async () => {
+    const id = await savedWithImages(2);
+    await editDraft(db.sql, ada, id, { ...draft, imageLayout: "two-rows" }, ports());
+
+    await editDraft(db.sql, ada, id, { title: "New", description: "Words." }, ports());
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "two-rows" });
+  });
+
+  it("falls back to the default when the images change so the choice no longer fits", async () => {
+    const id = await savedWithImages(3);
+    await editDraft(db.sql, ada, id, { ...draft, imageLayout: "three-row" }, ports());
+
+    await db.sql`update crms.announcements set images = ${photos(2)} where id = ${id}`;
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "two-columns" });
+  });
+
+  it("is used by the test copy", async () => {
+    const id = await savedWithImages(3);
+    await editDraft(db.sql, ada, id, { ...draft, imageLayout: "three-feature-top" }, ports());
+
+    await sendTestCopy(db.sql, ada, "ada@store.test", id, ports());
+
+    expect(mail.sent[0]).toMatchObject({ images: photos(3), imageLayout: "three-feature-top" });
+  });
+
+  it("sends a test copy of a text-only Draft with no layout", async () => {
+    const result = await saveDraft(db.sql, ada, draft, ports());
+    if (!result.ok) throw new Error("not saved");
+
+    await sendTestCopy(db.sql, ada, "ada@store.test", result.announcement.id, ports());
+
+    expect(mail.sent[0]).toMatchObject({ images: [], imageLayout: null });
+  });
+});
+
 describe("deleting a Draft", () => {
   async function saved(by = ada) {
     const result = await saveDraft(db.sql, by, draft, ports());
@@ -255,7 +341,7 @@ describe("sending a test copy", () => {
     expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: true });
 
     expect(mail.sent).toEqual([
-      { to: adaEmail, title: "Undas ube treats", body: "Our ube treats are back for Undas.", images: [] },
+      { to: adaEmail, title: "Undas ube treats", body: "Our ube treats are back for Undas.", images: [], imageLayout: null },
     ]);
   });
 

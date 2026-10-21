@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 
+import { defaultLayout, isImageLayout, layoutsFor, type ImageLayout } from "./image-layouts";
+
 /** An email's subject is cut off in inboxes past about this many characters. */
 export const TITLE_LIMIT = 60;
 
@@ -14,6 +16,8 @@ export interface Actor {
 export interface AnnouncementInput {
   title: string;
   description: string;
+  /** How the images are arranged. Left out, an edit keeps the current choice; null goes back to the default. */
+  imageLayout?: ImageLayout | null;
 }
 
 export interface AnnouncementRow {
@@ -22,6 +26,8 @@ export interface AnnouncementRow {
   description: string;
   /** Public HTTPS addresses, in order. Empty for a text-only Announcement. */
   images: string[];
+  /** The layout the email uses: Staff's choice if it still suits the images, else the default. Null with no images. */
+  imageLayout: ImageLayout | null;
   state: AnnouncementState;
   scheduledFor: Date | null;
   sentAt: Date | null;
@@ -52,6 +58,7 @@ export interface MarketingMessage {
   title: string;
   body: string;
   images: string[];
+  imageLayout: ImageLayout | null;
 }
 
 /**
@@ -68,7 +75,7 @@ export interface Ports {
   now: () => Date;
 }
 
-export type InputRefusal = "empty-title" | "title-too-long" | "empty-description";
+export type InputRefusal = "empty-title" | "title-too-long" | "empty-description" | "layout-mismatch";
 
 export type SaveResult = { ok: true; announcement: { id: string } } | { ok: false; reason: InputRefusal };
 export type EditResult = { ok: true } | { ok: false; reason: InputRefusal | "not-found" | "not-a-draft" };
@@ -79,7 +86,12 @@ export const INPUT_REFUSALS: Record<InputRefusal, string> = {
   "empty-title": "Give the Announcement a title.",
   "title-too-long": `Keep the title to ${TITLE_LIMIT} characters or fewer, so the subject is not cut off.`,
   "empty-description": "Write a description.",
+  "layout-mismatch": "That layout does not fit the number of images. Pick another.",
 };
+
+/** A layout must be one that holds exactly the images the Announcement has; null is always allowed. */
+const fits = (layout: ImageLayout | null | undefined, imageCount: number) =>
+  !layout || layoutsFor(imageCount).includes(layout);
 
 function check(input: AnnouncementInput): { ok: true; title: string; description: string } | { ok: false; reason: InputRefusal } {
   const title = input.title.trim();
@@ -108,6 +120,8 @@ async function audited({ audit }: Ports, event: AuditEvent) {
 export async function saveDraft(sql: postgres.Sql, actor: Actor, input: AnnouncementInput, ports: Ports): Promise<SaveResult> {
   const checked = check(input);
   if (!checked.ok) return checked;
+  // A new Draft has no images yet, so there is nothing for a layout to lay out.
+  if (!fits(input.imageLayout, 0)) return { ok: false, reason: "layout-mismatch" };
 
   const at = ports.now();
 
@@ -142,9 +156,17 @@ export async function editDraft(sql: postgres.Sql, actor: Actor, id: string, inp
   if (!checked.ok) return checked;
   if (!isUuid(id)) return { ok: false, reason: "not-found" };
 
+  const [current] = await sql<{ images: string[]; image_layout: string | null; state: AnnouncementState }[]>`
+    select images, image_layout, state from crms.announcements where id = ${id}`;
+  if (!current) return { ok: false, reason: "not-found" };
+  if (current.state !== "draft") return { ok: false, reason: "not-a-draft" };
+
+  const imageLayout = input.imageLayout === undefined ? current.image_layout : input.imageLayout;
+  if (!fits(imageLayout as ImageLayout | null, current.images.length)) return { ok: false, reason: "layout-mismatch" };
+
   const [row] = await sql<{ id: string }[]>`
     update crms.announcements
-    set title = ${checked.title}, description = ${checked.description},
+    set title = ${checked.title}, description = ${checked.description}, image_layout = ${imageLayout},
         updated_by_id = ${actor.id}, updated_by_name = ${actor.name}, updated_at = ${ports.now()}
     where id = ${id} and state = 'draft'
     returning id`;
@@ -183,17 +205,21 @@ export async function deleteDraft(sql: postgres.Sql, actor: Actor, id: string, p
 }
 
 const SELECT = (sql: postgres.Sql) => sql`
-  select a.id, a.title, a.description, a.images, a.state, a.scheduled_for, a.sent_at,
+  select a.id, a.title, a.description, a.images, a.image_layout, a.state, a.scheduled_for, a.sent_at,
     a.created_by_name, a.updated_by_name, a.updated_at,
     nullif((select count(*) from crms.announcement_recipients r where r.announcement_id = a.id), 0)::int as sent_to
   from crms.announcements a`;
 
 function toRow(r: Record<string, unknown>): AnnouncementRow {
+  const images = r.images as string[];
+  const chosen = isImageLayout(r.image_layout) ? r.image_layout : null;
+
   return {
     id: r.id as string,
     title: r.title as string,
     description: r.description as string,
-    images: r.images as string[],
+    images,
+    imageLayout: chosen && fits(chosen, images.length) ? chosen : defaultLayout(images.length),
     state: r.state as AnnouncementState,
     scheduledFor: r.scheduled_for as Date | null,
     sentAt: r.sent_at as Date | null,
@@ -249,6 +275,7 @@ export async function sendTestCopy(
       title: announcement.title,
       body: announcement.description,
       images: announcement.images,
+      imageLayout: announcement.imageLayout,
     });
   } catch (error) {
     console.error("A test copy could not be sent", error);

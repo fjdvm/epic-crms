@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 
 import { deleteDraftAction, editDraftAction, saveDraftAction, sendTestCopyAction } from "./actions";
 import { INPUT_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
+import { ImageLayoutGrid } from "./image-layout-grid";
+import { defaultLayout, IMAGE_LAYOUT_LABELS, layoutsFor, type ImageLayout } from "./image-layouts";
 import { InboxPreview } from "./inbox-preview";
 
 const MESSAGES: Record<string, string> = {
@@ -54,7 +56,7 @@ export function CampaignForm({
   draft,
   actions = REAL_ACTIONS,
 }: {
-  draft?: { id: string; title: string; description: string };
+  draft?: { id: string; title: string; description: string; images?: string[]; imageLayout?: ImageLayout | null };
   actions?: CampaignFormActions;
 }) {
   const router = useRouter();
@@ -65,7 +67,12 @@ export function CampaignForm({
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
 
-  const input: AnnouncementInput = { title, description };
+  const images = draft?.images ?? [];
+  const [imageLayout, setImageLayout] = useState<ImageLayout | null>(draft?.imageLayout ?? defaultLayout(images.length));
+  const layouts = layoutsFor(images.length);
+
+  // A Draft with no images has no layout to send, and an edit that leaves it out keeps what is stored.
+  const input: AnnouncementInput = { title, description, ...(images.length > 0 && { imageLayout }) };
 
   /** Each submit asks first; the dialog's confirm button is what actually sends it. */
   const ask = (kind: "save" | "delete" | "test") => (event?: React.FormEvent) => {
@@ -154,6 +161,36 @@ export function CampaignForm({
                 placeholder="Our Noche Buena batch is now open for pre-orders."
               />
             </div>
+
+            {layouts.length > 1 && (
+              <div role="radiogroup" aria-label="Image layout" className="flex flex-col gap-1.5">
+                <p className={LABEL}>Image layout</p>
+                <div className="flex flex-wrap gap-2">
+                  {layouts.map((layout) => {
+                    const selected = layout === imageLayout;
+
+                    return (
+                      <button
+                        key={layout}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={IMAGE_LAYOUT_LABELS[layout]}
+                        title={IMAGE_LAYOUT_LABELS[layout]}
+                        onClick={() => setImageLayout(layout)}
+                        className={cn(
+                          "w-[84px] rounded-lg border bg-white p-2 focus-visible:outline-none",
+                          selected ? "border-[#5b2a86] ring-2 ring-[#5b2a86]/20" : "border-[#e4e4e7] hover:border-[#c9a8f0]",
+                        )}
+                      >
+                        <ImageLayoutGrid layout={layout} gap={2} />
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs leading-[normal] text-[#71717a]">How the {images.length} images are arranged in the email.</p>
+              </div>
+            )}
           </section>
 
           <aside className="flex min-h-0 w-full shrink-0 flex-col gap-4 overflow-y-auto lg:w-[420px]">
@@ -162,7 +199,7 @@ export function CampaignForm({
                 <h2 className="text-[15px] font-semibold leading-[normal] text-[#18181b]">Preview</h2>
                 <p className="text-xs leading-[normal] text-[#71717a]">How it looks in the inbox.</p>
               </div>
-              <InboxPreview title={title} description={description} />
+              <InboxPreview title={title} description={description} images={images} imageLayout={imageLayout} />
             </section>
           </aside>
         </div>

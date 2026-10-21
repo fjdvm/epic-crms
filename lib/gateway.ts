@@ -158,13 +158,13 @@ export const gatewayAuditLog: AuditLog = {
  * member who asked for it, so that assertion stands for their own consent to receive it.
  */
 export const gatewayMarketingMail: MarketingMail = {
-  async sendOne({ to, title, body, images }) {
+  async sendOne({ to, title, body, images, imageLayout }) {
     const { base, key } = gateway();
 
     const response = await fetch(`${base}/notifications/emails/marketing`, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ to, app: "CRMS", subscriberConsent: true, title, body, images }),
+      body: JSON.stringify({ to, app: "CRMS", subscriberConsent: true, title, body, images, ...(imageLayout && { imageLayout }) }),
       signal: AbortSignal.timeout(10_000),
     });
 
