@@ -19,6 +19,7 @@ const ada = {
 const CUSTOMER_PROFILES = "Customer Profiles";
 const TICKETS = "Tickets";
 const FEEDBACK = "Feedback";
+const MARKETING = "Marketing";
 
 let portal: FakePortal;
 
@@ -171,5 +172,20 @@ describe("access to the Feedback page", () => {
     expect(await accessFor(await signInAda([TICKETS])).overview()).toMatchObject({
       pages: ["/tickets", "/conversations"],
     });
+  });
+});
+
+describe("access to the Email campaigns page", () => {
+  it("is allowed with the Marketing Module", async () => {
+    expect((await accessFor(await signInAda([MARKETING])).check(MARKETING)).decision).toBe("allowed");
+  });
+
+  it("is denied without it", async () => {
+    expect((await accessFor(await signInAda([FEEDBACK, TICKETS])).check(MARKETING)).decision).toBe("denied");
+  });
+
+  it("lists /email-campaigns only when its Module is granted", async () => {
+    expect(await accessFor(await signInAda([MARKETING])).overview()).toMatchObject({ pages: ["/email-campaigns"] });
+    expect(await accessFor(await signInAda([FEEDBACK])).overview()).toMatchObject({ pages: ["/feedback"] });
   });
 });

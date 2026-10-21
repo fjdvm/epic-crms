@@ -18,7 +18,8 @@ const SCHEMA = `
     id text primary key,
     full_name text not null,
     first_name text not null default '',
-    email text not null
+    email text not null,
+    marketing_opt_in boolean not null default false
   );
   create table orders (
     id integer primary key generated always as identity,

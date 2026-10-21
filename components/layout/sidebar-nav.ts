@@ -65,6 +65,13 @@ export const feedbackItem: NavItem = {
   icon: Star,
 };
 
+export const emailCampaignsItem: NavItem = {
+  group: "MARKETING",
+  name: "Email campaigns",
+  href: "/email-campaigns",
+  icon: Mail,
+};
+
 /** An entry from the Figma sidebar whose page is still to come. */
 function comingSoon(group: string, name: string, icon: LucideIcon): NavItem {
   return { group, name, href: null, icon };
@@ -81,7 +88,7 @@ export const sidebarItems: NavItem[] = [
   ticketsItem,
   conversationsItem,
   feedbackItem,
-  comingSoon("MARKETING", "Email campaigns", Mail),
+  emailCampaignsItem,
   comingSoon("MARKETING", "Segments", ListFilter),
 ];
 
