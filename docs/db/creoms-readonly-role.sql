@@ -20,6 +20,7 @@ GRANT SELECT ON
   public.order_lines,
   public.order_delivery_addresses,
   public.order_feedback,
+  public.feedback_requests,
   public.cart_lines,
   public.products,
   public.sizes,
@@ -30,3 +31,6 @@ TO creoms_readonly;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public, neon_auth
   FROM creoms_readonly;
 ALTER ROLE creoms_readonly SET default_transaction_read_only = on;
+
+-- The Feedback page's Response rate card (#84) reads feedback_requests. On a database where this role
+-- already exists, run only: GRANT SELECT ON public.feedback_requests TO creoms_readonly;

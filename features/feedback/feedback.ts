@@ -24,6 +24,14 @@ export interface FeedbackSummary {
   low: number;
 }
 
+/** What the Response rate card shows: Feedback on Orders that were sent a Feedback request, over the requests sent. */
+export interface ResponseRate {
+  requested: number;
+  received: number;
+  /** Whole percent; null when no request was sent. */
+  rate: number | null;
+}
+
 export interface FeedbackRow {
   orderId: number;
   customerId: string;
@@ -40,6 +48,7 @@ export interface FeedbackList {
   /** Every product name that has Feedback, alphabetically, for the product filter. */
   products: string[];
   summary: FeedbackSummary;
+  response: ResponseRate;
   total: number;
   page: number;
   pageSize: number;
@@ -50,12 +59,20 @@ export type FeedbackResult = { ok: true; list: FeedbackList } | { ok: false };
 
 const TIME_ZONE = "Asia/Manila";
 
-/** The conditions the date range, star and product filters add; days start and end at midnight in Philippines time. */
-function conditions(sql: postgres.Sql, query: FeedbackQuery) {
+/** The date range's conditions on `column`; days start and end at midnight in Philippines time. */
+function inRange(sql: postgres.Sql, query: FeedbackQuery, column: postgres.Helper<string>) {
   const parts = [sql`true`];
 
-  if (query.from) parts.push(sql`f.created_at >= (${query.from}::date)::timestamp at time zone ${TIME_ZONE}`);
-  if (query.to) parts.push(sql`f.created_at < (${query.to}::date + 1)::timestamp at time zone ${TIME_ZONE}`);
+  if (query.from) parts.push(sql`${column} >= (${query.from}::date)::timestamp at time zone ${TIME_ZONE}`);
+  if (query.to) parts.push(sql`${column} < (${query.to}::date + 1)::timestamp at time zone ${TIME_ZONE}`);
+
+  return parts.reduce((all, part) => sql`${all} and ${part}`);
+}
+
+/** The conditions the date range, star and product filters add. */
+function conditions(sql: postgres.Sql, query: FeedbackQuery) {
+  const parts = [inRange(sql, query, sql("f.created_at"))];
+
   if (query.stars !== undefined) parts.push(sql`f.rating = ${query.stars}`);
 
   if (query.product !== undefined) {
@@ -75,6 +92,13 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
   const [{ count, average, low }] = await sql<{ count: number; average: string | null; low: number }[]>`
     select count(*)::int as count, round(avg(f.rating), 1) as average, (count(*) filter (where f.rating <= 3))::int as low
     from order_feedback f where ${conditions(sql, { ...query, product: undefined })}`;
+
+  // Only the date range applies: requests have no stars or products. Feedback on Orders with no request is left out.
+  const [{ requested, received }] = await sql<{ requested: number; received: number }[]>`
+    select
+      (select count(*)::int from feedback_requests r where ${inRange(sql, query, sql("r.sent_at"))}) as requested,
+      (select count(*)::int from order_feedback f join feedback_requests r on r.order_id = f.order_id
+        where ${inRange(sql, query, sql("f.created_at"))}) as received`;
 
   const [{ total }] = await sql<{ total: number }[]>`select count(*)::int as total from order_feedback f where ${where}`;
 
@@ -112,6 +136,7 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
     })),
     products: products.map((p) => p.product_name),
     summary: { count, average: average === null ? null : Number(average), low },
+    response: { requested, received, rate: requested === 0 ? null : Math.round((received * 100) / requested) },
     total,
     page,
     pageSize,
