@@ -195,6 +195,7 @@ describe("the product view", () => {
 });
 
 const NO_RESPONSE = { requested: 0, received: 0, rate: null };
+const NO_TOP = { ok: true, result: null } as const;
 
 describe("the summary cards", () => {
   it("shows the response rate, as the Figma card words it", () => {
@@ -202,6 +203,7 @@ describe("the summary cards", () => {
       <FeedbackSummaryCards
         summary={{ count: 0, average: null, low: 0 }}
         response={{ requested: 17, received: 7, rate: 41 }}
+        topProduct={NO_TOP}
       />,
     );
 
@@ -209,26 +211,61 @@ describe("the summary cards", () => {
   });
 
   it("says No requests yet when none were sent in the range", () => {
-    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} response={NO_RESPONSE} />);
+    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} response={NO_RESPONSE} topProduct={NO_TOP} />);
 
     expect(screen.getByTestId("response-rate").textContent).toBe("Response rateNo requests yet");
   });
 
   it("shows the average rating with its review count, and the low ratings", () => {
-    render(<FeedbackSummaryCards summary={{ count: 64, average: 4.75, low: 3 }} response={NO_RESPONSE} />);
+    render(<FeedbackSummaryCards summary={{ count: 64, average: 4.75, low: 3 }} response={NO_RESPONSE} topProduct={NO_TOP} />);
 
     expect(screen.getByTestId("average-rating").textContent).toBe("Average rating4.8 ★64 Feedback");
     expect(screen.getByTestId("low-ratings").textContent).toBe("Low ratings31 to 3 stars");
   });
 
   it("shows a dash instead of an average when there is no Feedback", () => {
-    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} response={NO_RESPONSE} />);
+    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} response={NO_RESPONSE} topProduct={NO_TOP} />);
 
     expect(screen.getByTestId("average-rating").textContent).toBe("Average rating–0 Feedback");
   });
 
+  it("shows the Top product with its Feedback count, its reason and an All time label", () => {
+    render(
+      <FeedbackSummaryCards
+        summary={{ count: 0, average: null, low: 0 }}
+        response={NO_RESPONSE}
+        topProduct={{
+          ok: true,
+          result: {
+            product: "Halaya Smooth",
+            feedbackCount: 31,
+            reason: "Customers keep praising how creamy it is.",
+            model: "groq-4",
+            computedAt: new Date("2026-10-21T03:00:00Z"),
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("top-product").textContent).toBe(
+      "Top productAll timeHalaya Smooth31 FeedbackCustomers keep praising how creamy it is.",
+    );
+  });
+
+  it("says Not enough Feedback yet when no product qualifies", () => {
+    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} response={NO_RESPONSE} topProduct={NO_TOP} />);
+
+    expect(screen.getByTestId("top-product").textContent).toBe("Top productAll timeNot enough Feedback yet");
+  });
+
+  it("says the Top product is unavailable when it could not be read, rather than not enough Feedback", () => {
+    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} response={NO_RESPONSE} topProduct={{ ok: false }} />);
+
+    expect(screen.getByTestId("top-product").textContent).toBe("Top productAll timeUnavailable");
+  });
+
   it("mentions no tickets and calls each one Feedback, not a review", () => {
-    render(<FeedbackSummaryCards summary={{ count: 1, average: 5, low: 0 }} response={NO_RESPONSE} />);
+    render(<FeedbackSummaryCards summary={{ count: 1, average: 5, low: 0 }} response={NO_RESPONSE} topProduct={NO_TOP} />);
 
     expect(screen.getByText("1 Feedback")).toBeTruthy();
     expect(screen.queryByText(/review/i)).toBeNull();
