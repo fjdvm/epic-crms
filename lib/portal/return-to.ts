@@ -1,6 +1,6 @@
-import { CALLBACK_PATH, LOGIN_PATH } from "./config";
+import { CALLBACK_PATH, LOGIN_PATH, SIGNING_IN_PATH } from "./config";
 
-const AUTH_PATHS = [CALLBACK_PATH, LOGIN_PATH];
+const AUTH_PATHS = [CALLBACK_PATH, LOGIN_PATH, SIGNING_IN_PATH];
 
 /** Only a local CREOMS page may be returned to, never an arbitrary address or a handoff route. */
 export function safeReturnTo(value: string | null | undefined): string {

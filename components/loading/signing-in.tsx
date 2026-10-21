@@ -16,9 +16,14 @@ export function SigningIn({
   }, [loginUrl, navigate]);
 
   return (
-    <DelayedLoadingCard
-      title="Opening CRMS…"
-      subtitle="Handing your sign-in over securely"
-    />
+    <>
+      <noscript>
+        <meta httpEquiv="refresh" content={`0; url=${loginUrl}`} />
+      </noscript>
+      <DelayedLoadingCard
+        title="Opening CRMS…"
+        subtitle="Handing your sign-in over securely"
+      />
+    </>
   );
 }

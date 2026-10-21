@@ -49,7 +49,9 @@ class Browser {
   jar = new Map<string, string>();
 
   request(url: string) {
-    const cookie = [...this.jar].map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("; ");
+    const cookie = [...this.jar]
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join("; ");
 
     return new NextRequest(url, { headers: cookie ? { cookie } : {} });
   }
@@ -91,14 +93,33 @@ describe("a request with no session", () => {
 
     expect(gated.status).toBe(307);
     expect(browser.location(gated).pathname).toBe("/signing-in");
-    expect(authorizeUrl.startsWith(`${FAKE_PORTAL_URL}/api/integrations/authorize`)).toBe(true);
-    expect(new URL(authorizeUrl).searchParams.get("redirect_uri")).toBe(FAKE_CALLBACK);
+    expect(
+      authorizeUrl.startsWith(`${FAKE_PORTAL_URL}/api/integrations/authorize`),
+    ).toBe(true);
+    expect(new URL(authorizeUrl).searchParams.get("redirect_uri")).toBe(
+      FAKE_CALLBACK,
+    );
+  });
+
+  it("never returns to the signing-in page, which would start the handoff again", () => {
+    const browser = new Browser();
+    const response = login(
+      browser.request(
+        `${APP}/api/portal/login?returnTo=${encodeURIComponent("/signing-in?returnTo=%2F")}`,
+      ),
+    );
+
+    browser.keep(response);
+
+    expect(JSON.parse(browser.jar.get("creoms_handoff")!).returnTo).toBe("/");
   });
 
   it("never returns to an address outside CREOMS", () => {
     const browser = new Browser();
     const response = login(
-      browser.request(`${APP}/api/portal/login?returnTo=${encodeURIComponent("//evil.test")}`),
+      browser.request(
+        `${APP}/api/portal/login?returnTo=${encodeURIComponent("//evil.test")}`,
+      ),
     );
 
     browser.keep(response);
@@ -110,16 +131,21 @@ describe("a request with no session", () => {
 describe("completing the handoff", () => {
   it("lands the Staff member on the page they asked for, holding only the opaque handle", async () => {
     const browser = new Browser();
-    const { authorizeUrl } = await startHandoff(browser, "/customer-profiles?page=2");
+    const { authorizeUrl } = await startHandoff(
+      browser,
+      "/customer-profiles?page=2",
+    );
     portal.signIn("ada");
 
     const granted = await portal.handle(new Request(authorizeUrl));
-    const landed = await callback(browser.request(granted.headers.get("location")!));
+    const landed = await callback(
+      browser.request(granted.headers.get("location")!),
+    );
     browser.keep(landed);
 
-    expect(browser.location(landed).pathname + browser.location(landed).search).toBe(
-      "/customer-profiles?page=2",
-    );
+    expect(
+      browser.location(landed).pathname + browser.location(landed).search,
+    ).toBe("/customer-profiles?page=2");
 
     const sessionCookie = landed.headers
       .getSetCookie()
@@ -140,16 +166,23 @@ describe("completing the handoff", () => {
     const loginUrl = new URL(toLogin.headers.get("location")!);
 
     expect(loginUrl.pathname).toBe("/login");
-    const back = new URL(loginUrl.searchParams.get("returnTo")!, FAKE_PORTAL_URL);
+    const back = new URL(
+      loginUrl.searchParams.get("returnTo")!,
+      FAKE_PORTAL_URL,
+    );
     expect(back.pathname).toBe("/api/integrations/authorize");
-    expect(back.searchParams.get("state")).toBe(new URL(authorizeUrl).searchParams.get("state"));
+    expect(back.searchParams.get("state")).toBe(
+      new URL(authorizeUrl).searchParams.get("state"),
+    );
   });
 
   it("a replayed code shows an error and creates no session", async () => {
     const browser = new Browser();
     const { authorizeUrl } = await startHandoff(browser, "/customer-profiles");
     portal.signIn("ada");
-    const granted = (await portal.handle(new Request(authorizeUrl))).headers.get("location")!;
+    const granted = (
+      await portal.handle(new Request(authorizeUrl))
+    ).headers.get("location")!;
     const handoffCookies = new Map(browser.jar);
 
     const first = await callback(browser.request(granted));
@@ -161,7 +194,11 @@ describe("completing the handoff", () => {
     const replay = await callback(replayer.request(granted));
 
     expect(replay.headers.get("location")).toContain("/sign-in-error");
-    expect(replay.headers.getSetCookie().some((c) => c.startsWith("creoms_session="))).toBe(false);
+    expect(
+      replay.headers
+        .getSetCookie()
+        .some((c) => c.startsWith("creoms_session=")),
+    ).toBe(false);
   });
 
   it("an expired code shows an error and creates no session", async () => {
@@ -171,10 +208,16 @@ describe("completing the handoff", () => {
     const granted = await portal.handle(new Request(authorizeUrl));
     portal.expireCodes();
 
-    const response = await callback(browser.request(granted.headers.get("location")!));
+    const response = await callback(
+      browser.request(granted.headers.get("location")!),
+    );
 
     expect(browser.location(response).pathname).toBe("/sign-in-error");
-    expect(response.headers.getSetCookie().some((c) => c.startsWith("creoms_session="))).toBe(false);
+    expect(
+      response.headers
+        .getSetCookie()
+        .some((c) => c.startsWith("creoms_session=")),
+    ).toBe(false);
   });
 
   it("a callback whose state does not match the sign-in started shows an error", async () => {
@@ -197,7 +240,11 @@ describe("completing the handoff", () => {
     );
 
     expect(browser.location(response).search).toBe("?reason=denied");
-    expect(response.headers.getSetCookie().some((c) => c.startsWith("creoms_session="))).toBe(false);
+    expect(
+      response.headers
+        .getSetCookie()
+        .some((c) => c.startsWith("creoms_session=")),
+    ).toBe(false);
   });
 });
 
@@ -207,11 +254,17 @@ describe("the profile footer", () => {
     const { authorizeUrl } = await startHandoff(browser, "/customer-profiles");
     portal.signIn("ada");
     const granted = await portal.handle(new Request(authorizeUrl));
-    const landed = await callback(browser.request(granted.headers.get("location")!));
+    const landed = await callback(
+      browser.request(granted.headers.get("location")!),
+    );
     browser.keep(landed);
 
-    const result = await validateSession(browser.jar.get("creoms_session")!, "Customer Profiles");
-    if (result.decision !== "allowed") throw new Error("expected the Portal to allow");
+    const result = await validateSession(
+      browser.jar.get("creoms_session")!,
+      "Customer Profiles",
+    );
+    if (result.decision !== "allowed")
+      throw new Error("expected the Portal to allow");
 
     render(
       <StaffProvider staff={result.staff}>
@@ -222,20 +275,30 @@ describe("the profile footer", () => {
 
     expect(screen.getAllByText("Ada Okafor").length).toBeGreaterThan(0);
     expect(screen.getAllByText("ada.okafor").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("ada@brenraphaels.test").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ada@brenraphaels.test").length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getAllByText("Customer Support").length).toBeGreaterThan(0);
     expect(screen.queryByText("Staff Member")).toBeNull();
   });
 });
 
 describe("return addresses", () => {
-  it.each(["/\t/evil.test", "//evil.test", "https://evil.test", "/\\evil.test"])(
-    "never return to %j",
-    (value) => {
-      const browser = new Browser();
-      browser.keep(login(browser.request(`${APP}/api/portal/login?returnTo=${encodeURIComponent(value)}`)));
+  it.each([
+    "/\t/evil.test",
+    "//evil.test",
+    "https://evil.test",
+    "/\\evil.test",
+  ])("never return to %j", (value) => {
+    const browser = new Browser();
+    browser.keep(
+      login(
+        browser.request(
+          `${APP}/api/portal/login?returnTo=${encodeURIComponent(value)}`,
+        ),
+      ),
+    );
 
-      expect(JSON.parse(browser.jar.get("creoms_handoff")!).returnTo).toBe("/");
-    },
-  );
+    expect(JSON.parse(browser.jar.get("creoms_handoff")!).returnTo).toBe("/");
+  });
 });
