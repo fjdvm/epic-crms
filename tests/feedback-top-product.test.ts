@@ -44,10 +44,10 @@ async function many(count: number, products: string[], options?: Parameters<type
   for (let i = 0; i < count; i += 1) await feedback(products, options);
 }
 
-type Pick = { product: string; reason: string };
+type Choice = { product: string; reason: string };
 
 /** A client that labels everything neutral and picks with `pick`, or fails to pick when it is null. */
-function client(model: string, pick: ((candidates: TopProductCandidate[]) => Pick) | null): ModelClient & { offered: TopProductCandidate[][] } {
+function client(model: string, pick: ((candidates: TopProductCandidate[]) => Choice) | null): ModelClient & { offered: TopProductCandidate[][] } {
   const offered: TopProductCandidate[][] = [];
 
   return {
