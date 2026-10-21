@@ -5,6 +5,21 @@ export const FEEDBACK_PAGE_SIZE = 25;
 export interface FeedbackQuery {
   page?: number;
   pageSize?: number;
+  /** First day of the range, "YYYY-MM-DD" in Philippines time. Open-ended when absent. */
+  from?: string;
+  /** Last day of the range, "YYYY-MM-DD" in Philippines time, included. Open-ended when absent. */
+  to?: string;
+  /** Only Feedback with exactly this many stars. */
+  stars?: number;
+}
+
+/** What the Average rating and Low ratings cards show, for every Feedback the filters match. */
+export interface FeedbackSummary {
+  count: number;
+  /** Null when there is no Feedback. */
+  average: number | null;
+  /** Feedback of 1 to 3 stars. */
+  low: number;
 }
 
 export interface FeedbackRow {
@@ -20,6 +35,7 @@ export interface FeedbackRow {
 
 export interface FeedbackList {
   rows: FeedbackRow[];
+  summary: FeedbackSummary;
   total: number;
   page: number;
   pageSize: number;
@@ -28,11 +44,28 @@ export interface FeedbackList {
 
 export type FeedbackResult = { ok: true; list: FeedbackList } | { ok: false };
 
+const TIME_ZONE = "Asia/Manila";
+
+/** The conditions the date range and star filter add; days start and end at midnight in Philippines time. */
+function conditions(sql: postgres.Sql, query: FeedbackQuery) {
+  const parts = [sql`true`];
+
+  if (query.from) parts.push(sql`f.created_at >= (${query.from}::date)::timestamp at time zone ${TIME_ZONE}`);
+  if (query.to) parts.push(sql`f.created_at < (${query.to}::date + 1)::timestamp at time zone ${TIME_ZONE}`);
+  if (query.stars !== undefined) parts.push(sql`f.rating = ${query.stars}`);
+
+  return parts.reduce((all, part) => sql`${all} and ${part}`);
+}
+
 /** Feedback, newest first. A product with two lines on the Order is listed once. */
 export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {}): Promise<FeedbackList> {
   const pageSize = query.pageSize ?? FEEDBACK_PAGE_SIZE;
 
-  const [{ total }] = await sql<{ total: number }[]>`select count(*)::int as total from order_feedback`;
+  const where = conditions(sql, query);
+
+  const [{ total, average, low }] = await sql<{ total: number; average: string | null; low: number }[]>`
+    select count(*)::int as total, avg(f.rating) as average, (count(*) filter (where f.rating <= 3))::int as low
+    from order_feedback f where ${where}`;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);
@@ -47,6 +80,7 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
     from order_feedback f
     join orders o on o.id = f.order_id
     join customers c on c.id = o.customer_id
+    where ${where}
     order by f.created_at desc, f.order_id desc
     limit ${pageSize} offset ${(page - 1) * pageSize}`;
 
@@ -60,6 +94,7 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
       products: r.products as string[],
       createdAt: r.created_at as Date,
     })),
+    summary: { count: total, average: average === null ? null : Number(average), low },
     total,
     page,
     pageSize,
