@@ -1,5 +1,5 @@
 -- Adds the image layout to crms.announcements, for an Announcement already created from docs/db/crms-announcements.sql.
--- NOT YET RUN: needs the owner's approval. Run as creoms_writer, which owns crms.
+-- Run as creoms_writer, which owns crms, on production (the brenraphaels-ecommerce Neon project) on 2026-10-22.
 --
 -- image_layout is how Staff chose to arrange the images (see features/marketing/image-layouts.ts).
 -- Null means the default for the number of images, so existing rows need no backfill.
