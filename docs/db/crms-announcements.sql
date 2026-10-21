@@ -1,5 +1,5 @@
 -- Upgrades an existing crms schema (docs/db/crms-schema.sql as first run) for Announcements.
--- NOT YET RUN: needs the owner's approval. Run as creoms_writer, which owns crms.
+-- Run on the live database on 2026-10-22, as creoms_writer (which owns crms), through a temporary grant to the owner.
 
 -- One Marketing Email composed by Staff. Shared by every Staff member with the Marketing Module, so
 -- created_by and updated_by only say who touched it last, never who may. images holds the public
