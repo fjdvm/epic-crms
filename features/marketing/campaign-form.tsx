@@ -18,8 +18,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction } from "./actions";
-import { INPUT_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
+import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction, sendNowAction } from "./actions";
+import { INPUT_REFUSALS, SEND_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
 import { IMAGE_REFUSALS, MAX_IMAGE_BYTES, MAX_IMAGE_MB } from "./image-limits";
 import { prepareImage } from "./prepare-image";
 import { InboxPreview } from "./inbox-preview";
@@ -27,6 +27,7 @@ import { InboxPreview } from "./inbox-preview";
 const MESSAGES: Record<string, string> = {
   ...INPUT_REFUSALS,
   ...IMAGE_REFUSALS,
+  ...SEND_REFUSALS,
   "not-found": "That Announcement no longer exists.",
   "not-a-draft": "That Announcement is no longer a Draft, so it cannot be changed.",
   unavailable: "CREOMS could not reach its database. Try again in a moment.",
@@ -42,16 +43,20 @@ export interface CampaignFormActions {
   edit: typeof editDraftAction;
   remove: typeof deleteDraftAction;
   addImage: typeof addImageAction;
+  send: typeof sendNowAction;
 }
 
-const REAL_ACTIONS: CampaignFormActions = { save: saveDraftAction, edit: editDraftAction, remove: deleteDraftAction, addImage: addImageAction };
+const REAL_ACTIONS: CampaignFormActions = { save: saveDraftAction, edit: editDraftAction, remove: deleteDraftAction, addImage: addImageAction, send: sendNowAction };
 
 /** The compose form and its live inbox preview. With `draft`, it edits that Draft instead of starting a new one. */
 export function CampaignForm({
   draft,
+  subscribers = null,
   actions = REAL_ACTIONS,
 }: {
   draft?: { id: string; title: string; description: string; images?: string[] };
+  /** How many Subscribers would receive it now; null when they could not be counted. */
+  subscribers?: number | null;
   actions?: CampaignFormActions;
 }) {
   const router = useRouter();
@@ -60,7 +65,7 @@ export function CampaignForm({
   const [description, setDescription] = useState(draft?.description ?? "");
   const [images, setImages] = useState<string[]>(draft?.images ?? []);
   const [adding, setAdding] = useState(false);
-  const [confirming, setConfirming] = useState<"save" | "delete" | null>(null);
+  const [confirming, setConfirming] = useState<"save" | "delete" | "send" | null>(null);
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
 
@@ -86,7 +91,7 @@ export function CampaignForm({
   };
 
   /** Each submit asks first; the dialog's confirm button is what actually sends it. */
-  const ask = (kind: "save" | "delete") => (event?: React.FormEvent) => {
+  const ask = (kind: "save" | "delete" | "send") => (event?: React.FormEvent) => {
     event?.preventDefault();
     setConfirming(kind);
   };
@@ -98,6 +103,8 @@ export function CampaignForm({
     busy.current = true;
     startTransition(async () => {
       try {
+        if (kind === "send") return await send();
+
         const result =
           kind === "delete"
             ? await actions.remove(draft!.id)
@@ -114,6 +121,34 @@ export function CampaignForm({
         busy.current = false;
       }
     });
+  };
+
+  /** Sending saves the form as it stands first, so what goes out is what the preview shows. */
+  const send = async () => {
+    const saved = draft
+      ? { ...(await actions.edit(draft.id, input)), id: draft.id }
+      : await actions.save(input).then((r) => (r.ok ? { ok: true as const, id: r.announcement.id } : r));
+
+    if (!saved.ok) {
+      setConfirming(null);
+
+      return void toast.error(MESSAGES[saved.reason]);
+    }
+
+    const id = saved.id;
+    const result = await actions.send(id);
+
+    setConfirming(null);
+    if (!result.ok) {
+      toast.error(`${MESSAGES[result.reason]} Your work is saved as a Draft.`);
+
+      return void router.push(`/email-campaigns/${id}`);
+    }
+
+    if (result.state === "sent") toast.success(`Sent to ${result.subscribers} ${result.subscribers === 1 ? "Subscriber" : "Subscribers"}.`);
+    else toast.error("Some Subscribers could not be reached, so it is Failed. Open it to retry; nobody is emailed twice.");
+
+    router.push("/email-campaigns");
   };
 
   return (
@@ -245,8 +280,11 @@ export function CampaignForm({
         <Link href="/email-campaigns" className={OUTLINE}>
           Cancel
         </Link>
-        <button type="submit" className="rounded-lg bg-[#5b2a86] px-4 py-[9px] text-sm font-medium leading-[normal] text-white">
+        <button type="submit" className={OUTLINE}>
           Save draft
+        </button>
+        <button type="button" onClick={ask("send")} className="rounded-lg bg-[#5b2a86] px-4 py-[9px] text-sm font-medium leading-[normal] text-white">
+          Send now
         </button>
       </div>
 
@@ -257,12 +295,26 @@ export function CampaignForm({
         >
           <AlertDialogHeader className="gap-2 text-left">
             <AlertDialogTitle className="text-lg font-semibold">
-              {confirming === "delete" ? "Delete this Draft?" : draft ? "Save your changes?" : "Save this Draft?"}
+              {confirming === "send"
+                ? subscribers === 0
+                  ? "Nobody to send to"
+                  : subscribers === null
+                    ? "Send to every Subscriber?"
+                    : `Send to ${subscribers} ${subscribers === 1 ? "Subscriber" : "Subscribers"}?`
+                : confirming === "delete"
+                  ? "Delete this Draft?"
+                  : draft
+                    ? "Save your changes?"
+                    : "Save this Draft?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirming === "delete"
-                ? "It is removed for everyone with the Marketing Module and cannot be brought back."
-                : "It is saved as a Draft. Nothing is sent to Subscribers."}
+              {confirming === "send"
+                ? subscribers === 0
+                  ? SEND_REFUSALS["no-subscribers"]
+                  : "It goes out now to everyone who is a Subscriber at this moment, and cannot be unsent."
+                : confirming === "delete"
+                  ? "It is removed for everyone with the Marketing Module and cannot be brought back."
+                  : "It is saved as a Draft. Nothing is sent to Subscribers."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
@@ -273,10 +325,10 @@ export function CampaignForm({
             <Button
               type="button"
               onClick={confirm}
-              disabled={pending}
+              disabled={pending || (confirming === "send" && subscribers === 0)}
               className={cn("text-white", confirming === "delete" ? "bg-[#dc2626] hover:bg-[#dc2626]/90" : "bg-[#5b2a86] hover:bg-[#5b2a86]/90")}
             >
-              {pending ? "Working…" : confirming === "delete" ? "Delete" : "Save"}
+              {pending ? "Working…" : confirming === "delete" ? "Delete" : confirming === "send" ? "Send now" : "Save"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

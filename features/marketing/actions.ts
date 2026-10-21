@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { crmsDatabase } from "@/lib/crms-db";
-import { gatewayAuditLog, gatewayImageStore } from "@/lib/gateway";
+import { database } from "@/lib/db";
+import { gatewayAuditLog, gatewayImageStore, gatewayMarketingMailer } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 
@@ -11,18 +12,28 @@ import { addImage } from "./add-image";
 import {
   deleteDraft,
   editDraft,
+  retrySend,
   saveDraft,
+  sendNow,
+  storefrontSubscribers,
   type AnnouncementInput,
   type DeleteResult,
   type EditResult,
   type Ports,
   type SaveResult,
+  type SendResult,
 } from "./announcements";
 import type { AddImageResult } from "./image-limits";
 
 export type Unavailable = { ok: false; reason: "unavailable" };
 
-const ports = (): Ports => ({ audit: gatewayAuditLog, images: gatewayImageStore, now: () => new Date() });
+const ports = (): Ports => ({
+  audit: gatewayAuditLog,
+  images: gatewayImageStore,
+  subscribers: storefrontSubscribers(database()),
+  mailer: gatewayMarketingMailer,
+  now: () => new Date(),
+});
 
 /** Server actions are public endpoints, so each proves the Staff member holds the Marketing Module. */
 async function act<R extends { ok: boolean }>(
@@ -52,6 +63,14 @@ export async function editDraftAction(id: string, input: AnnouncementInput): Pro
 
 export async function deleteDraftAction(id: string): Promise<DeleteResult | Unavailable> {
   return act((actor) => deleteDraft(crmsDatabase(), actor, id, ports()));
+}
+
+export async function sendNowAction(id: string): Promise<SendResult | Unavailable> {
+  return act((actor) => sendNow(crmsDatabase(), actor, id, ports()));
+}
+
+export async function retrySendAction(id: string): Promise<SendResult | Unavailable> {
+  return act((actor) => retrySend(crmsDatabase(), actor, id, ports()));
 }
 
 /** Shrinks and stores one image; it joins an Announcement only when the Draft is saved with its address. */
