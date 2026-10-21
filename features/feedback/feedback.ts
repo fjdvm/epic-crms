@@ -48,7 +48,7 @@ export interface FeedbackList {
   page: number;
   pageSize: number;
   totalPages: number;
-  /** When the latest analysis run finished; null before the first one. */
+  /** When the latest run that labelled anything finished; null before the first one. */
   lastAnalyzed: Date | null;
 }
 
@@ -90,7 +90,7 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
     order by l.product_name`;
 
   const [{ last_analyzed: lastAnalyzed }] = await sql<{ last_analyzed: Date | null }[]>`
-    select max(finished_at) as last_analyzed from feedback_analysis_runs`;
+    select max(finished_at) as last_analyzed from feedback_analysis_runs where analyzed > 0`;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);

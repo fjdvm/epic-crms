@@ -33,6 +33,8 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
     );
   }
 
+  const lastAnalyzed = lastAnalyzedLabel(result.list.lastAnalyzed);
+
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
       <div className="flex shrink-0 items-center gap-2">
@@ -42,9 +44,9 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
             Every Feedback is tied to a delivered Order.
           </p>
         </div>
-        {lastAnalyzedLabel(result.list.lastAnalyzed) && (
+        {lastAnalyzed && (
           <p className="shrink-0 text-xs leading-[normal] text-[#6e6680]" data-testid="last-analyzed">
-            {lastAnalyzedLabel(result.list.lastAnalyzed)}
+            {lastAnalyzed}
           </p>
         )}
         <DateRangeButton filters={filters} today={manilaToday()} />

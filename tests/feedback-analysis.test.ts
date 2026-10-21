@@ -212,6 +212,30 @@ describe("runAnalysis", () => {
     expect(run.finished_at).not.toBeNull();
   });
 
+  it("closes the run record even when the run is cut short", async () => {
+    await feedback("Loved it");
+    await feedback("Fine");
+    // A database failure mid-run: the run must still be closed with what it did.
+    let calls = 0;
+    const breaking = {
+      model: "grok-4",
+      async classify(): Promise<Sentiment> {
+        calls += 1;
+        if (calls === 2) await db.sql`alter table order_feedback add constraint stop check (sentiment <> 'positive' or false) not valid`;
+        return "positive";
+      },
+    };
+
+    await expect(
+      runAnalysis({ sql: db.sql, grok: breaking, gemini: null, actor: SCHEDULE, audit: setup().audit, now: NOW }),
+    ).rejects.toThrow();
+
+    const [run] = await db.sql`select * from feedback_analysis_runs`;
+    expect(run.finished_at).not.toBeNull();
+
+    await db.sql`alter table order_feedback drop constraint stop`;
+  });
+
   it("writes a feedback.analysis_run audit event for CRMS, the Feedback Module and the Actor", async () => {
     await feedback("Loved it");
     const { audit, events } = setup();

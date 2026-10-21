@@ -91,29 +91,33 @@ export async function runAnalysis({ sql, grok, gemini, actor, audit, now = new D
   let analyzed = 0;
   let failed = 0;
 
-  for (const feedback of pending) {
-    const result = await label(models, { comment: feedback.comment, rating: feedback.rating });
+  try {
+    for (const feedback of pending) {
+      const result = await label(models, { comment: feedback.comment, rating: feedback.rating });
 
-    if (!result) {
-      failed += 1;
-      continue;
+      if (!result) {
+        failed += 1;
+        continue;
+      }
+
+      await sql`
+        update order_feedback
+        set sentiment = ${result.sentiment}, sentiment_model = ${result.model}, sentiment_analyzed_at = ${now}
+        where order_id = ${feedback.order_id} and sentiment is null`;
+
+      analyzed += 1;
+      if (!used.includes(result.model)) used.push(result.model);
     }
-
+  } finally {
+    // Even when the run is cut short, close it, so it never looks in progress and counts what it did.
     await sql`
-      update order_feedback
-      set sentiment = ${result.sentiment}, sentiment_model = ${result.model}, sentiment_analyzed_at = ${now}
-      where order_id = ${feedback.order_id} and sentiment is null`;
-
-    analyzed += 1;
-    if (!used.includes(result.model)) used.push(result.model);
+      update feedback_analysis_runs
+      set finished_at = ${new Date()}, analyzed = ${analyzed}, failed = ${failed},
+        model = ${used.length > 0 ? used.join(", ") : null}
+      where id = ${runId}`;
   }
 
   const model = used.length > 0 ? used.join(", ") : null;
-
-  await sql`
-    update feedback_analysis_runs
-    set finished_at = ${new Date()}, analyzed = ${analyzed}, failed = ${failed}, model = ${model}
-    where id = ${runId}`;
 
   try {
     await audit({

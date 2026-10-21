@@ -56,9 +56,10 @@ describe("Sentiment and Last analyzed", () => {
     expect((await listFeedback(db.sql)).lastAnalyzed).toBeNull();
   });
 
-  it("is the finish time of the latest finished run", async () => {
-    await db.sql`insert into feedback_analysis_runs (started_by_kind, finished_at) values
-      ('schedule', '2026-10-20T03:00:00Z'), ('schedule', '2026-10-21T06:00:00Z'), ('schedule', null)`;
+  it("is the finish time of the latest finished run that labelled something", async () => {
+    await db.sql`insert into feedback_analysis_runs (started_by_kind, finished_at, analyzed) values
+      ('schedule', '2026-10-20T03:00:00Z', 2), ('schedule', '2026-10-21T06:00:00Z', 1),
+      ('schedule', '2026-10-21T09:00:00Z', 0), ('schedule', null, 0)`;
 
     expect((await listFeedback(db.sql)).lastAnalyzed).toEqual(new Date("2026-10-21T06:00:00Z"));
   });
