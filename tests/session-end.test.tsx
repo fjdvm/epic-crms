@@ -195,4 +195,23 @@ describe("signing out", () => {
     expect(confirm.getAttribute("type")).toBe("submit");
   });
 
+  it("keeps the dialog open and shows the confirm button loading once Log out is confirmed", async () => {
+    render(
+      <StaffProvider staff={ada}>
+        <SidebarProfileFooter />
+      </StaffProvider>,
+    );
+    const submitted = vi.fn((event: Event) => event.preventDefault());
+    document.addEventListener("submit", submitted);
+
+    await userEvent.click(screen.getByRole("button", { name: "Log out" }));
+    const confirm = screen.getAllByRole("button", { name: "Log out" }).find((b) => b.getAttribute("form") === "logout-form")!;
+    await userEvent.click(confirm);
+    document.removeEventListener("submit", submitted);
+
+    expect(submitted).toHaveBeenCalledTimes(1);
+    expect((screen.getByRole("button", { name: "Logging out…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Log out?")).toBeTruthy();
+  });
 });
