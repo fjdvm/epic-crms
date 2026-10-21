@@ -1,5 +1,6 @@
 import type { WriteAuditEvent } from "@/features/feedback/analysis";
 import type { AuditLog, MarketingMail } from "@/features/marketing/announcements";
+import type { ImageStore } from "@/features/marketing/image-limits";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
@@ -134,6 +135,37 @@ export const gatewayFileStorage: FileStorage = {
 
   async remove(fileId) {
     await storage(`/${fileId}`, { method: "DELETE" });
+  },
+};
+
+/**
+ * Announcement images are Public and Permanent Files, so a recipient's mail app can fetch them long
+ * after the email is sent. A Draft's images are not Linked: file-storage's Links name records, and
+ * an Announcement not yet saved has none.
+ */
+export const gatewayImageStore: ImageStore = {
+  async store({ contentType, bytes }) {
+    const pending = await storage<{ id: string; uploadUrl: string }>("", {
+      method: "POST",
+      body: JSON.stringify({
+        filename: `announcement-${Date.now()}.jpg`,
+        contentType,
+        size: bytes.length,
+        visibility: "public",
+        retentionType: "permanent",
+      }),
+    });
+
+    // The signed address is file-storage's own, so it takes no gateway key.
+    const put = await fetch(pending.uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: bytes as BodyInit });
+    if (!put.ok) throw new Error(`The image upload was refused: ${put.status}`);
+
+    await storage(`/${pending.id}/confirm`, { method: "POST" });
+
+    const { url } = await storage<{ url: string }>(`/${pending.id}`);
+    if (!url.startsWith("https://")) throw new Error("file-storage gave an image address that is not HTTPS");
+
+    return url;
   },
 };
 

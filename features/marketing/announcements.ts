@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 
 import { defaultLayout, isImageLayout, layoutsFor, type ImageLayout } from "./image-layouts";
+import type { ImageStore } from "./image-limits";
 
 /** An email's subject is cut off in inboxes past about this many characters. */
 export const TITLE_LIMIT = 60;
@@ -16,6 +17,8 @@ export interface Actor {
 export interface AnnouncementInput {
   title: string;
   description: string;
+  /** Public HTTPS addresses from addImage, in order. Omitted for a text-only Announcement. */
+  images?: string[];
   /** How the images are arranged. Left out, an edit keeps the current choice; null goes back to the default. */
   imageLayout?: ImageLayout | null;
 }
@@ -72,10 +75,11 @@ export interface MarketingMail {
 export interface Ports {
   audit: AuditLog;
   mail: MarketingMail;
+  images: ImageStore;
   now: () => Date;
 }
 
-export type InputRefusal = "empty-title" | "title-too-long" | "empty-description" | "layout-mismatch";
+export type InputRefusal = "empty-title" | "title-too-long" | "empty-description" | "invalid-image" | "layout-mismatch";
 
 export type SaveResult = { ok: true; announcement: { id: string } } | { ok: false; reason: InputRefusal };
 export type EditResult = { ok: true } | { ok: false; reason: InputRefusal | "not-found" | "not-a-draft" };
@@ -86,6 +90,7 @@ export const INPUT_REFUSALS: Record<InputRefusal, string> = {
   "empty-title": "Give the Announcement a title.",
   "title-too-long": `Keep the title to ${TITLE_LIMIT} characters or fewer, so the subject is not cut off.`,
   "empty-description": "Write a description.",
+  "invalid-image": "One of the images is not a valid image address. Remove it and add it again.",
   "layout-mismatch": "That layout does not fit the number of images. Pick another.",
 };
 
@@ -93,7 +98,17 @@ export const INPUT_REFUSALS: Record<InputRefusal, string> = {
 const fits = (layout: ImageLayout | null | undefined, imageCount: number) =>
   !layout || layoutsFor(imageCount).includes(layout);
 
-function check(input: AnnouncementInput): { ok: true; title: string; description: string } | { ok: false; reason: InputRefusal } {
+function isPublicHttpsAddress(address: string): boolean {
+  try {
+    return new URL(address).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function check(
+  input: AnnouncementInput,
+): { ok: true; title: string; description: string; images: string[] } | { ok: false; reason: InputRefusal } {
   const title = input.title.trim();
   const description = input.description.trim();
 
@@ -101,7 +116,10 @@ function check(input: AnnouncementInput): { ok: true; title: string; description
   if (title.length > TITLE_LIMIT) return { ok: false, reason: "title-too-long" };
   if (!description) return { ok: false, reason: "empty-description" };
 
-  return { ok: true, title, description };
+  const images = input.images ?? [];
+  if (!images.every(isPublicHttpsAddress)) return { ok: false, reason: "invalid-image" };
+
+  return { ok: true, title, description, images };
 }
 
 /**
@@ -116,18 +134,17 @@ async function audited({ audit }: Ports, event: AuditEvent) {
   }
 }
 
-/** Saves a text-only Draft. Every Staff member with the Marketing Module shares every Announcement. */
+/** Saves a Draft. Every Staff member with the Marketing Module shares every Announcement. */
 export async function saveDraft(sql: postgres.Sql, actor: Actor, input: AnnouncementInput, ports: Ports): Promise<SaveResult> {
   const checked = check(input);
   if (!checked.ok) return checked;
-  // A new Draft has no images yet, so there is nothing for a layout to lay out.
-  if (!fits(input.imageLayout, 0)) return { ok: false, reason: "layout-mismatch" };
+  if (!fits(input.imageLayout, checked.images.length)) return { ok: false, reason: "layout-mismatch" };
 
   const at = ports.now();
 
   const [{ id }] = await sql<{ id: string }[]>`
-    insert into crms.announcements (title, description, created_by_id, created_by_name, updated_by_id, updated_by_name, created_at, updated_at)
-    values (${checked.title}, ${checked.description}, ${actor.id}, ${actor.name}, ${actor.id}, ${actor.name}, ${at}, ${at})
+    insert into crms.announcements (title, description, images, image_layout, created_by_id, created_by_name, updated_by_id, updated_by_name, created_at, updated_at)
+    values (${checked.title}, ${checked.description}, ${checked.images}, ${input.imageLayout ?? null}, ${actor.id}, ${actor.name}, ${actor.id}, ${actor.name}, ${at}, ${at})
     returning id`;
 
   await audited(ports, {
@@ -156,17 +173,14 @@ export async function editDraft(sql: postgres.Sql, actor: Actor, id: string, inp
   if (!checked.ok) return checked;
   if (!isUuid(id)) return { ok: false, reason: "not-found" };
 
-  const [current] = await sql<{ images: string[]; image_layout: string | null; state: AnnouncementState }[]>`
-    select images, image_layout, state from crms.announcements where id = ${id}`;
-  if (!current) return { ok: false, reason: "not-found" };
-  if (current.state !== "draft") return { ok: false, reason: "not-a-draft" };
-
-  const imageLayout = input.imageLayout === undefined ? current.image_layout : input.imageLayout;
-  if (!fits(imageLayout as ImageLayout | null, current.images.length)) return { ok: false, reason: "layout-mismatch" };
+  // A choice must fit the images being saved. An edit that does not mention it keeps what is stored,
+  // which reads back as the default if the images no longer suit it.
+  if (input.imageLayout !== undefined && !fits(input.imageLayout, checked.images.length)) return { ok: false, reason: "layout-mismatch" };
 
   const [row] = await sql<{ id: string }[]>`
     update crms.announcements
-    set title = ${checked.title}, description = ${checked.description}, image_layout = ${imageLayout},
+    set title = ${checked.title}, description = ${checked.description}, images = ${checked.images},
+        image_layout = ${input.imageLayout === undefined ? sql`image_layout` : input.imageLayout},
         updated_by_id = ${actor.id}, updated_by_name = ${actor.name}, updated_at = ${ports.now()}
     where id = ${id} and state = 'draft'
     returning id`;

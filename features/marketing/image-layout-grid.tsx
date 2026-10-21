@@ -17,10 +17,10 @@ const bandHeight = (band: Tile[][]) =>
   Math.max(...band.map((tiles) => tiles.reduce((sum, t) => sum + t.height, 0) + EMAIL_GAP * (tiles.length - 1)));
 
 /** A picture at its own proportions, or a placeholder when only the layout is being pictured. */
-function Picture({ src, placeholder }: { src?: string; placeholder: string }) {
+function Picture({ src, alt, placeholder }: { src?: string; alt: string; placeholder: string }) {
   return src ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt="" className="block h-auto w-full rounded-[6px]" />
+    <img src={src} alt={alt} className="block h-auto w-full rounded-[6px]" />
   ) : (
     <div className={`w-full rounded-[3px] bg-[#d9cdea] ${placeholder}`} />
   );
@@ -49,7 +49,7 @@ export function ImageLayoutGrid({
     return (
       <div data-layout={layout} className="flex flex-col" style={{ gap }}>
         {sources.map((src, i) => (
-          <Picture key={i} src={src} placeholder="h-3" />
+          <Picture key={i} src={src} alt={`Image ${i + 1}`} placeholder="h-3" />
         ))}
       </div>
     );
@@ -67,12 +67,12 @@ export function ImageLayoutGrid({
               <div key={c} className="flex min-w-0 flex-1 flex-col" style={{ gap }}>
                 {tiles.map(({ height, index }) =>
                   natural ? (
-                    <Picture key={index} src={images?.[index]} placeholder="h-10" />
+                    <Picture key={index} src={images?.[index]} alt={`Image ${index + 1}`} placeholder="h-10" />
                   ) : (
                     <div key={index} className="min-h-0" style={{ flex: height }}>
                       {images?.[index] ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={images[index]} alt="" className="block size-full rounded-[6px] object-cover" />
+                        <img src={images[index]} alt={`Image ${index + 1}`} className="block size-full rounded-[6px] object-cover" />
                       ) : (
                         <div className="size-full rounded-[3px] bg-[#d9cdea]" />
                       )}

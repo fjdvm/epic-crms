@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import sharp from "sharp";
+
+import { addImage } from "@/features/marketing/add-image";
+import { MAX_IMAGE_BYTES, type ImageStore } from "@/features/marketing/image-limits";
 import {
   deleteDraft,
   editDraft,
@@ -59,17 +63,33 @@ class FakeMail implements MarketingMail {
   }
 }
 
+/** In-memory file storage: every stored image gets a public address, and tests can make it fail. */
+class FakeImageStore implements ImageStore {
+  stored = new Map<string, { contentType: string; bytes: Uint8Array }>();
+  down = false;
+
+  async store(image: { contentType: "image/jpeg"; bytes: Uint8Array }) {
+    if (this.down) throw new Error("file-storage is down");
+    const url = `https://cdn.test/images/${this.stored.size + 1}.jpg`;
+    this.stored.set(url, image);
+
+    return url;
+  }
+}
+
 const ada = { id: "ada", name: "Ada Okafor" };
 const ben = { id: "ben", name: "Ben Cruz" };
 const now = new Date("2026-10-20T04:00:00Z");
 
 let audit: FakeAudit;
 let mail: FakeMail;
-const ports = () => ({ audit, mail, now: () => now });
+let images: FakeImageStore;
+const ports = () => ({ audit, mail, images, now: () => now });
 
 beforeEach(async () => {
   audit = new FakeAudit();
   mail = new FakeMail();
+  images = new FakeImageStore();
   await db.sql`truncate crms.announcements cascade`;
   await db.sql`truncate customers cascade`;
   await db.sql`truncate neon_auth."user" cascade`;
@@ -210,7 +230,7 @@ describe("choosing how the images are laid out", () => {
   it("keeps the layout Staff chose for the images the Draft has", async () => {
     const id = await savedWithImages(3);
 
-    expect((await editDraft(db.sql, ada, id, { ...draft, imageLayout: "three-row" }, ports())).ok).toBe(true);
+    expect((await editDraft(db.sql, ada, id, { ...draft, images: photos(3), imageLayout: "three-row" }, ports())).ok).toBe(true);
     expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "three-row" });
   });
 
@@ -230,7 +250,7 @@ describe("choosing how the images are laid out", () => {
   it("refuses a layout that does not hold the number of images and changes nothing", async () => {
     const id = await savedWithImages(3);
 
-    expect(await editDraft(db.sql, ada, id, { title: "Changed", description: "x", imageLayout: "four-grid" }, ports())).toEqual({
+    expect(await editDraft(db.sql, ada, id, { title: "Changed", description: "x", images: photos(3), imageLayout: "four-grid" }, ports())).toEqual({
       ok: false,
       reason: "layout-mismatch",
     });
@@ -246,16 +266,16 @@ describe("choosing how the images are laid out", () => {
 
   it("leaves the choice alone when an edit does not mention it", async () => {
     const id = await savedWithImages(2);
-    await editDraft(db.sql, ada, id, { ...draft, imageLayout: "two-rows" }, ports());
+    await editDraft(db.sql, ada, id, { ...draft, images: photos(2), imageLayout: "two-rows" }, ports());
 
-    await editDraft(db.sql, ada, id, { title: "New", description: "Words." }, ports());
+    await editDraft(db.sql, ada, id, { title: "New", description: "Words.", images: photos(2) }, ports());
 
     expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "two-rows" });
   });
 
   it("falls back to the default when the images change so the choice no longer fits", async () => {
     const id = await savedWithImages(3);
-    await editDraft(db.sql, ada, id, { ...draft, imageLayout: "three-row" }, ports());
+    await editDraft(db.sql, ada, id, { ...draft, images: photos(3), imageLayout: "three-row" }, ports());
 
     await db.sql`update crms.announcements set images = ${photos(2)} where id = ${id}`;
 
@@ -264,7 +284,7 @@ describe("choosing how the images are laid out", () => {
 
   it("is used by the test copy", async () => {
     const id = await savedWithImages(3);
-    await editDraft(db.sql, ada, id, { ...draft, imageLayout: "three-feature-top" }, ports());
+    await editDraft(db.sql, ada, id, { ...draft, images: photos(3), imageLayout: "three-feature-top" }, ports());
 
     await sendTestCopy(db.sql, ada, "ada@store.test", id, ports());
 
@@ -447,5 +467,109 @@ describe("the Subscriber count", () => {
 
   it("is zero for an empty store", async () => {
     expect(await subscriberCount(db.sql)).toEqual({ subscribers: 0, customers: 0 });
+  });
+});
+
+/** A photo-like image of about the given raw size: noise, so it does not compress away on its own. */
+const photo = (width: number, height: number, format: "png" | "jpeg" | "webp" = "png") =>
+  sharp({ create: { width, height, channels: 3, background: "#808080", noise: { type: "gaussian", mean: 128, sigma: 60 } } })
+    [format](format === "png" ? { compressionLevel: 0 } : {})
+    .toBuffer();
+
+describe("adding an image", () => {
+  it("accepts a 25 MB image and stores it much smaller, at an email-friendly width", async () => {
+    const big = await photo(3300, 2400);
+    expect(big.length).toBeGreaterThan(20 * 1024 * 1024);
+    expect(big.length).toBeLessThanOrEqual(MAX_IMAGE_BYTES);
+
+    const result = await addImage(ada, { filename: "halaya.png", bytes: big }, ports());
+
+    expect(result.ok).toBe(true);
+    const [kept] = [...images.stored.values()];
+    expect(images.stored.size).toBe(1);
+    expect(kept.bytes.length).toBeLessThan(big.length / 10);
+    const meta = await sharp(kept.bytes).metadata();
+    expect(meta.format).toBe("jpeg");
+    expect(meta.width).toBe(1200);
+    expect(meta.height).toBe(873);
+  });
+
+  it("hands back the public address Staff keep on the Announcement", async () => {
+    const result = await addImage(ada, { filename: "a.jpg", bytes: await photo(400, 300, "jpeg") }, ports());
+
+    expect(result).toEqual({ ok: true, url: "https://cdn.test/images/1.jpg" });
+  });
+
+  it("never enlarges a small image", async () => {
+    await addImage(ada, { filename: "small.webp", bytes: await photo(400, 300, "webp") }, ports());
+
+    expect((await sharp([...images.stored.values()][0].bytes).metadata()).width).toBe(400);
+  });
+
+  it("refuses a file that is not an image, and stores nothing", async () => {
+    const pdf = new TextEncoder().encode("%PDF-1.7 not an image");
+
+    expect(await addImage(ada, { filename: "menu.pdf", bytes: pdf }, ports())).toEqual({ ok: false, reason: "not-an-image" });
+    expect(images.stored.size).toBe(0);
+  });
+
+  it("refuses an image over 25 MB, and stores nothing", async () => {
+    const tooBig = new Uint8Array(MAX_IMAGE_BYTES + 1);
+
+    expect(await addImage(ada, { filename: "huge.png", bytes: tooBig }, ports())).toEqual({ ok: false, reason: "image-too-large" });
+    expect(images.stored.size).toBe(0);
+  });
+
+  it("refuses an empty file", async () => {
+    expect(await addImage(ada, { filename: "empty.png", bytes: new Uint8Array() }, ports())).toEqual({
+      ok: false,
+      reason: "empty-image",
+    });
+  });
+
+  it("says file storage is unavailable rather than losing the image silently", async () => {
+    images.down = true;
+
+    expect(await addImage(ada, { filename: "a.jpg", bytes: await photo(400, 300, "jpeg") }, ports())).toEqual({
+      ok: false,
+      reason: "storage-unavailable",
+    });
+  });
+});
+
+describe("images on a Draft", () => {
+  const a = "https://cdn.test/images/1.jpg";
+  const b = "https://cdn.test/images/2.jpg";
+
+  it("saves several images, in order, with the Draft", async () => {
+    await saveDraft(db.sql, ada, { ...draft, images: [a, b] }, ports());
+
+    expect((await listAnnouncements(db.sql))[0].images).toEqual([a, b]);
+  });
+
+  it("removes an image by editing the Draft without it", async () => {
+    const saved = await saveDraft(db.sql, ada, { ...draft, images: [a, b] }, ports());
+    const id = saved.ok ? saved.announcement.id : "";
+
+    await editDraft(db.sql, ben, id, { ...draft, images: [b] }, ports());
+
+    expect((await getAnnouncement(db.sql, id))!.images).toEqual([b]);
+  });
+
+  it("still saves a text-only Draft", async () => {
+    await saveDraft(db.sql, ada, draft, ports());
+
+    expect((await listAnnouncements(db.sql))[0].images).toEqual([]);
+  });
+
+  it("refuses an image address that is not a public HTTPS address", async () => {
+    expect(await saveDraft(db.sql, ada, { ...draft, images: ["javascript:alert(1)"] }, ports())).toEqual({
+      ok: false,
+      reason: "invalid-image",
+    });
+    expect(await saveDraft(db.sql, ada, { ...draft, images: ["http://cdn.test/a.jpg"] }, ports())).toEqual({
+      ok: false,
+      reason: "invalid-image",
+    });
   });
 });
