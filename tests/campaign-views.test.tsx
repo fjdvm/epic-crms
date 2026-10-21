@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AnnouncementRow } from "@/features/marketing/announcements";
@@ -30,11 +30,14 @@ const row = (overrides: Partial<AnnouncementRow> = {}): AnnouncementRow => ({
   ...overrides,
 });
 
+const imageName = (form: FormData) => (form.get("image") as File).name;
+
 function fakeActions(): CampaignFormActions {
   return {
     save: vi.fn(async () => ({ ok: true as const, announcement: { id: "new" } })),
     edit: vi.fn(async () => ({ ok: true as const })),
     remove: vi.fn(async () => ({ ok: true as const })),
+    addImage: vi.fn(async (form: FormData) => ({ ok: true as const, url: `https://cdn.test/${imageName(form)}` })),
   };
 }
 
@@ -114,7 +117,7 @@ describe("the campaign form", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked." }));
+    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 
@@ -136,7 +139,7 @@ describe("the campaign form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(actions.edit).toHaveBeenCalledWith("d1", { title: "New", description: "Words." }));
+    await waitFor(() => expect(actions.edit).toHaveBeenCalledWith("d1", { title: "New", description: "Words.", images: [] }));
     expect(actions.save).not.toHaveBeenCalled();
   });
 
@@ -169,5 +172,95 @@ describe("the campaign form", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Give the Announcement a title."));
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe("images on the campaign form", () => {
+  const pick = (files: File[]) =>
+    fireEvent.change(screen.getByLabelText("Add images"), { target: { files } });
+  const png = (name: string) => new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" });
+
+  it("adds several images and shows them in the preview", async () => {
+    render(<CampaignForm actions={fakeActions()} />);
+
+    pick([png("a.png"), png("b.png")]);
+
+    await waitFor(() => expect(within(screen.getByTestId("inbox-preview")).getAllByRole("img")).toHaveLength(2));
+    const srcs = within(screen.getByTestId("inbox-preview")).getAllByRole("img").map((i) => i.getAttribute("src"));
+    expect(srcs).toEqual(["https://cdn.test/a.png", "https://cdn.test/b.png"]);
+  });
+
+  it("removes an image from the form and the preview", async () => {
+    render(<CampaignForm actions={fakeActions()} />);
+    pick([png("a.png"), png("b.png")]);
+    await screen.findByRole("button", { name: "Remove image 2" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove image 1" }));
+
+    const srcs = within(screen.getByTestId("inbox-preview")).getAllByRole("img").map((i) => i.getAttribute("src"));
+    expect(srcs).toEqual(["https://cdn.test/b.png"]);
+  });
+
+  it("saves the images with the Draft", async () => {
+    const actions = fakeActions();
+    render(<CampaignForm actions={actions} />);
+    fireEvent.change(screen.getByLabelText(/Title/), { target: { value: "Halaya" } });
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Restocked." } });
+    pick([png("a.png")]);
+    await screen.findByRole("button", { name: "Remove image 1" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: ["https://cdn.test/a.png"] }),
+    );
+  });
+
+  it("shows the images a Draft already has", () => {
+    render(<CampaignForm draft={{ id: "d1", title: "Old", description: "Words.", images: ["https://cdn.test/kept.jpg"] }} actions={fakeActions()} />);
+
+    expect(screen.getByRole("button", { name: "Remove image 1" })).toBeTruthy();
+    expect(within(screen.getByTestId("inbox-preview")).getAllByRole("img").map((i) => i.getAttribute("src"))).toContain(
+      "https://cdn.test/kept.jpg",
+    );
+  });
+
+  it("says why a file is refused and keeps the images already added", async () => {
+    const { toast } = await import("sonner");
+    const actions = {
+      ...fakeActions(),
+      addImage: vi.fn(async (form: FormData) =>
+        imageName(form) === "menu.pdf"
+          ? { ok: false as const, reason: "not-an-image" as const }
+          : { ok: true as const, url: `https://cdn.test/${imageName(form)}` },
+      ),
+    };
+    render(<CampaignForm actions={actions} />);
+
+    pick([png("a.png"), new File(["%PDF"], "menu.pdf", { type: "application/pdf" })]);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("not an image")));
+    expect(screen.getByRole("button", { name: "Remove image 1" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Remove image 2" })).toBeNull();
+  });
+
+  it("refuses an image over 25 MB before sending it anywhere", async () => {
+    const { toast } = await import("sonner");
+    const actions = fakeActions();
+    render(<CampaignForm actions={actions} />);
+    const huge = png("huge.png");
+    Object.defineProperty(huge, "size", { value: 25 * 1024 * 1024 + 1 });
+
+    pick([huge]);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("over 25 MB")));
+    expect(actions.addImage).not.toHaveBeenCalled();
+  });
+
+  it("shows no image area in the preview for a text-only Announcement", () => {
+    render(<CampaignForm actions={fakeActions()} />);
+
+    expect(within(screen.getByTestId("inbox-preview")).queryAllByRole("img")).toHaveLength(0);
   });
 });

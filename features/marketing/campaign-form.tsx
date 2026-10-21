@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ImagePlus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useRef, useState, useTransition } from "react";
@@ -18,12 +18,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { deleteDraftAction, editDraftAction, saveDraftAction } from "./actions";
+import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction } from "./actions";
 import { INPUT_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
+import { IMAGE_REFUSALS, MAX_IMAGE_BYTES, MAX_IMAGE_MB } from "./image-limits";
+import { prepareImage } from "./prepare-image";
 import { InboxPreview } from "./inbox-preview";
 
 const MESSAGES: Record<string, string> = {
   ...INPUT_REFUSALS,
+  ...IMAGE_REFUSALS,
   "not-found": "That Announcement no longer exists.",
   "not-a-draft": "That Announcement is no longer a Draft, so it cannot be changed.",
   unavailable: "CREOMS could not reach its database. Try again in a moment.",
@@ -38,27 +41,49 @@ export interface CampaignFormActions {
   save: typeof saveDraftAction;
   edit: typeof editDraftAction;
   remove: typeof deleteDraftAction;
+  addImage: typeof addImageAction;
 }
 
-const REAL_ACTIONS: CampaignFormActions = { save: saveDraftAction, edit: editDraftAction, remove: deleteDraftAction };
+const REAL_ACTIONS: CampaignFormActions = { save: saveDraftAction, edit: editDraftAction, remove: deleteDraftAction, addImage: addImageAction };
 
 /** The compose form and its live inbox preview. With `draft`, it edits that Draft instead of starting a new one. */
 export function CampaignForm({
   draft,
   actions = REAL_ACTIONS,
 }: {
-  draft?: { id: string; title: string; description: string };
+  draft?: { id: string; title: string; description: string; images?: string[] };
   actions?: CampaignFormActions;
 }) {
   const router = useRouter();
   const ids = useId();
   const [title, setTitle] = useState(draft?.title ?? "");
   const [description, setDescription] = useState(draft?.description ?? "");
+  const [images, setImages] = useState<string[]>(draft?.images ?? []);
+  const [adding, setAdding] = useState(false);
   const [confirming, setConfirming] = useState<"save" | "delete" | null>(null);
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
 
-  const input: AnnouncementInput = { title, description };
+  const input: AnnouncementInput = { title, description, images };
+
+  /** Each file is shrunk and stored on its own, so one refusal does not lose the others. */
+  const addImages = async (files: File[]) => {
+    setAdding(true);
+    try {
+      for (const file of files) {
+        if (file.size > MAX_IMAGE_BYTES) {
+          toast.error(`${file.name}: ${IMAGE_REFUSALS["image-too-large"]}`);
+          continue;
+        }
+
+        const result = await actions.addImage(await toFormData(file));
+        if (result.ok) setImages((current) => [...current, result.url]);
+        else toast.error(`${file.name}: ${MESSAGES[result.reason]}`);
+      }
+    } finally {
+      setAdding(false);
+    }
+  };
 
   /** Each submit asks first; the dialog's confirm button is what actually sends it. */
   const ask = (kind: "save" | "delete") => (event?: React.FormEvent) => {
@@ -143,6 +168,57 @@ export function CampaignForm({
                 placeholder="Our Noche Buena batch is now open for pre-orders."
               />
             </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL}>
+                Images <span className="font-normal text-[#a1a1aa]">(optional)</span>
+              </span>
+              {images.length > 0 && (
+                <ul className="flex flex-wrap gap-2">
+                  {images.map((src, index) => (
+                    <li key={`${src}-${index}`} className="relative size-24 shrink-0 overflow-hidden rounded-lg border border-[#e4e4e7] bg-[#efe6f8]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt="" className="size-full object-cover" />
+                      <button
+                        type="button"
+                        aria-label={`Remove image ${index + 1}`}
+                        onClick={() => setImages((current) => current.filter((_, i) => i !== index))}
+                        className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-full bg-[#18181b]/80 text-white"
+                      >
+                        <X className="size-3.5" aria-hidden />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <label
+                htmlFor={`${ids}-images`}
+                className={cn(
+                  "flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[#8b5cf6] bg-[#f5f0ff] px-3 py-4 text-sm font-medium leading-[normal] text-[#6d28d9]",
+                  adding && "pointer-events-none opacity-60",
+                )}
+              >
+                <ImagePlus className="size-4" aria-hidden />
+                {adding ? "Adding…" : "Add images"}
+              </label>
+              <input
+                id={`${ids}-images`}
+                aria-label="Add images"
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={adding}
+                className="sr-only"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  if (files.length) void addImages(files);
+                }}
+              />
+              <p className="text-xs leading-[normal] text-[#71717a]">
+                Up to {MAX_IMAGE_MB} MB each. They are shrunk for email, and stay available to Subscribers permanently.
+              </p>
+            </div>
           </section>
 
           <aside className="flex min-h-0 w-full shrink-0 flex-col gap-4 overflow-y-auto lg:w-[420px]">
@@ -151,7 +227,7 @@ export function CampaignForm({
                 <h2 className="text-[15px] font-semibold leading-[normal] text-[#18181b]">Preview</h2>
                 <p className="text-xs leading-[normal] text-[#71717a]">How it looks in the inbox.</p>
               </div>
-              <InboxPreview title={title} description={description} />
+              <InboxPreview title={title} description={description} images={images} />
             </section>
           </aside>
         </div>
@@ -207,4 +283,11 @@ export function CampaignForm({
       </AlertDialog>
     </form>
   );
+}
+
+async function toFormData(file: File): Promise<FormData> {
+  const form = new FormData();
+  form.set("image", await prepareImage(file));
+
+  return form;
 }
