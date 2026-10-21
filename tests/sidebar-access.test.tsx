@@ -101,7 +101,7 @@ describe("the sidebar", () => {
     renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
-    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns", "Email campaigns", "Segments"]) {
+    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns", "Segments"]) {
       expect(screen.getByText(name).closest("[aria-disabled]")?.getAttribute("aria-disabled")).toBe("true");
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
@@ -119,5 +119,18 @@ describe("the sidebar", () => {
     await screen.findByRole("link", { name: "Tickets" });
 
     expect(screen.queryByText("Feedback")).toBeNull();
+  });
+
+  it("links Email campaigns with the Marketing page permitted", async () => {
+    renderSidebar(["/customer-profiles", "/email-campaigns"]);
+
+    expect((await screen.findByRole("link", { name: "Email campaigns" })).getAttribute("href")).toBe("/email-campaigns");
+  });
+
+  it("hides Email campaigns entirely, not even dimmed, without the Marketing Module", async () => {
+    renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+
+    expect(screen.queryByText("Email campaigns")).toBeNull();
   });
 });

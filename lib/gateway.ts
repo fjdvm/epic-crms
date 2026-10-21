@@ -1,4 +1,5 @@
 import type { WriteAuditEvent } from "@/features/feedback/analysis";
+import type { AuditLog } from "@/features/marketing/announcements";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
@@ -131,5 +132,29 @@ export const gatewayFileStorage: FileStorage = {
 
   async remove(fileId) {
     await storage(`/${fileId}`, { method: "DELETE" });
+  },
+};
+
+/** Writes Audit Events through the gateway as the "crms" Caller, whose audit key the gateway holds. */
+export const gatewayAuditLog: AuditLog = {
+  async record(event) {
+    const { base, key } = gateway();
+
+    const response = await fetch(`${base}/audit/events`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "CRMS",
+        module: "Marketing",
+        action: event.action,
+        outcome: "success",
+        actor: { type: "staff", id: event.actor.id, display_name: event.actor.name },
+        target: { type: "announcement", id: event.announcement.id, display_name: event.announcement.title },
+        description: event.description,
+        occurred_at: event.occurredAt.toISOString(),
+      }),
+    });
+
+    if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
   },
 };

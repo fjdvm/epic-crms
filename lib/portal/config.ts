@@ -9,6 +9,7 @@ export const UNAVAILABLE_PATH = "/unavailable";
 export const CUSTOMER_PROFILES_MODULE = "Customer Profiles";
 export const TICKETS_MODULE = "Tickets";
 export const FEEDBACK_MODULE = "Feedback";
+export const MARKETING_MODULE = "Marketing";
 
 function required(name: string): string {
   const value = process.env[name];
