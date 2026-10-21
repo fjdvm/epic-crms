@@ -72,7 +72,9 @@ class Browser {
 /** Opens a page without a session and follows the redirects up to the Portal's authorize step. */
 async function startHandoff(browser: Browser, page: string) {
   const gated = proxy(browser.request(`${APP}${page}`));
-  const loginUrl = browser.location(gated);
+  const signingIn = browser.location(gated);
+  // The signing-in page sends the browser straight on to the login route.
+  const loginUrl = new URL(`/api/portal/login${signingIn.search}`, APP);
   const toPortal = login(browser.request(loginUrl.toString()));
   browser.keep(toPortal);
 
@@ -88,7 +90,7 @@ describe("a request with no session", () => {
     );
 
     expect(gated.status).toBe(307);
-    expect(browser.location(gated).pathname).toBe("/api/portal/login");
+    expect(browser.location(gated).pathname).toBe("/signing-in");
     expect(authorizeUrl.startsWith(`${FAKE_PORTAL_URL}/api/integrations/authorize`)).toBe(true);
     expect(new URL(authorizeUrl).searchParams.get("redirect_uri")).toBe(FAKE_CALLBACK);
   });
