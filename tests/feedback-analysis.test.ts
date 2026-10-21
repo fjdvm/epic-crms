@@ -5,7 +5,7 @@ import {
   runAnalysis,
   type AuditEvent,
   type Sentiment,
-  type SentimentClient,
+  type ModelClient,
 } from "@/features/feedback/analysis";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -41,7 +41,7 @@ const stored = (orderId: number) =>
     select sentiment, sentiment_model, sentiment_analyzed_at from order_feedback where order_id = ${orderId}`.then((r) => r[0]);
 
 /** A client that answers from `answers` by comment, and fails for any comment not in it. */
-function client(model: string, answers: Record<string, Sentiment>): SentimentClient & { asked: string[] } {
+function client(model: string, answers: Record<string, Sentiment>): ModelClient & { asked: string[] } {
   const asked: string[] = [];
 
   return {
@@ -52,6 +52,9 @@ function client(model: string, answers: Record<string, Sentiment>): SentimentCli
       if (!(comment in answers)) throw new Error(`${model} is down`);
 
       return answers[comment];
+    },
+    async pickTopProduct() {
+      throw new Error(`${model} picks no Top product in these tests`);
     },
   };
 }
@@ -80,7 +83,7 @@ describe("runAnalysis", () => {
       now: NOW,
     });
 
-    expect(result).toEqual({ status: "done", analyzed: 2, failed: 0, model: "groq-4" });
+    expect(result).toEqual({ status: "done", analyzed: 2, failed: 0, model: "groq-4", topProduct: "not-enough" });
     expect(await stored(happy)).toMatchObject({ sentiment: "positive", sentiment_model: "groq-4", sentiment_analyzed_at: NOW });
     expect(await stored(unhappy)).toMatchObject({ sentiment: "negative", sentiment_model: "groq-4" });
   });
@@ -224,6 +227,9 @@ describe("runAnalysis", () => {
         calls += 1;
         if (calls === 2) await db.sql`alter table order_feedback add constraint stop check (sentiment <> 'positive' or false) not valid`;
         return "positive";
+      },
+      async pickTopProduct(): Promise<never> {
+        throw new Error("not asked");
       },
     };
 

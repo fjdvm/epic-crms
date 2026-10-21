@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 
+import { recomputeTopProduct, topProductStale, type TopProductClient, type TopProductOutcome } from "./top-product";
+
 export type Sentiment = "positive" | "neutral" | "negative";
 
 export const SENTIMENTS: readonly Sentiment[] = ["positive", "neutral", "negative"];
@@ -10,6 +12,9 @@ export interface SentimentClient {
   model: string;
   classify(feedback: { comment: string; rating: number }): Promise<Sentiment>;
 }
+
+/** A model as the run uses it: it labels Feedback and chooses the Top product. */
+export type ModelClient = SentimentClient & TopProductClient;
 
 /** Who started a run: the schedule, or a Staff member pressing Analyze. */
 export type AnalysisActor = { kind: "schedule" } | { kind: "staff"; id: string; name: string };
@@ -36,7 +41,7 @@ export type AnalysisResult =
   /** Analyze was pressed within 5 minutes of the last run's end. */
   | { status: "cooling-down"; until: Date }
   | { status: "nothing-to-do" }
-  | { status: "done"; analyzed: number; failed: number; model: string | null };
+  | { status: "done"; analyzed: number; failed: number; model: string | null; topProduct: TopProductOutcome };
 
 /** How long after a run ends before Analyze can start another. */
 export const COOLDOWN_MS = 5 * 60_000;
@@ -79,12 +84,12 @@ export async function analysisStatus(sql: postgres.Sql | postgres.TransactionSql
 }
 
 export interface AnalysisOptions {
-  /** The connection that may write only the Sentiment columns and the run record. */
+  /** The connection that may write only the Sentiment columns, the Top product and the run record. */
   sql: postgres.Sql;
   /** Null when its key is not set. */
-  groq: SentimentClient | null;
+  groq: ModelClient | null;
   /** Null when its key is not set. */
-  gemini: SentimentClient | null;
+  gemini: ModelClient | null;
   actor: AnalysisActor;
   audit: WriteAuditEvent;
   /** Refuse to start within 5 minutes of the last run's end: true for Analyze, not for the schedule's own slot. */
@@ -110,9 +115,11 @@ async function label(
 
 /**
  * One analysis run: labels every Feedback that has no Sentiment, Groq first and Gemini when Groq
- * fails, and records the run and its audit event. A Feedback both models fail on stays unlabelled
- * and is picked up again by the next run. Labelled Feedback is never asked about again. It refuses to
- * start while another run is in progress, and, with `cooldown`, within 5 minutes of the last run's end.
+ * fails, then chooses the Top product again, and records the run and its audit event. A Feedback both
+ * models fail on stays unlabelled and is picked up again by the next run. Labelled Feedback is never
+ * asked about again. A run with no Feedback to label still goes ahead when the Top product is stale.
+ * It refuses to start while another run is in progress, and, with `cooldown`, within 5 minutes of the
+ * last run's end.
  */
 export async function runAnalysis({
   sql,
@@ -123,7 +130,7 @@ export async function runAnalysis({
   cooldown = false,
   now = new Date(),
 }: AnalysisOptions): Promise<AnalysisResult> {
-  const models = [groq, gemini].filter((client): client is SentimentClient => client !== null);
+  const models = [groq, gemini].filter((client): client is ModelClient => client !== null);
 
   if (models.length === 0) return { status: "no-keys" };
 
@@ -131,6 +138,13 @@ export async function runAnalysis({
   const actorName = actor.kind === "staff" ? actor.name : null;
 
   type Pending = { order_id: number; rating: number; comment: string };
+
+  // Read outside the lock: a failure to read the Top product must not stop the labelling.
+  const stale = await topProductStale(sql).catch((error) => {
+    console.error("Whether the Top product is stale could not be read", error);
+
+    return false;
+  });
 
   // Checking the locks and recording the run happen under one table lock, so two presses of Analyze
   // at the same moment cannot both start a run.
@@ -147,7 +161,7 @@ export async function runAnalysis({
       where sentiment is null
       order by created_at, order_id`;
 
-    if (pending.length === 0) return { status: "nothing-to-do" };
+    if (pending.length === 0 && !stale) return { status: "nothing-to-do" };
 
     const [{ id }] = await tx<{ id: number }[]>`
       insert into feedback_analysis_runs (started_by_kind, started_by_id, started_by_name, started_at)
@@ -164,6 +178,7 @@ export async function runAnalysis({
   const used: string[] = [];
   let analyzed = 0;
   let failed = 0;
+  let topProduct: TopProductOutcome = "kept";
 
   try {
     for (const feedback of pending) {
@@ -182,6 +197,13 @@ export async function runAnalysis({
       analyzed += 1;
       if (!used.includes(result.model)) used.push(result.model);
     }
+
+    // At the end of every run, over all Feedback, so the new labels' Feedback counts too.
+    topProduct = await recomputeTopProduct(sql, models, now).catch((error): TopProductOutcome => {
+      console.error("The Top product could not be recomputed", error);
+
+      return "kept";
+    });
   } finally {
     // Even when the run is cut short, close it, so it never looks in progress and counts what it did.
     await sql`
@@ -213,5 +235,5 @@ export async function runAnalysis({
     console.error("The Feedback analysis audit event could not be written", error);
   }
 
-  return { status: "done", analyzed, failed, model };
+  return { status: "done", analyzed, failed, model, topProduct };
 }

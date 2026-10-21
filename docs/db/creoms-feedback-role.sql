@@ -4,7 +4,7 @@
 -- ecommerce migration must add (a hand-off, not run from here). Step 2 is the role.
 -- Replace <PASSWORD> with a generated secret before running. Do not commit it.
 
--- 1. Ecommerce migration: Sentiment on Feedback, and the record of analysis runs.
+-- 1. Ecommerce migration: Sentiment on Feedback, the record of analysis runs, and the cached Top product.
 --
 -- ALTER TABLE public.order_feedback
 --   ADD COLUMN sentiment text CHECK (sentiment IN ('positive', 'neutral', 'negative')),
@@ -22,8 +22,17 @@
 --   failed integer NOT NULL DEFAULT 0,
 --   model text
 -- );
+--
+-- CREATE TABLE public.feedback_top_product (
+--   id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1), -- one row: the latest successful result
+--   product_name text NOT NULL,
+--   feedback_count integer NOT NULL,
+--   reason text NOT NULL,                   -- one line on why Customers like it
+--   model text NOT NULL,
+--   computed_at timestamptz NOT NULL
+-- );
 
--- 2. The role: read Feedback, write only its Sentiment columns and the run record.
+-- 2. The role: read Feedback, write only its Sentiment columns, the run record and the Top product.
 CREATE ROLE creoms_feedback LOGIN PASSWORD '<PASSWORD>'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
 
@@ -38,5 +47,10 @@ GRANT SELECT, INSERT, UPDATE ON public.feedback_analysis_runs TO creoms_feedback
 -- Required for the run record's identity column.
 GRANT USAGE ON SEQUENCE public.feedback_analysis_runs_id_seq TO creoms_feedback;
 
--- 3. The pages that show "Last analyzed" read the run record as the read-only role.
+-- The Top product reads every product's Feedback, so it needs the Order lines.
+GRANT SELECT ON public.order_lines TO creoms_feedback;
+GRANT SELECT, INSERT, UPDATE ON public.feedback_top_product TO creoms_feedback;
+
+-- 3. The Feedback page reads the run record ("Last analyzed") and the Top product as the read-only role.
 GRANT SELECT ON public.feedback_analysis_runs TO creoms_readonly;
+GRANT SELECT ON public.feedback_top_product TO creoms_readonly;

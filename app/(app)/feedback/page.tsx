@@ -3,11 +3,12 @@ import { analysisStatus, type AnalysisStatus } from "@/features/feedback/analysi
 import { AnalyzeButton } from "@/features/feedback/analyze-button";
 import { loadFeedback } from "@/features/feedback/feedback";
 import { FeedbackListView } from "@/features/feedback/feedback-list";
-import { FeedbackSummaryCards } from "@/features/feedback/feedback-summary";
+import { FeedbackSummaryCards, type TopProductCard } from "@/features/feedback/feedback-summary";
 import { DateRangeButton } from "@/features/feedback/feedback-toolbar";
 import { lastAnalyzedLabel } from "@/features/feedback/sentiment-badge";
 import { manilaToday, parseFilters } from "@/features/feedback/filters";
 import { configuredClients } from "@/features/feedback/sentiment-clients";
+import { readTopProduct } from "@/features/feedback/top-product";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -47,6 +48,15 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
 
     return { running: false, availableAt: null, lastFailed: 0 };
   });
+  // Top product ignores the date range; a failed read shows on its card only.
+  const topProduct: TopProductCard = await readTopProduct(ticketsDatabase()).then(
+    (result): TopProductCard => ({ ok: true, result }),
+    (error): TopProductCard => {
+      console.error("The Top product could not be read", error);
+
+      return { ok: false };
+    },
+  );
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
@@ -70,7 +80,7 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
         />
         <DateRangeButton filters={filters} today={manilaToday()} />
       </div>
-      <FeedbackSummaryCards summary={result.list.summary} response={result.list.response} />
+      <FeedbackSummaryCards summary={result.list.summary} response={result.list.response} topProduct={topProduct} />
       <FeedbackListView list={result.list} filters={filters} />
     </div>
   );
