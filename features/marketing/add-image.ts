@@ -1,10 +1,7 @@
 import sharp from "sharp";
 
 import type { Actor, Ports } from "./announcements";
-import { MAX_IMAGE_BYTES, type AddImageResult } from "./image-limits";
-
-/** Email-friendly: wide enough for a retina phone, small enough to load quickly. */
-const IMAGE_WIDTH = 1200;
+import { IMAGE_WIDTH, MAX_IMAGE_BYTES, type AddImageResult } from "./image-limits";
 
 /**
  * Shrinks a Staff member's image and stores it, returning its public address. Only the shrunk copy is

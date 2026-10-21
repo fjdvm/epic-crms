@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 
 import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction } from "./actions";
 import { INPUT_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
-import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "./image-limits";
+import { IMAGE_REFUSALS, MAX_IMAGE_BYTES, MAX_IMAGE_MB } from "./image-limits";
 import { prepareImage } from "./prepare-image";
 import { InboxPreview } from "./inbox-preview";
 
@@ -216,7 +216,7 @@ export function CampaignForm({
                 }}
               />
               <p className="text-xs leading-[normal] text-[#71717a]">
-                Up to 25 MB each. They are shrunk for email, and stay available to Subscribers permanently.
+                Up to {MAX_IMAGE_MB} MB each. They are shrunk for email, and stay available to Subscribers permanently.
               </p>
             </div>
           </section>
