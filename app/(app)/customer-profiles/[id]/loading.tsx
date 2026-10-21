@@ -1,5 +1,5 @@
-import { DetailSkeleton } from "@/components/shared/detail-skeleton";
+import { PageLoading } from "@/components/loading/page-loading";
 
 export default function Loading() {
-  return <DetailSkeleton />;
+  return <PageLoading />;
 }
