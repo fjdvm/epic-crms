@@ -15,7 +15,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.sql`truncate feedback_analysis_runs, order_feedback, order_lines, orders, customers restart identity cascade`;
+  await db.sql`truncate feedback_analysis_runs, feedback_requests, order_feedback, order_lines, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values
     ('c1', 'Jane Doe', 'jane@example.com'), ('c2', 'Ramon Cruz', 'ramon@example.com')`;
 });
@@ -244,6 +244,59 @@ describe("the summary", () => {
       count: 1,
       average: 4,
       low: 0,
+    });
+  });
+});
+
+describe("the response rate", () => {
+  /** A delivered Order with a Feedback request sent on `sent` and, when `rating` is given, Feedback left on `given`. */
+  async function requested(options: { sent: string; rating?: number; given?: string }) {
+    const id = await order({ rating: options.rating, given: options.given });
+
+    await db.sql`insert into feedback_requests (order_id, customer_id, sent_at) values (${id}, 'c1', ${options.sent})`;
+
+    return id;
+  }
+
+  it("has no rate when no request was sent", async () => {
+    expect((await listFeedback(db.sql)).response).toEqual({ requested: 0, received: 0, rate: null });
+  });
+
+  it("is the Feedback received over the requests sent, as a whole percent", async () => {
+    await requested({ sent: "2026-10-01T00:00:00Z", rating: 5, given: "2026-10-02T00:00:00Z" });
+    await requested({ sent: "2026-10-01T00:00:00Z" });
+    await requested({ sent: "2026-10-01T00:00:00Z" });
+
+    expect((await listFeedback(db.sql)).response).toEqual({ requested: 3, received: 1, rate: 33 });
+  });
+
+  it("leaves out Feedback on Orders with no request record, from both numbers", async () => {
+    await requested({ sent: "2026-10-01T00:00:00Z", rating: 4, given: "2026-10-02T00:00:00Z" });
+    await order({ rating: 5, given: "2026-10-02T00:00:00Z" });
+
+    expect((await listFeedback(db.sql)).response).toEqual({ requested: 1, received: 1, rate: 100 });
+  });
+
+  it("counts requests by when they were sent and Feedback by when it was given, in the date range", async () => {
+    await requested({ sent: "2026-01-01T00:00:00Z", rating: 5, given: "2026-01-02T00:00:00Z" });
+    await requested({ sent: "2026-10-05T00:00:00Z", rating: 3, given: "2026-10-06T00:00:00Z" });
+    await requested({ sent: "2026-10-06T00:00:00Z" });
+
+    expect((await listFeedback(db.sql, { from: "2026-10-01", to: "2026-10-31" })).response).toEqual({
+      requested: 2,
+      received: 1,
+      rate: 50,
+    });
+  });
+
+  it("ignores the star and product filters", async () => {
+    await requested({ sent: "2026-10-01T00:00:00Z", rating: 5, given: "2026-10-02T00:00:00Z" });
+    await requested({ sent: "2026-10-01T00:00:00Z" });
+
+    expect((await listFeedback(db.sql, { stars: 1, product: "Nothing" })).response).toEqual({
+      requested: 2,
+      received: 1,
+      rate: 50,
     });
   });
 });

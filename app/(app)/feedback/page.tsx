@@ -51,7 +51,7 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
         )}
         <DateRangeButton filters={filters} today={manilaToday()} />
       </div>
-      <FeedbackSummaryCards summary={result.list.summary} />
+      <FeedbackSummaryCards summary={result.list.summary} response={result.list.response} />
       <FeedbackListView list={result.list} filters={filters} />
     </div>
   );

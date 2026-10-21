@@ -21,7 +21,8 @@ export function viewerFor(staff: { username: string }, permittedPages: string[])
   const viewer = {
     customerProfiles: permittedPages.includes("/customer-profiles"),
     ticketsStaffId: permittedPages.includes("/tickets") ? staff.username : null,
+    feedback: permittedPages.includes("/feedback"),
   };
 
-  return viewer.customerProfiles || viewer.ticketsStaffId !== null ? viewer : null;
+  return viewer.customerProfiles || viewer.ticketsStaffId !== null || viewer.feedback ? viewer : null;
 }

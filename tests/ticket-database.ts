@@ -56,6 +56,11 @@ const SCHEMA = `
     failed integer not null default 0,
     model text
   );
+  create table feedback_requests (
+    order_id integer primary key references orders (id) on delete cascade,
+    customer_id text not null references customers (id),
+    sent_at timestamptz not null default now()
+  );
   create table tickets (
     id integer primary key generated always as identity,
     customer_id text not null references customers (id),
