@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { orderAnchor } from "@/features/customer-profiles/orders";
 import { formatDate } from "@/features/customer-profiles/format";
 
 import type { FeedbackList } from "./feedback";
-import { StarFilter } from "./feedback-toolbar";
+import { ProductFilter, StarFilter } from "./feedback-toolbar";
 import { feedbackHref, type FeedbackFilters } from "./filters";
 
 /** Filled and empty stars as the Figma draws them; 4 and 5 are gold, lower ratings amber. */
@@ -24,14 +24,32 @@ function Stars({ rating }: { rating: number }) {
 }
 
 export function FeedbackListView({ list, filters }: { list: FeedbackList; filters: FeedbackFilters }) {
-  const filtered = Boolean(filters.from || filters.to || filters.stars !== undefined);
+  const filtered = Boolean(filters.from || filters.to || filters.stars !== undefined || filters.product);
   const href = (page: number) => feedbackHref({ ...filters, page });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-[#e6e1ee] bg-white p-5">
       <div className="flex shrink-0 items-center justify-between gap-3">
-        <h2 className="text-base font-semibold leading-[normal] text-[#1f1a2e]">Latest feedback</h2>
-        <StarFilter filters={filters} />
+        {filters.product ? (
+          <div className="min-w-0 space-y-1">
+            <Link
+              href={feedbackHref({ ...filters, product: undefined, page: 1 })}
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#5b2a86] hover:underline"
+            >
+              <ArrowLeft className="size-3" /> All Feedback
+            </Link>
+            <h2 className="truncate text-base font-semibold leading-[normal] text-[#1f1a2e]">{filters.product}</h2>
+            <p className="text-xs leading-[normal] text-[#6e6680]" data-testid="product-feedback-count">
+              {list.total} Feedback
+            </p>
+          </div>
+        ) : (
+          <h2 className="text-base font-semibold leading-[normal] text-[#1f1a2e]">Latest feedback</h2>
+        )}
+        <div className="flex shrink-0 items-center gap-2">
+          <ProductFilter filters={filters} products={list.products} />
+          <StarFilter filters={filters} />
+        </div>
       </div>
       {list.rows.length === 0 ? (
         <div className="p-8 text-center text-sm text-[#6e6680]">{filtered ? "No Feedback matches these filters." : "No Feedback yet."}</div>
@@ -52,7 +70,18 @@ export function FeedbackListView({ list, filters }: { list: FeedbackList; filter
                   >
                     #{row.orderId}
                   </Link>
-                  {row.products.length > 0 && ` · ${row.products.join(", ")}`}
+                  {row.products.length > 0 && " · "}
+                  {row.products.map((name, i) => (
+                    <span key={name}>
+                      {i > 0 && ", "}
+                      <Link
+                        href={feedbackHref({ ...filters, product: name, page: 1 })}
+                        className="text-[#5b2a86] hover:underline"
+                      >
+                        {name}
+                      </Link>
+                    </span>
+                  ))}
                 </p>
                 <span className="shrink-0 text-xs font-normal text-[#6e6680]">{formatDate(row.createdAt)}</span>
               </div>

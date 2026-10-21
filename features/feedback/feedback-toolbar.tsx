@@ -130,3 +130,33 @@ export function StarFilter({ filters }: { filters: FeedbackFilters }) {
     </Select>
   );
 }
+
+/** Narrows the list to one product; "All products" is the default. */
+export function ProductFilter({ filters, products }: { filters: FeedbackFilters; products: string[] }) {
+  const router = useRouter();
+  // The address may name a product that has no Feedback in the list; keep it selectable so the Select can show it.
+  const options = filters.product && !products.includes(filters.product) ? [filters.product, ...products] : products;
+
+  return (
+    <Select
+      value={filters.product === undefined ? "all" : `product:${filters.product}`}
+      onValueChange={(value) =>
+        router.push(
+          feedbackHref({ ...filters, product: value === "all" ? undefined : value.slice("product:".length), page: 1 }),
+        )
+      }
+    >
+      <SelectTrigger aria-label="Product" className="h-9 w-[180px] border-[#e6e1ee] text-sm">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All products</SelectItem>
+        {options.map((name) => (
+          <SelectItem key={name} value={`product:${name}`}>
+            {name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}

@@ -2,6 +2,7 @@ export interface FeedbackFilters {
   from?: string;
   to?: string;
   stars?: number;
+  product?: string;
   page: number;
 }
 
@@ -31,17 +32,19 @@ export function parseFilters(raw: Record<string, string | string[] | undefined>)
     from,
     to,
     stars: stars >= 1 && stars <= 5 ? stars : undefined,
+    product: first(raw.product).trim() || undefined,
     page: Math.max(1, Number.parseInt(first(raw.page), 10) || 1),
   };
 }
 
-/** The page address for these filters; the defaults (All time, every rating, page 1) leave no trace. */
+/** The page address for these filters; the defaults (All time, every rating, every product, page 1) leave no trace. */
 export function feedbackHref(filters: FeedbackFilters): string {
   const query = new URLSearchParams();
 
   if (filters.from) query.set("from", filters.from);
   if (filters.to) query.set("to", filters.to);
   if (filters.stars !== undefined) query.set("stars", String(filters.stars));
+  if (filters.product) query.set("product", filters.product);
   if (filters.page > 1) query.set("page", String(filters.page));
 
   const text = query.toString();

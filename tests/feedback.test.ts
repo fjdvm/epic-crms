@@ -131,6 +131,63 @@ describe("the star filter", () => {
   });
 });
 
+describe("the product filter", () => {
+  it("lists the Feedback of every Order that contained the product, so a two-product Order appears under both", async () => {
+    const both = await order({ products: ["Smooth tub", "Tidbits pouch"], rating: 5 });
+    const tidbitsOnly = await order({ products: ["Tidbits pouch"], rating: 3 });
+    await order({ products: ["Ube Jam"], rating: 4 });
+
+    const tub = await listFeedback(db.sql, { product: "Smooth tub" });
+    const tidbits = await listFeedback(db.sql, { product: "Tidbits pouch" });
+
+    expect(tub.rows.map((r) => r.orderId)).toEqual([both]);
+    expect(tidbits.rows.map((r) => r.orderId).sort()).toEqual([both, tidbitsOnly].sort());
+    expect(tidbits.total).toBe(2);
+    // The row still shows everything on the Order.
+    expect(tub.rows[0].products).toEqual(["Smooth tub", "Tidbits pouch"]);
+  });
+
+  it("counts an Order once when it has two lines of the product", async () => {
+    await order({ products: ["Smooth tub", "Smooth tub"], rating: 5 });
+
+    expect((await listFeedback(db.sql, { product: "Smooth tub" })).total).toBe(1);
+  });
+
+  it("combines with the date range and the star filter", async () => {
+    await order({ products: ["Smooth tub"], rating: 5, given: "2026-01-01T00:00:00Z" });
+    const hit = await order({ products: ["Smooth tub"], rating: 2, given: "2026-10-05T00:00:00Z" });
+    await order({ products: ["Smooth tub"], rating: 5, given: "2026-10-06T00:00:00Z" });
+    await order({ products: ["Ube Jam"], rating: 2, given: "2026-10-05T00:00:00Z" });
+
+    const list = await listFeedback(db.sql, { product: "Smooth tub", from: "2026-10-01", stars: 2 });
+
+    expect(list.rows.map((r) => r.orderId)).toEqual([hit]);
+  });
+
+  it("matches nothing for a product with no Feedback", async () => {
+    await order({ rating: 5 });
+
+    expect(await listFeedback(db.sql, { product: "Nope" })).toMatchObject({ rows: [], total: 0 });
+  });
+
+  it("leaves the cards on every Feedback, so no per-product average appears", async () => {
+    await order({ products: ["Smooth tub"], rating: 5 });
+    await order({ products: ["Ube Jam"], rating: 1 });
+
+    const list = await listFeedback(db.sql, { product: "Smooth tub" });
+
+    expect(list.summary).toEqual({ count: 2, average: 3, low: 1 });
+  });
+
+  it("offers every product that has Feedback, alphabetically, whatever the filters", async () => {
+    await order({ products: ["Tidbits pouch", "Smooth tub"], rating: 5 });
+    await order({ products: ["Ube Jam"], rating: 1 });
+    await order({ products: ["Never reviewed"] });
+
+    expect((await listFeedback(db.sql, { stars: 5 })).products).toEqual(["Smooth tub", "Tidbits pouch", "Ube Jam"]);
+  });
+});
+
 describe("the summary", () => {
   it("is empty with no average when nothing matches", async () => {
     expect((await listFeedback(db.sql)).summary).toEqual({ count: 0, average: null, low: 0 });

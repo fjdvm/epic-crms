@@ -11,6 +11,8 @@ export interface FeedbackQuery {
   to?: string;
   /** Only Feedback with exactly this many stars. */
   stars?: number;
+  /** Only Feedback of Orders that contained a product with exactly this name. */
+  product?: string;
 }
 
 /** What the Average rating and Low ratings cards show, for every Feedback the filters match. */
@@ -35,6 +37,8 @@ export interface FeedbackRow {
 
 export interface FeedbackList {
   rows: FeedbackRow[];
+  /** Every product name that has Feedback, alphabetically, for the product filter. */
+  products: string[];
   summary: FeedbackSummary;
   total: number;
   page: number;
@@ -46,13 +50,17 @@ export type FeedbackResult = { ok: true; list: FeedbackList } | { ok: false };
 
 const TIME_ZONE = "Asia/Manila";
 
-/** The conditions the date range and star filter add; days start and end at midnight in Philippines time. */
+/** The conditions the date range, star and product filters add; days start and end at midnight in Philippines time. */
 function conditions(sql: postgres.Sql, query: FeedbackQuery) {
   const parts = [sql`true`];
 
   if (query.from) parts.push(sql`f.created_at >= (${query.from}::date)::timestamp at time zone ${TIME_ZONE}`);
   if (query.to) parts.push(sql`f.created_at < (${query.to}::date + 1)::timestamp at time zone ${TIME_ZONE}`);
   if (query.stars !== undefined) parts.push(sql`f.rating = ${query.stars}`);
+
+  if (query.product !== undefined) {
+    parts.push(sql`exists (select 1 from order_lines pl where pl.order_id = f.order_id and pl.product_name = ${query.product})`);
+  }
 
   return parts.reduce((all, part) => sql`${all} and ${part}`);
 }
@@ -63,9 +71,17 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
 
   const where = conditions(sql, query);
 
-  const [{ total, average, low }] = await sql<{ total: number; average: string | null; low: number }[]>`
-    select count(*)::int as total, round(avg(f.rating), 1) as average, (count(*) filter (where f.rating <= 3))::int as low
-    from order_feedback f where ${where}`;
+  // The cards ignore the product filter, so a product's view never shows a rating that mixes in its Orders' other items.
+  const [{ count, average, low }] = await sql<{ count: number; average: string | null; low: number }[]>`
+    select count(*)::int as count, round(avg(f.rating), 1) as average, (count(*) filter (where f.rating <= 3))::int as low
+    from order_feedback f where ${conditions(sql, { ...query, product: undefined })}`;
+
+  const [{ total }] = await sql<{ total: number }[]>`select count(*)::int as total from order_feedback f where ${where}`;
+
+  const products = await sql<{ product_name: string }[]>`
+    select distinct l.product_name from order_lines l
+    join order_feedback f on f.order_id = l.order_id
+    order by l.product_name`;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);
@@ -94,7 +110,8 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
       products: r.products as string[],
       createdAt: r.created_at as Date,
     })),
-    summary: { count: total, average: average === null ? null : Number(average), low },
+    products: products.map((p) => p.product_name),
+    summary: { count, average: average === null ? null : Number(average), low },
     total,
     page,
     pageSize,
