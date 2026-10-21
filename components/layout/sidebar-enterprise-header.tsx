@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import { ChevronsUpDown, Check, X } from "lucide-react";
 import {
@@ -15,9 +15,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ReturningToPortal } from "@/components/loading/returning-to-portal";
 import { systems, type SystemChild } from "./sidebar-nav";
 
-export function SidebarEnterpriseHeader({ isMobile }: { isMobile: boolean }) {
+export function SidebarEnterpriseHeader({
+  isMobile,
+  navigate = (url) => {
+    window.location.href = url;
+  },
+}: {
+  isMobile: boolean;
+  navigate?: (url: string) => void;
+}) {
+  const [returningToPortal, setReturningToPortal] = useState(false);
+
   return (
     <SidebarHeader className="h-24 justify-center py-0 pl-3.5 pr-2.5 border-b border-sidebar-border">
       <div className="flex items-center justify-between gap-2">
@@ -61,7 +72,8 @@ export function SidebarEnterpriseHeader({ isMobile }: { isMobile: boolean }) {
                     key={sys.fullName}
                     onClick={() => {
                       if (sys.url) {
-                        window.location.href = sys.url;
+                        if (sys.portal) setReturningToPortal(true);
+                        navigate(sys.url);
                       }
                     }}
                     className={`cursor-pointer text-xs flex items-center justify-between p-2.5 rounded-lg transition-all font-medium gap-3 ${
@@ -113,6 +125,7 @@ export function SidebarEnterpriseHeader({ isMobile }: { isMobile: boolean }) {
           </SidebarTrigger>
         )}
       </div>
+      {returningToPortal && <ReturningToPortal subtitle="Opening the Enterprise Portal" />}
     </SidebarHeader>
   );
 }

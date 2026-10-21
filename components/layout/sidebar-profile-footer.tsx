@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { ReturningToPortal } from "@/components/loading/returning-to-portal";
 import { LOGOUT_PATH } from "@/lib/portal/config";
 import { useStaff } from "./staff-context";
 
@@ -81,6 +82,7 @@ export function SidebarProfileFooter() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {loggingOut && <ReturningToPortal subtitle="Signing you out securely" />}
     </div>
   );
 }

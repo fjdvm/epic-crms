@@ -1,9 +1,5 @@
-import { TableSkeleton } from "@/components/shared/table-skeleton";
+import { PageLoading } from "@/components/loading/page-loading";
 
 export default function Loading() {
-  return (
-    <div className="p-md sm:p-lg">
-      <TableSkeleton columns={8} />
-    </div>
-  );
+  return <PageLoading />;
 }

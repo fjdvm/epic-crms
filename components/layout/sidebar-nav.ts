@@ -31,6 +31,8 @@ export interface SystemItem {
   icon: LucideIcon;
   active: boolean;
   url?: string;
+  /** The Enterprise Portal, which shows the returning card while it opens. */
+  portal?: boolean;
 }
 
 export type SystemChild = SystemItem;
@@ -89,6 +91,7 @@ export const systems: SystemItem[] = [
     desc: "All systems hub & app launcher",
     icon: LayoutGrid,
     active: false,
+    portal: true,
     url: process.env.NEXT_PUBLIC_HOST_URL ?? "https://localhost:3000/",
   },
   {

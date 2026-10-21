@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element -- fixed-size Figma vector assets */
 
-/** The Figma loading card: a centered card over a blurred, dimmed page. */
+/** The Figma loading card: a centered card over a blurred, dimmed page, above dialogs (z-[99999]). */
 export function LoadingCard({
   title,
   subtitle,
@@ -12,7 +12,7 @@ export function LoadingCard({
     <div
       role="status"
       aria-live="polite"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(250,247,252,0.55)] backdrop-blur-[8px]"
+      className="fixed inset-0 z-[100000] flex items-center justify-center bg-[rgba(250,247,252,0.55)] backdrop-blur-[8px]"
     >
       <div className="flex flex-col items-center gap-[18px] rounded-[20px] border border-[#ece6f2] bg-white px-10 pb-7 pt-8 shadow-[0px_16px_40px_0px_rgba(51,26,77,0.12)]">
         <div className="relative size-[72px]">

@@ -9,7 +9,7 @@ import {
 } from "@/features/notifications/live-updates";
 import type { Notification, NotificationFeed } from "@/features/notifications/notifications";
 
-const { toast, refresh } = vi.hoisted(() => ({ toast: vi.fn(), refresh: vi.fn() }));
+const { toast, refresh } = vi.hoisted(() => ({ toast: { info: vi.fn() }, refresh: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
@@ -105,13 +105,13 @@ describe("live updates", () => {
 
     await elapse(5_000);
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast).toHaveBeenCalledWith("Ben Cruz became a Customer");
+    expect(toast.info).toHaveBeenCalledTimes(1);
+    expect(toast.info).toHaveBeenCalledWith("Ben Cruz became a Customer");
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(screen.getByText("unread:2 new:u-2")).toBeTruthy();
 
     await elapse(5_000);
-    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast.info).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -122,8 +122,8 @@ describe("live updates", () => {
     await elapse(5_000);
     await elapse(5_000);
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast).toHaveBeenCalledWith("Cy Tan sent a message on TKT-208");
+    expect(toast.info).toHaveBeenCalledTimes(1);
+    expect(toast.info).toHaveBeenCalledWith("Cy Tan sent a message on TKT-208");
     expect(screen.getByText("unread:2 new:")).toBeTruthy();
   });
 
@@ -145,7 +145,7 @@ describe("live updates", () => {
     await elapse(10_000);
     expect(poll).toHaveBeenCalledTimes(2);
     expect(screen.getByText("unread:1 new:")).toBeTruthy();
-    expect(toast).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
   });
 });
 
