@@ -31,8 +31,52 @@ export type WriteAuditEvent = (event: AuditEvent) => Promise<void>;
 
 export type AnalysisResult =
   | { status: "no-keys" }
+  /** Another run has started and not finished. */
+  | { status: "busy" }
+  /** Analyze was pressed within 5 minutes of the last run's end. */
+  | { status: "cooling-down"; until: Date }
   | { status: "nothing-to-do" }
   | { status: "done"; analyzed: number; failed: number; model: string | null };
+
+/** How long after a run ends before Analyze can start another. */
+export const COOLDOWN_MS = 5 * 60_000;
+
+/**
+ * A run with no end older than this died without closing its record (the route's limit is 5 minutes),
+ * so it no longer counts as in progress.
+ */
+export const STALE_RUN_MS = 15 * 60_000;
+
+/** What the Analyze button needs to know about the runs so far. */
+export interface AnalysisStatus {
+  /** A run has started and not finished. */
+  running: boolean;
+  /** When Analyze can be pressed again, while within 5 minutes of the last run's end; otherwise null. */
+  availableAt: Date | null;
+  /** How many Feedbacks the last finished run could not analyze. */
+  lastFailed: number;
+}
+
+/** The state of the runs at `now`, read from the run record. */
+export async function analysisStatus(sql: postgres.Sql | postgres.TransactionSql, now = new Date()): Promise<AnalysisStatus> {
+  const [running] = await sql<{ id: number }[]>`
+    select id from feedback_analysis_runs
+    where finished_at is null and started_at > ${new Date(now.getTime() - STALE_RUN_MS)}
+    limit 1`;
+  const [last] = await sql<{ finished_at: Date; failed: number }[]>`
+    select finished_at, failed from feedback_analysis_runs
+    where finished_at is not null
+    order by finished_at desc, id desc
+    limit 1`;
+
+  const availableAt = last ? new Date(last.finished_at.getTime() + COOLDOWN_MS) : null;
+
+  return {
+    running: running !== undefined,
+    availableAt: availableAt && availableAt > now ? availableAt : null,
+    lastFailed: last?.failed ?? 0,
+  };
+}
 
 export interface AnalysisOptions {
   /** The connection that may write only the Sentiment columns and the run record. */
@@ -43,6 +87,8 @@ export interface AnalysisOptions {
   gemini: SentimentClient | null;
   actor: AnalysisActor;
   audit: WriteAuditEvent;
+  /** Refuse to start within 5 minutes of the last run's end: true for Analyze, not for the schedule's own slot. */
+  cooldown?: boolean;
   now?: Date;
 }
 
@@ -65,27 +111,55 @@ async function label(
 /**
  * One analysis run: labels every Feedback that has no Sentiment, Groq first and Gemini when Groq
  * fails, and records the run and its audit event. A Feedback both models fail on stays unlabelled
- * and is picked up again by the next run. Labelled Feedback is never asked about again.
+ * and is picked up again by the next run. Labelled Feedback is never asked about again. It refuses to
+ * start while another run is in progress, and, with `cooldown`, within 5 minutes of the last run's end.
  */
-export async function runAnalysis({ sql, groq, gemini, actor, audit, now = new Date() }: AnalysisOptions): Promise<AnalysisResult> {
+export async function runAnalysis({
+  sql,
+  groq,
+  gemini,
+  actor,
+  audit,
+  cooldown = false,
+  now = new Date(),
+}: AnalysisOptions): Promise<AnalysisResult> {
   const models = [groq, gemini].filter((client): client is SentimentClient => client !== null);
 
   if (models.length === 0) return { status: "no-keys" };
 
-  const pending = await sql<{ order_id: number; rating: number; comment: string }[]>`
-    select order_id, rating, comment from order_feedback
-    where sentiment is null
-    order by created_at, order_id`;
-
-  if (pending.length === 0) return { status: "nothing-to-do" };
-
   const actorId = actor.kind === "staff" ? actor.id : null;
   const actorName = actor.kind === "staff" ? actor.name : null;
 
-  const [{ id: runId }] = await sql<{ id: number }[]>`
-    insert into feedback_analysis_runs (started_by_kind, started_by_id, started_by_name, started_at)
-    values (${actor.kind}, ${actorId}, ${actorName}, ${now})
-    returning id`;
+  type Pending = { order_id: number; rating: number; comment: string };
+
+  // Checking the locks and recording the run happen under one table lock, so two presses of Analyze
+  // at the same moment cannot both start a run.
+  const claim = await sql.begin(async (tx): Promise<AnalysisResult | { runId: number; pending: Pending[] }> => {
+    await tx`lock table feedback_analysis_runs in share row exclusive mode`;
+
+    const status = await analysisStatus(tx, now);
+
+    if (status.running) return { status: "busy" };
+    if (cooldown && status.availableAt) return { status: "cooling-down", until: status.availableAt };
+
+    const pending = await tx<Pending[]>`
+      select order_id, rating, comment from order_feedback
+      where sentiment is null
+      order by created_at, order_id`;
+
+    if (pending.length === 0) return { status: "nothing-to-do" };
+
+    const [{ id }] = await tx<{ id: number }[]>`
+      insert into feedback_analysis_runs (started_by_kind, started_by_id, started_by_name, started_at)
+      values (${actor.kind}, ${actorId}, ${actorName}, ${now})
+      returning id`;
+
+    return { runId: id, pending: [...pending] };
+  });
+
+  if ("status" in claim) return claim;
+
+  const { runId, pending } = claim;
 
   const used: string[] = [];
   let analyzed = 0;

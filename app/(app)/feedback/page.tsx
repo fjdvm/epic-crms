@@ -1,13 +1,19 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { analysisStatus, type AnalysisStatus } from "@/features/feedback/analysis";
+import { AnalyzeButton } from "@/features/feedback/analyze-button";
 import { loadFeedback } from "@/features/feedback/feedback";
 import { FeedbackListView } from "@/features/feedback/feedback-list";
 import { FeedbackSummaryCards } from "@/features/feedback/feedback-summary";
 import { DateRangeButton } from "@/features/feedback/feedback-toolbar";
 import { lastAnalyzedLabel } from "@/features/feedback/sentiment-badge";
 import { manilaToday, parseFilters } from "@/features/feedback/filters";
+import { configuredClients } from "@/features/feedback/sentiment-clients";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
+
+// Analyze runs as a server action on this page, asking a model about each unlabelled Feedback in turn.
+export const maxDuration = 300;
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -34,6 +40,13 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
   }
 
   const lastAnalyzed = lastAnalyzedLabel(result.list.lastAnalyzed);
+  const { groq, gemini } = configuredClients();
+  // The action checks the locks again, so a failed read only loses the hint, never the lock.
+  const status: AnalysisStatus = await (async () => analysisStatus(ticketsDatabase()))().catch((error) => {
+    console.error("The Feedback analysis runs could not be read", error);
+
+    return { running: false, availableAt: null, lastFailed: 0 };
+  });
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
@@ -49,6 +62,12 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
             {lastAnalyzed}
           </p>
         )}
+        <AnalyzeButton
+          keysSet={groq !== null || gemini !== null}
+          running={status.running}
+          availableAt={status.availableAt?.toISOString() ?? null}
+          lastFailed={status.lastFailed}
+        />
         <DateRangeButton filters={filters} today={manilaToday()} />
       </div>
       <FeedbackSummaryCards summary={result.list.summary} response={result.list.response} />

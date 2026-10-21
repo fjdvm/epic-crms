@@ -33,6 +33,8 @@ GRANT SELECT ON public.order_feedback TO creoms_feedback;
 GRANT UPDATE (sentiment, sentiment_model, sentiment_analyzed_at) ON public.order_feedback TO creoms_feedback;
 
 GRANT SELECT, INSERT, UPDATE ON public.feedback_analysis_runs TO creoms_feedback;
+-- UPDATE also lets a run take `LOCK TABLE feedback_analysis_runs IN SHARE ROW EXCLUSIVE MODE`, which
+-- stops two presses of Analyze from both starting a run.
 -- Required for the run record's identity column.
 GRANT USAGE ON SEQUENCE public.feedback_analysis_runs_id_seq TO creoms_feedback;
 
