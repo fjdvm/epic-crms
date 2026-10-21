@@ -46,7 +46,8 @@ export function SidebarProfileFooter() {
         </div>
       </div>
 
-      <form id="logout-form" action={LOGOUT_PATH} method="post" />
+      {/* Loading starts on submit: disabling the button in its onClick cancels the submission. */}
+      <form id="logout-form" action={LOGOUT_PATH} method="post" onSubmit={() => setLoggingOut(true)} />
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <Button type="button" variant="outline" className="w-full">
@@ -72,7 +73,6 @@ export function SidebarProfileFooter() {
               type="submit"
               form="logout-form"
               disabled={loggingOut}
-              onClick={() => setLoggingOut(true)}
               className="bg-zinc-900 text-white hover:bg-zinc-800"
             >
               {loggingOut && <Loader2 aria-hidden className="size-4 animate-spin" />}
