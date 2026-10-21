@@ -87,7 +87,7 @@ export function LiveUpdatesProvider({
 
       for (const n of arrived) {
         seen.current.add(n.id);
-        toast(describeNotification(n).text);
+        toast.info(describeNotification(n).text);
       }
 
       // Only a New Customer shows as New in the list; Ticket alerts name no Customer row.
