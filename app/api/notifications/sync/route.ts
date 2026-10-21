@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { readCustomers, syncNewCustomers } from "@/features/notifications/notifications";
+import { syncFeedbackEvents } from "@/features/notifications/feedback-events";
 import { syncTicketEvents } from "@/features/notifications/ticket-events";
 import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
@@ -17,7 +18,7 @@ function authorised(header: string | null, secret: string): boolean {
 }
 
 /**
- * Finds Customers and Ticket events CREOMS has not seen yet and creates their notifications.
+ * Finds Customers, Ticket events and low-rating Feedback CREOMS has not seen yet and creates their notifications.
  * Called by a scheduler, not by a browser, so it is outside the Portal session and
  * authenticated by a bearer secret instead.
  */
@@ -33,7 +34,9 @@ export async function POST(request: NextRequest) {
     // The reply keeps the New Customer fields at the top level, as before.
     const tickets = await syncTicketEvents(crmsDatabase(), ticketsDatabase());
 
-    return NextResponse.json({ ...customers, tickets });
+    const feedback = await syncFeedbackEvents(crmsDatabase(), ticketsDatabase());
+
+    return NextResponse.json({ ...customers, tickets, feedback });
   } catch (error) {
     console.error("Notification sync failed", error);
 

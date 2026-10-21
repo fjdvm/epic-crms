@@ -40,6 +40,12 @@ const list = (rows: FeedbackRow[], extra: Partial<FeedbackList> = {}): FeedbackL
 });
 
 describe("the Feedback list", () => {
+  it("gives each Feedback an anchor the Feedback notification links to", () => {
+    const { container } = render(<FeedbackListView list={list([row({ orderId: 1042 })])} filters={NO_FILTERS} />);
+
+    expect(container.querySelector("#feedback-1042")).toBeTruthy();
+  });
+
   it("shows stars, Customer, Order, products, comment and date", () => {
     render(<FeedbackListView list={list([row()])} filters={NO_FILTERS} />);
 

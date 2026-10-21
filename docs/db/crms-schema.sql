@@ -33,15 +33,18 @@ CREATE TABLE crms.sync_state (
 );
 
 -- Bell notifications. kind says what happened: a New Customer (at most one per Customer) or a
--- Ticket event. recipient_id is the Claimer's Portal id; NULL means every Staff member who may see
--- that kind (Customer Profiles for new-customer, Tickets for the rest). read_at is shared.
+-- Ticket event or a low-rating Feedback. recipient_id is the Claimer's Portal id; NULL means every
+-- Staff member who may see that kind (Customer Profiles for new-customer, Tickets for the Ticket
+-- kinds, Feedback for feedback-low). read_at is shared.
 CREATE TABLE crms.notifications (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   kind          text NOT NULL DEFAULT 'new-customer'
-                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed')),
+                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'feedback-low')),
   customer_id   text NOT NULL,
   customer_name text NOT NULL,
   ticket_id     integer,
+  order_id      integer,
+  rating        smallint,
   recipient_id  text,
   created_at    timestamptz NOT NULL DEFAULT now(),
   read_at       timestamptz
@@ -89,6 +92,19 @@ CREATE TABLE crms.seen_ticket_events (
 
 -- One row, set by the first Ticket sync.
 CREATE TABLE crms.ticket_sync_state (
+  singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  baselined_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Orders whose Feedback CREOMS has already seen, so each low-rating Feedback alerts once. The first
+-- Feedback sync fills this with everything in the window, so the bell starts empty.
+CREATE TABLE crms.seen_feedback (
+  order_id integer PRIMARY KEY,
+  seen_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- One row, set by the first Feedback sync.
+CREATE TABLE crms.feedback_sync_state (
   singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
   baselined_at timestamptz NOT NULL DEFAULT now()
 );

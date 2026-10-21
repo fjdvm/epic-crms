@@ -36,12 +36,12 @@ beforeEach(async () => {
 // The reader and the writer are one connection here; production uses two roles on one database.
 const sync = () => syncTicketEvents(db.sql, db.sql);
 
-const everyone = { customerProfiles: false, ticketsStaffId: "ada" };
-const ada = { customerProfiles: false, ticketsStaffId: "ada" };
-const ben = { customerProfiles: false, ticketsStaffId: "ben" };
-const noTicketsModule = { customerProfiles: true, ticketsStaffId: null };
+const everyone = { customerProfiles: false, ticketsStaffId: "ada", feedback: false };
+const ada = { customerProfiles: false, ticketsStaffId: "ada", feedback: false };
+const ben = { customerProfiles: false, ticketsStaffId: "ben", feedback: false };
+const noTicketsModule = { customerProfiles: true, ticketsStaffId: null, feedback: false };
 
-async function alertsFor(viewer: { customerProfiles: boolean; ticketsStaffId: string | null }) {
+async function alertsFor(viewer: { customerProfiles: boolean; ticketsStaffId: string | null; feedback: boolean }) {
   const feed = await listNotifications(db.sql, "crms", 20, viewer);
 
   return feed.notifications.map((n) => `${n.kind}:${n.ticketId}`).sort();
@@ -227,10 +227,10 @@ describe("Ticket notifications", () => {
       await ticket();
       await sync();
 
-      const profiles = { customerProfiles: true, ticketsStaffId: null };
+      const profiles = { customerProfiles: true, ticketsStaffId: null, feedback: false };
       expect(await alertsFor(profiles)).toEqual(["new-customer:null"]);
       expect(await alertsFor(ada)).toHaveLength(1);
-      expect(await alertsFor({ customerProfiles: true, ticketsStaffId: "ada" })).toHaveLength(2);
+      expect(await alertsFor({ customerProfiles: true, ticketsStaffId: "ada", feedback: false })).toHaveLength(2);
     });
 
     it("lets a Customer who is new also raise a Ticket alert", async () => {
@@ -240,7 +240,7 @@ describe("Ticket notifications", () => {
       await ticket();
       await sync();
 
-      expect(await alertsFor({ customerProfiles: true, ticketsStaffId: "ada" })).toHaveLength(2);
+      expect(await alertsFor({ customerProfiles: true, ticketsStaffId: "ada", feedback: false })).toHaveLength(2);
     });
   });
 
@@ -267,7 +267,7 @@ describe("Ticket notifications", () => {
 
       // Ben clears the alert addressed to everyone, but not Ada's own or the New Customer one.
       expect((await listNotifications(db.sql, "crms", 20, ada)).unread).toBe(1);
-      expect((await listNotifications(db.sql, "crms", 20, { customerProfiles: true, ticketsStaffId: null })).unread).toBe(1);
+      expect((await listNotifications(db.sql, "crms", 20, { customerProfiles: true, ticketsStaffId: null, feedback: false })).unread).toBe(1);
 
       await markAllRead(db.sql, "crms", ada);
       expect((await listNotifications(db.sql, "crms", 20, ada)).unread).toBe(0);

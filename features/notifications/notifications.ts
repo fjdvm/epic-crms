@@ -7,7 +7,7 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "feedback-low";
 
 export interface Notification {
   id: string;
@@ -16,6 +16,9 @@ export interface Notification {
   customerName: string;
   /** The Ticket a Ticket notification is about; null for a New Customer. */
   ticketId: number | null;
+  /** The Order and star rating a Feedback notification is about; null for the other kinds. */
+  orderId: number | null;
+  rating: number | null;
   /** When CREOMS first saw the event, such as the person becoming a Customer. */
   createdAt: Date;
   read: boolean;
@@ -25,19 +28,22 @@ export interface Notification {
  * Whose bell is being read. New Customer alerts go to Staff with the Customer Profiles Module.
  * Ticket alerts go to Staff with the Tickets Module (`ticketsStaffId` is their Portal id, null
  * without the Module): to everyone when addressed to no one, otherwise to the Claimer alone.
+ * Feedback alerts go to Staff with the Feedback Module.
  */
 export interface Viewer {
   customerProfiles: boolean;
   ticketsStaffId: string | null;
+  feedback: boolean;
 }
 
-const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null };
+const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null, feedback: false };
 
 /** The rows of `crms.notifications` this viewer may see and mark read. */
 function visibleTo(sql: postgres.Sql, viewer: Viewer) {
   return sql`(
     (kind = 'new-customer' and ${viewer.customerProfiles})
-    or (kind <> 'new-customer' and ${viewer.ticketsStaffId !== null}
+    or (kind = 'feedback-low' and ${viewer.feedback})
+    or (kind not in ('new-customer', 'feedback-low') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))
   )`;
 }
@@ -129,11 +135,13 @@ export async function listNotifications(
       customer_id: string;
       customer_name: string;
       ticket_id: number | null;
+      order_id: number | null;
+      rating: number | null;
       created_at: Date;
       read_at: Date | null;
     }[]
   >`
-    select id::text, kind, customer_id, customer_name, ticket_id, created_at, read_at
+    select id::text, kind, customer_id, customer_name, ticket_id, order_id, rating, created_at, read_at
     from ${s}.notifications
     where ${visibleTo(writer, viewer)}
     order by created_at desc, id desc
@@ -147,6 +155,8 @@ export async function listNotifications(
       customerId: r.customer_id,
       customerName: r.customer_name,
       ticketId: r.ticket_id,
+      orderId: r.order_id,
+      rating: r.rating,
       createdAt: r.created_at,
       read: r.read_at !== null,
     })),
