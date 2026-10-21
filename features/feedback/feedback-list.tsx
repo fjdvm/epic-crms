@@ -6,10 +6,8 @@ import { orderAnchor } from "@/features/customer-profiles/orders";
 import { formatDate } from "@/features/customer-profiles/format";
 
 import type { FeedbackList } from "./feedback";
-
-function href(page: number): string {
-  return page > 1 ? `/feedback?page=${page}` : "/feedback";
-}
+import { StarFilter } from "./feedback-toolbar";
+import { feedbackHref, type FeedbackFilters } from "./filters";
 
 /** Filled and empty stars as the Figma draws them; 4 and 5 are gold, lower ratings amber. */
 function Stars({ rating }: { rating: number }) {
@@ -25,12 +23,18 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
-export function FeedbackListView({ list }: { list: FeedbackList }) {
+export function FeedbackListView({ list, filters }: { list: FeedbackList; filters: FeedbackFilters }) {
+  const filtered = Boolean(filters.from || filters.to || filters.stars !== undefined);
+  const href = (page: number) => feedbackHref({ ...filters, page });
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-[#e6e1ee] bg-white p-5">
-      <h2 className="shrink-0 text-base font-semibold leading-[normal] text-[#1f1a2e]">Latest feedback</h2>
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <h2 className="text-base font-semibold leading-[normal] text-[#1f1a2e]">Latest feedback</h2>
+        <StarFilter filters={filters} />
+      </div>
       {list.rows.length === 0 ? (
-        <div className="p-8 text-center text-sm text-[#6e6680]">No Feedback yet.</div>
+        <div className="p-8 text-center text-sm text-[#6e6680]">{filtered ? "No Feedback matches these filters." : "No Feedback yet."}</div>
       ) : (
         <ul className="min-h-0 flex-1 overflow-auto">
           {list.rows.map((row) => (

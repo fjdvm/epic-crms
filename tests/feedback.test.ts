@@ -85,6 +85,85 @@ describe("listFeedback", () => {
   });
 });
 
+describe("the date range", () => {
+  it("is inclusive of both days, counted in Philippines time", async () => {
+    // 2026-10-05 00:00 in Manila is 2026-10-04T16:00Z; 2026-10-07 ends at 2026-10-07T15:59:59Z.
+    const before = await order({ rating: 5, given: "2026-10-04T15:59:59Z" });
+    const start = await order({ rating: 5, given: "2026-10-04T16:00:00Z" });
+    const end = await order({ rating: 5, given: "2026-10-07T15:59:59Z" });
+    const after = await order({ rating: 5, given: "2026-10-07T16:00:00Z" });
+
+    const { rows } = await listFeedback(db.sql, { from: "2026-10-05", to: "2026-10-07" });
+
+    expect(rows.map((r) => r.orderId).sort()).toEqual([start, end].sort());
+    expect(rows.map((r) => r.orderId)).not.toContain(before);
+    expect(rows.map((r) => r.orderId)).not.toContain(after);
+  });
+
+  it("is open-ended when only one side is given", async () => {
+    const early = await order({ rating: 4, given: "2026-09-01T00:00:00Z" });
+    const late = await order({ rating: 4, given: "2026-10-20T00:00:00Z" });
+
+    expect((await listFeedback(db.sql, { from: "2026-10-01" })).rows.map((r) => r.orderId)).toEqual([late]);
+    expect((await listFeedback(db.sql, { to: "2026-10-01" })).rows.map((r) => r.orderId)).toEqual([early]);
+  });
+
+  it("pages within the range", async () => {
+    for (let i = 0; i < FEEDBACK_PAGE_SIZE + 1; i++) await order({ rating: 4, given: "2026-10-05T00:00:00Z" });
+    await order({ rating: 4, given: "2026-01-01T00:00:00Z" });
+
+    const list = await listFeedback(db.sql, { from: "2026-10-01", page: 2 });
+
+    expect(list).toMatchObject({ total: 26, totalPages: 2 });
+    expect(list.rows).toHaveLength(1);
+  });
+});
+
+describe("the star filter", () => {
+  it("narrows the list to one rating", async () => {
+    await order({ rating: 5 });
+    const three = await order({ rating: 3 });
+
+    const list = await listFeedback(db.sql, { stars: 3 });
+
+    expect(list.rows.map((r) => r.orderId)).toEqual([three]);
+    expect(list.total).toBe(1);
+  });
+});
+
+describe("the summary", () => {
+  it("is empty with no average when nothing matches", async () => {
+    expect((await listFeedback(db.sql)).summary).toEqual({ count: 0, average: null, low: 0 });
+  });
+
+  it("averages every Feedback and counts the 1 to 3 star ones as low", async () => {
+    for (const rating of [5, 4, 3, 1]) await order({ rating });
+
+    expect((await listFeedback(db.sql)).summary).toEqual({ count: 4, average: 3.3, low: 2 });
+  });
+
+  it("rounds the average to one decimal, halves going up", async () => {
+    for (const rating of [5, 5, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]) {
+      await order({ rating });
+    }
+
+    expect((await listFeedback(db.sql)).summary.average).toBe(4.2);
+  });
+
+  it("follows the date range and the star filter, not the page", async () => {
+    await order({ rating: 5, given: "2026-01-01T00:00:00Z" });
+    await order({ rating: 2, given: "2026-10-05T00:00:00Z" });
+    await order({ rating: 4, given: "2026-10-06T00:00:00Z" });
+
+    expect((await listFeedback(db.sql, { from: "2026-10-01" })).summary).toEqual({ count: 2, average: 3, low: 1 });
+    expect((await listFeedback(db.sql, { from: "2026-10-01", stars: 4 })).summary).toEqual({
+      count: 1,
+      average: 4,
+      low: 0,
+    });
+  });
+});
+
 describe("loadFeedback", () => {
   it("reports an unreachable database instead of throwing", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
