@@ -1,12 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -20,6 +20,7 @@ import { useStaff } from "./staff-context";
 
 export function SidebarProfileFooter() {
   const { name, username, email, role } = useStaff();
+  const [loggingOut, setLoggingOut] = useState(false);
   const initials = name
     .split(" ")
     .map((n) => n[0])
@@ -52,7 +53,10 @@ export function SidebarProfileFooter() {
             Log out
           </Button>
         </AlertDialogTrigger>
-        <AlertDialogContent className="w-[calc(100%-2rem)] max-w-[24rem] sm:max-w-[24rem] md:max-w-[24rem] lg:max-w-[24rem] gap-4 p-6 sm:p-6 rounded-xl">
+        <AlertDialogContent
+          onEscapeKeyDown={(event) => loggingOut && event.preventDefault()}
+          className="w-[calc(100%-2rem)] max-w-[24rem] sm:max-w-[24rem] md:max-w-[24rem] lg:max-w-[24rem] gap-4 p-6 sm:p-6 rounded-xl"
+        >
           <AlertDialogHeader className="gap-2 text-left">
             <AlertDialogTitle className="text-lg font-semibold">Log out?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -60,14 +64,20 @@ export function SidebarProfileFooter() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
-            <AlertDialogCancel className="mt-0 sm:mt-0">Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            <AlertDialogCancel disabled={loggingOut} className="mt-0 sm:mt-0">
+              Cancel
+            </AlertDialogCancel>
+            {/* A plain button, not AlertDialogAction: that would close the dialog and hide the loading state. */}
+            <Button
               type="submit"
               form="logout-form"
+              disabled={loggingOut}
+              onClick={() => setLoggingOut(true)}
               className="bg-zinc-900 text-white hover:bg-zinc-800"
             >
-              Log out
-            </AlertDialogAction>
+              {loggingOut && <Loader2 aria-hidden className="size-4 animate-spin" />}
+              {loggingOut ? "Logging out…" : "Log out"}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
