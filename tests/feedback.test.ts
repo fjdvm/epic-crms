@@ -1,0 +1,98 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { FEEDBACK_PAGE_SIZE, listFeedback, loadFeedback } from "@/features/feedback/feedback";
+
+import { startTestDatabase, type TestDatabase } from "./ticket-database";
+
+let db: TestDatabase;
+
+beforeAll(async () => {
+  db = await startTestDatabase();
+}, 60_000);
+
+afterAll(async () => {
+  await db.close();
+});
+
+beforeEach(async () => {
+  await db.sql`truncate order_feedback, order_lines, orders, customers restart identity cascade`;
+  await db.sql`insert into customers (id, full_name, email) values
+    ('c1', 'Jane Doe', 'jane@example.com'), ('c2', 'Ramon Cruz', 'ramon@example.com')`;
+});
+
+/** An Order with its product names and, when given, Feedback left on `given`. */
+async function order(options: { customer?: string; products?: string[]; rating?: number; comment?: string; given?: string }) {
+  const [row] = await db.sql<{ id: number }[]>`
+    insert into orders (customer_id, status) values (${options.customer ?? "c1"}, 'delivered') returning id`;
+
+  for (const name of options.products ?? ["Ube Jam"]) {
+    await db.sql`insert into order_lines (order_id, product_name) values (${row.id}, ${name})`;
+  }
+
+  if (options.rating !== undefined) {
+    await db.sql`
+      insert into order_feedback (order_id, rating, comment, created_at)
+      values (${row.id}, ${options.rating}, ${options.comment ?? "Nice"}, ${options.given ?? "2026-10-01T00:00:00Z"})`;
+  }
+
+  return row.id;
+}
+
+describe("listFeedback", () => {
+  it("is empty when no Order has Feedback", async () => {
+    await order({});
+
+    expect(await listFeedback(db.sql)).toMatchObject({ rows: [], total: 0, page: 1, totalPages: 1 });
+  });
+
+  it("shows stars, Customer, Order, products, comment and date, newest first", async () => {
+    const older = await order({ rating: 5, comment: "Perfect", given: "2026-10-01T00:00:00Z" });
+    const newer = await order({ customer: "c2", rating: 2, comment: "Too sweet", given: "2026-10-05T00:00:00Z" });
+
+    const { rows } = await listFeedback(db.sql);
+
+    expect(rows.map((r) => r.orderId)).toEqual([newer, older]);
+    expect(rows[0]).toMatchObject({
+      rating: 2,
+      comment: "Too sweet",
+      customerId: "c2",
+      customerName: "Ramon Cruz",
+      products: ["Ube Jam"],
+      createdAt: new Date("2026-10-05T00:00:00Z"),
+    });
+  });
+
+  it("lists every product of an Order once, in the order they were added", async () => {
+    await order({ products: ["Smooth tub", "Tidbits pouch"], rating: 5 });
+
+    expect((await listFeedback(db.sql)).rows[0].products).toEqual(["Smooth tub", "Tidbits pouch"]);
+  });
+
+  it("pages 25 at a time and clamps a page past the end", async () => {
+    for (let i = 0; i < FEEDBACK_PAGE_SIZE + 2; i++) {
+      await order({ rating: 4, given: `2026-10-01T00:${String(i).padStart(2, "0")}:00Z` });
+    }
+
+    const first = await listFeedback(db.sql, { page: 1 });
+    const second = await listFeedback(db.sql, { page: 2 });
+    const past = await listFeedback(db.sql, { page: 9 });
+
+    expect(first.rows).toHaveLength(25);
+    expect(first.totalPages).toBe(2);
+    expect(second.rows).toHaveLength(2);
+    expect(past.page).toBe(2);
+    expect(new Set([...first.rows, ...second.rows].map((r) => r.orderId)).size).toBe(27);
+  });
+});
+
+describe("loadFeedback", () => {
+  it("reports an unreachable database instead of throwing", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(
+      await loadFeedback(() => {
+        throw new Error("down");
+      }, {}),
+    ).toEqual({ ok: false });
+  });
+});
