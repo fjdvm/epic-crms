@@ -31,6 +31,7 @@ const row = (overrides: Partial<FeedbackRow> = {}): FeedbackRow => ({
 
 const list = (rows: FeedbackRow[], extra: Partial<FeedbackList> = {}): FeedbackList => ({
   rows,
+  products: ["Smooth tub", "Tidbits pouch"],
   summary: { count: rows.length, average: null, low: 0 },
   total: rows.length,
   page: 1,
@@ -44,7 +45,8 @@ describe("the Feedback list", () => {
     render(<FeedbackListView list={list([row()])} filters={NO_FILTERS} />);
 
     expect(screen.getByRole("img", { name: "4 out of 5 stars" }).textContent).toBe("★★★★☆");
-    expect(screen.getByText(/Smooth tub, Tidbits pouch/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Smooth tub" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Tidbits pouch" })).toBeTruthy();
     expect(screen.getByText("Ordered for the office.")).toBeTruthy();
     expect(screen.getByText("5 Oct 2026")).toBeTruthy();
   });
@@ -54,6 +56,14 @@ describe("the Feedback list", () => {
 
     expect(screen.getByRole("link", { name: "Ana Reyes" }).getAttribute("href")).toBe("/customer-profiles/c1");
     expect(screen.getByRole("link", { name: "#1040" }).getAttribute("href")).toBe("/customer-profiles/c1#order-1040");
+  });
+
+  it("links each product name to that product's view, keeping the other filters", () => {
+    render(<FeedbackListView list={list([row()])} filters={{ stars: 2, from: "2026-10-01", page: 3 }} />);
+
+    expect(screen.getByRole("link", { name: "Tidbits pouch" }).getAttribute("href")).toBe(
+      "/feedback?from=2026-10-01&stars=2&product=Tidbits+pouch",
+    );
   });
 
   it("shows an empty state when there is no Feedback", () => {
@@ -87,6 +97,15 @@ describe("the Feedback list", () => {
     expect(screen.getByRole("combobox", { name: "Rating" }).textContent).toContain("3 stars");
   });
 
+  it("shows the product filter on its current product and on All products by default", () => {
+    render(<FeedbackListView list={list([row()])} filters={NO_FILTERS} />);
+    expect(screen.getByRole("combobox", { name: "Product" }).textContent).toContain("All products");
+
+    cleanup();
+    render(<FeedbackListView list={list([row()])} filters={{ product: "Smooth tub", page: 1 }} />);
+    expect(screen.getByRole("combobox", { name: "Product" }).textContent).toContain("Smooth tub");
+  });
+
   it("pages with Previous and Next, keeping the list in its own scrolling container", () => {
     const { container } = render(<FeedbackListView list={list([row()], { page: 2, totalPages: 3 })} filters={NO_FILTERS} />);
 
@@ -100,6 +119,38 @@ describe("the Feedback list", () => {
     render(<FeedbackListView list={list([row({ rating: 1 })])} filters={NO_FILTERS} />);
 
     expect(screen.queryByText(/export|how feedback works|ticket|website/i)).toBeNull();
+  });
+});
+
+describe("the product view", () => {
+  const view = { product: "Smooth tub", stars: 5, page: 1 } satisfies FeedbackFilters;
+
+  it("shows the product name, its Feedback count and the filtered list, with no average", () => {
+    render(
+      <FeedbackListView
+        list={list([row()], { total: 12, summary: { count: 40, average: 4.1, low: 2 } })}
+        filters={view}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Smooth tub" })).toBeTruthy();
+    expect(screen.getByTestId("product-feedback-count").textContent).toBe("12 Feedback");
+    expect(screen.getByText("Ordered for the office.")).toBeTruthy();
+    expect(screen.queryByText(/average|4\.1/i)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Latest feedback" })).toBeNull();
+  });
+
+  it("goes back to all Feedback, keeping the other filters", () => {
+    render(<FeedbackListView list={list([row()])} filters={view} />);
+
+    expect(screen.getByRole("link", { name: /All Feedback/ }).getAttribute("href")).toBe("/feedback?stars=5");
+  });
+
+  it("says so when the product has no Feedback in the range", () => {
+    render(<FeedbackListView list={list([], { total: 0 })} filters={view} />);
+
+    expect(screen.getByTestId("product-feedback-count").textContent).toBe("0 Feedback");
+    expect(screen.getByText("No Feedback matches these filters.")).toBeTruthy();
   });
 });
 

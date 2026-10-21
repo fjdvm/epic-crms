@@ -25,6 +25,11 @@ describe("parseFilters", () => {
     });
   });
 
+  it("reads the product from the address and ignores a blank one", () => {
+    expect(parseFilters({ product: "Smooth tub" }).product).toBe("Smooth tub");
+    expect(parseFilters({ product: "  " }).product).toBeUndefined();
+  });
+
   it("swaps a range given backwards", () => {
     expect(parseFilters({ from: "2026-10-31", to: "2026-10-01" })).toMatchObject({ from: "2026-10-01", to: "2026-10-31" });
   });
@@ -38,6 +43,14 @@ describe("feedbackHref", () => {
   it("keeps the range, stars and page", () => {
     expect(feedbackHref({ from: "2026-10-01", to: "2026-10-31", stars: 2, page: 2 })).toBe(
       "/feedback?from=2026-10-01&to=2026-10-31&stars=2&page=2",
+    );
+  });
+});
+
+describe("feedbackHref with a product", () => {
+  it("keeps the product, encoded, with the other filters", () => {
+    expect(feedbackHref({ product: "Smooth tub & more", stars: 2, page: 1 })).toBe(
+      "/feedback?stars=2&product=Smooth+tub+%26+more",
     );
   });
 });
