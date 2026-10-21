@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  analysisStatus,
   runAnalysis,
   type AuditEvent,
   type Sentiment,
@@ -292,5 +293,115 @@ describe("runAnalysis", () => {
     });
 
     expect(result).toMatchObject({ status: "done", analyzed: 1 });
+  });
+});
+
+describe("the Analyze locks", () => {
+  const STAFF = { kind: "staff", id: "s1", name: "Ana Staff" } as const;
+  const minutes = (n: number) => new Date(NOW.getTime() + n * 60_000);
+
+  async function pastRun(startedAt: Date, finishedAt: Date | null, failed = 0) {
+    await db.sql`
+      insert into feedback_analysis_runs (started_by_kind, started_at, finished_at, analyzed, failed)
+      values ('schedule', ${startedAt}, ${finishedAt}, 1, ${failed})`;
+  }
+
+  const press = (now: Date, events: AuditEvent[] = []) =>
+    runAnalysis({
+      sql: db.sql,
+      groq: client("groq-4", { Hmm: "neutral" }),
+      gemini: null,
+      actor: STAFF,
+      audit: async (event) => void events.push(event),
+      cooldown: true,
+      now,
+    });
+
+  it("refuses to start while another run is in progress, for the button and the schedule", async () => {
+    const id = await feedback("Hmm");
+    await pastRun(minutes(-2), null);
+
+    expect(await press(NOW)).toEqual({ status: "busy" });
+    expect(
+      await runAnalysis({ sql: db.sql, groq: client("groq-4", {}), gemini: null, actor: SCHEDULE, audit: setup().audit, now: NOW }),
+    ).toEqual({ status: "busy" });
+    expect((await stored(id)).sentiment).toBeNull();
+    expect(await db.sql`select 1 from feedback_analysis_runs`).toHaveLength(1);
+  });
+
+  it("does not treat a run that died without finishing as in progress forever", async () => {
+    await feedback("Hmm");
+    await pastRun(minutes(-60), null);
+
+    expect(await press(NOW)).toMatchObject({ status: "done", analyzed: 1 });
+  });
+
+  it("refuses Analyze within 5 minutes of the last run's end, and allows it after", async () => {
+    const id = await feedback("Hmm");
+    await pastRun(minutes(-10), minutes(-3));
+
+    expect(await press(NOW)).toEqual({ status: "cooling-down", until: minutes(2) });
+    expect((await stored(id)).sentiment).toBeNull();
+
+    expect(await press(minutes(2))).toMatchObject({ status: "done", analyzed: 1 });
+    expect((await stored(id)).sentiment).toBe("neutral");
+  });
+
+  it("does not hold the schedule's own slot to the 5 minutes", async () => {
+    await feedback("Hmm");
+    await pastRun(minutes(-10), minutes(-1));
+
+    const result = await runAnalysis({
+      sql: db.sql,
+      groq: client("groq-4", { Hmm: "neutral" }),
+      gemini: null,
+      actor: SCHEDULE,
+      audit: setup().audit,
+      now: NOW,
+    });
+
+    expect(result).toMatchObject({ status: "done", analyzed: 1 });
+  });
+
+  it("only processes Feedback with no Sentiment and names the Staff member in the audit event", async () => {
+    const labelled = await feedback("Done", 5, "positive");
+    const fresh = await feedback("Hmm");
+    const events: AuditEvent[] = [];
+
+    expect(await press(NOW, events)).toMatchObject({ status: "done", analyzed: 1, failed: 0 });
+    expect(await stored(labelled)).toMatchObject({ sentiment: "positive", sentiment_model: "earlier-model" });
+    expect((await stored(fresh)).sentiment).toBe("neutral");
+    expect(events[0].actor).toEqual({ type: "staff", id: "s1", display_name: "Ana Staff" });
+  });
+
+  it("reports missing keys before anything else, even during a run", async () => {
+    await feedback("Hmm");
+    await pastRun(minutes(-1), null);
+
+    const result = await runAnalysis({ sql: db.sql, groq: null, gemini: null, actor: STAFF, audit: setup().audit, cooldown: true, now: NOW });
+
+    expect(result).toEqual({ status: "no-keys" });
+  });
+});
+
+describe("analysisStatus", () => {
+  const minutes = (n: number) => new Date(NOW.getTime() + n * 60_000);
+
+  it("is idle and available before any run", async () => {
+    expect(await analysisStatus(db.sql, NOW)).toEqual({ running: false, availableAt: null, lastFailed: 0 });
+  });
+
+  it("reports a run in progress, the 5-minute lock and the last run's failures", async () => {
+    await db.sql`
+      insert into feedback_analysis_runs (started_by_kind, started_at, finished_at, analyzed, failed)
+      values ('schedule', ${minutes(-30)}, ${minutes(-20)}, 0, 5),
+        ('staff', ${minutes(-4)}, ${minutes(-2)}, 2, 3)`;
+
+    expect(await analysisStatus(db.sql, NOW)).toEqual({ running: false, availableAt: minutes(3), lastFailed: 3 });
+    expect(await analysisStatus(db.sql, minutes(3))).toMatchObject({ availableAt: null, lastFailed: 3 });
+
+    await db.sql`insert into feedback_analysis_runs (started_by_kind, started_at) values ('schedule', ${minutes(-1)})`;
+
+    expect(await analysisStatus(db.sql, NOW)).toMatchObject({ running: true });
   });
 });
