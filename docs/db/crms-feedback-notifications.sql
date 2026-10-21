@@ -1,6 +1,6 @@
 -- Upgrades an existing crms schema (docs/db/crms-schema.sql plus crms-ticket-notifications.sql) for
 -- low-rating Feedback notifications.
--- NOT YET RUN: needs the owner's approval. Run as creoms_writer, which owns crms.
+-- Run on production 2026-10-21 as creoms_writer, which owns crms.
 
 ALTER TABLE crms.notifications
   DROP CONSTRAINT notifications_kind_check,
