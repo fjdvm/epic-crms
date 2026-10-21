@@ -35,6 +35,7 @@ function fakeActions(): CampaignFormActions {
     save: vi.fn(async () => ({ ok: true as const, announcement: { id: "new" } })),
     edit: vi.fn(async () => ({ ok: true as const })),
     remove: vi.fn(async () => ({ ok: true as const })),
+    sendTest: vi.fn(async () => ({ ok: true as const })),
   };
 }
 
@@ -151,6 +152,38 @@ describe("the campaign form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(actions.remove).toHaveBeenCalledWith("d1"));
+  });
+
+  it("asks before sending a test copy, and sends the saved Draft on confirming", async () => {
+    const actions = fakeActions();
+    render(<CampaignForm draft={{ id: "d1", title: "Old", description: "Words." }} actions={actions} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send a test" }));
+    expect(await screen.findByText("Send a test copy?")).toBeTruthy();
+    expect(actions.sendTest).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+
+    await waitFor(() => expect(actions.sendTest).toHaveBeenCalledWith("d1"));
+    expect(actions.save).not.toHaveBeenCalled();
+    expect(actions.edit).not.toHaveBeenCalled();
+  });
+
+  it("says when the test copy could not be sent", async () => {
+    const { toast } = await import("sonner");
+    const actions = { ...fakeActions(), sendTest: vi.fn(async () => ({ ok: false as const, reason: "send-failed" as const })) };
+    render(<CampaignForm draft={{ id: "d1", title: "Old", description: "Words." }} actions={actions} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send a test" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send test" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("test copy")));
+  });
+
+  it("offers a test copy only once the Draft is saved", () => {
+    render(<CampaignForm actions={fakeActions()} />);
+
+    expect((screen.getByRole("button", { name: "Send a test" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("offers no delete for a Draft that is not saved yet", () => {

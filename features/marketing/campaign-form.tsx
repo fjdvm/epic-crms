@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { deleteDraftAction, editDraftAction, saveDraftAction } from "./actions";
+import { deleteDraftAction, editDraftAction, saveDraftAction, sendTestCopyAction } from "./actions";
 import { INPUT_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
 import { InboxPreview } from "./inbox-preview";
 
@@ -26,6 +26,7 @@ const MESSAGES: Record<string, string> = {
   ...INPUT_REFUSALS,
   "not-found": "That Announcement no longer exists.",
   "not-a-draft": "That Announcement is no longer a Draft, so it cannot be changed.",
+  "send-failed": "The test copy could not be sent. Try again in a moment.",
   unavailable: "CREOMS could not reach its database. Try again in a moment.",
 };
 
@@ -38,9 +39,15 @@ export interface CampaignFormActions {
   save: typeof saveDraftAction;
   edit: typeof editDraftAction;
   remove: typeof deleteDraftAction;
+  sendTest: typeof sendTestCopyAction;
 }
 
-const REAL_ACTIONS: CampaignFormActions = { save: saveDraftAction, edit: editDraftAction, remove: deleteDraftAction };
+const REAL_ACTIONS: CampaignFormActions = {
+  save: saveDraftAction,
+  edit: editDraftAction,
+  remove: deleteDraftAction,
+  sendTest: sendTestCopyAction,
+};
 
 /** The compose form and its live inbox preview. With `draft`, it edits that Draft instead of starting a new one. */
 export function CampaignForm({
@@ -54,14 +61,14 @@ export function CampaignForm({
   const ids = useId();
   const [title, setTitle] = useState(draft?.title ?? "");
   const [description, setDescription] = useState(draft?.description ?? "");
-  const [confirming, setConfirming] = useState<"save" | "delete" | null>(null);
+  const [confirming, setConfirming] = useState<"save" | "delete" | "test" | null>(null);
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
 
   const input: AnnouncementInput = { title, description };
 
   /** Each submit asks first; the dialog's confirm button is what actually sends it. */
-  const ask = (kind: "save" | "delete") => (event?: React.FormEvent) => {
+  const ask = (kind: "save" | "delete" | "test") => (event?: React.FormEvent) => {
     event?.preventDefault();
     setConfirming(kind);
   };
@@ -74,14 +81,18 @@ export function CampaignForm({
     startTransition(async () => {
       try {
         const result =
-          kind === "delete"
-            ? await actions.remove(draft!.id)
-            : draft
-              ? await actions.edit(draft.id, input)
-              : await actions.save(input);
+          kind === "test"
+            ? await actions.sendTest(draft!.id)
+            : kind === "delete"
+              ? await actions.remove(draft!.id)
+              : draft
+                ? await actions.edit(draft.id, input)
+                : await actions.save(input);
 
         setConfirming(null);
         if (!result.ok) return void toast.error(MESSAGES[result.reason]);
+
+        if (kind === "test") return void toast.success("Test copy sent to your email.");
 
         toast.success(kind === "delete" ? "Draft deleted." : "Draft saved.");
         router.push("/email-campaigns");
@@ -161,6 +172,15 @@ export function CampaignForm({
         <p className="min-w-0 flex-1 text-[13px] leading-[normal] text-[#71717a]">
           {draft ? "Anyone with the Marketing Module can edit or delete this Draft." : "Not saved yet."}
         </p>
+        <button
+          type="button"
+          onClick={ask("test")}
+          disabled={!draft}
+          title={draft ? undefined : "Save the Draft first"}
+          className={cn(OUTLINE, "disabled:cursor-not-allowed disabled:opacity-50")}
+        >
+          Send a test
+        </button>
         {draft && (
           <button type="button" onClick={ask("delete")} className={cn(OUTLINE, "text-[#dc2626]")}>
             Delete draft
@@ -181,12 +201,20 @@ export function CampaignForm({
         >
           <AlertDialogHeader className="gap-2 text-left">
             <AlertDialogTitle className="text-lg font-semibold">
-              {confirming === "delete" ? "Delete this Draft?" : draft ? "Save your changes?" : "Save this Draft?"}
+              {confirming === "test"
+                ? "Send a test copy?"
+                : confirming === "delete"
+                  ? "Delete this Draft?"
+                  : draft
+                    ? "Save your changes?"
+                    : "Save this Draft?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirming === "delete"
-                ? "It is removed for everyone with the Marketing Module and cannot be brought back."
-                : "It is saved as a Draft. Nothing is sent to Subscribers."}
+              {confirming === "test"
+                ? "The saved Draft is emailed to you only, as Subscribers would see it. Unsaved changes are not included."
+                : confirming === "delete"
+                  ? "It is removed for everyone with the Marketing Module and cannot be brought back."
+                  : "It is saved as a Draft. Nothing is sent to Subscribers."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
@@ -200,7 +228,7 @@ export function CampaignForm({
               disabled={pending}
               className={cn("text-white", confirming === "delete" ? "bg-[#dc2626] hover:bg-[#dc2626]/90" : "bg-[#5b2a86] hover:bg-[#5b2a86]/90")}
             >
-              {pending ? "Working…" : confirming === "delete" ? "Delete" : "Save"}
+              {pending ? "Working…" : confirming === "test" ? "Send test" : confirming === "delete" ? "Delete" : "Save"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

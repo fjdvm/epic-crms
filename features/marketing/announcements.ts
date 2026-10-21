@@ -34,7 +34,7 @@ export interface AnnouncementRow {
 
 /** What the audit-logs service is told about a Staff action; the gateway adapter fills in the rest. */
 export interface AuditEvent {
-  action: "record.created" | "record.updated" | "record.deleted";
+  action: "record.created" | "record.updated" | "record.deleted" | "record.viewed";
   actor: Actor;
   announcement: { id: string; title: string };
   description: string;
@@ -46,8 +46,25 @@ export interface AuditLog {
   record(event: AuditEvent): Promise<void>;
 }
 
+/** One Marketing Email for one address, as the notifications service takes it. */
+export interface MarketingMessage {
+  to: string;
+  title: string;
+  body: string;
+  images: string[];
+}
+
+/**
+ * The notifications service's marketing email, reached through the api-gateway (see lib/gateway.ts).
+ * Tests replace it with a fake. It must throw when the gateway does not accept the email.
+ */
+export interface MarketingMail {
+  sendOne(message: MarketingMessage): Promise<void>;
+}
+
 export interface Ports {
   audit: AuditLog;
+  mail: MarketingMail;
   now: () => Date;
 }
 
@@ -55,6 +72,7 @@ export type InputRefusal = "empty-title" | "title-too-long" | "empty-description
 
 export type SaveResult = { ok: true; announcement: { id: string } } | { ok: false; reason: InputRefusal };
 export type EditResult = { ok: true } | { ok: false; reason: InputRefusal | "not-found" | "not-a-draft" };
+export type TestCopyResult = { ok: true } | { ok: false; reason: "not-found" | "send-failed" };
 export type DeleteResult = { ok: true } | { ok: false; reason: "not-found" | "not-a-draft" };
 
 export const INPUT_REFUSALS: Record<InputRefusal, string> = {
@@ -209,4 +227,42 @@ export async function subscriberCount(sql: postgres.Sql): Promise<{ subscribers:
     join neon_auth."user" u on u.id::text = c.id and u."emailVerified"`;
 
   return row;
+}
+
+/**
+ * Emails the real Marketing Email to the Staff member's own address, whatever state the Announcement
+ * is in. It goes to no one else and is not recorded against any Customer, so the Announcement is unchanged.
+ */
+export async function sendTestCopy(
+  sql: postgres.Sql,
+  actor: Actor,
+  staffEmail: string,
+  id: string,
+  ports: Ports,
+): Promise<TestCopyResult> {
+  const announcement = await getAnnouncement(sql, id);
+  if (!announcement) return { ok: false, reason: "not-found" };
+
+  try {
+    await ports.mail.sendOne({
+      to: staffEmail,
+      title: announcement.title,
+      body: announcement.description,
+      images: announcement.images,
+    });
+  } catch (error) {
+    console.error("A test copy could not be sent", error);
+
+    return { ok: false, reason: "send-failed" };
+  }
+
+  await audited(ports, {
+    action: "record.viewed",
+    actor,
+    announcement: { id, title: announcement.title },
+    description: `${actor.name} sent themselves a test copy of "${announcement.title}".`,
+    occurredAt: ports.now(),
+  });
+
+  return { ok: true };
 }

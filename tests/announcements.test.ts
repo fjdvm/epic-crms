@@ -7,10 +7,13 @@ import {
   getAnnouncement,
   listAnnouncements,
   saveDraft,
+  sendTestCopy,
   subscriberCount,
   TITLE_LIMIT,
   type AuditEvent,
   type AuditLog,
+  type MarketingMail,
+  type MarketingMessage,
 } from "@/features/marketing/announcements";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -46,15 +49,27 @@ class FakeAudit implements AuditLog {
   }
 }
 
+class FakeMail implements MarketingMail {
+  sent: MarketingMessage[] = [];
+  down = false;
+
+  async sendOne(message: MarketingMessage) {
+    if (this.down) throw new Error("the gateway is down");
+    this.sent.push(message);
+  }
+}
+
 const ada = { id: "ada", name: "Ada Okafor" };
 const ben = { id: "ben", name: "Ben Cruz" };
 const now = new Date("2026-10-20T04:00:00Z");
 
 let audit: FakeAudit;
-const ports = () => ({ audit, now: () => now });
+let mail: FakeMail;
+const ports = () => ({ audit, mail, now: () => now });
 
 beforeEach(async () => {
   audit = new FakeAudit();
+  mail = new FakeMail();
   await db.sql`truncate crms.announcements cascade`;
   await db.sql`truncate customers cascade`;
   await db.sql`truncate neon_auth."user" cascade`;
@@ -219,6 +234,95 @@ describe("deleting a Draft", () => {
     await deleteDraft(db.sql, ada, id, ports());
 
     expect(await deleteDraft(db.sql, ben, id, ports())).toEqual({ ok: false, reason: "not-found" });
+  });
+});
+
+describe("sending a test copy", () => {
+  const adaEmail = "ada@store.test";
+
+  async function saved() {
+    const result = await saveDraft(db.sql, ada, draft, ports());
+    if (!result.ok) throw new Error("not saved");
+    audit.events = [];
+
+    return result.announcement.id;
+  }
+
+  it("emails the real Marketing Email to the signed-in Staff member only", async () => {
+    const id = await saved();
+    await db.sql`insert into customers (id, full_name, email, marketing_opt_in) values ('c1', 'A', 'a@x.test', true)`;
+
+    expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: true });
+
+    expect(mail.sent).toEqual([
+      { to: adaEmail, title: "Undas ube treats", body: "Our ube treats are back for Undas.", images: [] },
+    ]);
+  });
+
+  it("shows the Announcement's images", async () => {
+    const id = await saved();
+    await db.sql`update crms.announcements set images = ${["https://files.test/a.jpg", "https://files.test/b.jpg"]} where id = ${id}`;
+
+    await sendTestCopy(db.sql, ada, adaEmail, id, ports());
+
+    expect(mail.sent[0].images).toEqual(["https://files.test/a.jpg", "https://files.test/b.jpg"]);
+  });
+
+  it("adds nothing to any Customer Profile and leaves the Announcement as it was", async () => {
+    const id = await saved();
+    await db.sql`insert into customers (id, full_name, email, marketing_opt_in) values ('c1', 'A', 'a@x.test', true)`;
+    const before = await getAnnouncement(db.sql, id);
+
+    await sendTestCopy(db.sql, ada, adaEmail, id, ports());
+
+    expect(await db.sql`select 1 from crms.announcement_recipients`).toHaveLength(0);
+    expect(await getAnnouncement(db.sql, id)).toEqual(before);
+  });
+
+  it("works on an Announcement in any state", async () => {
+    const id = await saved();
+    await db.sql`update crms.announcements set state = 'sent', sent_at = now() where id = ${id}`;
+
+    expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: true });
+  });
+
+  it("is audited with the acting Staff member", async () => {
+    const id = await saved();
+
+    await sendTestCopy(db.sql, ben, "ben@store.test", id, ports());
+
+    expect(audit.events).toEqual([
+      {
+        action: "record.viewed",
+        actor: ben,
+        announcement: { id, title: "Undas ube treats" },
+        description: 'Ben Cruz sent themselves a test copy of "Undas ube treats".',
+        occurredAt: now,
+      },
+    ]);
+  });
+
+  it("says so, and audits nothing, when the gateway refuses it", async () => {
+    const id = await saved();
+    mail.down = true;
+
+    expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: false, reason: "send-failed" });
+    expect(audit.events).toEqual([]);
+  });
+
+  it("still sends when the audit log is down", async () => {
+    const id = await saved();
+    audit.down = true;
+
+    expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: true });
+    expect(mail.sent).toHaveLength(1);
+  });
+
+  it("sends nothing for an Announcement that does not exist", async () => {
+    expect(
+      await sendTestCopy(db.sql, ada, adaEmail, "00000000-0000-0000-0000-000000000000", ports()),
+    ).toEqual({ ok: false, reason: "not-found" });
+    expect(mail.sent).toEqual([]);
   });
 });
 
