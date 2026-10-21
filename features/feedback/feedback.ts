@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 
+import type { Sentiment } from "./analysis";
+
 export const FEEDBACK_PAGE_SIZE = 25;
 
 export interface FeedbackQuery {
@@ -41,6 +43,8 @@ export interface FeedbackRow {
   /** The product names on the Order, in the order they were added. */
   products: string[];
   createdAt: Date;
+  /** Null until the Feedback has been labelled. */
+  sentiment: Sentiment | null;
 }
 
 export interface FeedbackList {
@@ -53,6 +57,8 @@ export interface FeedbackList {
   page: number;
   pageSize: number;
   totalPages: number;
+  /** When the latest run that labelled anything finished; null before the first one. */
+  lastAnalyzed: Date | null;
 }
 
 export type FeedbackResult = { ok: true; list: FeedbackList } | { ok: false };
@@ -107,11 +113,14 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
     join order_feedback f on f.order_id = l.order_id
     order by l.product_name`;
 
+  const [{ last_analyzed: lastAnalyzed }] = await sql<{ last_analyzed: Date | null }[]>`
+    select max(finished_at) as last_analyzed from feedback_analysis_runs where analyzed > 0`;
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);
 
   const rows = await sql<Record<string, unknown>[]>`
-    select f.order_id, f.rating, f.comment, f.created_at, c.id as customer_id, c.full_name,
+    select f.order_id, f.rating, f.comment, f.created_at, f.sentiment, c.id as customer_id, c.full_name,
       coalesce(
         (select array_agg(product_name order by first_line)
          from (select product_name, min(id) as first_line from order_lines
@@ -133,6 +142,7 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
       comment: r.comment as string,
       products: r.products as string[],
       createdAt: r.created_at as Date,
+      sentiment: (r.sentiment as Sentiment | null) ?? null,
     })),
     products: products.map((p) => p.product_name),
     summary: { count, average: average === null ? null : Number(average), low },
@@ -141,6 +151,7 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
     page,
     pageSize,
     totalPages,
+    lastAnalyzed,
   };
 }
 

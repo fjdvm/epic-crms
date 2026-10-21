@@ -32,7 +32,7 @@ describe("activityOf", () => {
         createdAt: new Date("2026-03-10T00:00:00Z"),
         paymentMethod: "gcash",
         paymentProof: { reference: "R1", screenshot: null, submittedAt: new Date("2026-03-11T00:00:00Z") },
-        feedback: { rating: 5, comment: "Great", createdAt: new Date("2026-03-20T00:00:00Z") },
+        feedback: { rating: 5, comment: "Great", createdAt: new Date("2026-03-20T00:00:00Z"), sentiment: null },
       }),
       order({ id: 1, createdAt: new Date("2026-03-01T00:00:00Z") }),
     ]);
@@ -55,7 +55,7 @@ describe("ActivityTimeline", () => {
     const open = vi.fn();
     render(
       <ActivityTimeline
-        orders={[order({ id: 9, feedback: { rating: 4, comment: null, createdAt: new Date("2026-03-05T00:00:00Z") } })]}
+        orders={[order({ id: 9, feedback: { rating: 4, comment: null, createdAt: new Date("2026-03-05T00:00:00Z"), sentiment: null } })]}
         onOpenOrder={open}
       />,
     );

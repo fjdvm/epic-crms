@@ -55,7 +55,7 @@ describe("OrdersTab", () => {
 
   it("shows lines, totals, the checkout Address and feedback for an open Order", () => {
     render(
-      <OrdersTab orders={[order({ feedback: { rating: 4, comment: "Tasty", createdAt: new Date("2026-03-02T00:00:00Z") } })]} expanded={open} onToggle={() => {}} />,
+      <OrdersTab orders={[order({ feedback: { rating: 4, comment: "Tasty", createdAt: new Date("2026-03-02T00:00:00Z"), sentiment: null } })]} expanded={open} onToggle={() => {}} />,
     );
 
     expect(screen.getByText("Sourdough")).toBeTruthy();

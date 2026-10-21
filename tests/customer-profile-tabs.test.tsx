@@ -60,9 +60,9 @@ describe("FeedbackTab", () => {
     render(
       <FeedbackTab
         orders={[
-          order({ id: 7, feedback: { rating: 5, comment: "Great", createdAt: new Date("2026-03-02T00:00:00Z") } }),
+          order({ id: 7, feedback: { rating: 5, comment: "Great", createdAt: new Date("2026-03-02T00:00:00Z"), sentiment: null } }),
           order({ id: 6 }),
-          order({ id: 4, feedback: { rating: 2, comment: null, createdAt: new Date("2026-03-02T00:00:00Z") } }),
+          order({ id: 4, feedback: { rating: 2, comment: null, createdAt: new Date("2026-03-02T00:00:00Z"), sentiment: null } }),
         ]}
         onOpenOrder={open}
       />,
@@ -76,6 +76,42 @@ describe("FeedbackTab", () => {
     fireEvent.click(screen.getByRole("link", { name: "Order #4" }));
     expect(open).toHaveBeenCalledWith(4);
     expect(screen.getByRole("link", { name: "Order #7" }).getAttribute("href")).toBe("#order-7");
+  });
+
+  it("shows each Feedback's Sentiment badge, or Analysing… until it is labelled", () => {
+    render(
+      <FeedbackTab
+        orders={[
+          order({ id: 7, feedback: { rating: 5, comment: "Great", createdAt: new Date(), sentiment: "positive" } }),
+          order({ id: 4, feedback: { rating: 2, comment: "Meh", createdAt: new Date(), sentiment: null } }),
+        ]}
+        onOpenOrder={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Positive")).toBeTruthy();
+    expect(screen.getByText("Analysing…")).toBeTruthy();
+  });
+
+  it("shows the Order's products", () => {
+    render(
+      <FeedbackTab
+        orders={[
+          order({
+            id: 7,
+            lines: [
+              { product: "Smooth tub", size: "200g", quantity: 1, price: 100 },
+              { product: "Smooth tub", size: "500g", quantity: 1, price: 100 },
+              { product: "Tidbits pouch", size: "", quantity: 2, price: 100 },
+            ],
+            feedback: { rating: 5, comment: "Great", createdAt: new Date(), sentiment: "positive" },
+          }),
+        ]}
+        onOpenOrder={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Smooth tub, Tidbits pouch")).toBeTruthy();
   });
 
   it("shows the empty state when no Order has feedback", () => {
