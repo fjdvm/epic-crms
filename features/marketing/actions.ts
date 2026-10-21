@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 
 import { crmsDatabase } from "@/lib/crms-db";
-import { gatewayAuditLog } from "@/lib/gateway";
+import { gatewayAuditLog, gatewayImageStore } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 
+import { addImage } from "./add-image";
 import {
   deleteDraft,
   editDraft,
@@ -17,10 +18,11 @@ import {
   type Ports,
   type SaveResult,
 } from "./announcements";
+import type { AddImageResult } from "./image-limits";
 
 export type Unavailable = { ok: false; reason: "unavailable" };
 
-const ports = (): Ports => ({ audit: gatewayAuditLog, now: () => new Date() });
+const ports = (): Ports => ({ audit: gatewayAuditLog, images: gatewayImageStore, now: () => new Date() });
 
 /** Server actions are public endpoints, so each proves the Staff member holds the Marketing Module. */
 async function act<R extends { ok: boolean }>(
@@ -50,4 +52,20 @@ export async function editDraftAction(id: string, input: AnnouncementInput): Pro
 
 export async function deleteDraftAction(id: string): Promise<DeleteResult | Unavailable> {
   return act((actor) => deleteDraft(crmsDatabase(), actor, id, ports()));
+}
+
+/** Shrinks and stores one image; it joins an Announcement only when the Draft is saved with its address. */
+export async function addImageAction(form: FormData): Promise<AddImageResult | Unavailable> {
+  const staff = await requireModule(MARKETING_MODULE);
+  const file = form.get("image");
+
+  if (!(file instanceof File)) return { ok: false, reason: "not-an-image" };
+
+  try {
+    return await addImage({ id: staff.username, name: staff.name }, { filename: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, ports());
+  } catch (error) {
+    console.error("Announcement image could not be added", error);
+
+    return { ok: false, reason: "unavailable" };
+  }
 }

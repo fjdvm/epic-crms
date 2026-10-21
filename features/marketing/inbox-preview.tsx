@@ -1,5 +1,5 @@
 /** How the Announcement looks in an inbox, as the Figma draws it. A text-only Announcement has no image area. */
-export function InboxPreview({ title, description }: { title: string; description: string }) {
+export function InboxPreview({ title, description, images = [] }: { title: string; description: string; images?: string[] }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-[10px] border border-[#e4e4e7] bg-white" data-testid="inbox-preview">
       <div className="flex items-center gap-[10px] bg-[#18181b] px-[14px] py-3">
@@ -11,6 +11,10 @@ export function InboxPreview({ title, description }: { title: string; descriptio
         <p className="text-lg font-bold leading-[normal] break-words text-[#18181b]">
           {title.trim() || <span className="text-[#a1a1aa]">Your title</span>}
         </p>
+        {images.map((src, index) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={`${src}-${index}`} src={src} alt={`Image ${index + 1}`} className="block w-full rounded-lg bg-[#efe6f8]" />
+        ))}
         <p className="text-[13px] leading-[normal] break-words whitespace-pre-wrap text-[#3f3f46]">
           {description.trim() || <span className="text-[#a1a1aa]">Your description</span>}
         </p>
