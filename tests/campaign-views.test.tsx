@@ -21,6 +21,7 @@ const row = (overrides: Partial<AnnouncementRow> = {}): AnnouncementRow => ({
   title: "Undas ube treats",
   description: "Back for Undas.",
   images: [],
+  imageLayout: null,
   state: "draft",
   scheduledFor: null,
   sentAt: null,
@@ -38,6 +39,7 @@ function fakeActions(): CampaignFormActions {
     save: vi.fn(async () => ({ ok: true as const, announcement: { id: "new" } })),
     edit: vi.fn(async () => ({ ok: true as const })),
     remove: vi.fn(async () => ({ ok: true as const })),
+    sendTest: vi.fn(async () => ({ ok: true as const })),
     addImage: vi.fn(async (form: FormData) => ({ ok: true as const, url: `https://cdn.test/${imageName(form)}` })),
     send: vi.fn(async () => ({ ok: true as const, state: "sent" as const, subscribers: 412 })),
   };
@@ -158,6 +160,102 @@ describe("the campaign form", () => {
     await waitFor(() => expect(actions.remove).toHaveBeenCalledWith("d1"));
   });
 
+  it("asks before sending a test copy, and sends the saved Draft on confirming", async () => {
+    const actions = fakeActions();
+    render(<CampaignForm draft={{ id: "d1", title: "Old", description: "Words." }} actions={actions} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send a test" }));
+    expect(await screen.findByText("Send a test copy?")).toBeTruthy();
+    expect(actions.sendTest).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+
+    await waitFor(() => expect(actions.sendTest).toHaveBeenCalledWith("d1"));
+    expect(actions.save).not.toHaveBeenCalled();
+    expect(actions.edit).not.toHaveBeenCalled();
+  });
+
+  it("says when the test copy could not be sent", async () => {
+    const { toast } = await import("sonner");
+    const actions = { ...fakeActions(), sendTest: vi.fn(async () => ({ ok: false as const, reason: "send-failed" as const })) };
+    render(<CampaignForm draft={{ id: "d1", title: "Old", description: "Words." }} actions={actions} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send a test" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send test" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("test copy")));
+  });
+
+  describe("choosing an image layout", () => {
+    const photos = (count: number) => Array.from({ length: count }, (_, i) => `https://files.test/${i + 1}.jpg`);
+    const withImages = (count: number, imageLayout: AnnouncementRow["imageLayout"] = null) => ({
+      id: "d1",
+      title: "Old",
+      description: "Words.",
+      images: photos(count),
+      imageLayout,
+    });
+
+    it("offers the layouts that hold the number of images, with the current one selected", () => {
+      render(<CampaignForm draft={withImages(3, "three-row")} actions={fakeActions()} />);
+
+      const options = screen.getAllByRole("radio");
+      expect(options.map((o) => o.getAttribute("aria-label"))).toEqual([
+        "One large, two small",
+        "Large on top, two below",
+        "Three in a row",
+        "Stacked",
+      ]);
+      expect(options.map((o) => o.getAttribute("aria-checked"))).toEqual(["false", "false", "true", "false"]);
+    });
+
+    it("selects the default when none was chosen", () => {
+      render(<CampaignForm draft={withImages(4)} actions={fakeActions()} />);
+
+      expect(screen.getByRole("radio", { name: "Four in a grid" }).getAttribute("aria-checked")).toBe("true");
+    });
+
+    it("saves the chosen layout with the Draft", async () => {
+      const actions = fakeActions();
+      render(<CampaignForm draft={withImages(2)} actions={actions} />);
+
+      fireEvent.click(screen.getByRole("radio", { name: "Two stacked" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Old", description: "Words.", images: photos(2), imageLayout: "two-rows" }),
+      );
+    });
+
+    it("shows every image in the preview, in the chosen layout", () => {
+      render(<CampaignForm draft={withImages(3)} actions={fakeActions()} />);
+
+      const shown = () => screen.getByTestId("inbox-preview").querySelectorAll("img[src^='https://files.test/']");
+      expect(Array.from(shown()).map((img) => img.getAttribute("src"))).toEqual(photos(3));
+
+      fireEvent.click(screen.getByRole("radio", { name: "Three in a row" }));
+
+      expect(screen.getByTestId("inbox-preview").querySelector("[data-layout='three-row']")).not.toBeNull();
+      expect(shown()).toHaveLength(3);
+    });
+
+    it("offers no choice for a text-only Draft or a single image", () => {
+      const { unmount } = render(<CampaignForm draft={withImages(0)} actions={fakeActions()} />);
+      expect(screen.queryAllByRole("radio")).toEqual([]);
+      unmount();
+
+      render(<CampaignForm draft={withImages(1)} actions={fakeActions()} />);
+      expect(screen.queryAllByRole("radio")).toEqual([]);
+    });
+  });
+
+  it("offers a test copy only once the Draft is saved", () => {
+    render(<CampaignForm actions={fakeActions()} />);
+
+    expect((screen.getByRole("button", { name: "Send a test" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("offers no delete for a Draft that is not saved yet", () => {
     render(<CampaignForm actions={fakeActions()} />);
 
@@ -190,6 +288,21 @@ describe("images on the campaign form", () => {
     await waitFor(() => expect(within(screen.getByTestId("inbox-preview")).getAllByRole("img")).toHaveLength(2));
     const srcs = within(screen.getByTestId("inbox-preview")).getAllByRole("img").map((i) => i.getAttribute("src"));
     expect(srcs).toEqual(["https://cdn.test/a.png", "https://cdn.test/b.png"]);
+  });
+
+  it("offers layouts for the images as they are added, and drops a choice that no longer fits", async () => {
+    render(<CampaignForm actions={fakeActions()} />);
+    expect(screen.queryAllByRole("radio")).toEqual([]);
+
+    pick([png("a.png"), png("b.png")]);
+    await screen.findByRole("radio", { name: "Two stacked" });
+    fireEvent.click(screen.getByRole("radio", { name: "Two stacked" }));
+
+    pick([png("c.png")]);
+
+    await screen.findByRole("radio", { name: "Three in a row" });
+    // Two stacked holds two images, so the default for three takes over.
+    expect(screen.getByRole("radio", { name: "One large, two small" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("removes an image from the form and the preview", async () => {

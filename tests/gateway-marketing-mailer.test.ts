@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { gatewayMarketingMailer } from "@/lib/gateway";
 
-const mail = { title: "Undas ube treats", description: "Back for Undas.", images: ["https://cdn.test/1.jpg"] };
+const mail = { title: "Undas ube treats", description: "Back for Undas.", images: ["https://cdn.test/1.jpg"], imageLayout: null };
 const ada = { customerId: "c1", email: "ada@x.test" };
 const ben = { customerId: "c2", email: "ben@x.test" };
 

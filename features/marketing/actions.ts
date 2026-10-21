@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
-import { gatewayAuditLog, gatewayImageStore, gatewayMarketingMailer } from "@/lib/gateway";
+import { gatewayAuditLog, gatewayImageStore, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 
@@ -16,12 +16,14 @@ import {
   saveDraft,
   sendNow,
   storefrontSubscribers,
+  sendTestCopy,
   type AnnouncementInput,
   type DeleteResult,
   type EditResult,
   type Ports,
   type SaveResult,
   type SendResult,
+  type TestCopyResult,
 } from "./announcements";
 import type { AddImageResult } from "./image-limits";
 
@@ -29,6 +31,7 @@ export type Unavailable = { ok: false; reason: "unavailable" };
 
 const ports = (): Ports => ({
   audit: gatewayAuditLog,
+  mail: gatewayMarketingMail,
   images: gatewayImageStore,
   subscribers: storefrontSubscribers(database()),
   mailer: gatewayMarketingMailer,
@@ -37,12 +40,12 @@ const ports = (): Ports => ({
 
 /** Server actions are public endpoints, so each proves the Staff member holds the Marketing Module. */
 async function act<R extends { ok: boolean }>(
-  run: (actor: { id: string; name: string }) => Promise<R>,
+  run: (actor: { id: string; name: string }, email: string) => Promise<R>,
 ): Promise<R | Unavailable> {
   const staff = await requireModule(MARKETING_MODULE);
 
   try {
-    const result = await run({ id: staff.username, name: staff.name });
+    const result = await run({ id: staff.username, name: staff.name }, staff.email);
     if (result.ok) revalidatePath("/email-campaigns");
 
     return result;
@@ -71,6 +74,11 @@ export async function sendNowAction(id: string): Promise<SendResult | Unavailabl
 
 export async function retrySendAction(id: string): Promise<SendResult | Unavailable> {
   return act((actor) => retrySend(crmsDatabase(), actor, id, ports()));
+}
+
+/** Sends to the signed-in Staff member's own email, taken from their session and never from the caller. */
+export async function sendTestCopyAction(id: string): Promise<TestCopyResult | Unavailable> {
+  return act((actor, email) => sendTestCopy(crmsDatabase(), actor, email, id, ports()));
 }
 
 /** Shrinks and stores one image; it joins an Announcement only when the Draft is saved with its address. */

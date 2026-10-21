@@ -18,8 +18,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction, sendNowAction } from "./actions";
-import { INPUT_REFUSALS, SEND_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
+import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction, sendNowAction, sendTestCopyAction } from "./actions";
+import { INPUT_REFUSALS, plural, SEND_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
+import { ImageLayoutGrid } from "./image-layout-grid";
+import { defaultLayout, IMAGE_LAYOUT_LABELS, layoutsFor, type ImageLayout } from "./image-layouts";
 import { IMAGE_REFUSALS, MAX_IMAGE_BYTES, MAX_IMAGE_MB } from "./image-limits";
 import { prepareImage } from "./prepare-image";
 import { InboxPreview } from "./inbox-preview";
@@ -30,6 +32,7 @@ const MESSAGES: Record<string, string> = {
   ...SEND_REFUSALS,
   "not-found": "That Announcement no longer exists.",
   "not-a-draft": "That Announcement is no longer a Draft, so it cannot be changed.",
+  "send-failed": "The test copy could not be sent. Try again in a moment.",
   unavailable: "CREOMS could not reach its database. Try again in a moment.",
 };
 
@@ -38,15 +41,53 @@ const CONTROL =
 const LABEL = "flex gap-[3px] text-[13px] font-medium leading-[normal] text-[#27272a]";
 const OUTLINE = "rounded-lg border border-[#e4e4e7] bg-white px-4 py-[9px] text-sm font-medium leading-[normal] text-[#18181b]";
 
+type Submit = "save" | "delete" | "test" | "send";
+
+/** What each submit asks before it runs, and says once it has. */
+const CONFIRMATION: Record<Submit, { title: string; description: string; button: string; done: string }> = {
+  save: {
+    title: "Save this Draft?",
+    description: "It is saved as a Draft. Nothing is sent to Subscribers.",
+    button: "Save",
+    done: "Draft saved.",
+  },
+  delete: {
+    title: "Delete this Draft?",
+    description: "It is removed for everyone with the Marketing Module and cannot be brought back.",
+    button: "Delete",
+    done: "Draft deleted.",
+  },
+  test: {
+    title: "Send a test copy?",
+    description: "The saved Draft is emailed to you only, as Subscribers would see it. Unsaved changes are not included.",
+    button: "Send test",
+    done: "Test copy sent to your email.",
+  },
+  send: {
+    title: "Send to every Subscriber?",
+    description: "It goes out now to everyone who is a Subscriber at this moment, and cannot be unsent.",
+    button: "Send now",
+    done: "Sent.",
+  },
+};
+
 export interface CampaignFormActions {
   save: typeof saveDraftAction;
   edit: typeof editDraftAction;
   remove: typeof deleteDraftAction;
+  sendTest: typeof sendTestCopyAction;
   addImage: typeof addImageAction;
   send: typeof sendNowAction;
 }
 
-const REAL_ACTIONS: CampaignFormActions = { save: saveDraftAction, edit: editDraftAction, remove: deleteDraftAction, addImage: addImageAction, send: sendNowAction };
+const REAL_ACTIONS: CampaignFormActions = {
+  save: saveDraftAction,
+  edit: editDraftAction,
+  remove: deleteDraftAction,
+  sendTest: sendTestCopyAction,
+  addImage: addImageAction,
+  send: sendNowAction,
+};
 
 /** The compose form and its live inbox preview. With `draft`, it edits that Draft instead of starting a new one. */
 export function CampaignForm({
@@ -54,7 +95,7 @@ export function CampaignForm({
   subscribers = null,
   actions = REAL_ACTIONS,
 }: {
-  draft?: { id: string; title: string; description: string; images?: string[] };
+  draft?: { id: string; title: string; description: string; images?: string[]; imageLayout?: ImageLayout | null };
   /** How many Subscribers would receive it now; null when they could not be counted. */
   subscribers?: number | null;
   actions?: CampaignFormActions;
@@ -65,11 +106,18 @@ export function CampaignForm({
   const [description, setDescription] = useState(draft?.description ?? "");
   const [images, setImages] = useState<string[]>(draft?.images ?? []);
   const [adding, setAdding] = useState(false);
-  const [confirming, setConfirming] = useState<"save" | "delete" | "send" | null>(null);
+  const [confirming, setConfirming] = useState<Submit | null>(null);
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
 
-  const input: AnnouncementInput = { title, description, images };
+  // Adding or removing an image changes which layouts hold them all, so the choice is only kept while it still fits.
+  const [chosenLayout, setChosenLayout] = useState<ImageLayout | null>(draft?.imageLayout ?? null);
+  const layouts = layoutsFor(images.length);
+  const chosen = chosenLayout && layouts.includes(chosenLayout) ? chosenLayout : null;
+  const imageLayout = chosen ?? defaultLayout(images.length);
+
+  // Only a layout Staff chose is sent; otherwise an edit keeps what is stored, which reads back as the default.
+  const input: AnnouncementInput = { title, description, images, ...(chosen && { imageLayout: chosen }) };
 
   /** Each file is shrunk and stored on its own, so one refusal does not lose the others. */
   const addImages = async (files: File[]) => {
@@ -91,9 +139,27 @@ export function CampaignForm({
   };
 
   /** Each submit asks first; the dialog's confirm button is what actually sends it. */
-  const ask = (kind: "save" | "delete" | "send") => (event?: React.FormEvent) => {
+  const ask = (kind: Submit) => (event?: React.FormEvent) => {
     event?.preventDefault();
     setConfirming(kind);
+  };
+
+  // The dialog keeps its words while it closes, when nothing is being confirmed any more.
+  const shown = confirming ?? "save";
+  const text =
+    shown === "save" && draft
+      ? { ...CONFIRMATION.save, title: "Save your changes?" }
+      : shown === "send" && subscribers !== null
+        ? subscribers === 0
+          ? { ...CONFIRMATION.send, title: "Nobody to send to", description: SEND_REFUSALS["no-subscribers"] }
+          : { ...CONFIRMATION.send, title: `Send to ${plural(subscribers)}?` }
+        : CONFIRMATION[shown];
+
+  const run = (kind: Exclude<Submit, "send">) => {
+    if (kind === "test") return actions.sendTest(draft!.id);
+    if (kind === "delete") return actions.remove(draft!.id);
+
+    return draft ? actions.edit(draft.id, input) : actions.save(input);
   };
 
   const confirm = () => {
@@ -105,18 +171,14 @@ export function CampaignForm({
       try {
         if (kind === "send") return await send();
 
-        const result =
-          kind === "delete"
-            ? await actions.remove(draft!.id)
-            : draft
-              ? await actions.edit(draft.id, input)
-              : await actions.save(input);
+        const result = await run(kind);
 
         setConfirming(null);
         if (!result.ok) return void toast.error(MESSAGES[result.reason]);
 
-        toast.success(kind === "delete" ? "Draft deleted." : "Draft saved.");
-        router.push("/email-campaigns");
+        toast.success(CONFIRMATION[kind].done);
+        // A test copy leaves Staff where they are, still composing.
+        if (kind !== "test") router.push("/email-campaigns");
       } finally {
         busy.current = false;
       }
@@ -145,7 +207,7 @@ export function CampaignForm({
       return void router.push(`/email-campaigns/${id}`);
     }
 
-    if (result.state === "sent") toast.success(`Sent to ${result.subscribers} ${result.subscribers === 1 ? "Subscriber" : "Subscribers"}.`);
+    if (result.state === "sent") toast.success(`Sent to ${plural(result.subscribers)}.`);
     else toast.error("Some Subscribers could not be reached, so it is Failed. Open it to retry; nobody is emailed twice.");
 
     router.push("/email-campaigns");
@@ -203,6 +265,36 @@ export function CampaignForm({
                 placeholder="Our Noche Buena batch is now open for pre-orders."
               />
             </div>
+
+            {layouts.length > 1 && (
+              <div role="radiogroup" aria-label="Image layout" className="flex flex-col gap-1.5">
+                <p className={LABEL}>Image layout</p>
+                <div className="flex flex-wrap gap-2">
+                  {layouts.map((layout) => {
+                    const selected = layout === imageLayout;
+
+                    return (
+                      <button
+                        key={layout}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={IMAGE_LAYOUT_LABELS[layout]}
+                        title={IMAGE_LAYOUT_LABELS[layout]}
+                        onClick={() => setChosenLayout(layout)}
+                        className={cn(
+                          "w-[84px] rounded-lg border bg-white p-2 focus-visible:outline-none",
+                          selected ? "border-[#5b2a86] ring-2 ring-[#5b2a86]/20" : "border-[#e4e4e7] hover:border-[#c9a8f0]",
+                        )}
+                      >
+                        <ImageLayoutGrid layout={layout} gap={2} />
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs leading-[normal] text-[#71717a]">How the {images.length} images are arranged in the email.</p>
+              </div>
+            )}
 
             <div className="flex flex-col gap-1.5">
               <span className={LABEL}>
@@ -262,7 +354,7 @@ export function CampaignForm({
                 <h2 className="text-[15px] font-semibold leading-[normal] text-[#18181b]">Preview</h2>
                 <p className="text-xs leading-[normal] text-[#71717a]">How it looks in the inbox.</p>
               </div>
-              <InboxPreview title={title} description={description} images={images} />
+              <InboxPreview title={title} description={description} images={images} imageLayout={imageLayout} />
             </section>
           </aside>
         </div>
@@ -272,6 +364,15 @@ export function CampaignForm({
         <p className="min-w-0 flex-1 text-[13px] leading-[normal] text-[#71717a]">
           {draft ? "Anyone with the Marketing Module can edit or delete this Draft." : "Not saved yet."}
         </p>
+        <button
+          type="button"
+          onClick={ask("test")}
+          disabled={!draft}
+          title={draft ? undefined : "Save the Draft first"}
+          className={cn(OUTLINE, "disabled:cursor-not-allowed disabled:opacity-50")}
+        >
+          Send a test
+        </button>
         {draft && (
           <button type="button" onClick={ask("delete")} className={cn(OUTLINE, "text-[#dc2626]")}>
             Delete draft
@@ -295,27 +396,9 @@ export function CampaignForm({
         >
           <AlertDialogHeader className="gap-2 text-left">
             <AlertDialogTitle className="text-lg font-semibold">
-              {confirming === "send"
-                ? subscribers === 0
-                  ? "Nobody to send to"
-                  : subscribers === null
-                    ? "Send to every Subscriber?"
-                    : `Send to ${subscribers} ${subscribers === 1 ? "Subscriber" : "Subscribers"}?`
-                : confirming === "delete"
-                  ? "Delete this Draft?"
-                  : draft
-                    ? "Save your changes?"
-                    : "Save this Draft?"}
+              {text.title}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirming === "send"
-                ? subscribers === 0
-                  ? SEND_REFUSALS["no-subscribers"]
-                  : "It goes out now to everyone who is a Subscriber at this moment, and cannot be unsent."
-                : confirming === "delete"
-                  ? "It is removed for everyone with the Marketing Module and cannot be brought back."
-                  : "It is saved as a Draft. Nothing is sent to Subscribers."}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{text.description}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
             <AlertDialogCancel disabled={pending} className="mt-0 sm:mt-0">
@@ -328,7 +411,7 @@ export function CampaignForm({
               disabled={pending || (confirming === "send" && subscribers === 0)}
               className={cn("text-white", confirming === "delete" ? "bg-[#dc2626] hover:bg-[#dc2626]/90" : "bg-[#5b2a86] hover:bg-[#5b2a86]/90")}
             >
-              {pending ? "Working…" : confirming === "delete" ? "Delete" : confirming === "send" ? "Send now" : "Save"}
+              {pending ? "Working…" : text.button}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

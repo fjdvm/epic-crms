@@ -3,12 +3,17 @@
 
 -- One Marketing Email composed by Staff. Shared by every Staff member with the Marketing Module, so
 -- created_by and updated_by only say who touched it last, never who may. images holds the public
--- HTTPS addresses of the shrunk images, in order (empty for a text-only Announcement).
+-- HTTPS addresses of the shrunk images, in order (empty for a text-only Announcement). image_layout is
+-- how Staff chose to arrange them (see features/marketing/image-layouts.ts); null means the default
+-- for the number of images.
 CREATE TABLE crms.announcements (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title           text NOT NULL CHECK (title <> '' AND char_length(title) <= 60),
   description     text NOT NULL CHECK (description <> ''),
   images          text[] NOT NULL DEFAULT '{}',
+  image_layout    text CHECK (image_layout IN ('stacked', 'single', 'two-columns', 'two-rows', 'three-feature-left',
+                                               'three-feature-top', 'three-row', 'four-grid', 'four-feature-left',
+                                               'four-feature-top')),
   state           text NOT NULL DEFAULT 'draft' CHECK (state IN ('draft', 'scheduled', 'sent', 'failed')),
   scheduled_for   timestamptz,
   sent_at         timestamptz,

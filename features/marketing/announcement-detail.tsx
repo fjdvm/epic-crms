@@ -93,7 +93,7 @@ export function AnnouncementDetail({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <section className="flex max-w-[420px] flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white px-5 py-[18px]">
           <h2 className="text-[15px] font-semibold leading-[normal] text-[#18181b]">What Subscribers received</h2>
-          <InboxPreview title={announcement.title} description={announcement.description} images={announcement.images} />
+          <InboxPreview title={announcement.title} description={announcement.description} images={announcement.images} imageLayout={announcement.imageLayout} />
         </section>
       </div>
 

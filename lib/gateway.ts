@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 
 import type { WriteAuditEvent } from "@/features/feedback/analysis";
-import type { AuditLog, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
+import type { AuditLog, MarketingMail, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
 import type { ImageStore } from "@/features/marketing/image-limits";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
@@ -227,6 +227,7 @@ export const gatewayMarketingMailer: MarketingMailer = {
               title: mail.title,
               body: mail.description,
               images: mail.images,
+              ...(mail.imageLayout && { imageLayout: mail.imageLayout }),
               unsubscribeUrl: unsubscribeUrl(subscriber.customerId),
             }),
             signal: AbortSignal.timeout(15_000),
@@ -245,5 +246,25 @@ export const gatewayMarketingMailer: MarketingMailer = {
     }
 
     return handedOver;
+  },
+};
+
+/**
+ * Queues one Marketing Email through the api-gateway's notifications service, as the "crms" Caller.
+ * The service requires the sender to assert the recipient is a Subscriber; a test copy goes to the Staff
+ * member who asked for it, so that assertion stands for their own consent to receive it.
+ */
+export const gatewayMarketingMail: MarketingMail = {
+  async sendOne({ to, title, body, images, imageLayout }) {
+    const { base, key } = gateway();
+
+    const response = await fetch(`${base}/notifications/emails/marketing`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ to, app: "CRMS", subscriberConsent: true, title, body, images, ...(imageLayout && { imageLayout }) }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!response.ok) throw new Error(`The gateway refused the marketing email: ${response.status}`);
   },
 };
