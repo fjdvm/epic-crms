@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SigningIn } from "@/components/loading/signing-in";
+import { SidebarEnterpriseHeader } from "@/components/layout/sidebar-enterprise-header";
 import { SidebarProfileFooter } from "@/components/layout/sidebar-profile-footer";
 import { StaffProvider } from "@/components/layout/staff-context";
 import AppLoading from "@/app/(app)/loading";
@@ -111,5 +112,42 @@ describe("the return to the Portal loading card", () => {
 
     expect(screen.getByText("Returning to the Portal…")).toBeTruthy();
     expect(screen.getByText("Signing you out securely")).toBeTruthy();
+  });
+});
+
+describe("the return to the Portal loading card from the module switcher", () => {
+  function chooseModule(name: string) {
+    const navigate = vi.fn();
+    render(<SidebarEnterpriseHeader isMobile={false} navigate={navigate} />);
+    fireEvent.pointerDown(screen.getByText("Bren Raphael's"), { button: 0, ctrlKey: false, pointerType: "mouse" });
+    fireEvent.click(screen.getByText(name));
+
+    return navigate;
+  }
+
+  it("goes to the Portal straight away but shows nothing before the wait passes about 300 ms", () => {
+    const navigate = chooseModule("Enterprise Portal");
+
+    act(() => void vi.advanceTimersByTime(299));
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Returning to the Portal…")).toBeNull();
+  });
+
+  it("shows the returning to the Portal card once the wait passes 300 ms", () => {
+    chooseModule("Enterprise Portal");
+
+    act(() => void vi.advanceTimersByTime(300));
+
+    expect(screen.getByText("Returning to the Portal…")).toBeTruthy();
+    expect(screen.getByText("Opening the Enterprise Portal")).toBeTruthy();
+  });
+
+  it("shows no Portal card when another System is chosen", () => {
+    chooseModule("Human Resource Management");
+
+    act(() => void vi.advanceTimersByTime(1000));
+
+    expect(screen.queryByText("Returning to the Portal…")).toBeNull();
   });
 });

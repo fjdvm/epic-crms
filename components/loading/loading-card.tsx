@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element -- fixed-size Figma vector assets */
 
-/** The Figma loading card: a centered card over a blurred, dimmed page. */
+/** The Figma loading card: a centered card over a blurred, dimmed page, above dialogs (z-[99999]). */
 export function LoadingCard({
   title,
   subtitle,

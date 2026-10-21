@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { DelayedLoadingCard } from "@/components/loading/delayed-loading-card";
+import { ReturningToPortal } from "@/components/loading/returning-to-portal";
 import { LOGOUT_PATH } from "@/lib/portal/config";
 import { useStaff } from "./staff-context";
 
@@ -82,9 +82,7 @@ export function SidebarProfileFooter() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {loggingOut && (
-        <DelayedLoadingCard title="Returning to the Portal…" subtitle="Signing you out securely" />
-      )}
+      {loggingOut && <ReturningToPortal subtitle="Signing you out securely" />}
     </div>
   );
 }
