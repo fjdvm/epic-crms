@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AnnouncementRow } from "@/features/marketing/announcements";
+import { AnnouncementDetail } from "@/features/marketing/announcement-detail";
 import { CampaignForm, type CampaignFormActions } from "@/features/marketing/campaign-form";
 import { CampaignList, SubscribersCard } from "@/features/marketing/campaign-list";
 
@@ -40,6 +41,7 @@ function fakeActions(): CampaignFormActions {
     remove: vi.fn(async () => ({ ok: true as const })),
     sendTest: vi.fn(async () => ({ ok: true as const })),
     addImage: vi.fn(async (form: FormData) => ({ ok: true as const, url: `https://cdn.test/${imageName(form)}` })),
+    send: vi.fn(async () => ({ ok: true as const, state: "sent" as const, subscribers: 412 })),
   };
 }
 
@@ -61,11 +63,11 @@ describe("the Announcements list", () => {
     expect(screen.getByText("Draft")).toBeTruthy();
   });
 
-  it("opens a Draft to edit it but not an Announcement already Sent", () => {
+  it("opens every Announcement, a Draft to edit and the rest to read", () => {
     render(<CampaignList announcements={[row({ id: "s", title: "Halaya restock", state: "sent" }), row({ id: "d", title: "Christmas" })]} />);
 
     expect(screen.getByRole("link", { name: "Christmas" }).getAttribute("href")).toBe("/email-campaigns/d");
-    expect(screen.queryByRole("link", { name: "Halaya restock" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Halaya restock" }).getAttribute("href")).toBe("/email-campaigns/s");
   });
 
   it("says when there are none", () => {
@@ -375,5 +377,98 @@ describe("images on the campaign form", () => {
     render(<CampaignForm actions={fakeActions()} />);
 
     expect(within(screen.getByTestId("inbox-preview")).queryAllByRole("img")).toHaveLength(0);
+  });
+});
+
+describe("sending now from the form", () => {
+  function filled(actions: CampaignFormActions, subscribers: number | null, draft?: { id: string; title: string; description: string }) {
+    render(<CampaignForm actions={actions} subscribers={subscribers} draft={draft} />);
+    fireEvent.change(screen.getByLabelText(/Title/), { target: { value: "Halaya" } });
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Restocked." } });
+  }
+
+  it("asks first, showing how many Subscribers will receive it, and sends only on confirming", async () => {
+    const actions = fakeActions();
+    filled(actions, 412);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+
+    expect(await screen.findByText("Send to 412 Subscribers?")).toBeTruthy();
+    expect(actions.send).not.toHaveBeenCalled();
+    expect(actions.save).not.toHaveBeenCalled();
+
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Send now" }));
+
+    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("new"));
+    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] });
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
+  });
+
+  it("sends an existing Draft after saving the changes made to it", async () => {
+    const actions = fakeActions();
+    filled(actions, 3, { id: "d1", title: "Old", description: "Old." });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Send now" }));
+
+    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("d1"));
+    expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Halaya", description: "Restocked.", images: [] });
+  });
+
+  it("blocks sending when there are no Subscribers", async () => {
+    const actions = fakeActions();
+    filled(actions, 0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/no Subscribers/)).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: "Send now" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("sends nothing when the confirmation is cancelled", async () => {
+    const actions = fakeActions();
+    filled(actions, 5);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel", hidden: false }));
+
+    expect(actions.send).not.toHaveBeenCalled();
+    expect(actions.save).not.toHaveBeenCalled();
+  });
+
+  it("keeps the work as a Draft and says why when the send is refused", async () => {
+    const actions = fakeActions();
+    actions.send = vi.fn(async () => ({ ok: false as const, reason: "no-subscribers" as const }));
+    filled(actions, 5);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Send now" }));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns/new"));
+  });
+});
+
+describe("an Announcement that is no longer a Draft", () => {
+  it("is read-only and shows how many Subscribers a Sent one went to", () => {
+    render(<AnnouncementDetail announcement={row({ state: "sent", sentTo: 140, sentAt: new Date("2026-10-05T02:00:00Z") })} />);
+
+    expect(screen.getByTestId("delivery").textContent).toContain("Sent to 140 Subscribers on 5 Oct 2026");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("offers Retry on a Failed one, after asking, and retries only on confirming", async () => {
+    const retry = vi.fn(async () => ({ ok: true as const, state: "sent" as const, subscribers: 3 }));
+    render(<AnnouncementDetail announcement={row({ state: "failed", sentTo: 2 })} retry={retry} />);
+    expect(screen.getByTestId("delivery").textContent).toContain("2 were emailed");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Retry this send?")).toBeTruthy();
+    expect(retry).not.toHaveBeenCalled();
+
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("a1"));
   });
 });

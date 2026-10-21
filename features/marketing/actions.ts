@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { crmsDatabase } from "@/lib/crms-db";
-import { gatewayAuditLog, gatewayImageStore, gatewayMarketingMail } from "@/lib/gateway";
+import { database } from "@/lib/db";
+import { gatewayAuditLog, gatewayImageStore, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 
@@ -11,13 +12,17 @@ import { addImage } from "./add-image";
 import {
   deleteDraft,
   editDraft,
+  retrySend,
   saveDraft,
+  sendNow,
+  storefrontSubscribers,
   sendTestCopy,
   type AnnouncementInput,
   type DeleteResult,
   type EditResult,
   type Ports,
   type SaveResult,
+  type SendResult,
   type TestCopyResult,
 } from "./announcements";
 import type { AddImageResult } from "./image-limits";
@@ -28,6 +33,8 @@ const ports = (): Ports => ({
   audit: gatewayAuditLog,
   mail: gatewayMarketingMail,
   images: gatewayImageStore,
+  subscribers: storefrontSubscribers(database()),
+  mailer: gatewayMarketingMailer,
   now: () => new Date(),
 });
 
@@ -59,6 +66,14 @@ export async function editDraftAction(id: string, input: AnnouncementInput): Pro
 
 export async function deleteDraftAction(id: string): Promise<DeleteResult | Unavailable> {
   return act((actor) => deleteDraft(crmsDatabase(), actor, id, ports()));
+}
+
+export async function sendNowAction(id: string): Promise<SendResult | Unavailable> {
+  return act((actor) => sendNow(crmsDatabase(), actor, id, ports()));
+}
+
+export async function retrySendAction(id: string): Promise<SendResult | Unavailable> {
+  return act((actor) => retrySend(crmsDatabase(), actor, id, ports()));
 }
 
 /** Sends to the signed-in Staff member's own email, taken from their session and never from the caller. */

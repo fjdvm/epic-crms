@@ -10,14 +10,21 @@ import {
   editDraft,
   getAnnouncement,
   listAnnouncements,
+  retrySend,
   saveDraft,
+  sendNow,
+  SEND_BATCH_SIZE,
   sendTestCopy,
   subscriberCount,
   TITLE_LIMIT,
   type AuditEvent,
   type AuditLog,
+  type MarketingContent,
+  type MarketingMailer,
   type MarketingMail,
   type MarketingMessage,
+  type Subscriber,
+  type SubscriberSource,
 } from "@/features/marketing/announcements";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -77,6 +84,33 @@ class FakeImageStore implements ImageStore {
   }
 }
 
+class FakeSubscribers implements SubscriberSource {
+  subscribers: Subscriber[] = [];
+  down = false;
+
+  async list() {
+    if (this.down) throw new Error("the storefront data is down");
+
+    return this.subscribers;
+  }
+}
+
+/** Records every batch handed to the notifications service, and refuses the addresses a test lists. */
+class FakeMailer implements MarketingMailer {
+  batches: { mail: MarketingContent; to: Subscriber[] }[] = [];
+  refusing = new Set<string>();
+
+  async sendBatch(mail: MarketingContent, to: Subscriber[]) {
+    this.batches.push({ mail, to });
+
+    return to.filter((s) => !this.refusing.has(s.email));
+  }
+
+  get emailed() {
+    return this.batches.flatMap((b) => b.to.map((s) => s.email)).sort();
+  }
+}
+
 const ada = { id: "ada", name: "Ada Okafor" };
 const ben = { id: "ben", name: "Ben Cruz" };
 const now = new Date("2026-10-20T04:00:00Z");
@@ -84,12 +118,18 @@ const now = new Date("2026-10-20T04:00:00Z");
 let audit: FakeAudit;
 let mail: FakeMail;
 let images: FakeImageStore;
-const ports = () => ({ audit, mail, images, now: () => now });
+let subscribers: FakeSubscribers;
+let mailer: FakeMailer;
+let clock = now;
+const ports = () => ({ audit, mail, images, subscribers, mailer, now: () => clock });
 
 beforeEach(async () => {
   audit = new FakeAudit();
   mail = new FakeMail();
   images = new FakeImageStore();
+  subscribers = new FakeSubscribers();
+  mailer = new FakeMailer();
+  clock = now;
   await db.sql`truncate crms.announcements cascade`;
   await db.sql`truncate customers cascade`;
   await db.sql`truncate neon_auth."user" cascade`;
@@ -571,5 +611,218 @@ describe("images on a Draft", () => {
       ok: false,
       reason: "invalid-image",
     });
+  });
+});
+
+const subscriber = (n: number): Subscriber => ({ customerId: `c${n}`, email: `c${n}@x.test` });
+const subscribe = (count: number) => {
+  subscribers.subscribers = Array.from({ length: count }, (_, i) => subscriber(i + 1));
+};
+
+describe("sending now", () => {
+  async function saved(input: Parameters<typeof saveDraft>[2] = draft) {
+    const result = await saveDraft(db.sql, ada, input, ports());
+    if (!result.ok) throw new Error("not saved");
+    audit.events = [];
+
+    return result.announcement.id;
+  }
+
+  it("emails every Subscriber and becomes Sent, with how many it went to", async () => {
+    subscribe(3);
+    const id = await saved({ ...draft, images: ["https://cdn.test/images/1.jpg"] });
+    clock = new Date("2026-10-20T05:00:00Z");
+
+    expect(await sendNow(db.sql, ada, id, ports())).toEqual({ ok: true, state: "sent", subscribers: 3 });
+
+    expect(mailer.emailed).toEqual(["c1@x.test", "c2@x.test", "c3@x.test"]);
+    expect(mailer.batches[0].mail).toMatchObject({
+      title: "Undas ube treats",
+      description: "Our ube treats are back for Undas.",
+      images: ["https://cdn.test/images/1.jpg"],
+    });
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "sent", sentTo: 3, sentAt: clock });
+  });
+
+  it("sends a text-only Announcement", async () => {
+    subscribe(1);
+    const id = await saved();
+
+    expect((await sendNow(db.sql, ada, id, ports())).ok).toBe(true);
+    expect(mailer.batches[0].mail.images).toEqual([]);
+  });
+
+  it("splits a large audience into several batches within the limit", async () => {
+    subscribe(SEND_BATCH_SIZE * 2 + 5);
+    const id = await saved();
+
+    expect(await sendNow(db.sql, ada, id, ports())).toMatchObject({ ok: true, state: "sent" });
+
+    expect(mailer.batches.map((b) => b.to.length)).toEqual([SEND_BATCH_SIZE, SEND_BATCH_SIZE, 5]);
+    expect(mailer.emailed).toHaveLength(SEND_BATCH_SIZE * 2 + 5);
+    expect(new Set(mailer.emailed).size).toBe(SEND_BATCH_SIZE * 2 + 5);
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ sentTo: SEND_BATCH_SIZE * 2 + 5 });
+  });
+
+  it("is blocked with no Subscribers, and the Announcement stays a Draft", async () => {
+    const id = await saved();
+
+    expect(await sendNow(db.sql, ada, id, ports())).toEqual({ ok: false, reason: "no-subscribers" });
+
+    expect(mailer.batches).toEqual([]);
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "draft" });
+    expect(audit.events).toEqual([]);
+  });
+
+  it("audits the send with the acting Staff member and the Subscriber count", async () => {
+    subscribe(2);
+    const id = await saved();
+
+    await sendNow(db.sql, ben, id, ports());
+
+    expect(audit.events).toEqual([
+      {
+        action: "record.updated",
+        actor: ben,
+        announcement: { id, title: "Undas ube treats" },
+        description: 'Ben Cruz sent "Undas ube treats" to 2 Subscribers.',
+        subscribers: 2,
+        occurredAt: now,
+      },
+    ]);
+  });
+
+  it("still sends when the audit log is down", async () => {
+    subscribe(1);
+    audit.down = true;
+
+    expect(await sendNow(db.sql, ada, await saved(), ports())).toMatchObject({ ok: true, state: "sent" });
+  });
+
+  it("is Failed when a batch is not fully handed over, keeping who was reached", async () => {
+    subscribe(3);
+    mailer.refusing.add("c2@x.test");
+    const id = await saved();
+
+    expect(await sendNow(db.sql, ada, id, ports())).toEqual({ ok: true, state: "failed", subscribers: 3 });
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "failed", sentTo: 2, sentAt: null });
+    expect(audit.events[0].description).toBe('Ada Okafor tried to send "Undas ube treats" to 3 Subscribers; 2 were reached and it is Failed.');
+  });
+
+  it("is Failed, reaching nobody, when the notifications service is down", async () => {
+    subscribe(2);
+    mailer.sendBatch = async () => {
+      throw new Error("gateway refused");
+    };
+    const id = await saved();
+
+    expect(await sendNow(db.sql, ada, id, ports())).toMatchObject({ ok: true, state: "failed" });
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "failed", sentTo: null });
+  });
+
+  it("does not send when the Subscribers cannot be read", async () => {
+    subscribers.down = true;
+    const id = await saved();
+
+    await expect(sendNow(db.sql, ada, id, ports())).rejects.toThrow("the storefront data is down");
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "draft" });
+  });
+
+  it("emails only the Subscribers the source gives, so someone who Unsubscribed is not emailed", async () => {
+    subscribe(3);
+    const id = await saved();
+    subscribers.subscribers = subscribers.subscribers.filter((s) => s.customerId !== "c2");
+
+    await sendNow(db.sql, ada, id, ports());
+
+    expect(mailer.emailed).toEqual(["c1@x.test", "c3@x.test"]);
+  });
+
+  it("will not send a Sent Announcement again, or one that does not exist", async () => {
+    subscribe(1);
+    const id = await saved();
+    await sendNow(db.sql, ada, id, ports());
+    mailer.batches = [];
+
+    expect(await sendNow(db.sql, ada, id, ports())).toEqual({ ok: false, reason: "not-sendable" });
+    expect(await sendNow(db.sql, ada, "00000000-0000-0000-0000-000000000000", ports())).toEqual({ ok: false, reason: "not-found" });
+    expect(mailer.batches).toEqual([]);
+  });
+
+  it("will not send twice at once", async () => {
+    subscribe(2);
+    const id = await saved();
+
+    const results = await Promise.all([sendNow(db.sql, ada, id, ports()), sendNow(db.sql, ben, id, ports())]);
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.find((r) => !r.ok)).toEqual({ ok: false, reason: "in-progress" });
+    expect(mailer.emailed).toEqual(["c1@x.test", "c2@x.test"]);
+  });
+
+  it("can be sent again once a send that never finished has gone stale", async () => {
+    subscribe(1);
+    const id = await saved();
+    await db.sql`update crms.announcements set sent_at = ${new Date(now.getTime() - 60 * 60 * 1000)} where id = ${id}`;
+
+    expect((await sendNow(db.sql, ada, id, ports())).ok).toBe(true);
+  });
+
+  it("sends a Scheduled Announcement now", async () => {
+    subscribe(1);
+    const id = await saved();
+    await db.sql`update crms.announcements set state = 'scheduled', scheduled_for = ${new Date(now.getTime() + 3600_000)} where id = ${id}`;
+
+    expect(await sendNow(db.sql, ada, id, ports())).toMatchObject({ ok: true, state: "sent" });
+  });
+});
+
+describe("retrying a Failed send", () => {
+  async function failedWithOneReached() {
+    subscribe(3);
+    mailer.refusing.add("c2@x.test");
+    const saved = await saveDraft(db.sql, ada, draft, ports());
+    if (!saved.ok) throw new Error("not saved");
+    await sendNow(db.sql, ada, saved.announcement.id, ports());
+    mailer.batches = [];
+    audit.events = [];
+
+    return saved.announcement.id;
+  }
+
+  it("skips Subscribers already reached, so nobody gets it twice", async () => {
+    const id = await failedWithOneReached();
+    mailer.refusing.clear();
+
+    expect(await retrySend(db.sql, ben, id, ports())).toEqual({ ok: true, state: "sent", subscribers: 3 });
+
+    expect(mailer.emailed).toEqual(["c2@x.test"]);
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "sent", sentTo: 3 });
+    expect(audit.events[0]).toMatchObject({ actor: ben, subscribers: 3 });
+  });
+
+  it("stays Failed while someone still cannot be reached", async () => {
+    const id = await failedWithOneReached();
+
+    expect(await retrySend(db.sql, ada, id, ports())).toMatchObject({ ok: true, state: "failed" });
+    expect(mailer.emailed).toEqual(["c2@x.test"]);
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "failed", sentTo: 2 });
+  });
+
+  it("is Sent without emailing anyone when everyone left was already reached", async () => {
+    const id = await failedWithOneReached();
+    subscribers.subscribers = subscribers.subscribers.filter((s) => s.customerId !== "c2");
+
+    expect(await retrySend(db.sql, ada, id, ports())).toMatchObject({ ok: true, state: "sent" });
+    expect(mailer.batches).toEqual([]);
+  });
+
+  it("applies only to a Failed Announcement", async () => {
+    subscribe(1);
+    const saved = await saveDraft(db.sql, ada, draft, ports());
+    if (!saved.ok) throw new Error("not saved");
+
+    expect(await retrySend(db.sql, ada, saved.announcement.id, ports())).toEqual({ ok: false, reason: "not-sendable" });
   });
 });

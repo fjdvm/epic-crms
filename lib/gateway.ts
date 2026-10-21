@@ -1,5 +1,7 @@
+import { createHmac } from "node:crypto";
+
 import type { WriteAuditEvent } from "@/features/feedback/analysis";
-import type { AuditLog, MarketingMail } from "@/features/marketing/announcements";
+import type { AuditLog, MarketingMail, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
 import type { ImageStore } from "@/features/marketing/image-limits";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
@@ -180,8 +182,71 @@ export const gatewayAuditLog: AuditLog = {
       actor: { type: "staff", id: event.actor.id, display_name: event.actor.name },
       target: { type: "announcement", id: event.announcement.id, display_name: event.announcement.title },
       description: event.description,
+      ...(event.subscribers === undefined ? {} : { metadata: { subscribers: event.subscribers } }),
       occurred_at: event.occurredAt.toISOString(),
     }),
+};
+
+/**
+ * The link in a Marketing Email that sets one Customer's Marketing opt-in to no. The storefront verifies the
+ * same token, `<base64url id>.<base64url HMAC-SHA256 of the id>`, signed with the secret both share.
+ */
+export function unsubscribeUrl(customerId: string): string {
+  const secret = process.env.UNSUBSCRIBE_SECRET;
+  const site = process.env.CREOMS_STOREFRONT_URL;
+
+  if (!secret || !site) throw new Error("UNSUBSCRIBE_SECRET and CREOMS_STOREFRONT_URL must be set; see .env.example");
+
+  const signature = createHmac("sha256", secret).update(customerId).digest("base64url");
+
+  return `${site.replace(/\/$/, "")}/unsubscribe?token=${Buffer.from(customerId).toString("base64url")}.${signature}`;
+}
+
+/** How many Marketing Emails are in flight to the gateway at once within a batch. */
+const MAX_CONCURRENT_EMAILS = 10;
+
+/**
+ * Hands a batch to the notifications service as the CRMS Caller. Each Subscriber gets their own Email, because
+ * each carries their own Unsubscribe link, and the Email asserts that its recipient is a Subscriber.
+ */
+export const gatewayMarketingMailer: MarketingMailer = {
+  async sendBatch(mail, to) {
+    const { base, key } = gateway();
+    const handedOver: Subscriber[] = [];
+
+    for (let i = 0; i < to.length; i += MAX_CONCURRENT_EMAILS) {
+      const settled = await Promise.allSettled(
+        to.slice(i, i + MAX_CONCURRENT_EMAILS).map(async (subscriber) => {
+          const response = await fetch(`${base}/notifications/emails/marketing`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: subscriber.email,
+              app: "CRMS",
+              subscriberConsent: true,
+              title: mail.title,
+              body: mail.description,
+              images: mail.images,
+              ...(mail.imageLayout && { imageLayout: mail.imageLayout }),
+              unsubscribeUrl: unsubscribeUrl(subscriber.customerId),
+            }),
+            signal: AbortSignal.timeout(15_000),
+          });
+
+          if (!response.ok) throw new Error(`The gateway refused a Marketing Email: ${response.status}`);
+
+          return subscriber;
+        }),
+      );
+
+      for (const result of settled) {
+        if (result.status === "fulfilled") handedOver.push(result.value);
+        else console.error("A Marketing Email could not be handed over", result.reason);
+      }
+    }
+
+    return handedOver;
+  },
 };
 
 /**

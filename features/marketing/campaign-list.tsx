@@ -33,7 +33,7 @@ export function SubscribersCard({ counts }: { counts: { subscribers: number; cus
   );
 }
 
-/** The Announcements table. Only a Draft opens, to be edited; the other states get their own views later. */
+/** The Announcements table. A Draft opens to be edited; every other state opens read-only. */
 export function CampaignList({ announcements }: { announcements: AnnouncementRow[] }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
@@ -52,13 +52,9 @@ export function CampaignList({ announcements }: { announcements: AnnouncementRow
             <ul className="min-h-0 flex-1 overflow-y-auto">
               {announcements.map((a) => (
                 <li key={a.id} className={`grid ${COLUMNS} items-center gap-4 border-b border-[#efebf4] py-[11px] text-sm leading-[normal] text-[#1f1a2e]`}>
-                  {a.state === "draft" ? (
-                    <Link href={`/email-campaigns/${a.id}`} className="truncate font-medium text-[#5b2a86] hover:underline">
-                      {a.title}
-                    </Link>
-                  ) : (
-                    <span className="truncate font-medium text-[#5b2a86]">{a.title}</span>
-                  )}
+                  <Link href={`/email-campaigns/${a.id}`} className="truncate font-medium text-[#5b2a86] hover:underline">
+                    {a.title}
+                  </Link>
                   <span>{a.sentTo ?? "—"}</span>
                   <span>{a.sentAt ? formatDate(a.sentAt) : "—"}</span>
                   <span>

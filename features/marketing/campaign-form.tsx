@@ -18,8 +18,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction, sendTestCopyAction } from "./actions";
-import { INPUT_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
+import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction, sendNowAction, sendTestCopyAction } from "./actions";
+import { INPUT_REFUSALS, plural, SEND_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
 import { ImageLayoutGrid } from "./image-layout-grid";
 import { defaultLayout, IMAGE_LAYOUT_LABELS, layoutsFor, type ImageLayout } from "./image-layouts";
 import { IMAGE_REFUSALS, MAX_IMAGE_BYTES, MAX_IMAGE_MB } from "./image-limits";
@@ -29,6 +29,7 @@ import { InboxPreview } from "./inbox-preview";
 const MESSAGES: Record<string, string> = {
   ...INPUT_REFUSALS,
   ...IMAGE_REFUSALS,
+  ...SEND_REFUSALS,
   "not-found": "That Announcement no longer exists.",
   "not-a-draft": "That Announcement is no longer a Draft, so it cannot be changed.",
   "send-failed": "The test copy could not be sent. Try again in a moment.",
@@ -40,7 +41,7 @@ const CONTROL =
 const LABEL = "flex gap-[3px] text-[13px] font-medium leading-[normal] text-[#27272a]";
 const OUTLINE = "rounded-lg border border-[#e4e4e7] bg-white px-4 py-[9px] text-sm font-medium leading-[normal] text-[#18181b]";
 
-type Submit = "save" | "delete" | "test";
+type Submit = "save" | "delete" | "test" | "send";
 
 /** What each submit asks before it runs, and says once it has. */
 const CONFIRMATION: Record<Submit, { title: string; description: string; button: string; done: string }> = {
@@ -62,6 +63,12 @@ const CONFIRMATION: Record<Submit, { title: string; description: string; button:
     button: "Send test",
     done: "Test copy sent to your email.",
   },
+  send: {
+    title: "Send to every Subscriber?",
+    description: "It goes out now to everyone who is a Subscriber at this moment, and cannot be unsent.",
+    button: "Send now",
+    done: "Sent.",
+  },
 };
 
 export interface CampaignFormActions {
@@ -70,6 +77,7 @@ export interface CampaignFormActions {
   remove: typeof deleteDraftAction;
   sendTest: typeof sendTestCopyAction;
   addImage: typeof addImageAction;
+  send: typeof sendNowAction;
 }
 
 const REAL_ACTIONS: CampaignFormActions = {
@@ -78,14 +86,18 @@ const REAL_ACTIONS: CampaignFormActions = {
   remove: deleteDraftAction,
   sendTest: sendTestCopyAction,
   addImage: addImageAction,
+  send: sendNowAction,
 };
 
 /** The compose form and its live inbox preview. With `draft`, it edits that Draft instead of starting a new one. */
 export function CampaignForm({
   draft,
+  subscribers = null,
   actions = REAL_ACTIONS,
 }: {
   draft?: { id: string; title: string; description: string; images?: string[]; imageLayout?: ImageLayout | null };
+  /** How many Subscribers would receive it now; null when they could not be counted. */
+  subscribers?: number | null;
   actions?: CampaignFormActions;
 }) {
   const router = useRouter();
@@ -134,9 +146,16 @@ export function CampaignForm({
 
   // The dialog keeps its words while it closes, when nothing is being confirmed any more.
   const shown = confirming ?? "save";
-  const text = shown === "save" && draft ? { ...CONFIRMATION.save, title: "Save your changes?" } : CONFIRMATION[shown];
+  const text =
+    shown === "save" && draft
+      ? { ...CONFIRMATION.save, title: "Save your changes?" }
+      : shown === "send" && subscribers !== null
+        ? subscribers === 0
+          ? { ...CONFIRMATION.send, title: "Nobody to send to", description: SEND_REFUSALS["no-subscribers"] }
+          : { ...CONFIRMATION.send, title: `Send to ${plural(subscribers)}?` }
+        : CONFIRMATION[shown];
 
-  const run = (kind: Submit) => {
+  const run = (kind: Exclude<Submit, "send">) => {
     if (kind === "test") return actions.sendTest(draft!.id);
     if (kind === "delete") return actions.remove(draft!.id);
 
@@ -150,6 +169,8 @@ export function CampaignForm({
     busy.current = true;
     startTransition(async () => {
       try {
+        if (kind === "send") return await send();
+
         const result = await run(kind);
 
         setConfirming(null);
@@ -162,6 +183,34 @@ export function CampaignForm({
         busy.current = false;
       }
     });
+  };
+
+  /** Sending saves the form as it stands first, so what goes out is what the preview shows. */
+  const send = async () => {
+    const saved = draft
+      ? { ...(await actions.edit(draft.id, input)), id: draft.id }
+      : await actions.save(input).then((r) => (r.ok ? { ok: true as const, id: r.announcement.id } : r));
+
+    if (!saved.ok) {
+      setConfirming(null);
+
+      return void toast.error(MESSAGES[saved.reason]);
+    }
+
+    const id = saved.id;
+    const result = await actions.send(id);
+
+    setConfirming(null);
+    if (!result.ok) {
+      toast.error(`${MESSAGES[result.reason]} Your work is saved as a Draft.`);
+
+      return void router.push(`/email-campaigns/${id}`);
+    }
+
+    if (result.state === "sent") toast.success(`Sent to ${plural(result.subscribers)}.`);
+    else toast.error("Some Subscribers could not be reached, so it is Failed. Open it to retry; nobody is emailed twice.");
+
+    router.push("/email-campaigns");
   };
 
   return (
@@ -332,8 +381,11 @@ export function CampaignForm({
         <Link href="/email-campaigns" className={OUTLINE}>
           Cancel
         </Link>
-        <button type="submit" className="rounded-lg bg-[#5b2a86] px-4 py-[9px] text-sm font-medium leading-[normal] text-white">
+        <button type="submit" className={OUTLINE}>
           Save draft
+        </button>
+        <button type="button" onClick={ask("send")} className="rounded-lg bg-[#5b2a86] px-4 py-[9px] text-sm font-medium leading-[normal] text-white">
+          Send now
         </button>
       </div>
 
@@ -356,7 +408,7 @@ export function CampaignForm({
             <Button
               type="button"
               onClick={confirm}
-              disabled={pending}
+              disabled={pending || (confirming === "send" && subscribers === 0)}
               className={cn("text-white", confirming === "delete" ? "bg-[#dc2626] hover:bg-[#dc2626]/90" : "bg-[#5b2a86] hover:bg-[#5b2a86]/90")}
             >
               {pending ? "Working…" : text.button}
