@@ -3,6 +3,7 @@ import { loadFeedback } from "@/features/feedback/feedback";
 import { FeedbackListView } from "@/features/feedback/feedback-list";
 import { FeedbackSummaryCards } from "@/features/feedback/feedback-summary";
 import { DateRangeButton } from "@/features/feedback/feedback-toolbar";
+import { lastAnalyzedLabel } from "@/features/feedback/sentiment-badge";
 import { manilaToday, parseFilters } from "@/features/feedback/filters";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
@@ -41,6 +42,11 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
             Every Feedback is tied to a delivered Order.
           </p>
         </div>
+        {lastAnalyzedLabel(result.list.lastAnalyzed) && (
+          <p className="shrink-0 text-xs leading-[normal] text-[#6e6680]" data-testid="last-analyzed">
+            {lastAnalyzedLabel(result.list.lastAnalyzed)}
+          </p>
+        )}
         <DateRangeButton filters={filters} today={manilaToday()} />
       </div>
       <FeedbackSummaryCards summary={result.list.summary} />

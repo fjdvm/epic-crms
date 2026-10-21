@@ -1,5 +1,7 @@
 import { Star } from "lucide-react";
 
+import { SentimentBadge } from "@/features/feedback/sentiment-badge";
+
 import { formatDate } from "./format";
 import { TabCard } from "./tab-card";
 import { orderAnchor, type CustomerOrder } from "./orders";
@@ -37,8 +39,14 @@ export function FeedbackTab({
               >
                 Order #{o.id}
               </a>
-              <span className="text-xs text-muted-foreground">{formatDate(o.createdAt)}</span>
+              <span className="flex items-center gap-2">
+                <SentimentBadge sentiment={feedback.sentiment} />
+                <span className="text-xs text-muted-foreground">{formatDate(o.createdAt)}</span>
+              </span>
             </div>
+            {o.lines.length > 0 && (
+              <p className="text-xs text-muted-foreground">{[...new Set(o.lines.map((l) => l.product))].join(", ")}</p>
+            )}
             <p className="flex items-center gap-1 text-sm text-foreground">
               <Star className="size-4" /> {feedback.rating} / 5
             </p>

@@ -40,7 +40,21 @@ const SCHEMA = `
     order_id integer primary key references orders (id) on delete cascade,
     rating integer not null,
     comment text not null,
-    created_at timestamptz not null default now()
+    created_at timestamptz not null default now(),
+    sentiment text check (sentiment in ('positive', 'neutral', 'negative')),
+    sentiment_model text,
+    sentiment_analyzed_at timestamptz
+  );
+  create table feedback_analysis_runs (
+    id integer primary key generated always as identity,
+    started_by_kind text not null,
+    started_by_id text,
+    started_by_name text,
+    started_at timestamptz not null default now(),
+    finished_at timestamptz,
+    analyzed integer not null default 0,
+    failed integer not null default 0,
+    model text
   );
   create table tickets (
     id integer primary key generated always as identity,

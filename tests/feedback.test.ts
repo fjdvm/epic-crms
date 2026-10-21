@@ -15,7 +15,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.sql`truncate order_feedback, order_lines, orders, customers restart identity cascade`;
+  await db.sql`truncate feedback_analysis_runs, order_feedback, order_lines, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values
     ('c1', 'Jane Doe', 'jane@example.com'), ('c2', 'Ramon Cruz', 'ramon@example.com')`;
 });
@@ -37,6 +37,32 @@ async function order(options: { customer?: string; products?: string[]; rating?:
 
   return row.id;
 }
+
+describe("Sentiment and Last analyzed", () => {
+  it("gives each row its Sentiment, or null until it is labelled", async () => {
+    const labelled = await order({ rating: 5, given: "2026-10-05T00:00:00Z" });
+    const waiting = await order({ rating: 2, given: "2026-10-01T00:00:00Z" });
+    await db.sql`update order_feedback set sentiment = 'positive', sentiment_model = 'grok-4' where order_id = ${labelled}`;
+
+    const { rows } = await listFeedback(db.sql);
+
+    expect(rows.find((r) => r.orderId === labelled)?.sentiment).toBe("positive");
+    expect(rows.find((r) => r.orderId === waiting)?.sentiment).toBeNull();
+  });
+
+  it("is null for Last analyzed until a run has finished", async () => {
+    await db.sql`insert into feedback_analysis_runs (started_by_kind) values ('schedule')`;
+
+    expect((await listFeedback(db.sql)).lastAnalyzed).toBeNull();
+  });
+
+  it("is the finish time of the latest finished run", async () => {
+    await db.sql`insert into feedback_analysis_runs (started_by_kind, finished_at) values
+      ('schedule', '2026-10-20T03:00:00Z'), ('schedule', '2026-10-21T06:00:00Z'), ('schedule', null)`;
+
+    expect((await listFeedback(db.sql)).lastAnalyzed).toEqual(new Date("2026-10-21T06:00:00Z"));
+  });
+});
 
 describe("listFeedback", () => {
   it("is empty when no Order has Feedback", async () => {

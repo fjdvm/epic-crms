@@ -6,6 +6,7 @@ import { orderAnchor } from "@/features/customer-profiles/orders";
 import { formatDate } from "@/features/customer-profiles/format";
 
 import type { FeedbackList } from "./feedback";
+import { SentimentBadge } from "./sentiment-badge";
 import { ProductFilter, StarFilter } from "./feedback-toolbar";
 import { feedbackHref, type FeedbackFilters } from "./filters";
 
@@ -83,6 +84,7 @@ export function FeedbackListView({ list, filters }: { list: FeedbackList; filter
                     </span>
                   ))}
                 </p>
+                <SentimentBadge sentiment={row.sentiment} />
                 <span className="shrink-0 text-xs font-normal text-[#6e6680]">{formatDate(row.createdAt)}</span>
               </div>
               {row.comment && <p className="text-sm leading-[normal] text-[#1f1a2e]">{row.comment}</p>}
