@@ -18,8 +18,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction } from "./actions";
+import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction, sendTestCopyAction } from "./actions";
 import { INPUT_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
+import { ImageLayoutGrid } from "./image-layout-grid";
+import { defaultLayout, IMAGE_LAYOUT_LABELS, layoutsFor, type ImageLayout } from "./image-layouts";
 import { IMAGE_REFUSALS, MAX_IMAGE_BYTES, MAX_IMAGE_MB } from "./image-limits";
 import { prepareImage } from "./prepare-image";
 import { InboxPreview } from "./inbox-preview";
@@ -29,6 +31,7 @@ const MESSAGES: Record<string, string> = {
   ...IMAGE_REFUSALS,
   "not-found": "That Announcement no longer exists.",
   "not-a-draft": "That Announcement is no longer a Draft, so it cannot be changed.",
+  "send-failed": "The test copy could not be sent. Try again in a moment.",
   unavailable: "CREOMS could not reach its database. Try again in a moment.",
 };
 
@@ -37,21 +40,52 @@ const CONTROL =
 const LABEL = "flex gap-[3px] text-[13px] font-medium leading-[normal] text-[#27272a]";
 const OUTLINE = "rounded-lg border border-[#e4e4e7] bg-white px-4 py-[9px] text-sm font-medium leading-[normal] text-[#18181b]";
 
+type Submit = "save" | "delete" | "test";
+
+/** What each submit asks before it runs, and says once it has. */
+const CONFIRMATION: Record<Submit, { title: string; description: string; button: string; done: string }> = {
+  save: {
+    title: "Save this Draft?",
+    description: "It is saved as a Draft. Nothing is sent to Subscribers.",
+    button: "Save",
+    done: "Draft saved.",
+  },
+  delete: {
+    title: "Delete this Draft?",
+    description: "It is removed for everyone with the Marketing Module and cannot be brought back.",
+    button: "Delete",
+    done: "Draft deleted.",
+  },
+  test: {
+    title: "Send a test copy?",
+    description: "The saved Draft is emailed to you only, as Subscribers would see it. Unsaved changes are not included.",
+    button: "Send test",
+    done: "Test copy sent to your email.",
+  },
+};
+
 export interface CampaignFormActions {
   save: typeof saveDraftAction;
   edit: typeof editDraftAction;
   remove: typeof deleteDraftAction;
+  sendTest: typeof sendTestCopyAction;
   addImage: typeof addImageAction;
 }
 
-const REAL_ACTIONS: CampaignFormActions = { save: saveDraftAction, edit: editDraftAction, remove: deleteDraftAction, addImage: addImageAction };
+const REAL_ACTIONS: CampaignFormActions = {
+  save: saveDraftAction,
+  edit: editDraftAction,
+  remove: deleteDraftAction,
+  sendTest: sendTestCopyAction,
+  addImage: addImageAction,
+};
 
 /** The compose form and its live inbox preview. With `draft`, it edits that Draft instead of starting a new one. */
 export function CampaignForm({
   draft,
   actions = REAL_ACTIONS,
 }: {
-  draft?: { id: string; title: string; description: string; images?: string[] };
+  draft?: { id: string; title: string; description: string; images?: string[]; imageLayout?: ImageLayout | null };
   actions?: CampaignFormActions;
 }) {
   const router = useRouter();
@@ -60,11 +94,18 @@ export function CampaignForm({
   const [description, setDescription] = useState(draft?.description ?? "");
   const [images, setImages] = useState<string[]>(draft?.images ?? []);
   const [adding, setAdding] = useState(false);
-  const [confirming, setConfirming] = useState<"save" | "delete" | null>(null);
+  const [confirming, setConfirming] = useState<Submit | null>(null);
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
 
-  const input: AnnouncementInput = { title, description, images };
+  // Adding or removing an image changes which layouts hold them all, so the choice is only kept while it still fits.
+  const [chosenLayout, setChosenLayout] = useState<ImageLayout | null>(draft?.imageLayout ?? null);
+  const layouts = layoutsFor(images.length);
+  const chosen = chosenLayout && layouts.includes(chosenLayout) ? chosenLayout : null;
+  const imageLayout = chosen ?? defaultLayout(images.length);
+
+  // Only a layout Staff chose is sent; otherwise an edit keeps what is stored, which reads back as the default.
+  const input: AnnouncementInput = { title, description, images, ...(chosen && { imageLayout: chosen }) };
 
   /** Each file is shrunk and stored on its own, so one refusal does not lose the others. */
   const addImages = async (files: File[]) => {
@@ -86,9 +127,20 @@ export function CampaignForm({
   };
 
   /** Each submit asks first; the dialog's confirm button is what actually sends it. */
-  const ask = (kind: "save" | "delete") => (event?: React.FormEvent) => {
+  const ask = (kind: Submit) => (event?: React.FormEvent) => {
     event?.preventDefault();
     setConfirming(kind);
+  };
+
+  // The dialog keeps its words while it closes, when nothing is being confirmed any more.
+  const shown = confirming ?? "save";
+  const text = shown === "save" && draft ? { ...CONFIRMATION.save, title: "Save your changes?" } : CONFIRMATION[shown];
+
+  const run = (kind: Submit) => {
+    if (kind === "test") return actions.sendTest(draft!.id);
+    if (kind === "delete") return actions.remove(draft!.id);
+
+    return draft ? actions.edit(draft.id, input) : actions.save(input);
   };
 
   const confirm = () => {
@@ -98,18 +150,14 @@ export function CampaignForm({
     busy.current = true;
     startTransition(async () => {
       try {
-        const result =
-          kind === "delete"
-            ? await actions.remove(draft!.id)
-            : draft
-              ? await actions.edit(draft.id, input)
-              : await actions.save(input);
+        const result = await run(kind);
 
         setConfirming(null);
         if (!result.ok) return void toast.error(MESSAGES[result.reason]);
 
-        toast.success(kind === "delete" ? "Draft deleted." : "Draft saved.");
-        router.push("/email-campaigns");
+        toast.success(CONFIRMATION[kind].done);
+        // A test copy leaves Staff where they are, still composing.
+        if (kind !== "test") router.push("/email-campaigns");
       } finally {
         busy.current = false;
       }
@@ -169,6 +217,36 @@ export function CampaignForm({
               />
             </div>
 
+            {layouts.length > 1 && (
+              <div role="radiogroup" aria-label="Image layout" className="flex flex-col gap-1.5">
+                <p className={LABEL}>Image layout</p>
+                <div className="flex flex-wrap gap-2">
+                  {layouts.map((layout) => {
+                    const selected = layout === imageLayout;
+
+                    return (
+                      <button
+                        key={layout}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={IMAGE_LAYOUT_LABELS[layout]}
+                        title={IMAGE_LAYOUT_LABELS[layout]}
+                        onClick={() => setChosenLayout(layout)}
+                        className={cn(
+                          "w-[84px] rounded-lg border bg-white p-2 focus-visible:outline-none",
+                          selected ? "border-[#5b2a86] ring-2 ring-[#5b2a86]/20" : "border-[#e4e4e7] hover:border-[#c9a8f0]",
+                        )}
+                      >
+                        <ImageLayoutGrid layout={layout} gap={2} />
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs leading-[normal] text-[#71717a]">How the {images.length} images are arranged in the email.</p>
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <span className={LABEL}>
                 Images <span className="font-normal text-[#a1a1aa]">(optional)</span>
@@ -227,7 +305,7 @@ export function CampaignForm({
                 <h2 className="text-[15px] font-semibold leading-[normal] text-[#18181b]">Preview</h2>
                 <p className="text-xs leading-[normal] text-[#71717a]">How it looks in the inbox.</p>
               </div>
-              <InboxPreview title={title} description={description} images={images} />
+              <InboxPreview title={title} description={description} images={images} imageLayout={imageLayout} />
             </section>
           </aside>
         </div>
@@ -237,6 +315,15 @@ export function CampaignForm({
         <p className="min-w-0 flex-1 text-[13px] leading-[normal] text-[#71717a]">
           {draft ? "Anyone with the Marketing Module can edit or delete this Draft." : "Not saved yet."}
         </p>
+        <button
+          type="button"
+          onClick={ask("test")}
+          disabled={!draft}
+          title={draft ? undefined : "Save the Draft first"}
+          className={cn(OUTLINE, "disabled:cursor-not-allowed disabled:opacity-50")}
+        >
+          Send a test
+        </button>
         {draft && (
           <button type="button" onClick={ask("delete")} className={cn(OUTLINE, "text-[#dc2626]")}>
             Delete draft
@@ -257,13 +344,9 @@ export function CampaignForm({
         >
           <AlertDialogHeader className="gap-2 text-left">
             <AlertDialogTitle className="text-lg font-semibold">
-              {confirming === "delete" ? "Delete this Draft?" : draft ? "Save your changes?" : "Save this Draft?"}
+              {text.title}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirming === "delete"
-                ? "It is removed for everyone with the Marketing Module and cannot be brought back."
-                : "It is saved as a Draft. Nothing is sent to Subscribers."}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{text.description}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
             <AlertDialogCancel disabled={pending} className="mt-0 sm:mt-0">
@@ -276,7 +359,7 @@ export function CampaignForm({
               disabled={pending}
               className={cn("text-white", confirming === "delete" ? "bg-[#dc2626] hover:bg-[#dc2626]/90" : "bg-[#5b2a86] hover:bg-[#5b2a86]/90")}
             >
-              {pending ? "Working…" : confirming === "delete" ? "Delete" : "Save"}
+              {pending ? "Working…" : text.button}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

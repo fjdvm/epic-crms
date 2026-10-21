@@ -1,5 +1,18 @@
+import { ImageLayoutGrid } from "./image-layout-grid";
+import type { ImageLayout } from "./image-layouts";
+
 /** How the Announcement looks in an inbox, as the Figma draws it. A text-only Announcement has no image area. */
-export function InboxPreview({ title, description, images = [] }: { title: string; description: string; images?: string[] }) {
+export function InboxPreview({
+  title,
+  description,
+  images = [],
+  imageLayout = null,
+}: {
+  title: string;
+  description: string;
+  images?: string[];
+  imageLayout?: ImageLayout | null;
+}) {
   return (
     <div className="flex flex-col overflow-hidden rounded-[10px] border border-[#e4e4e7] bg-white" data-testid="inbox-preview">
       <div className="flex items-center gap-[10px] bg-[#18181b] px-[14px] py-3">
@@ -11,10 +24,7 @@ export function InboxPreview({ title, description, images = [] }: { title: strin
         <p className="text-lg font-bold leading-[normal] break-words text-[#18181b]">
           {title.trim() || <span className="text-[#a1a1aa]">Your title</span>}
         </p>
-        {images.map((src, index) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={`${src}-${index}`} src={src} alt={`Image ${index + 1}`} className="block w-full rounded-lg bg-[#efe6f8]" />
-        ))}
+        {imageLayout && images.length > 0 && <ImageLayoutGrid layout={imageLayout} images={images} gap={6} />}
         <p className="text-[13px] leading-[normal] break-words whitespace-pre-wrap text-[#3f3f46]">
           {description.trim() || <span className="text-[#a1a1aa]">Your description</span>}
         </p>

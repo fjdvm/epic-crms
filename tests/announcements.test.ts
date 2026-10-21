@@ -11,10 +11,13 @@ import {
   getAnnouncement,
   listAnnouncements,
   saveDraft,
+  sendTestCopy,
   subscriberCount,
   TITLE_LIMIT,
   type AuditEvent,
   type AuditLog,
+  type MarketingMail,
+  type MarketingMessage,
 } from "@/features/marketing/announcements";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -50,6 +53,16 @@ class FakeAudit implements AuditLog {
   }
 }
 
+class FakeMail implements MarketingMail {
+  sent: MarketingMessage[] = [];
+  down = false;
+
+  async sendOne(message: MarketingMessage) {
+    if (this.down) throw new Error("the gateway is down");
+    this.sent.push(message);
+  }
+}
+
 /** In-memory file storage: every stored image gets a public address, and tests can make it fail. */
 class FakeImageStore implements ImageStore {
   stored = new Map<string, { contentType: string; bytes: Uint8Array }>();
@@ -69,11 +82,13 @@ const ben = { id: "ben", name: "Ben Cruz" };
 const now = new Date("2026-10-20T04:00:00Z");
 
 let audit: FakeAudit;
+let mail: FakeMail;
 let images: FakeImageStore;
-const ports = () => ({ audit, images, now: () => now });
+const ports = () => ({ audit, mail, images, now: () => now });
 
 beforeEach(async () => {
   audit = new FakeAudit();
+  mail = new FakeMail();
   images = new FakeImageStore();
   await db.sql`truncate crms.announcements cascade`;
   await db.sql`truncate customers cascade`;
@@ -200,6 +215,92 @@ describe("editing a Draft", () => {
   });
 });
 
+describe("choosing how the images are laid out", () => {
+  const photos = (count: number) => Array.from({ length: count }, (_, i) => `https://files.test/${i + 1}.jpg`);
+
+  async function savedWithImages(count: number) {
+    const result = await saveDraft(db.sql, ada, draft, ports());
+    if (!result.ok) throw new Error("not saved");
+    await db.sql`update crms.announcements set images = ${photos(count)} where id = ${result.announcement.id}`;
+    audit.events = [];
+
+    return result.announcement.id;
+  }
+
+  it("keeps the layout Staff chose for the images the Draft has", async () => {
+    const id = await savedWithImages(3);
+
+    expect((await editDraft(db.sql, ada, id, { ...draft, images: photos(3), imageLayout: "three-row" }, ports())).ok).toBe(true);
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "three-row" });
+  });
+
+  it("uses the first layout that suits the images when none was chosen", async () => {
+    const id = await savedWithImages(4);
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "four-grid" });
+  });
+
+  it("has no layout for a text-only Draft", async () => {
+    const result = await saveDraft(db.sql, ada, draft, ports());
+    if (!result.ok) throw new Error("not saved");
+
+    expect(await getAnnouncement(db.sql, result.announcement.id)).toMatchObject({ imageLayout: null });
+  });
+
+  it("refuses a layout that does not hold the number of images and changes nothing", async () => {
+    const id = await savedWithImages(3);
+
+    expect(await editDraft(db.sql, ada, id, { title: "Changed", description: "x", images: photos(3), imageLayout: "four-grid" }, ports())).toEqual({
+      ok: false,
+      reason: "layout-mismatch",
+    });
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ title: "Undas ube treats", imageLayout: "three-feature-left" });
+    expect(audit.events).toEqual([]);
+  });
+
+  it("refuses a layout for a Draft with no images", async () => {
+    const result = await saveDraft(db.sql, ada, { ...draft, imageLayout: "single" }, ports());
+
+    expect(result).toEqual({ ok: false, reason: "layout-mismatch" });
+  });
+
+  it("leaves the choice alone when an edit does not mention it", async () => {
+    const id = await savedWithImages(2);
+    await editDraft(db.sql, ada, id, { ...draft, images: photos(2), imageLayout: "two-rows" }, ports());
+
+    await editDraft(db.sql, ada, id, { title: "New", description: "Words.", images: photos(2) }, ports());
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "two-rows" });
+  });
+
+  it("falls back to the default when the images change so the choice no longer fits", async () => {
+    const id = await savedWithImages(3);
+    await editDraft(db.sql, ada, id, { ...draft, images: photos(3), imageLayout: "three-row" }, ports());
+
+    await db.sql`update crms.announcements set images = ${photos(2)} where id = ${id}`;
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ imageLayout: "two-columns" });
+  });
+
+  it("is used by the test copy", async () => {
+    const id = await savedWithImages(3);
+    await editDraft(db.sql, ada, id, { ...draft, images: photos(3), imageLayout: "three-feature-top" }, ports());
+
+    await sendTestCopy(db.sql, ada, "ada@store.test", id, ports());
+
+    expect(mail.sent[0]).toMatchObject({ images: photos(3), imageLayout: "three-feature-top" });
+  });
+
+  it("sends a test copy of a text-only Draft with no layout", async () => {
+    const result = await saveDraft(db.sql, ada, draft, ports());
+    if (!result.ok) throw new Error("not saved");
+
+    await sendTestCopy(db.sql, ada, "ada@store.test", result.announcement.id, ports());
+
+    expect(mail.sent[0]).toMatchObject({ images: [], imageLayout: null });
+  });
+});
+
 describe("deleting a Draft", () => {
   async function saved(by = ada) {
     const result = await saveDraft(db.sql, by, draft, ports());
@@ -239,6 +340,95 @@ describe("deleting a Draft", () => {
     await deleteDraft(db.sql, ada, id, ports());
 
     expect(await deleteDraft(db.sql, ben, id, ports())).toEqual({ ok: false, reason: "not-found" });
+  });
+});
+
+describe("sending a test copy", () => {
+  const adaEmail = "ada@store.test";
+
+  async function saved() {
+    const result = await saveDraft(db.sql, ada, draft, ports());
+    if (!result.ok) throw new Error("not saved");
+    audit.events = [];
+
+    return result.announcement.id;
+  }
+
+  it("emails the real Marketing Email to the signed-in Staff member only", async () => {
+    const id = await saved();
+    await db.sql`insert into customers (id, full_name, email, marketing_opt_in) values ('c1', 'A', 'a@x.test', true)`;
+
+    expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: true });
+
+    expect(mail.sent).toEqual([
+      { to: adaEmail, title: "Undas ube treats", body: "Our ube treats are back for Undas.", images: [], imageLayout: null },
+    ]);
+  });
+
+  it("shows the Announcement's images", async () => {
+    const id = await saved();
+    await db.sql`update crms.announcements set images = ${["https://files.test/a.jpg", "https://files.test/b.jpg"]} where id = ${id}`;
+
+    await sendTestCopy(db.sql, ada, adaEmail, id, ports());
+
+    expect(mail.sent[0].images).toEqual(["https://files.test/a.jpg", "https://files.test/b.jpg"]);
+  });
+
+  it("adds nothing to any Customer Profile and leaves the Announcement as it was", async () => {
+    const id = await saved();
+    await db.sql`insert into customers (id, full_name, email, marketing_opt_in) values ('c1', 'A', 'a@x.test', true)`;
+    const before = await getAnnouncement(db.sql, id);
+
+    await sendTestCopy(db.sql, ada, adaEmail, id, ports());
+
+    expect(await db.sql`select 1 from crms.announcement_recipients`).toHaveLength(0);
+    expect(await getAnnouncement(db.sql, id)).toEqual(before);
+  });
+
+  it("works on an Announcement in any state", async () => {
+    const id = await saved();
+    await db.sql`update crms.announcements set state = 'sent', sent_at = now() where id = ${id}`;
+
+    expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: true });
+  });
+
+  it("is audited with the acting Staff member", async () => {
+    const id = await saved();
+
+    await sendTestCopy(db.sql, ben, "ben@store.test", id, ports());
+
+    expect(audit.events).toEqual([
+      {
+        action: "record.viewed",
+        actor: ben,
+        announcement: { id, title: "Undas ube treats" },
+        description: 'Ben Cruz sent themselves a test copy of "Undas ube treats".',
+        occurredAt: now,
+      },
+    ]);
+  });
+
+  it("says so, and audits nothing, when the gateway refuses it", async () => {
+    const id = await saved();
+    mail.down = true;
+
+    expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: false, reason: "send-failed" });
+    expect(audit.events).toEqual([]);
+  });
+
+  it("still sends when the audit log is down", async () => {
+    const id = await saved();
+    audit.down = true;
+
+    expect(await sendTestCopy(db.sql, ada, adaEmail, id, ports())).toEqual({ ok: true });
+    expect(mail.sent).toHaveLength(1);
+  });
+
+  it("sends nothing for an Announcement that does not exist", async () => {
+    expect(
+      await sendTestCopy(db.sql, ada, adaEmail, "00000000-0000-0000-0000-000000000000", ports()),
+    ).toEqual({ ok: false, reason: "not-found" });
+    expect(mail.sent).toEqual([]);
   });
 });
 

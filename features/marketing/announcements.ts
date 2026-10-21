@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 
+import { defaultLayout, isImageLayout, layoutsFor, type ImageLayout } from "./image-layouts";
 import type { ImageStore } from "./image-limits";
 
 /** An email's subject is cut off in inboxes past about this many characters. */
@@ -18,6 +19,8 @@ export interface AnnouncementInput {
   description: string;
   /** Public HTTPS addresses from addImage, in order. Omitted for a text-only Announcement. */
   images?: string[];
+  /** How the images are arranged. Left out, an edit keeps the current choice; null goes back to the default. */
+  imageLayout?: ImageLayout | null;
 }
 
 export interface AnnouncementRow {
@@ -26,6 +29,8 @@ export interface AnnouncementRow {
   description: string;
   /** Public HTTPS addresses, in order. Empty for a text-only Announcement. */
   images: string[];
+  /** The layout the email uses: Staff's choice if it still suits the images, else the default. Null with no images. */
+  imageLayout: ImageLayout | null;
   state: AnnouncementState;
   scheduledFor: Date | null;
   sentAt: Date | null;
@@ -38,7 +43,7 @@ export interface AnnouncementRow {
 
 /** What the audit-logs service is told about a Staff action; the gateway adapter fills in the rest. */
 export interface AuditEvent {
-  action: "record.created" | "record.updated" | "record.deleted";
+  action: "record.created" | "record.updated" | "record.deleted" | "record.viewed";
   actor: Actor;
   announcement: { id: string; title: string };
   description: string;
@@ -50,16 +55,35 @@ export interface AuditLog {
   record(event: AuditEvent): Promise<void>;
 }
 
+/** One Marketing Email for one address, as the notifications service takes it. */
+export interface MarketingMessage {
+  to: string;
+  title: string;
+  body: string;
+  images: string[];
+  imageLayout: ImageLayout | null;
+}
+
+/**
+ * The notifications service's marketing email, reached through the api-gateway (see lib/gateway.ts).
+ * Tests replace it with a fake. It must throw when the gateway does not accept the email.
+ */
+export interface MarketingMail {
+  sendOne(message: MarketingMessage): Promise<void>;
+}
+
 export interface Ports {
   audit: AuditLog;
+  mail: MarketingMail;
   images: ImageStore;
   now: () => Date;
 }
 
-export type InputRefusal = "empty-title" | "title-too-long" | "empty-description" | "invalid-image";
+export type InputRefusal = "empty-title" | "title-too-long" | "empty-description" | "invalid-image" | "layout-mismatch";
 
 export type SaveResult = { ok: true; announcement: { id: string } } | { ok: false; reason: InputRefusal };
 export type EditResult = { ok: true } | { ok: false; reason: InputRefusal | "not-found" | "not-a-draft" };
+export type TestCopyResult = { ok: true } | { ok: false; reason: "not-found" | "send-failed" };
 export type DeleteResult = { ok: true } | { ok: false; reason: "not-found" | "not-a-draft" };
 
 export const INPUT_REFUSALS: Record<InputRefusal, string> = {
@@ -67,7 +91,12 @@ export const INPUT_REFUSALS: Record<InputRefusal, string> = {
   "title-too-long": `Keep the title to ${TITLE_LIMIT} characters or fewer, so the subject is not cut off.`,
   "empty-description": "Write a description.",
   "invalid-image": "One of the images is not a valid image address. Remove it and add it again.",
+  "layout-mismatch": "That layout does not fit the number of images. Pick another.",
 };
+
+/** A layout must be one that holds exactly the images the Announcement has; null is always allowed. */
+const fits = (layout: ImageLayout | null | undefined, imageCount: number) =>
+  !layout || layoutsFor(imageCount).includes(layout);
 
 function isPublicHttpsAddress(address: string): boolean {
   try {
@@ -109,12 +138,13 @@ async function audited({ audit }: Ports, event: AuditEvent) {
 export async function saveDraft(sql: postgres.Sql, actor: Actor, input: AnnouncementInput, ports: Ports): Promise<SaveResult> {
   const checked = check(input);
   if (!checked.ok) return checked;
+  if (!fits(input.imageLayout, checked.images.length)) return { ok: false, reason: "layout-mismatch" };
 
   const at = ports.now();
 
   const [{ id }] = await sql<{ id: string }[]>`
-    insert into crms.announcements (title, description, images, created_by_id, created_by_name, updated_by_id, updated_by_name, created_at, updated_at)
-    values (${checked.title}, ${checked.description}, ${checked.images}, ${actor.id}, ${actor.name}, ${actor.id}, ${actor.name}, ${at}, ${at})
+    insert into crms.announcements (title, description, images, image_layout, created_by_id, created_by_name, updated_by_id, updated_by_name, created_at, updated_at)
+    values (${checked.title}, ${checked.description}, ${checked.images}, ${input.imageLayout ?? null}, ${actor.id}, ${actor.name}, ${actor.id}, ${actor.name}, ${at}, ${at})
     returning id`;
 
   await audited(ports, {
@@ -143,9 +173,14 @@ export async function editDraft(sql: postgres.Sql, actor: Actor, id: string, inp
   if (!checked.ok) return checked;
   if (!isUuid(id)) return { ok: false, reason: "not-found" };
 
+  // A choice must fit the images being saved. An edit that does not mention it keeps what is stored,
+  // which reads back as the default if the images no longer suit it.
+  if (input.imageLayout !== undefined && !fits(input.imageLayout, checked.images.length)) return { ok: false, reason: "layout-mismatch" };
+
   const [row] = await sql<{ id: string }[]>`
     update crms.announcements
     set title = ${checked.title}, description = ${checked.description}, images = ${checked.images},
+        image_layout = ${input.imageLayout === undefined ? sql`image_layout` : input.imageLayout},
         updated_by_id = ${actor.id}, updated_by_name = ${actor.name}, updated_at = ${ports.now()}
     where id = ${id} and state = 'draft'
     returning id`;
@@ -184,17 +219,21 @@ export async function deleteDraft(sql: postgres.Sql, actor: Actor, id: string, p
 }
 
 const SELECT = (sql: postgres.Sql) => sql`
-  select a.id, a.title, a.description, a.images, a.state, a.scheduled_for, a.sent_at,
+  select a.id, a.title, a.description, a.images, a.image_layout, a.state, a.scheduled_for, a.sent_at,
     a.created_by_name, a.updated_by_name, a.updated_at,
     nullif((select count(*) from crms.announcement_recipients r where r.announcement_id = a.id), 0)::int as sent_to
   from crms.announcements a`;
 
 function toRow(r: Record<string, unknown>): AnnouncementRow {
+  const images = r.images as string[];
+  const chosen = isImageLayout(r.image_layout) ? r.image_layout : null;
+
   return {
     id: r.id as string,
     title: r.title as string,
     description: r.description as string,
-    images: r.images as string[],
+    images,
+    imageLayout: chosen && fits(chosen, images.length) ? chosen : defaultLayout(images.length),
     state: r.state as AnnouncementState,
     scheduledFor: r.scheduled_for as Date | null,
     sentAt: r.sent_at as Date | null,
@@ -228,4 +267,43 @@ export async function subscriberCount(sql: postgres.Sql): Promise<{ subscribers:
     join neon_auth."user" u on u.id::text = c.id and u."emailVerified"`;
 
   return row;
+}
+
+/**
+ * Emails the real Marketing Email to the Staff member's own address, whatever state the Announcement
+ * is in. It goes to no one else and is not recorded against any Customer, so the Announcement is unchanged.
+ */
+export async function sendTestCopy(
+  sql: postgres.Sql,
+  actor: Actor,
+  staffEmail: string,
+  id: string,
+  ports: Ports,
+): Promise<TestCopyResult> {
+  const announcement = await getAnnouncement(sql, id);
+  if (!announcement) return { ok: false, reason: "not-found" };
+
+  try {
+    await ports.mail.sendOne({
+      to: staffEmail,
+      title: announcement.title,
+      body: announcement.description,
+      images: announcement.images,
+      imageLayout: announcement.imageLayout,
+    });
+  } catch (error) {
+    console.error("A test copy could not be sent", error);
+
+    return { ok: false, reason: "send-failed" };
+  }
+
+  await audited(ports, {
+    action: "record.viewed",
+    actor,
+    announcement: { id, title: announcement.title },
+    description: `${actor.name} sent themselves a test copy of "${announcement.title}".`,
+    occurredAt: ports.now(),
+  });
+
+  return { ok: true };
 }
