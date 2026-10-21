@@ -139,7 +139,15 @@ describe("the summary", () => {
   it("averages every Feedback and counts the 1 to 3 star ones as low", async () => {
     for (const rating of [5, 4, 3, 1]) await order({ rating });
 
-    expect((await listFeedback(db.sql)).summary).toEqual({ count: 4, average: 3.25, low: 2 });
+    expect((await listFeedback(db.sql)).summary).toEqual({ count: 4, average: 3.3, low: 2 });
+  });
+
+  it("rounds the average to one decimal, halves going up", async () => {
+    for (const rating of [5, 5, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]) {
+      await order({ rating });
+    }
+
+    expect((await listFeedback(db.sql)).summary.average).toBe(4.2);
   });
 
   it("follows the date range and the star filter, not the page", async () => {

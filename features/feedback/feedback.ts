@@ -64,7 +64,7 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
   const where = conditions(sql, query);
 
   const [{ total, average, low }] = await sql<{ total: number; average: string | null; low: number }[]>`
-    select count(*)::int as total, avg(f.rating) as average, (count(*) filter (where f.rating <= 3))::int as low
+    select count(*)::int as total, round(avg(f.rating), 1) as average, (count(*) filter (where f.rating <= 3))::int as low
     from order_feedback f where ${where}`;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

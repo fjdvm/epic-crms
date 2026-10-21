@@ -107,20 +107,21 @@ describe("the summary cards", () => {
   it("shows the average rating with its review count, and the low ratings", () => {
     render(<FeedbackSummaryCards summary={{ count: 64, average: 4.75, low: 3 }} />);
 
-    expect(screen.getByTestId("average-rating").textContent).toBe("Average rating4.8 ★64 reviews");
+    expect(screen.getByTestId("average-rating").textContent).toBe("Average rating4.8 ★64 Feedback");
     expect(screen.getByTestId("low-ratings").textContent).toBe("Low ratings31 to 3 stars");
   });
 
   it("shows a dash instead of an average when there is no Feedback", () => {
     render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} />);
 
-    expect(screen.getByTestId("average-rating").textContent).toBe("Average rating–0 reviews");
+    expect(screen.getByTestId("average-rating").textContent).toBe("Average rating–0 Feedback");
   });
 
-  it("says 1 review in the singular and mentions no tickets", () => {
+  it("mentions no tickets and calls each one Feedback, not a review", () => {
     render(<FeedbackSummaryCards summary={{ count: 1, average: 5, low: 0 }} />);
 
-    expect(screen.getByText("1 review")).toBeTruthy();
+    expect(screen.getByText("1 Feedback")).toBeTruthy();
+    expect(screen.queryByText(/review/i)).toBeNull();
     expect(screen.queryByText(/ticket/i)).toBeNull();
   });
 });

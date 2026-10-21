@@ -12,7 +12,7 @@ export function FeedbackSummaryCards({ summary }: { summary: FeedbackSummary }) 
           {summary.average === null ? "–" : `${summary.average.toFixed(1)} ★`}
         </p>
         <p className="text-xs text-[#6e6680]">
-          {summary.count} {summary.count === 1 ? "review" : "reviews"}
+          {summary.count} Feedback
         </p>
       </div>
       <div className={CARD} data-testid="low-ratings">
