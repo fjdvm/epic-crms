@@ -18,6 +18,7 @@ const ada = {
 };
 const CUSTOMER_PROFILES = "Customer Profiles";
 const TICKETS = "Tickets";
+const FEEDBACK = "Feedback";
 
 let portal: FakePortal;
 
@@ -149,5 +150,26 @@ describe("which pages a Staff member may open", () => {
 
   it("is refused without a session", async () => {
     expect(await accessFor(undefined).overview()).toEqual({ decision: "invalid" });
+  });
+});
+
+describe("access to the Feedback page", () => {
+  it("is allowed with the Feedback Module", async () => {
+    expect((await accessFor(await signInAda([FEEDBACK])).check(FEEDBACK)).decision).toBe("allowed");
+  });
+
+  it("is denied with only the Tickets Module", async () => {
+    expect((await accessFor(await signInAda([TICKETS])).check(FEEDBACK)).decision).toBe("denied");
+  });
+
+  it("is denied with only the Feedback Module for the Tickets pages", async () => {
+    expect((await accessFor(await signInAda([FEEDBACK])).check(TICKETS)).decision).toBe("denied");
+  });
+
+  it("lists /feedback only when its Module is granted", async () => {
+    expect(await accessFor(await signInAda([FEEDBACK])).overview()).toMatchObject({ pages: ["/feedback"] });
+    expect(await accessFor(await signInAda([TICKETS])).overview()).toMatchObject({
+      pages: ["/tickets", "/conversations"],
+    });
   });
 });

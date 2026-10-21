@@ -101,10 +101,23 @@ describe("the sidebar", () => {
     renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
-    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns", "Feedback", "Email campaigns", "Segments"]) {
+    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns", "Email campaigns", "Segments"]) {
       expect(screen.getByText(name).closest("[aria-disabled]")?.getAttribute("aria-disabled")).toBe("true");
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
-    for (const label of ["SALES", "SERVICE", "MARKETING"]) expect(screen.getByText(label)).toBeTruthy();
+    for (const label of ["SALES", "MARKETING"]) expect(screen.getByText(label)).toBeTruthy();
+  });
+
+  it("shows the Feedback item only with the Feedback page permitted", async () => {
+    renderSidebar(["/customer-profiles", "/feedback"]);
+
+    expect(await screen.findByRole("link", { name: "Feedback" })).toBeTruthy();
+  });
+
+  it("hides Feedback entirely, not even dimmed, without the Feedback Module", async () => {
+    renderSidebar(["/customer-profiles", "/tickets", "/conversations"]);
+    await screen.findByRole("link", { name: "Tickets" });
+
+    expect(screen.queryByText("Feedback")).toBeNull();
   });
 });

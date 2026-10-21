@@ -36,6 +36,12 @@ const SCHEMA = `
     price_in_centavos integer not null default 0,
     quantity integer not null default 1
   );
+  create table order_feedback (
+    order_id integer primary key references orders (id) on delete cascade,
+    rating integer not null,
+    comment text not null,
+    created_at timestamptz not null default now()
+  );
   create table tickets (
     id integer primary key generated always as identity,
     customer_id text not null references customers (id),
