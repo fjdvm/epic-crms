@@ -43,7 +43,7 @@ function visibleTo(sql: postgres.Sql, viewer: Viewer) {
   return sql`(
     (kind = 'new-customer' and ${viewer.customerProfiles})
     or (kind = 'feedback-low' and ${viewer.feedback})
-    or (kind not in ('new-customer', 'feedback-low') and ${viewer.ticketsStaffId !== null}
+    or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))
   )`;
 }

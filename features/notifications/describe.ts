@@ -17,7 +17,7 @@ export function describeNotification(n: Notification): { text: string; href: str
     case "ticket-message":
       return { text: `${n.customerName} sent a message on ${ticket}`, href };
     case "feedback-low":
-      return { text: `${n.customerName} gave Order #${n.orderId} ${stars}`, href: `/feedback#${feedbackAnchor(n.orderId!)}` };
+      return { text: `${n.customerName} rated Order #${n.orderId} ${stars}`, href: `/feedback#${feedbackAnchor(n.orderId!)}` };
     case "ticket-not-fixed":
       return { text: `${n.customerName} says ${ticket} is not fixed`, href };
   }

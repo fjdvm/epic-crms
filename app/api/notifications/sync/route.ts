@@ -34,7 +34,12 @@ export async function POST(request: NextRequest) {
     // The reply keeps the New Customer fields at the top level, as before.
     const tickets = await syncTicketEvents(crmsDatabase(), ticketsDatabase());
 
-    const feedback = await syncFeedbackEvents(crmsDatabase(), ticketsDatabase());
+    // Feedback is last and isolated: its failure must not hide the syncs that already succeeded.
+    const feedback = await syncFeedbackEvents(crmsDatabase(), ticketsDatabase()).catch((error) => {
+      console.error("Feedback notification sync failed", error);
+
+      return { error: "sync failed" };
+    });
 
     return NextResponse.json({ ...customers, tickets, feedback });
   } catch (error) {

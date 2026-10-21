@@ -98,9 +98,9 @@ describe("the header bell", () => {
     render(<HeaderNotifications feed={lowFeed} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
-    const one = await screen.findByRole("link", { name: /Ada Lim gave Order #1042 1 star/ });
+    const one = await screen.findByRole("link", { name: /Ada Lim rated Order #1042 1 star/ });
     expect(one.getAttribute("href")).toBe("/feedback#feedback-1042");
-    const three = await screen.findByRole("link", { name: /Ben Cruz gave Order #1040 3 stars/ });
+    const three = await screen.findByRole("link", { name: /Ben Cruz rated Order #1040 3 stars/ });
     expect(three.getAttribute("href")).toBe("/feedback#feedback-1040");
   });
 });

@@ -39,7 +39,7 @@ export function FeedbackListView({ list, filters }: { list: FeedbackList; filter
       ) : (
         <ul className="min-h-0 flex-1 overflow-auto">
           {list.rows.map((row) => (
-            <li key={row.orderId} id={feedbackAnchor(row.orderId)} className="flex scroll-mt-3 flex-col gap-1 border-b border-[#efebf4] py-3 target:bg-[#faf6fd]">
+            <li key={row.orderId} id={feedbackAnchor(row.orderId)} className="flex scroll-mt-3 flex-col gap-1 border-b border-[#efebf4] py-3">
               <div className="flex items-center gap-[10px] text-[13px] font-medium leading-[normal] text-[#1f1a2e]">
                 <Stars rating={row.rating} />
                 <p className="min-w-0 flex-1">

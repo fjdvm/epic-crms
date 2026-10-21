@@ -90,6 +90,19 @@ describe("Feedback notifications", () => {
     expect(await alertsFor(withProfilesModule)).toEqual([]);
   });
 
+  it("shows Staff with both Modules the Feedback alert once, and Tickets-only Staff never", async () => {
+    await sync();
+    const order = await feedback(1);
+    await sync();
+
+    const both = { customerProfiles: false, ticketsStaffId: "ada", feedback: true };
+    const feed = await listNotifications(db.sql, "crms", 20, both);
+
+    expect(feed.notifications.map((n) => n.orderId)).toEqual([order]);
+    expect(feed.unread).toBe(1);
+    expect((await listNotifications(db.sql, "crms", 20, withTicketsModule)).unread).toBe(0);
+  });
+
   it("names the Customer and the Order", async () => {
     await sync();
     const order = await feedback(1);
