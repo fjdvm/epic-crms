@@ -33,6 +33,7 @@ const list = (rows: FeedbackRow[], extra: Partial<FeedbackList> = {}): FeedbackL
   rows,
   products: ["Smooth tub", "Tidbits pouch"],
   summary: { count: rows.length, average: null, low: 0 },
+  response: { requested: 0, received: 0, rate: null },
   total: rows.length,
   page: 1,
   pageSize: 25,
@@ -160,22 +161,41 @@ describe("the product view", () => {
   });
 });
 
+const NO_RESPONSE = { requested: 0, received: 0, rate: null };
+
 describe("the summary cards", () => {
+  it("shows the response rate, as the Figma card words it", () => {
+    render(
+      <FeedbackSummaryCards
+        summary={{ count: 0, average: null, low: 0 }}
+        response={{ requested: 17, received: 7, rate: 41 }}
+      />,
+    );
+
+    expect(screen.getByTestId("response-rate").textContent).toBe("Response rate41%Of delivery emails");
+  });
+
+  it("says No requests yet when none were sent in the range", () => {
+    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} response={NO_RESPONSE} />);
+
+    expect(screen.getByTestId("response-rate").textContent).toBe("Response rateNo requests yet");
+  });
+
   it("shows the average rating with its review count, and the low ratings", () => {
-    render(<FeedbackSummaryCards summary={{ count: 64, average: 4.75, low: 3 }} />);
+    render(<FeedbackSummaryCards summary={{ count: 64, average: 4.75, low: 3 }} response={NO_RESPONSE} />);
 
     expect(screen.getByTestId("average-rating").textContent).toBe("Average rating4.8 ★64 Feedback");
     expect(screen.getByTestId("low-ratings").textContent).toBe("Low ratings31 to 3 stars");
   });
 
   it("shows a dash instead of an average when there is no Feedback", () => {
-    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} />);
+    render(<FeedbackSummaryCards summary={{ count: 0, average: null, low: 0 }} response={NO_RESPONSE} />);
 
     expect(screen.getByTestId("average-rating").textContent).toBe("Average rating–0 Feedback");
   });
 
   it("mentions no tickets and calls each one Feedback, not a review", () => {
-    render(<FeedbackSummaryCards summary={{ count: 1, average: 5, low: 0 }} />);
+    render(<FeedbackSummaryCards summary={{ count: 1, average: 5, low: 0 }} response={NO_RESPONSE} />);
 
     expect(screen.getByText("1 Feedback")).toBeTruthy();
     expect(screen.queryByText(/review/i)).toBeNull();
