@@ -139,9 +139,11 @@ export function ProductFilter({ filters, products }: { filters: FeedbackFilters;
 
   return (
     <Select
-      value={filters.product ?? "all"}
+      value={filters.product === undefined ? "all" : `product:${filters.product}`}
       onValueChange={(value) =>
-        router.push(feedbackHref({ ...filters, product: value === "all" ? undefined : value, page: 1 }))
+        router.push(
+          feedbackHref({ ...filters, product: value === "all" ? undefined : value.slice("product:".length), page: 1 }),
+        )
       }
     >
       <SelectTrigger aria-label="Product" className="h-9 w-[180px] border-[#e6e1ee] text-sm">
@@ -150,7 +152,7 @@ export function ProductFilter({ filters, products }: { filters: FeedbackFilters;
       <SelectContent>
         <SelectItem value="all">All products</SelectItem>
         {options.map((name) => (
-          <SelectItem key={name} value={name}>
+          <SelectItem key={name} value={`product:${name}`}>
             {name}
           </SelectItem>
         ))}
