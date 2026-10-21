@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { configuredClients, geminiClient, grokClient, parseSentiment } from "@/features/feedback/sentiment-clients";
+import { configuredClients, geminiClient, groqClient, parseSentiment } from "@/features/feedback/sentiment-clients";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -17,22 +17,22 @@ describe("parseSentiment", () => {
   });
 });
 
-describe("grokClient", () => {
-  it("sends the Feedback to xAI with its key and model and reads the label", async () => {
+describe("groqClient", () => {
+  it("sends the Feedback to Groq with its key and model and reads the label", async () => {
     const fetcher = vi.fn(async () => json({ choices: [{ message: { content: "negative" } }] }));
-    const client = grokClient({ apiKey: "xai-key", model: "grok-4", fetcher: fetcher as unknown as typeof fetch });
+    const client = groqClient({ apiKey: "groq-key", model: "groq-4", fetcher: fetcher as unknown as typeof fetch });
 
     expect(await client.classify({ comment: "Too sweet", rating: 2 })).toBe("negative");
 
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://api.x.ai/v1/chat/completions");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer xai-key");
-    expect(JSON.parse(init.body as string)).toMatchObject({ model: "grok-4" });
+    expect(url).toBe("https://api.groq.com/openai/v1/chat/completions");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer groq-key");
+    expect(JSON.parse(init.body as string)).toMatchObject({ model: "groq-4" });
     expect(init.body).toContain("Too sweet");
   });
 
-  it("throws when xAI refuses", async () => {
-    const client = grokClient({ apiKey: "k", model: "m", fetcher: (async () => json({}, 429)) as unknown as typeof fetch });
+  it("throws when Groq refuses", async () => {
+    const client = groqClient({ apiKey: "k", model: "m", fetcher: (async () => json({}, 429)) as unknown as typeof fetch });
 
     await expect(client.classify({ comment: "x", rating: 3 })).rejects.toThrow(/429/);
   });
@@ -61,9 +61,9 @@ describe("geminiClient", () => {
 
 describe("configuredClients", () => {
   it("builds only the clients whose key and model are both set", () => {
-    const { grok, gemini } = configuredClients({ GROK_API_KEY: "k", GROK_MODEL: "grok-4", GEMINI_API_KEY: "", GEMINI_MODEL: "g" });
+    const { groq, gemini } = configuredClients({ GROQ_API_KEY: "k", GROQ_MODEL: "groq-4", GOOGLE_GENERATIVE_AI_API_KEY: "", GEMINI_MODEL: "g" });
 
-    expect(grok?.model).toBe("grok-4");
+    expect(groq?.model).toBe("groq-4");
     expect(gemini).toBeNull();
   });
 });

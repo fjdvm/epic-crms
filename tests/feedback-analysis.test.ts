@@ -65,32 +65,32 @@ function setup() {
 }
 
 describe("runAnalysis", () => {
-  it("labels each unlabelled Feedback with Grok and records the model and time", async () => {
+  it("labels each unlabelled Feedback with Groq and records the model and time", async () => {
     const happy = await feedback("Loved it");
     const unhappy = await feedback("Too sweet", 2);
     const { audit } = setup();
 
     const result = await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", { "Loved it": "positive", "Too sweet": "negative" }),
+      groq: client("groq-4", { "Loved it": "positive", "Too sweet": "negative" }),
       gemini: client("gemini-2.5", {}),
       actor: SCHEDULE,
       audit,
       now: NOW,
     });
 
-    expect(result).toEqual({ status: "done", analyzed: 2, failed: 0, model: "grok-4" });
-    expect(await stored(happy)).toMatchObject({ sentiment: "positive", sentiment_model: "grok-4", sentiment_analyzed_at: NOW });
-    expect(await stored(unhappy)).toMatchObject({ sentiment: "negative", sentiment_model: "grok-4" });
+    expect(result).toEqual({ status: "done", analyzed: 2, failed: 0, model: "groq-4" });
+    expect(await stored(happy)).toMatchObject({ sentiment: "positive", sentiment_model: "groq-4", sentiment_analyzed_at: NOW });
+    expect(await stored(unhappy)).toMatchObject({ sentiment: "negative", sentiment_model: "groq-4" });
   });
 
-  it("uses Gemini for a Feedback Grok fails on, and records Gemini as its model", async () => {
+  it("uses Gemini for a Feedback Groq fails on, and records Gemini as its model", async () => {
     const id = await feedback("Okay I guess");
     const { audit } = setup();
 
     const result = await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", {}),
+      groq: client("groq-4", {}),
       gemini: client("gemini-2.5", { "Okay I guess": "neutral" }),
       actor: SCHEDULE,
       audit,
@@ -107,7 +107,7 @@ describe("runAnalysis", () => {
 
     const first = await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", {}),
+      groq: client("groq-4", {}),
       gemini: client("gemini-2.5", {}),
       actor: SCHEDULE,
       audit,
@@ -119,7 +119,7 @@ describe("runAnalysis", () => {
 
     const second = await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", { Hmm: "neutral" }),
+      groq: client("groq-4", { Hmm: "neutral" }),
       gemini: client("gemini-2.5", {}),
       actor: SCHEDULE,
       audit,
@@ -133,20 +133,20 @@ describe("runAnalysis", () => {
   it("never asks about Feedback that is already labelled", async () => {
     const id = await feedback("Old news", 5, "positive");
     await feedback("Fresh");
-    const grok = client("grok-4", { Fresh: "neutral" });
+    const groq = client("groq-4", { Fresh: "neutral" });
 
-    await runAnalysis({ sql: db.sql, grok, gemini: null, actor: SCHEDULE, audit: setup().audit, now: NOW });
+    await runAnalysis({ sql: db.sql, groq, gemini: null, actor: SCHEDULE, audit: setup().audit, now: NOW });
 
-    expect(grok.asked).toEqual(["Fresh"]);
+    expect(groq.asked).toEqual(["Fresh"]);
     expect(await stored(id)).toMatchObject({ sentiment: "positive", sentiment_model: "earlier-model" });
   });
 
-  it("works with only Grok or only Gemini configured", async () => {
+  it("works with only Groq or only Gemini configured", async () => {
     await feedback("Fine");
 
     const result = await runAnalysis({
       sql: db.sql,
-      grok: null,
+      groq: null,
       gemini: client("gemini-2.5", { Fine: "neutral" }),
       actor: SCHEDULE,
       audit: setup().audit,
@@ -160,7 +160,7 @@ describe("runAnalysis", () => {
     const id = await feedback("Fine");
     const { audit, events } = setup();
 
-    const result = await runAnalysis({ sql: db.sql, grok: null, gemini: null, actor: SCHEDULE, audit, now: NOW });
+    const result = await runAnalysis({ sql: db.sql, groq: null, gemini: null, actor: SCHEDULE, audit, now: NOW });
 
     expect(result).toEqual({ status: "no-keys" });
     expect((await stored(id)).sentiment).toBeNull();
@@ -174,7 +174,7 @@ describe("runAnalysis", () => {
 
     const result = await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", {}),
+      groq: client("groq-4", {}),
       gemini: null,
       actor: SCHEDULE,
       audit,
@@ -192,7 +192,7 @@ describe("runAnalysis", () => {
 
     await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", { "Loved it": "positive" }),
+      groq: client("groq-4", { "Loved it": "positive" }),
       gemini: client("gemini-2.5", {}),
       actor: { kind: "staff", id: "s1", name: "Ana Staff" },
       audit: setup().audit,
@@ -207,7 +207,7 @@ describe("runAnalysis", () => {
       started_by_name: "Ana Staff",
       analyzed: 1,
       failed: 1,
-      model: "grok-4",
+      model: "groq-4",
     });
     expect(run.finished_at).not.toBeNull();
   });
@@ -218,7 +218,7 @@ describe("runAnalysis", () => {
     // A database failure mid-run: the run must still be closed with what it did.
     let calls = 0;
     const breaking = {
-      model: "grok-4",
+      model: "groq-4",
       async classify(): Promise<Sentiment> {
         calls += 1;
         if (calls === 2) await db.sql`alter table order_feedback add constraint stop check (sentiment <> 'positive' or false) not valid`;
@@ -227,7 +227,7 @@ describe("runAnalysis", () => {
     };
 
     await expect(
-      runAnalysis({ sql: db.sql, grok: breaking, gemini: null, actor: SCHEDULE, audit: setup().audit, now: NOW }),
+      runAnalysis({ sql: db.sql, groq: breaking, gemini: null, actor: SCHEDULE, audit: setup().audit, now: NOW }),
     ).rejects.toThrow();
 
     const [run] = await db.sql`select * from feedback_analysis_runs`;
@@ -242,7 +242,7 @@ describe("runAnalysis", () => {
 
     await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", { "Loved it": "positive" }),
+      groq: client("groq-4", { "Loved it": "positive" }),
       gemini: null,
       actor: SCHEDULE,
       audit,
@@ -256,7 +256,7 @@ describe("runAnalysis", () => {
       action: "feedback.analysis_run",
       outcome: "success",
       actor: { type: "process" },
-      metadata: { analyzed: 1, failed: 0, model: "grok-4" },
+      metadata: { analyzed: 1, failed: 0, model: "groq-4" },
     });
   });
 
@@ -266,7 +266,7 @@ describe("runAnalysis", () => {
 
     await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", { "Loved it": "positive" }),
+      groq: client("groq-4", { "Loved it": "positive" }),
       gemini: null,
       actor: { kind: "staff", id: "s1", name: "Ana Staff" },
       audit,
@@ -282,7 +282,7 @@ describe("runAnalysis", () => {
 
     const result = await runAnalysis({
       sql: db.sql,
-      grok: client("grok-4", { "Loved it": "positive" }),
+      groq: client("groq-4", { "Loved it": "positive" }),
       gemini: null,
       actor: SCHEDULE,
       audit: async () => {

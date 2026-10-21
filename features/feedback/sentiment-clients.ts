@@ -24,12 +24,12 @@ interface ClientOptions {
   fetcher?: typeof fetch;
 }
 
-/** Grok, through xAI's OpenAI-compatible chat API. */
-export function grokClient({ apiKey, model, fetcher = fetch }: ClientOptions): SentimentClient {
+/** Groq, through Groq's OpenAI-compatible chat API. */
+export function groqClient({ apiKey, model, fetcher = fetch }: ClientOptions): SentimentClient {
   return {
     model,
     async classify(feedback) {
-      const response = await fetcher("https://api.x.ai/v1/chat/completions", {
+      const response = await fetcher("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -43,7 +43,7 @@ export function grokClient({ apiKey, model, fetcher = fetch }: ClientOptions): S
         signal: AbortSignal.timeout(20_000),
       });
 
-      if (!response.ok) throw new Error(`Grok refused the request: ${response.status}`);
+      if (!response.ok) throw new Error(`Groq refused the request: ${response.status}`);
 
       const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
 
@@ -82,12 +82,12 @@ export function geminiClient({ apiKey, model, fetcher = fetch }: ClientOptions):
 
 /** The clients whose key is set in the environment; a missing key gives null so the run can say "AI keys not set". */
 export function configuredClients(env: Record<string, string | undefined> = process.env): {
-  grok: SentimentClient | null;
+  groq: SentimentClient | null;
   gemini: SentimentClient | null;
 } {
   return {
-    grok: env.GROK_API_KEY && env.GROK_MODEL ? grokClient({ apiKey: env.GROK_API_KEY, model: env.GROK_MODEL }) : null,
+    groq: env.GROQ_API_KEY && env.GROQ_MODEL ? groqClient({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL }) : null,
     gemini:
-      env.GEMINI_API_KEY && env.GEMINI_MODEL ? geminiClient({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL }) : null,
+      env.GOOGLE_GENERATIVE_AI_API_KEY && env.GEMINI_MODEL ? geminiClient({ apiKey: env.GOOGLE_GENERATIVE_AI_API_KEY, model: env.GEMINI_MODEL }) : null,
   };
 }

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const runAnalysis = vi.fn();
 
 vi.mock("@/features/feedback/analysis", () => ({ runAnalysis }));
-vi.mock("@/features/feedback/sentiment-clients", () => ({ configuredClients: () => ({ grok: null, gemini: null }) }));
+vi.mock("@/features/feedback/sentiment-clients", () => ({ configuredClients: () => ({ groq: null, gemini: null }) }));
 vi.mock("@/lib/feedback-db", () => ({ feedbackWriterDatabase: () => ({}) }));
 vi.mock("@/lib/gateway", () => ({ writeAuditEvent: vi.fn() }));
 
@@ -31,12 +31,12 @@ describe("the scheduled Feedback analysis route", () => {
   });
 
   it("runs the analysis as the schedule and returns the result", async () => {
-    runAnalysis.mockResolvedValue({ status: "done", analyzed: 2, failed: 0, model: "grok-4" });
+    runAnalysis.mockResolvedValue({ status: "done", analyzed: 2, failed: 0, model: "groq-4" });
 
     const response = await call("Bearer cron-secret");
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "done", analyzed: 2, failed: 0, model: "grok-4" });
+    expect(await response.json()).toEqual({ status: "done", analyzed: 2, failed: 0, model: "groq-4" });
     expect(runAnalysis).toHaveBeenCalledWith(expect.objectContaining({ actor: { kind: "schedule" } }));
   });
 

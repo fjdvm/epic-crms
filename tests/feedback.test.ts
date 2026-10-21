@@ -42,7 +42,7 @@ describe("Sentiment and Last analyzed", () => {
   it("gives each row its Sentiment, or null until it is labelled", async () => {
     const labelled = await order({ rating: 5, given: "2026-10-05T00:00:00Z" });
     const waiting = await order({ rating: 2, given: "2026-10-01T00:00:00Z" });
-    await db.sql`update order_feedback set sentiment = 'positive', sentiment_model = 'grok-4' where order_id = ${labelled}`;
+    await db.sql`update order_feedback set sentiment = 'positive', sentiment_model = 'groq-4' where order_id = ${labelled}`;
 
     const { rows } = await listFeedback(db.sql);
 

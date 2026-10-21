@@ -38,7 +38,7 @@ export interface AnalysisOptions {
   /** The connection that may write only the Sentiment columns and the run record. */
   sql: postgres.Sql;
   /** Null when its key is not set. */
-  grok: SentimentClient | null;
+  groq: SentimentClient | null;
   /** Null when its key is not set. */
   gemini: SentimentClient | null;
   actor: AnalysisActor;
@@ -46,7 +46,7 @@ export interface AnalysisOptions {
   now?: Date;
 }
 
-/** Grok first, then Gemini. Null when both fail, or when neither is configured. */
+/** Groq first, then Gemini. Null when both fail, or when neither is configured. */
 async function label(
   models: SentimentClient[],
   feedback: { comment: string; rating: number },
@@ -63,12 +63,12 @@ async function label(
 }
 
 /**
- * One analysis run: labels every Feedback that has no Sentiment, Grok first and Gemini when Grok
+ * One analysis run: labels every Feedback that has no Sentiment, Groq first and Gemini when Groq
  * fails, and records the run and its audit event. A Feedback both models fail on stays unlabelled
  * and is picked up again by the next run. Labelled Feedback is never asked about again.
  */
-export async function runAnalysis({ sql, grok, gemini, actor, audit, now = new Date() }: AnalysisOptions): Promise<AnalysisResult> {
-  const models = [grok, gemini].filter((client): client is SentimentClient => client !== null);
+export async function runAnalysis({ sql, groq, gemini, actor, audit, now = new Date() }: AnalysisOptions): Promise<AnalysisResult> {
+  const models = [groq, gemini].filter((client): client is SentimentClient => client !== null);
 
   if (models.length === 0) return { status: "no-keys" };
 
