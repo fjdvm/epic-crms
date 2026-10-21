@@ -1,9 +1,24 @@
 import type { FeedbackSummary, ResponseRate } from "./feedback";
+import type { TopProduct } from "./top-product";
+
+/** The cached Top product as the page read it; `ok: false` when it could not be read. */
+export type TopProductCard = { ok: true; result: TopProduct | null } | { ok: false };
 
 const CARD = "flex min-w-0 flex-col gap-[6px] rounded-xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]";
 
-/** The Average rating, Low ratings and Response rate cards, for the Feedback the date range and star filter leave. */
-export function FeedbackSummaryCards({ summary, response }: { summary: FeedbackSummary; response: ResponseRate }) {
+/**
+ * The Average rating, Low ratings and Response rate cards, for the Feedback the date range and star filter
+ * leave, and the Top product card, which is over all Feedback whatever the range.
+ */
+export function FeedbackSummaryCards({
+  summary,
+  response,
+  topProduct,
+}: {
+  summary: FeedbackSummary;
+  response: ResponseRate;
+  topProduct: TopProductCard;
+}) {
   return (
     <div className="grid shrink-0 grid-cols-2 gap-4 lg:grid-cols-4">
       <div className={CARD} data-testid="average-rating">
@@ -28,6 +43,27 @@ export function FeedbackSummaryCards({ summary, response }: { summary: FeedbackS
           <>
             <p className="text-2xl font-semibold text-[#1f1a2e]">{response.rate}%</p>
             <p className="text-xs text-[#6e6680]">Of delivery emails</p>
+          </>
+        )}
+      </div>
+      <div className={CARD} data-testid="top-product">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-[13px] font-medium text-[#6e6680]">Top product</p>
+          <p className="shrink-0 text-xs text-[#6e6680]">All time</p>
+        </div>
+        {!topProduct.ok ? (
+          <p className="text-xs text-[#6e6680]">Unavailable</p>
+        ) : topProduct.result === null ? (
+          <p className="text-xs text-[#6e6680]">Not enough Feedback yet</p>
+        ) : (
+          <>
+            <p className="truncate text-2xl font-semibold text-[#1f1a2e]" title={topProduct.result.product}>
+              {topProduct.result.product}
+            </p>
+            <p className="text-xs text-[#6e6680]">{topProduct.result.feedbackCount} Feedback</p>
+            <p className="truncate text-xs text-[#6e6680]" title={topProduct.result.reason}>
+              {topProduct.result.reason}
+            </p>
           </>
         )}
       </div>
