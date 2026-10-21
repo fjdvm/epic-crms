@@ -20,8 +20,8 @@ export const sendAppEmail: SendAppEmail = async (email) => {
   if (!response.ok) throw new Error(`The gateway refused the email: ${response.status}`);
 };
 
-/** Writes an Audit Event through the api-gateway to audit-logs, as the "crms" Caller. Callers decide whether a failure matters. */
-export const writeAuditEvent: WriteAuditEvent = async (event) => {
+/** Posts one Audit Event through the api-gateway to audit-logs, as the "crms" Caller. Callers decide whether a failure matters. */
+async function postAuditEvent(event: object): Promise<void> {
   const { base, key } = gateway();
 
   const response = await fetch(`${base}/audit/events`, {
@@ -32,7 +32,9 @@ export const writeAuditEvent: WriteAuditEvent = async (event) => {
   });
 
   if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
-};
+}
+
+export const writeAuditEvent: WriteAuditEvent = postAuditEvent;
 
 /** Where the Customer reviews a Ticket in the storefront. */
 export function storefrontTicketUrl(id: number): string {
@@ -135,26 +137,17 @@ export const gatewayFileStorage: FileStorage = {
   },
 };
 
-/** Writes Audit Events through the gateway as the "crms" Caller, whose audit key the gateway holds. */
+/** Announcement actions as Audit Events: CRMS, Marketing Module, acted by a Staff member. */
 export const gatewayAuditLog: AuditLog = {
-  async record(event) {
-    const { base, key } = gateway();
-
-    const response = await fetch(`${base}/audit/events`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: "CRMS",
-        module: "Marketing",
-        action: event.action,
-        outcome: "success",
-        actor: { type: "staff", id: event.actor.id, display_name: event.actor.name },
-        target: { type: "announcement", id: event.announcement.id, display_name: event.announcement.title },
-        description: event.description,
-        occurred_at: event.occurredAt.toISOString(),
-      }),
-    });
-
-    if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
-  },
+  record: (event) =>
+    postAuditEvent({
+      source: "CRMS",
+      module: "Marketing",
+      action: event.action,
+      outcome: "success",
+      actor: { type: "staff", id: event.actor.id, display_name: event.actor.name },
+      target: { type: "announcement", id: event.announcement.id, display_name: event.announcement.title },
+      description: event.description,
+      occurred_at: event.occurredAt.toISOString(),
+    }),
 };

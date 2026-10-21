@@ -91,9 +91,11 @@ export async function saveDraft(sql: postgres.Sql, actor: Actor, input: Announce
   const checked = check(input);
   if (!checked.ok) return checked;
 
+  const at = ports.now();
+
   const [{ id }] = await sql<{ id: string }[]>`
     insert into crms.announcements (title, description, created_by_id, created_by_name, updated_by_id, updated_by_name, created_at, updated_at)
-    values (${checked.title}, ${checked.description}, ${actor.id}, ${actor.name}, ${actor.id}, ${actor.name}, ${ports.now()}, ${ports.now()})
+    values (${checked.title}, ${checked.description}, ${actor.id}, ${actor.name}, ${actor.id}, ${actor.name}, ${at}, ${at})
     returning id`;
 
   await audited(ports, {
