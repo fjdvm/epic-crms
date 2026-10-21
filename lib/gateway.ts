@@ -1,3 +1,4 @@
+import type { WriteAuditEvent } from "@/features/feedback/analysis";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
@@ -16,6 +17,20 @@ export const sendAppEmail: SendAppEmail = async (email) => {
   });
 
   if (!response.ok) throw new Error(`The gateway refused the email: ${response.status}`);
+};
+
+/** Writes an Audit Event through the api-gateway to audit-logs, as the "crms" Caller. Callers decide whether a failure matters. */
+export const writeAuditEvent: WriteAuditEvent = async (event) => {
+  const { base, key } = gateway();
+
+  const response = await fetch(`${base}/audit/events`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify(event),
+    signal: AbortSignal.timeout(5_000),
+  });
+
+  if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
 };
 
 /** Where the Customer reviews a Ticket in the storefront. */

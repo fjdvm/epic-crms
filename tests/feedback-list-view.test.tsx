@@ -6,6 +6,7 @@ import type { FeedbackFilters } from "@/features/feedback/filters";
 import { FeedbackSummaryCards } from "@/features/feedback/feedback-summary";
 import { DateRangeButton, rangeLabel } from "@/features/feedback/feedback-toolbar";
 import { FeedbackListView } from "@/features/feedback/feedback-list";
+import { lastAnalyzedLabel } from "@/features/feedback/sentiment-badge";
 import type { FeedbackList, FeedbackRow } from "@/features/feedback/feedback";
 
 const push = vi.fn();
@@ -26,6 +27,7 @@ const row = (overrides: Partial<FeedbackRow> = {}): FeedbackRow => ({
   comment: "Ordered for the office.",
   products: ["Smooth tub", "Tidbits pouch"],
   createdAt: new Date("2026-10-05T00:00:00Z"),
+  sentiment: null,
   ...overrides,
 });
 
@@ -38,7 +40,38 @@ const list = (rows: FeedbackRow[], extra: Partial<FeedbackList> = {}): FeedbackL
   page: 1,
   pageSize: 25,
   totalPages: 1,
+  lastAnalyzed: null,
   ...extra,
+});
+
+describe("Sentiment badges and Last analyzed", () => {
+  it("shows each Feedback's Sentiment", () => {
+    render(
+      <FeedbackListView
+        list={list([
+          row({ orderId: 1, sentiment: "positive" }),
+          row({ orderId: 2, sentiment: "neutral" }),
+          row({ orderId: 3, sentiment: "negative" }),
+        ])}
+        filters={NO_FILTERS}
+      />,
+    );
+
+    expect(screen.getByText("Positive")).toBeTruthy();
+    expect(screen.getByText("Neutral")).toBeTruthy();
+    expect(screen.getByText("Negative")).toBeTruthy();
+  });
+
+  it("says Analysing… until a Feedback is labelled", () => {
+    render(<FeedbackListView list={list([row({ sentiment: null })])} filters={NO_FILTERS} />);
+
+    expect(screen.getByText("Analysing…")).toBeTruthy();
+  });
+
+  it("shows Last analyzed in Philippines time, and nothing before the first run", () => {
+    expect(lastAnalyzedLabel(new Date("2026-10-21T06:00:00Z"))).toBe("Last analyzed 21 Oct 2026, 2:00 pm");
+    expect(lastAnalyzedLabel(null)).toBeNull();
+  });
 });
 
 describe("the Feedback list", () => {

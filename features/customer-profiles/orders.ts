@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 
+import type { Sentiment } from "@/features/feedback/analysis";
+
 export interface OrderLine {
   product: string;
   size: string;
@@ -33,7 +35,7 @@ export interface CustomerOrder {
   total: number;
   /** The Address as it was at checkout, not the Customer's current one. */
   address: OrderAddress | null;
-  feedback: { rating: number; comment: string | null; createdAt: Date } | null;
+  feedback: { rating: number; comment: string | null; createdAt: Date; sentiment: Sentiment | null } | null;
   /** Only GCash Orders that have submitted proof. */
   paymentProof: { reference: string | null; screenshot: string | null; submittedAt: Date | null } | null;
 }
@@ -49,7 +51,7 @@ export async function getCustomerOrders(sql: postgres.Sql, customerId: string): 
       o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_submitted_at,
       a.label as a_label, a.street as a_street, a.barangay as a_barangay, a.city as a_city,
       a.province as a_province, a.postal_code as a_postal_code, a.country as a_country,
-      f.rating as f_rating, f.comment as f_comment, f.created_at as f_created_at
+      f.rating as f_rating, f.comment as f_comment, f.created_at as f_created_at, f.sentiment as f_sentiment
     from public.orders o
     left join public.order_delivery_addresses a on a.order_id = o.id
     left join public.order_feedback f on f.order_id = o.id
@@ -106,6 +108,7 @@ export async function getCustomerOrders(sql: postgres.Sql, customerId: string): 
               rating: o.f_rating as number,
               comment: (o.f_comment as string | null) ?? null,
               createdAt: o.f_created_at as Date,
+              sentiment: (o.f_sentiment as Sentiment | null) ?? null,
             },
       paymentProof:
         o.payment_method === "gcash" && (reference || screenshot || submittedAt)

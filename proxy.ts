@@ -21,6 +21,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/|api/portal/|api/notifications/sync|sign-in-error|signing-in|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
+    "/((?!_next/|api/portal/|api/notifications/sync|api/cron/|sign-in-error|signing-in|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
   ],
 };
