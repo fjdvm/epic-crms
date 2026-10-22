@@ -136,16 +136,16 @@ describe("the sidebar", () => {
     expect(screen.queryByText("Feedback")).toBeNull();
   });
 
-  it("links Email campaigns with the Marketing page permitted", async () => {
+  it("links Email Campaigns with the Marketing page permitted", async () => {
     renderSidebar(["/customer-profiles", "/email-campaigns"]);
 
-    expect((await screen.findByRole("link", { name: "Email campaigns" })).getAttribute("href")).toBe("/email-campaigns");
+    expect((await screen.findByRole("link", { name: "Email Campaigns" })).getAttribute("href")).toBe("/email-campaigns");
   });
 
-  it("hides Email campaigns entirely, not even dimmed, without the Marketing Module", async () => {
+  it("hides Email Campaigns entirely, not even dimmed, without the Marketing Module", async () => {
     renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
-    expect(screen.queryByText("Email campaigns")).toBeNull();
+    expect(screen.queryByText("Email Campaigns")).toBeNull();
   });
 });

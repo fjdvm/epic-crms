@@ -299,7 +299,7 @@ export function CampaignForm({
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-8 pt-5 pb-4">
         <div className="flex shrink-0 flex-col gap-1">
           <Link href="/email-campaigns" className="inline-flex items-center gap-1 text-[13px] font-medium leading-[normal] text-[#71717a]">
-            <ChevronLeft className="size-4" aria-hidden /> Email campaigns
+            <ChevronLeft className="size-4" aria-hidden /> Email Campaigns
           </Link>
           <h1 className="text-2xl font-semibold leading-[normal] text-[#18181b]">{scheduled ? "Edit scheduled Announcement" : draft ? "Edit draft" : "New campaign"}</h1>
           <p className="text-sm leading-[normal] text-[#71717a]">

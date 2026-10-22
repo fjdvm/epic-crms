@@ -21,9 +21,9 @@ export default async function EmailCampaignsPage() {
 
     return (
       <div className="p-md sm:p-lg space-y-md">
-        <h1 className="text-2xl font-semibold leading-[normal] text-foreground">Email campaigns</h1>
+        <h1 className="text-2xl font-semibold leading-[normal] text-foreground">Email Campaigns</h1>
         <Alert variant="destructive">
-          <AlertTitle>Email campaigns are temporarily unavailable</AlertTitle>
+          <AlertTitle>Email Campaigns are temporarily unavailable</AlertTitle>
           <AlertDescription>
             CREOMS could not read the Announcements. Reload to try again; if it keeps happening, tell whoever
             maintains CREOMS.
@@ -39,7 +39,7 @@ export default async function EmailCampaignsPage() {
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
       <div className="flex shrink-0 items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1">
-          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Email campaigns</h1>
+          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Email Campaigns</h1>
           <p className="text-sm leading-[normal] text-[#6e6680]">Every Announcement goes to every Subscriber.</p>
         </div>
         <Link

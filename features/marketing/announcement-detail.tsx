@@ -65,7 +65,7 @@ export function AnnouncementDetail({
       <div className="flex shrink-0 items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Link href="/email-campaigns" className="inline-flex items-center gap-1 text-[13px] font-medium leading-[normal] text-[#71717a]">
-            <ChevronLeft className="size-4" aria-hidden /> Email campaigns
+            <ChevronLeft className="size-4" aria-hidden /> Email Campaigns
           </Link>
           <div className="flex items-center gap-3">
             <h1 className="min-w-0 truncate text-2xl font-semibold leading-[normal] text-[#18181b]">{announcement.title}</h1>

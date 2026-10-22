@@ -10,6 +10,9 @@ import CustomerProfilesLoading from "@/app/(app)/customer-profiles/loading";
 import CustomerProfileLoading from "@/app/(app)/customer-profiles/[id]/loading";
 import FeedbackLoading from "@/app/(app)/feedback/loading";
 import TicketsLoading from "@/app/(app)/tickets/loading";
+import FulfilmentLoading from "@/app/(app)/fulfilment/loading";
+import ConversationsLoading from "@/app/(app)/conversations/loading";
+import EmailCampaignsLoading from "@/app/(app)/email-campaigns/loading";
 import TicketLoading from "@/app/(app)/tickets/[id]/loading";
 
 beforeEach(() => vi.useFakeTimers());
@@ -42,11 +45,18 @@ describe("the sign-in handoff loading card", () => {
 
 const pageLoadings = [
   ["any CREOMS page", AppLoading],
-  ["Customer Profiles", CustomerProfilesLoading],
   ["a Customer profile", CustomerProfileLoading],
-  ["Feedback", FeedbackLoading],
-  ["Tickets", TicketsLoading],
   ["a Ticket", TicketLoading],
+] as const;
+
+/** These pages keep their static chrome and skeleton only the data. */
+const chromeLoadings = [
+  ["Customer Profiles", CustomerProfilesLoading, "Customer Profiles"],
+  ["Feedback", FeedbackLoading, "Feedback"],
+  ["Tickets", TicketsLoading, "Tickets"],
+  ["Fulfilment", FulfilmentLoading, "Fulfilment"],
+  ["Conversations", ConversationsLoading, "Conversations"],
+  ["Email Campaigns", EmailCampaignsLoading, "Email Campaigns"],
 ] as const;
 
 describe("the page navigation skeleton", () => {
@@ -56,6 +66,16 @@ describe("the page navigation skeleton", () => {
     expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
     expect(screen.queryByText("Getting this page ready")).toBeNull();
   });
+
+describe("the page navigation skeleton that keeps the page's static chrome", () => {
+  it.each(chromeLoadings)("shows the heading and a skeleton for the data on %s", (_page, Loading, heading) => {
+    render(<Loading />);
+
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: heading })).toBeTruthy();
+    expect(screen.queryByText("Getting this page ready")).toBeNull();
+  });
+});
 });
 
 describe("the return to the Portal loading card", () => {

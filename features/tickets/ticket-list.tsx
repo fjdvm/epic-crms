@@ -18,14 +18,14 @@ export interface TicketListParams {
   page: number;
 }
 
-const TAB_LABELS: Record<TicketTab, string> = {
+export const TAB_LABELS: Record<TicketTab, string> = {
   open: "Open",
   waiting: "Waiting on customer",
   resolved: "Resolved",
 };
 
 /** The Figma frame's columns, minus Channel: a Ticket has no Channel. They share the table width in proportion, so the rows fill the card. */
-const COLUMNS: { header: string; className: string }[] = [
+export const COLUMNS: { header: string; className: string }[] = [
   { header: "Ticket", className: "flex-[1_1_100px]" },
   { header: "Subject", className: "min-w-0 flex-[3_1_270px]" },
   { header: "Customer", className: "min-w-0 flex-[2_1_150px]" },
@@ -57,8 +57,8 @@ function StatusPill({ row }: { row: TicketRow }) {
   return <Pill className={PILL.red}>Open</Pill>;
 }
 
-const HEAD = "flex items-start overflow-clip";
-const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
+export const HEAD = "flex items-start overflow-clip";
+export const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
 export function TicketListView({ list, params }: { list: TicketList; params: TicketListParams }) {
   return (
