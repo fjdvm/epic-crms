@@ -37,13 +37,18 @@ export class FakeStorefront {
     const mayConfirm = update.status === "confirmed" && order.status === "placed";
     const mayCancel = update.status === "cancelled" &&
       ["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(order.status);
-    if (!mayConfirm && !mayCancel) return Response.json({ error: "Order already changed." }, { status: 409 });
+    const mayPrepare = update.status === "preparing" && (order.status === "paid" ||
+      (order.status === "confirmed" && order.payment_method === "cash-on-delivery"));
+    const mayDispatch = update.status === "dispatched" && order.status === "preparing";
+    const mayDeliver = update.status === "delivered" && order.status === "dispatched";
+    if (!mayConfirm && !mayCancel && !mayPrepare && !mayDispatch && !mayDeliver) return Response.json({ error: "Order already changed." }, { status: 409 });
     if (mayConfirm && order.fulfillment_method === "delivery" &&
       (!Number.isSafeInteger(update.deliveryFeeInCentavos) || update.deliveryFeeInCentavos < 0)) {
       return Response.json({ error: "A Delivery fee is required." }, { status: 400 });
     }
     const [changed] = await this.sql`
       update orders set status = ${update.status},
+        delivered_at = ${mayDeliver ? new Date() : order.delivered_at},
         delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos}
       where id = ${id} and status = ${order.status} returning id, status, delivery_fee_in_centavos`;
     if (!changed) return Response.json({ error: "Order already changed." }, { status: 409 });
