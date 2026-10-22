@@ -37,17 +37,22 @@ export class FakeStorefront {
     const mayConfirm = update.status === "confirmed" && order.status === "placed";
     const mayCancel = update.status === "cancelled" &&
       ["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(order.status);
+    const mayPrepare = update.status === "preparing" && (order.status === "paid" ||
+      (order.status === "confirmed" && order.payment_method === "cash-on-delivery"));
+    const mayDispatch = update.status === "dispatched" && order.status === "preparing";
+    const mayDeliver = update.status === "delivered" && order.status === "dispatched";
     const mayMarkPaid = update.status === "paid" && order.status === "awaiting payment";
     if (mayMarkPaid && (!update.staffId || !update.staffName)) {
       return Response.json({ error: "Staff attribution is required." }, { status: 400 });
     }
-    if (!mayConfirm && !mayCancel && !mayMarkPaid) return Response.json({ error: "Order already changed." }, { status: 409 });
+    if (!mayConfirm && !mayCancel && !mayPrepare && !mayDispatch && !mayDeliver && !mayMarkPaid) return Response.json({ error: "Order already changed." }, { status: 409 });
     if (mayConfirm && order.fulfillment_method === "delivery" &&
       (!Number.isSafeInteger(update.deliveryFeeInCentavos) || update.deliveryFeeInCentavos < 0)) {
       return Response.json({ error: "A Delivery fee is required." }, { status: 400 });
     }
     const [changed] = await this.sql`
       update orders set status = ${update.status},
+        delivered_at = ${mayDeliver ? new Date() : order.delivered_at},
         delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos},
         paid_by_id = ${mayMarkPaid ? update.staffId : order.paid_by_id},
         paid_by_name = ${mayMarkPaid ? update.staffName : order.paid_by_name},

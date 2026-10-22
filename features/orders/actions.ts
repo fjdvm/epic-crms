@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 
 import { database } from "@/lib/db";
-import { ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
+import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 import type { Staff } from "@/lib/portal/client";
 import { requireModule } from "@/lib/portal/staff";
 import { changeOrderStatus, type OrderChangeResult } from "@/lib/storefront";
 
 import { paymentQueue, type PaymentQueueResult } from "./payments";
+import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
 
 interface CurrentOrder {
   status: string;
@@ -23,10 +24,10 @@ const ALREADY_CHANGED = "Order already changed; refresh it before trying again."
 async function act(
   id: number,
   run: (order: CurrentOrder, staff: Staff) => Promise<OrderChangeResult>,
-  module = ORDERS_MODULE,
+  requiredModule: string = ORDERS_MODULE,
 ): Promise<OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
-  const staff = await requireModule(module);
+  const staff = await requireModule(requiredModule);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
 
   let result: OrderChangeResult;
@@ -111,4 +112,39 @@ export async function markPaid(id: number): Promise<OrderChangeResult> {
     }
     return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
   }, PAYMENTS_MODULE);
+}
+
+/** Preparation uses the same readiness rule as the board; the storefront still owns the write. */
+export async function startPreparing(id: number): Promise<OrderChangeResult> {
+  return act(id, async (order) => {
+    if (!readyToPrepare({ status: order.status, paymentMethod: order.payment_method })) {
+      return { ok: false, reason: "Order is not ready to prepare or has already changed. Refresh it before trying again." };
+    }
+    return changeOrderStatus(id, { status: "preparing" });
+  }, FULFILMENT_MODULE);
+}
+
+export async function dispatchOrder(id: number): Promise<OrderChangeResult> {
+  return act(id, async (order) => {
+    if (order.status !== "preparing") {
+      return { ok: false, reason: "Only a preparing Order can be dispatched; it may have already changed. Refresh it before trying again." };
+    }
+    return changeOrderStatus(id, { status: "dispatched" });
+  }, FULFILMENT_MODULE);
+}
+
+/** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
+export async function deliverOrder(id: number): Promise<OrderChangeResult> {
+  return act(id, async (order) => {
+    if (order.status !== "dispatched") {
+      return { ok: false, reason: "Only a dispatched Order can be delivered; it may have already changed. Refresh it before trying again." };
+    }
+    return changeOrderStatus(id, { status: "delivered" });
+  }, FULFILMENT_MODULE);
+}
+
+/** Public board read: Fulfilment access is proved on every request, like each move. */
+export async function getFulfilmentBoard(): Promise<FulfilmentBoardResult> {
+  await requireModule(FULFILMENT_MODULE);
+  return loadFulfilmentBoard(database);
 }

@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cancelOrder, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee } from "@/features/orders/actions";
+import {
+  cancelOrder, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee,
+  startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard,
+} from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
 import { revalidatePath } from "next/cache";
@@ -28,41 +31,47 @@ beforeEach(async () => {
   vi.mocked(requireModule).mockResolvedValue({ username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
-async function order(method = "delivery", status = "placed") {
-  const [row] = await db.sql`insert into orders (customer_id, fulfillment_method, status)
-    values ('c1', ${method}, ${status}) returning id`;
+async function order(method = "delivery", status = "placed", payment = "cash-on-delivery") {
+  const [row] = await db.sql`insert into orders (customer_id, fulfillment_method, status, payment_method)
+    values ('c1', ${method}, ${status}, ${payment}) returning id`;
   return row.id as number;
 }
+async function signInWithModules(modules: string[]) {
+  const portal = new FakePortal();
+  portal.addStaff("ben", { username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" }, modules);
+  portal.signIn("ben");
+  const verifier = "test-proof";
+  const authorize = new URL("/api/integrations/authorize", FAKE_PORTAL_URL);
+  authorize.search = new URLSearchParams({
+    system: FAKE_SYSTEM, redirect_uri: FAKE_CALLBACK, state: "test-state",
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
+  }).toString();
+  const granted = await portal.handle(new Request(authorize));
+  const code = new URL(granted.headers.get("location")!).searchParams.get("code");
+  const exchange = await portal.handle(new Request(`${FAKE_PORTAL_URL}/api/integrations/exchange`, {
+    method: "POST", headers: { Authorization: `Basic ${Buffer.from(`${FAKE_SYSTEM}:${FAKE_SECRET}`).toString("base64")}` },
+    body: JSON.stringify({ code, redirect_uri: FAKE_CALLBACK, state: "test-state", code_verifier: verifier }),
+  }));
+  session.handle = (await exchange.json()).handle;
+  expect(session.handle).toBeTruthy();
+  vi.stubEnv("CREOMS_DEV_BYPASS", "false");
+  vi.stubEnv("PORTAL_URL", FAKE_PORTAL_URL);
+  vi.stubEnv("PORTAL_SYSTEM_SECRET", FAKE_SECRET);
+  vi.stubEnv("PORTAL_SYSTEM_NAME", FAKE_SYSTEM);
+  const portalRequest = portalFetch(portal);
+  const storefrontRequest = storefrontFetch(storefront);
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    return new URL(request.url).origin === FAKE_PORTAL_URL ? portalRequest(request) : storefrontRequest(request);
+  });
+  const actual = await vi.importActual<typeof import("@/lib/portal/staff")>("@/lib/portal/staff");
+  vi.mocked(requireModule).mockImplementation(actual.requireModule);
+  return portal;
+}
 describe("Order actions", () => {
-  it.each([
-    { module: "Orders", grants: ["Payments", "Fulfilment"], actions: [() => quoteDeliveryFee(1, 15000), () => confirmPickup(1), () => cancelOrder(1)] },
-    { module: "Payments", grants: ["Orders", "Fulfilment"], actions: [() => loadPaymentQueue(), () => markPaid(1), () => cancelPaymentOrder(1)] },
-  ])("refuses direct calls when the Portal grants no $module Module", async ({ grants, actions }) => {
-    const portal = new FakePortal();
-    portal.addStaff("ben", { username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" }, grants);
-    portal.signIn("ben");
-    const verifier = "test-proof";
-    const authorize = new URL("/api/integrations/authorize", FAKE_PORTAL_URL);
-    authorize.search = new URLSearchParams({
-      system: FAKE_SYSTEM, redirect_uri: FAKE_CALLBACK, state: "test-state",
-      code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
-    }).toString();
-    const granted = await portal.handle(new Request(authorize));
-    const code = new URL(granted.headers.get("location")!).searchParams.get("code");
-    const exchange = await portal.handle(new Request(`${FAKE_PORTAL_URL}/api/integrations/exchange`, {
-      method: "POST", headers: { Authorization: `Basic ${Buffer.from(`${FAKE_SYSTEM}:${FAKE_SECRET}`).toString("base64")}` },
-      body: JSON.stringify({ code, redirect_uri: FAKE_CALLBACK, state: "test-state", code_verifier: verifier }),
-    }));
-    session.handle = (await exchange.json()).handle;
-    expect(session.handle).toBeTruthy();
-    vi.stubEnv("CREOMS_DEV_BYPASS", "false");
-    vi.stubEnv("PORTAL_URL", FAKE_PORTAL_URL);
-    vi.stubEnv("PORTAL_SYSTEM_SECRET", FAKE_SECRET);
-    vi.stubEnv("PORTAL_SYSTEM_NAME", FAKE_SYSTEM);
-    vi.stubGlobal("fetch", portalFetch(portal));
-    const actual = await vi.importActual<typeof import("@/lib/portal/staff")>("@/lib/portal/staff");
-    vi.mocked(requireModule).mockImplementation(actual.requireModule);
-    for (const action of actions) {
+  it("refuses direct calls when the Portal grants Payments and Fulfilment but no Orders Module", async () => {
+    await signInWithModules(["Payments", "Fulfilment"]);
+    for (const action of [() => quoteDeliveryFee(1, 15000), () => confirmPickup(1), () => cancelOrder(1)]) {
       await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     }
     expect(storefront.requests).toBe(0);
@@ -165,6 +174,81 @@ describe("Order actions", () => {
   });
 });
 
+describe("Fulfilment Order actions", () => {
+  it("denies Orders and Payments Staff, and rechecks a revoked Fulfilment grant", async () => {
+    const id = await order("delivery", "confirmed");
+    const portal = await signInWithModules(["Orders", "Payments"]);
+    for (const action of [() => startPreparing(id), () => dispatchOrder(id), () => deliverOrder(id), getFulfilmentBoard]) {
+      await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    }
+    expect(storefront.requests).toBe(0);
+    portal.grant("ben", "Fulfilment");
+    expect((await startPreparing(id)).ok).toBe(true);
+    portal.revoke("ben", "Fulfilment");
+    await expect(dispatchOrder(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    expect(storefront.requests).toBe(1);
+  });
+
+  it("refuses out-of-order moves and unpaid Orders before sending a request", async () => {
+    for (const status of ["placed", "awaiting payment", "preparing", "dispatched", "delivered", "cancelled"]) {
+      expect(await startPreparing(await order("delivery", status))).toMatchObject({ ok: false, reason: expect.stringContaining("not ready to prepare") });
+    }
+    expect((await startPreparing(await order("delivery", "confirmed", "gcash"))).ok).toBe(false);
+    for (const status of ["placed", "confirmed", "awaiting payment", "paid", "dispatched", "delivered", "cancelled"]) {
+      expect(await dispatchOrder(await order("delivery", status))).toMatchObject({ ok: false, reason: expect.stringContaining("Only a preparing Order") });
+    }
+    for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing", "delivered", "cancelled"]) {
+      expect(await deliverOrder(await order("delivery", status))).toMatchObject({ ok: false, reason: expect.stringContaining("Only a dispatched Order") });
+    }
+    expect(storefront.requests).toBe(0);
+  });
+
+  it("allows preparation of paid GCash and confirmed Pickup Orders", async () => {
+    expect((await startPreparing(await order("delivery", "paid", "gcash"))).ok).toBe(true);
+    expect((await startPreparing(await order("pickup", "confirmed"))).ok).toBe(true);
+  });
+
+  it("preserves the storefront refusal for each move without reporting success", async () => {
+    storefront.refusal = "Another Staff member has already moved this Order.";
+    for (const [status, move] of [["confirmed", startPreparing], ["preparing", dispatchOrder], ["dispatched", deliverOrder]] as const) {
+      expect(await move(await order("delivery", status))).toEqual({ ok: false, reason: storefront.refusal });
+    }
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("only confirms one of two Staff making the same move", async () => {
+    for (const [status, move] of [["confirmed", startPreparing], ["preparing", dispatchOrder], ["dispatched", deliverOrder]] as const) {
+      const id = await order("delivery", status);
+      const results = await Promise.all([move(id), move(id)]);
+      expect(results.filter(result => result.ok)).toHaveLength(1);
+      expect(results.find(result => !result.ok)).toMatchObject({ reason: expect.stringMatching(/already changed/) });
+    }
+  });
+  it("loads the board only with the Fulfilment Module", async () => {
+    const id = await order("delivery", "confirmed");
+    const result = await getFulfilmentBoard();
+    expect(result.ok && result.board.ready).toEqual([expect.objectContaining({ id })]);
+    expect(requireModule).toHaveBeenCalledWith("Fulfilment");
+  });
+  it("marks a dispatched Order delivered through the storefront and records its Delivery time", async () => {
+    const id = await order("delivery", "dispatched");
+    expect(await deliverOrder(id)).toEqual({ ok: true, order: { id, status: "delivered", deliveryFeeInCentavos: null } });
+    const { loadFulfilmentBoard } = await import("@/features/orders/fulfilment");
+    const result = await loadFulfilmentBoard(() => db.sql);
+    expect(result.ok && result.board.delivered).toEqual([expect.objectContaining({ id, deliveredAt: expect.any(Date) })]);
+    expect(requireModule).toHaveBeenCalledWith("Fulfilment");
+  });
+  it("dispatches an Order being prepared through the storefront", async () => {
+    const id = await order("delivery", "preparing");
+    expect(await dispatchOrder(id)).toEqual({ ok: true, order: { id, status: "dispatched", deliveryFeeInCentavos: null } });
+    expect(requireModule).toHaveBeenCalledWith("Fulfilment");
+  });
+  it("starts preparation only after the storefront confirms a payable-ready Order", async () => {
+    const id = await order("delivery", "confirmed");
+    expect(await startPreparing(id)).toEqual({ ok: true, order: { id, status: "preparing", deliveryFeeInCentavos: null } });
+    expect(requireModule).toHaveBeenCalledWith("Fulfilment");
+  });
+});
 
 describe("the Payments queue", () => {
   it("lists only submitted GCash proofs awaiting payment, oldest proof first, with amount due", async () => {
@@ -298,5 +382,27 @@ describe("Payments refusals", () => {
       expect(await action(999)).toEqual({ ok: false, reason: "Order was not found." });
     }
     expect(storefront.requests).toBe(0);
+  });
+});
+
+
+describe("Payments Module access", () => {
+  it("refuses Orders-only direct calls and rechecks a revoked Payments grant", async () => {
+    const id = await order("delivery", "awaiting payment", "gcash");
+    await db.sql`update orders set gcash_reference_number = '1234567890', payment_proof_submitted_at = now() where id = ${id}`;
+    const portal = await signInWithModules(["Orders", "Fulfilment"]);
+    for (const action of [loadPaymentQueue, () => markPaid(id), () => cancelPaymentOrder(id)]) {
+      await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    }
+    expect(storefront.requests).toBe(0);
+    portal.grant("ben", "Payments");
+    expect(await loadPaymentQueue()).toMatchObject({ ok: true, orders: [{ id }] });
+    expect(await markPaid(id)).toMatchObject({ ok: true, order: { id, status: "paid" } });
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { paidBy: { id: "ben", name: "Ben" } } });
+    portal.revoke("ben", "Payments");
+    for (const action of [loadPaymentQueue, () => markPaid(id), () => cancelPaymentOrder(id)]) {
+      await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    }
+    expect(storefront.requests).toBe(1);
   });
 });
