@@ -11,6 +11,7 @@ import { STAGES } from "./customers";
 import { STAGE_LABELS, type Stage } from "./rules";
 import { LiveRow } from "./live-row";
 import { StageBadge } from "./stage-badge";
+import { PendingList, StageNavigation } from "./stage-tabs";
 import { formatDate, formatWholePesos } from "./format";
 
 export interface ListParams {
@@ -70,30 +71,17 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
         </Button>
       </div>
 
-      <nav aria-label="Stage" className="flex flex-wrap gap-1">
-        {[undefined, ...STAGES].map((stage) => {
-          const count = stage
-            ? list.stageCounts[stage]
-            : STAGES.reduce((sum, s) => sum + list.stageCounts[s], 0);
-          const active = params.stage === stage;
-
-          return (
-            <Link
-              key={stage ?? "all"}
-              href={href(params, { stage, page: 1 })}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "rounded-lg px-3.5 py-2 text-sm font-medium",
-                active ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {stage ? STAGE_LABELS[stage] : "All"} {count}
-            </Link>
-          );
-        })}
-      </nav>
-
+      <StageNavigation
+        activeStage={params.stage}
+        tabs={[undefined, ...STAGES].map((s) => ({
+          stage: s,
+          label: s ? STAGE_LABELS[s] : "All",
+          count: s ? list.stageCounts[s] : STAGES.reduce((sum, t) => sum + list.stageCounts[t], 0),
+          href: href(params, { stage: s, page: 1 }),
+        }))}
+      >
       <div className="space-y-[14px] rounded-xl border border-border bg-card p-5">
+        <PendingList>
         {list.rows.length === 0 ? (
           <div className="p-xl text-center text-muted-foreground">
             {params.search || params.stage ? "No Customers match." : "No Customers yet."}
@@ -204,7 +192,9 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           Lifecycle stage is calculated from orders: New = no order, First order = 1, Repeat = 2+, At
           risk = no order in 60 days, Lost = no order in 120 days.
         </p>
+        </PendingList>
       </div>
+      </StageNavigation>
     </div>
   );
 }
