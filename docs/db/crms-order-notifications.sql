@@ -1,5 +1,6 @@
 -- Upgrades an existing crms schema after crms-feedback-notifications.sql for Order notifications.
--- Run as creoms_writer, which owns crms, before deploying the Order notification code.
+-- Applied to production 2026-10-22 UTC as creoms_writer after verification on a temporary Neon branch.
+-- Run as creoms_writer, which owns crms, before deploying the Order notification code on other installs.
 -- Changes only CREOMS tables; the storefront Orders remain read-only.
 BEGIN;
 
