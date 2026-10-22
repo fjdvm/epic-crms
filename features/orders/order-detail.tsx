@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import type { OrderDetail } from "./orders";
 import { PaymentPill, StatusPill } from "./status-pill";
 
-/** The steps an Order moves through. Only GCash Delivery Orders go through the payment steps. */
+/** The steps an Order moves through. Only GCash Delivery Orders go through the payment steps, plus any Order already in one. */
 function progressFor(order: OrderDetail): string[] {
   const pays =
     (order.paymentMethod === "gcash" && order.fulfillmentMethod !== "pickup") ||
@@ -192,6 +192,10 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
               <div className="flex justify-between">
                 <dt className="text-[#6e6680]">Method</dt>
                 <dd>{orderLabel(order.paymentMethod)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-[#6e6680]">Amount</dt>
+                <dd>{formatPesos(order.total)}</dd>
               </div>
               {order.paidBy && (
                 <div className="flex justify-between">

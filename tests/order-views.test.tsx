@@ -198,6 +198,28 @@ describe("an Order's detail", () => {
     expect(screen.getByRole("img", { name: /Payment proof/ }).getAttribute("src")).toBe("https://files.test/proof.png");
   });
 
+  it("shows the payment method, amount and who verified the payment", () => {
+    render(
+      <OrderDetailView
+        order={detail({
+          status: "paid",
+          paymentLabel: "Paid",
+          paidBy: { id: "s1", name: "Bernice", at: new Date("2026-10-20T08:00:00Z") },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Method").nextElementSibling?.textContent).toBe("GCash");
+    expect(screen.getByText("Amount").nextElementSibling?.textContent).toBe("₱1,150.00");
+    expect(screen.getByText("Verified by").nextElementSibling?.textContent).toContain("Bernice");
+  });
+
+  it("shows no Verified by row before the payment is checked", () => {
+    render(<OrderDetailView order={detail({ status: "awaiting payment" })} />);
+
+    expect(screen.queryByText("Verified by")).toBeNull();
+  });
+
   it("says no proof has been submitted yet for a GCash Order awaiting payment", () => {
     render(<OrderDetailView order={detail({ status: "awaiting payment" })} />);
 
