@@ -27,7 +27,22 @@ const SCHEMA = `
     status text not null default 'placed',
     subtotal_in_centavos integer not null default 0,
     delivery_fee_in_centavos integer,
+    fulfillment_method text not null default 'delivery',
+    payment_method text not null default 'cash-on-delivery',
+    gcash_reference_number text,
+    payment_proof_screenshot_pathname text,
+    payment_proof_submitted_at timestamptz,
     created_at timestamptz not null default now()
+  );
+  create table order_delivery_addresses (
+    order_id integer primary key references orders (id) on delete cascade,
+    label text not null default 'Home',
+    street text not null,
+    barangay text not null,
+    city text not null,
+    province text not null,
+    postal_code text not null,
+    country text not null default 'Philippines'
   );
   create table order_lines (
     id integer primary key generated always as identity,

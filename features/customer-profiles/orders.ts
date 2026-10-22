@@ -45,6 +45,15 @@ export const orderAnchor = (orderId: number) => `order-${orderId}`;
 
 /** A Customer's Orders, newest first. */
 export async function getCustomerOrders(sql: postgres.Sql, customerId: string): Promise<CustomerOrder[]> {
+  return fetchOrders(sql, sql`o.customer_id = ${customerId}`);
+}
+
+/** One Order with its lines, address, Feedback and Payment proof, or null if there is no such Order. */
+export async function getOrderById(sql: postgres.Sql, orderId: number): Promise<CustomerOrder | null> {
+  return (await fetchOrders(sql, sql`o.id = ${orderId}`))[0] ?? null;
+}
+
+async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postgres.Row[]>): Promise<CustomerOrder[]> {
   const orders = await sql<Record<string, unknown>[]>`
     select o.id, o.created_at, o.status, o.fulfillment_method, o.payment_method,
       o.subtotal_in_centavos, o.delivery_fee_in_centavos,
@@ -55,7 +64,7 @@ export async function getCustomerOrders(sql: postgres.Sql, customerId: string): 
     from public.orders o
     left join public.order_delivery_addresses a on a.order_id = o.id
     left join public.order_feedback f on f.order_id = o.id
-    where o.customer_id = ${customerId}
+    where ${where}
     order by o.created_at desc, o.id desc`;
 
   if (orders.length === 0) return [];

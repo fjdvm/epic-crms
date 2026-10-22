@@ -43,6 +43,18 @@ export async function requireModule(module: string): Promise<Staff> {
   return result.staff;
 }
 
+/** Like requireModule, for a page that opens with any one of several Modules. */
+export async function requireAnyModule(modules: readonly string[]): Promise<Staff> {
+  const access = await requestAccess();
+  const result = await proceed(await access.checkAny(modules));
+
+  if (result.decision === "denied") {
+    redirect(NO_ACCESS_PATH);
+  }
+
+  return result.staff;
+}
+
 /** The Staff member and the pages they may open, for the shell. No Module at all means no access. */
 export async function getShell(): Promise<{ staff: Staff; permittedPages: string[] }> {
   const result = await proceed(await (await requestAccess()).overview());
