@@ -4,12 +4,13 @@ import Link from "next/link";
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
-import { FULFILMENT_MODULE, ORDERS_MODULE } from "@/lib/portal/config";
+import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 import { cn } from "@/lib/utils";
 
 import type { OrderDetail } from "./orders";
 import { FulfilmentMove } from "./fulfilment-moves";
 import { OrdersActions } from "./orders-actions";
+import { PaymentsActions } from "./payments-actions";
 import { PaymentPill, StatusPill } from "./status-pill";
 
 /** The steps an Order moves through. Only GCash Delivery Orders go through the payment steps, plus any Order already in one. */
@@ -164,9 +165,12 @@ export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; m
               {orderLabel(order.paymentMethod)}
             </p>
           </div>
-          {(modules.includes(ORDERS_MODULE) || modules.includes(FULFILMENT_MODULE)) && (
+          {(modules.includes(ORDERS_MODULE) || modules.includes(PAYMENTS_MODULE) || modules.includes(FULFILMENT_MODULE)) && (
             <div className="flex flex-wrap items-center gap-2">
               {modules.includes(ORDERS_MODULE) && <OrdersActions order={order} />}
+              {modules.includes(PAYMENTS_MODULE) && (
+                <PaymentsActions order={order} withCancel={!modules.includes(ORDERS_MODULE)} />
+              )}
               {modules.includes(FULFILMENT_MODULE) && <FulfilmentMove order={order} />}
             </div>
           )}
