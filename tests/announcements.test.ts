@@ -11,6 +11,7 @@ import {
   editDraft,
   getAnnouncement,
   listAnnouncements,
+  listEmailsReceived,
   retrySend,
   saveDraft,
   schedule,
@@ -1184,5 +1185,53 @@ describe("the scheduled send", () => {
 
     expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 0, skipped: 1, unreadable: 0 });
     expect(mailer.batches).toEqual([]);
+  });
+});
+
+describe("Email received on a Customer Profile", () => {
+  const adaEmail = "ada@store.test";
+
+  async function sentAt(at: string, input: Parameters<typeof saveDraft>[2]) {
+    const id = await savedDraft(input);
+    clock = new Date(at);
+    await sendNow(db.sql, ada, id, ports());
+
+    return id;
+  }
+
+  it("lists each Announcement the Customer was sent, newest first, with what was received", async () => {
+    subscribe(2);
+    const first = await sentAt("2026-10-20T05:00:00Z", { title: "First", description: "One." });
+    const second = await sentAt("2026-10-21T05:00:00Z", { title: "Second", description: "Two.", images: ["https://cdn.test/images/1.jpg"] });
+
+    expect(await listEmailsReceived(db.sql, "c1")).toEqual([
+      { id: second, title: "Second", description: "Two.", images: ["https://cdn.test/images/1.jpg"], imageLayout: "single", receivedAt: new Date("2026-10-21T05:00:00Z") },
+      { id: first, title: "First", description: "One.", images: [], imageLayout: null, receivedAt: new Date("2026-10-20T05:00:00Z") },
+    ]);
+  });
+
+  it("leaves out Announcements the Customer was not sent", async () => {
+    subscribe(1);
+    await sentAt("2026-10-20T05:00:00Z", draft);
+
+    expect(await listEmailsReceived(db.sql, "c2")).toEqual([]);
+  });
+
+  it("leaves out test copies and Announcements that were never sent", async () => {
+    subscribe(1);
+    const id = await savedDraft();
+    await sendTestCopy(db.sql, ada, adaEmail, id, ports());
+    await savedDraft({ title: "Unsent", description: "Draft." });
+
+    expect(await listEmailsReceived(db.sql, "c1")).toEqual([]);
+  });
+
+  it("lists a Failed Announcement the Customer was reached by", async () => {
+    subscribe(2);
+    mailer.refusing.add("c2@x.test");
+    const id = await sentAt("2026-10-20T05:00:00Z", draft);
+
+    expect((await listEmailsReceived(db.sql, "c1")).map((e) => e.id)).toEqual([id]);
+    expect(await listEmailsReceived(db.sql, "c2")).toEqual([]);
   });
 });

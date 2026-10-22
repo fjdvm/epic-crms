@@ -336,6 +336,32 @@ export async function getAnnouncement(sql: postgres.Sql, id: string): Promise<An
   return row ? toRow(row) : null;
 }
 
+/** An Announcement as one Customer was sent it: what they received, and when it was handed over to them. */
+export interface EmailReceived {
+  id: string;
+  title: string;
+  description: string;
+  images: string[];
+  imageLayout: ImageLayout | null;
+  receivedAt: Date;
+}
+
+/** The Announcements this Customer was handed, newest first. A test copy is never recorded against a Customer, so it never appears. */
+export async function listEmailsReceived(sql: postgres.Sql, customerId: string): Promise<EmailReceived[]> {
+  const rows = await sql<Record<string, unknown>[]>`
+    select a.id, a.title, a.description, a.images, a.image_layout, r.handed_over_at
+    from crms.announcement_recipients r
+    join crms.announcements a on a.id = r.announcement_id
+    where r.customer_id = ${customerId}
+    order by r.handed_over_at desc, a.id`;
+
+  return rows.map((r) => {
+    const { title, description, images, imageLayout } = toRow({ ...r, state: "sent" });
+
+    return { id: r.id as string, title, description, images, imageLayout, receivedAt: r.handed_over_at as Date };
+  });
+}
+
 /** Subscribers (verified Customers who said yes to marketing) out of every verified Customer. Reads the storefront's data. */
 export async function subscriberCount(sql: postgres.Sql): Promise<{ subscribers: number; customers: number }> {
   const [row] = await sql<{ subscribers: number; customers: number }[]>`

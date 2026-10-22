@@ -159,7 +159,7 @@ export function CustomerProfileView({
             </TabsContent>
 
             <TabsContent value="emails" className="mt-0">
-              <EmailsTab marketingOptIn={p.marketingOptIn} />
+              <EmailsTab marketingOptIn={p.marketingOptIn} emails={p.emailsReceived} />
             </TabsContent>
 
             <TabsContent value="details" className="mt-0 space-y-5">
