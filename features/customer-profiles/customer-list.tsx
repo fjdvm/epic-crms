@@ -24,7 +24,7 @@ export interface ListParams {
 }
 
 /** Column widths follow the design: proportional, so every column shares the card width. */
-const COLUMNS: { key: SortKey | null; header: string; className: string }[] = [
+export const COLUMNS: { key: SortKey | null; header: string; className: string }[] = [
   { key: "name", header: "Customer", className: "min-w-0 flex-[2_1_220px]" },
   { key: "email", header: "Contact", className: "min-w-0 flex-[3_1_340px]" },
   { key: null, header: "Stage", className: "flex-[1_1_120px]" },
@@ -46,7 +46,7 @@ function href(params: ListParams, change: Partial<ListParams>): string {
   return `/customer-profiles?${query}`;
 }
 
-const CELL = "py-[11px] pr-3 text-sm text-foreground";
+export const CELL = "py-[11px] pr-3 text-sm text-foreground";
 
 export function CustomerListView({ list, params }: { list: CustomerList; params: ListParams }) {
   return (
