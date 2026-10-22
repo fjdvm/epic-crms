@@ -6,8 +6,9 @@ The Fulfilment Module's backend lives at the Order actions boundary:
 - `startPreparing(id)`, `dispatchOrder(id)` and `deliverOrder(id)` return the existing Order change result.
 
 Every entry point checks the Fulfilment Module, including direct calls and calls after a
-Module is revoked. Holding Orders or Payments alone is insufficient. These functions are
-ready for the Fulfilment board UI; this backend ticket does not replace the placeholder page.
+Module is revoked. Holding Orders or Payments alone is insufficient. The Fulfilment page
+(#149) reads the board with `loadFulfilmentBoard` after checking the Module itself, and its
+cards and the Order detail call the three moves through the shared Order action dialog.
 
 The board has `ready`, `preparing`, `dispatched` and `delivered` arrays. Ready to prepare
 contains paid Orders or confirmed Cash on Delivery Orders (including Pickup). Placed

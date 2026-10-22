@@ -267,11 +267,13 @@ describe("an Order's detail", () => {
     expect(screen.getByText("This Order was cancelled.")).toBeTruthy();
   });
 
-  it("has no action buttons for Staff with neither the Orders nor the Payments Module", () => {
+  it("has no Orders actions for Staff without the Orders Module", () => {
     for (const status of ["placed", "confirmed", "awaiting payment", "preparing"]) {
       for (const modules of [[], ["Fulfilment"]]) {
         const { unmount } = render(<OrderDetailView order={detail({ status, deliveryFee: null })} modules={modules} />);
-        expect(screen.queryAllByRole("button")).toHaveLength(0);
+        for (const name of ["Cancel order", "Quote delivery fee", "Confirm order"]) {
+          expect(screen.queryByRole("button", { name })).toBeNull();
+        }
         unmount();
       }
     }
