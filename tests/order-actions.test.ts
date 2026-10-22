@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cancelOrder, confirmPickup, quoteDeliveryFee } from "@/features/orders/actions";
+import { cancelOrder, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee } from "@/features/orders/actions";
+import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requireModule } from "@/lib/portal/staff";
@@ -33,9 +34,12 @@ async function order(method = "delivery", status = "placed") {
   return row.id as number;
 }
 describe("Order actions", () => {
-  it("refuses direct calls when the Portal grants Payments and Fulfilment but no Orders Module", async () => {
+  it.each([
+    { module: "Orders", grants: ["Payments", "Fulfilment"], actions: [() => quoteDeliveryFee(1, 15000), () => confirmPickup(1), () => cancelOrder(1)] },
+    { module: "Payments", grants: ["Orders", "Fulfilment"], actions: [() => loadPaymentQueue(), () => markPaid(1), () => cancelPaymentOrder(1)] },
+  ])("refuses direct calls when the Portal grants no $module Module", async ({ grants, actions }) => {
     const portal = new FakePortal();
-    portal.addStaff("ben", { username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" }, ["Payments", "Fulfilment"]);
+    portal.addStaff("ben", { username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" }, grants);
     portal.signIn("ben");
     const verifier = "test-proof";
     const authorize = new URL("/api/integrations/authorize", FAKE_PORTAL_URL);
@@ -58,7 +62,7 @@ describe("Order actions", () => {
     vi.stubGlobal("fetch", portalFetch(portal));
     const actual = await vi.importActual<typeof import("@/lib/portal/staff")>("@/lib/portal/staff");
     vi.mocked(requireModule).mockImplementation(actual.requireModule);
-    for (const action of [() => quoteDeliveryFee(1, 15000), () => confirmPickup(1), () => cancelOrder(1)]) {
+    for (const action of actions) {
       await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     }
     expect(storefront.requests).toBe(0);
@@ -158,5 +162,141 @@ describe("Order actions", () => {
     const id = await order();
     expect(await quoteDeliveryFee(id, 15000)).toEqual({ ok: true, order: { id, status: "confirmed", deliveryFeeInCentavos: 15000 } });
     expect(requireModule).toHaveBeenCalledWith("Orders");
+  });
+});
+
+
+describe("the Payments queue", () => {
+  it("lists only submitted GCash proofs awaiting payment, oldest proof first, with amount due", async () => {
+    const newer = await order("delivery", "awaiting payment");
+    const older = await order("delivery", "awaiting payment");
+    const textOnly = await order("delivery", "awaiting payment");
+    for (const [id, submitted, screenshot] of [
+      [newer, "2026-10-22T10:00:00Z", "receipts/new.png"],
+      [older, "2026-10-21T10:00:00Z", "receipts/old.png"],
+      [textOnly, "2026-10-23T10:00:00Z", null],
+    ] as const) {
+      await db.sql`update orders set payment_method = 'gcash', gcash_reference_number = ${`ref-${id}`},
+        payment_proof_screenshot_pathname = ${screenshot}, payment_proof_submitted_at = ${new Date(submitted)},
+        subtotal_in_centavos = 100000, delivery_fee_in_centavos = 15000 where id = ${id}`;
+    }
+    const paid = await order("delivery", "paid");
+    const confirmed = await order("delivery", "confirmed");
+    const noProof = await order("delivery", "awaiting payment");
+    await db.sql`update orders set payment_method = 'gcash' where id in ${db.sql([paid, confirmed, noProof])}`;
+    const cod = await order("delivery", "awaiting payment");
+    await db.sql`update orders set gcash_reference_number = 'not-in-queue', payment_proof_submitted_at = now()
+      where id in ${db.sql([paid, confirmed, cod])}`;
+
+    const result = await loadPaymentQueue();
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error("expected the Payments queue to load");
+    expect(result.orders.map(o => o.id)).toEqual([older, newer, textOnly]);
+    expect(result.orders[0]).toMatchObject({
+      customer: { id: "c1", name: "Maria Santos" }, total: 115000,
+      paymentProof: { reference: `ref-${older}`, screenshot: "receipts/old.png", submittedAt: new Date("2026-10-21T10:00:00Z") },
+    });
+    expect(result.orders[2].paymentProof.screenshot).toBeNull();
+    expect(requireModule).toHaveBeenCalledWith("Payments");
+  });
+});
+
+
+describe("checking a Payment proof", () => {
+  it("marks paid with the signed-in Staff identity, then exposes who and when on the Order", async () => {
+    const id = await order("delivery", "awaiting payment");
+    await db.sql`update orders set payment_method = 'gcash', gcash_reference_number = '1234567890',
+      payment_proof_submitted_at = now() where id = ${id}`;
+    expect(await markPaid(id)).toMatchObject({ ok: true, order: { id, status: "paid" } });
+    const result = await loadOrder(() => db.sql, id);
+    expect(result).toMatchObject({ ok: true, order: {
+      status: "paid", paidBy: { id: "ana", name: "Ana", at: expect.any(Date) },
+    } });
+    expect(await loadPaymentQueue()).toEqual({ ok: true, orders: [] });
+    expect(requireModule).toHaveBeenCalledWith("Payments");
+  });
+});
+
+
+describe("cancelling from Payments", () => {
+  it("lets Payments Staff cancel through preparing and refuses later Orders", async () => {
+    for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing"]) {
+      const id = await order("delivery", status);
+      expect(await cancelPaymentOrder(id)).toMatchObject({ ok: true, order: { id, status: "cancelled" } });
+    }
+    for (const status of ["dispatched", "delivered", "cancelled"]) {
+      expect(await cancelPaymentOrder(await order("delivery", status))).toEqual({
+        ok: false, reason: "Order already changed; refresh it before trying again.",
+      });
+    }
+    expect(vi.mocked(requireModule).mock.calls.every(([module]) => module === "Payments")).toBe(true);
+  });
+});
+
+
+describe("Payments refusals", () => {
+  async function proof() {
+    const id = await order("delivery", "awaiting payment");
+    await db.sql`update orders set payment_method = 'gcash', gcash_reference_number = '1234567890',
+      payment_proof_submitted_at = now() where id = ${id}`;
+    return id;
+  }
+
+  it("preserves storefront reasons for marking paid and cancelling, without reporting a change", async () => {
+    const id = await proof();
+    storefront.refusal = "The Customer has already cancelled this Order.";
+    for (const action of [markPaid, cancelPaymentOrder]) {
+      expect(await action(id)).toEqual({ ok: false, reason: storefront.refusal });
+    }
+    expect(revalidatePath).not.toHaveBeenCalled();
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "awaiting payment", paidBy: null } });
+  });
+
+  it("settles simultaneous payment checks without overwriting the first Staff attribution", async () => {
+    const id = await proof();
+    vi.mocked(requireModule)
+      .mockResolvedValueOnce({ username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" })
+      .mockResolvedValueOnce({ username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
+    const results = await Promise.all([markPaid(id), markPaid(id)]);
+    expect(results.filter(r => r.ok)).toHaveLength(1);
+    expect(results.find(r => !r.ok)).toMatchObject({ ok: false, reason: expect.stringMatching(/already changed/) });
+    const result = await loadOrder(() => db.sql, id);
+    const winner = results[0].ok ? { id: "ana", name: "Ana" } : { id: "ben", name: "Ben" };
+    expect(result).toMatchObject({ ok: true, order: { paidBy: winner } });
+    await cancelPaymentOrder(id);
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "cancelled", paidBy: winner } });
+  });
+
+  it("refuses stale, non-GCash and unsubmitted proofs", async () => {
+    const moved = await proof();
+    expect((await markPaid(moved)).ok).toBe(true);
+    expect(await markPaid(moved)).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
+    for (const method of ["cash-on-delivery", "gcash"]) {
+      const id = await order("delivery", "awaiting payment");
+      await db.sql`update orders set payment_method = ${method} where id = ${id}`;
+      expect(await markPaid(id)).toEqual({ ok: false, reason: "Only a GCash Order with submitted Payment proof can be marked paid." });
+    }
+  });
+
+  it("reports uncertainty without retrying or reporting paid", async () => {
+    const id = await proof();
+    storefront.unavailable = true;
+    expect(await markPaid(id)).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
+    expect(storefront.requests).toBe(1);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("reports unavailable queue data separately from an empty queue", async () => {
+    expect(await loadPaymentQueue()).toEqual({ ok: true, orders: [] });
+    vi.mocked(database).mockImplementationOnce(() => { throw new Error("Database offline"); });
+    expect(await loadPaymentQueue()).toEqual({ ok: false, reason: "Payments are temporarily unavailable." });
+  });
+
+  it("refuses invalid and missing Order numbers for Payments actions", async () => {
+    for (const action of [markPaid, cancelPaymentOrder]) {
+      expect(await action(0)).toEqual({ ok: false, reason: "Invalid Order number." });
+      expect(await action(999)).toEqual({ ok: false, reason: "Order was not found." });
+    }
+    expect(storefront.requests).toBe(0);
   });
 });

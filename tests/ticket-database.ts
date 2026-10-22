@@ -32,6 +32,9 @@ const SCHEMA = `
     gcash_reference_number text,
     payment_proof_screenshot_pathname text,
     payment_proof_submitted_at timestamptz,
+    paid_by_id text,
+    paid_by_name text,
+    paid_at timestamptz,
     created_at timestamptz not null default now()
   );
   create table order_delivery_addresses (
