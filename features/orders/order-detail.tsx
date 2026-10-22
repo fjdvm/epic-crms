@@ -1,90 +1,12 @@
-import { Check } from "lucide-react";
 import Link from "next/link";
 
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
-import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
-import { cn } from "@/lib/utils";
 
 import type { OrderDetail } from "./orders";
-import { FulfilmentMove } from "./fulfilment-moves";
-import { OrdersActions } from "./orders-actions";
-import { PaymentsActions } from "./payments-actions";
-import { PaymentPill, StatusPill } from "./status-pill";
-
-/** The steps an Order moves through. Only GCash Delivery Orders go through the payment steps, plus any Order already in one. */
-function progressFor(order: OrderDetail): string[] {
-  const pays =
-    (order.paymentMethod === "gcash" && order.fulfillmentMethod !== "pickup") ||
-    order.status === "awaiting payment" ||
-    order.status === "paid";
-
-  return [
-    "placed",
-    "confirmed",
-    ...(pays ? ["awaiting payment", "paid"] : []),
-    "preparing",
-    "dispatched",
-    "delivered",
-  ];
-}
-
-function Progress({ order }: { order: OrderDetail }) {
-  if (order.status === "cancelled") {
-    return <p className="text-sm text-[#6e6680]">This Order was cancelled.</p>;
-  }
-
-  const steps = progressFor(order);
-  const current = steps.indexOf(order.status);
-
-  return (
-    <ol aria-label="Order progress" className="flex min-w-max items-start">
-      {steps.map((step, i) => (
-        <li
-          key={step}
-          data-done={i <= current}
-          aria-current={i === current ? "step" : undefined}
-          className={cn("flex items-start", i < steps.length - 1 && "flex-1")}
-        >
-          <div className="flex w-[84px] shrink-0 flex-col items-center gap-2 text-center">
-            <span
-              aria-hidden
-              className={cn(
-                "flex size-8 items-center justify-center rounded-full border-2",
-                i < current && "border-[#5b2a86] bg-[#5b2a86] text-white",
-                i === current && "border-[#5b2a86] bg-white",
-                i > current && "border-[#d9d3e3] bg-white",
-              )}
-            >
-              {i < current && <Check className="size-4" />}
-              {i === current && (
-                <span className="size-2.5 rounded-full bg-[#5b2a86]" />
-              )}
-            </span>
-            <span
-              className={cn(
-                "text-xs leading-[normal]",
-                i <= current ? "font-medium text-[#1f1a2e]" : "text-[#9a93a8]",
-              )}
-            >
-              {orderLabel(step)}
-            </span>
-          </div>
-          {i < steps.length - 1 && (
-            <span
-              aria-hidden
-              className={cn(
-                "mt-4 h-0.5 flex-1",
-                i < current ? "bg-[#5b2a86]" : "bg-[#e6e1ee]",
-              )}
-            />
-          )}
-        </li>
-      ))}
-    </ol>
-  );
-}
+import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
+import { PaymentPill } from "./status-pill";
 
 function DeliveryFee({ order }: { order: OrderDetail }) {
   if (order.fulfillmentMethod === "pickup") return null;
@@ -146,6 +68,7 @@ export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; m
   const address = order.address;
 
   return (
+    <OrderLiveProvider status={order.status}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="shrink-0 space-y-2">
         <Link href="/orders" className="text-sm font-medium text-[#5b2a86]">
@@ -157,7 +80,7 @@ export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; m
               <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
                 Order #{order.id}
               </h1>
-              <StatusPill status={order.status} />
+              <LiveStatus />
             </div>
             <p className="text-sm leading-[normal] text-[#6e6680]">
               Placed {formatDate(order.createdAt)} ·{" "}
@@ -165,15 +88,7 @@ export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; m
               {orderLabel(order.paymentMethod)}
             </p>
           </div>
-          {(modules.includes(ORDERS_MODULE) || modules.includes(PAYMENTS_MODULE) || modules.includes(FULFILMENT_MODULE)) && (
-            <div className="flex flex-wrap items-center gap-2">
-              {modules.includes(ORDERS_MODULE) && <OrdersActions order={order} />}
-              {modules.includes(PAYMENTS_MODULE) && (
-                <PaymentsActions order={order} withCancel={!modules.includes(ORDERS_MODULE)} />
-              )}
-              {modules.includes(FULFILMENT_MODULE) && <FulfilmentMove order={order} />}
-            </div>
-          )}
+          <LiveActions order={order} modules={modules} />
         </div>
       </div>
 
@@ -182,7 +97,7 @@ export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; m
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Order status</h2>
             <div className="overflow-x-auto">
-              <Progress order={order} />
+              <LiveProgress order={order} />
             </div>
           </section>
 
@@ -276,5 +191,6 @@ export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; m
         </div>
       </div>
     </div>
+    </OrderLiveProvider>
   );
 }

@@ -155,7 +155,7 @@ describe("moving an Order on the board", () => {
     expect(startPreparing).not.toHaveBeenCalled();
   });
 
-  it("shows a spinner at once, and the result only once the server confirms", async () => {
+  it("closes the dialog at once, and tells Staff only once the server confirms", async () => {
     const pending = deferred<Awaited<ReturnType<typeof dispatchOrder>>>();
     vi.mocked(dispatchOrder).mockReturnValue(pending.promise);
     board({ preparing: [card({ status: "preparing" })] });
@@ -165,16 +165,14 @@ describe("moving an Order on the board", () => {
     expect(within(dialog).getByText(/no courier or tracking number/i)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as dispatched" }));
 
-    const busy = within(dialog).getByRole("button", { name: "Dispatching…" });
-    expect(busy.getAttribute("aria-busy")).toBe("true");
-    expect(busy.querySelector("svg.animate-spin")).toBeTruthy();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" })).toBeTruthy();
     expect(dispatchOrder).toHaveBeenCalledWith(1042);
     expect(toast.success).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
 
     await act(async () => pending.settle(moved(1042, "dispatched")));
 
-    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(toast.success).toHaveBeenCalledWith("Order #1042 dispatched.");
     expect(refresh).toHaveBeenCalled();
   });
