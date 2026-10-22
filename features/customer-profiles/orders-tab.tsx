@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ChevronDown, ChevronRight, Star } from "lucide-react";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -113,11 +114,14 @@ export function OrdersTab({
   orders,
   expanded,
   onToggle,
+  canOpenOrder = false,
 }: {
   orders: CustomerOrder[];
   /** Order ids whose details are open. */
   expanded: ReadonlySet<number>;
   onToggle: (orderId: number) => void;
+  /** Staff who hold the Orders, Payments or Fulfilment Module get a link to each Order's detail page. */
+  canOpenOrder?: boolean;
 }) {
   return (
     <div className="space-y-[14px] rounded-xl border border-border bg-card p-5">
@@ -148,14 +152,20 @@ export function OrdersTab({
               <tbody key={o.id} id={orderAnchor(o.id)} className="border-b border-border-subtle last:border-0">
                 <tr>
                   <td className={`${CELL} font-medium text-primary`}>
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      onClick={() => onToggle(o.id)}
-                      className="inline-flex items-center gap-1"
-                    >
-                      {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}#{o.id}
-                    </button>
+                    {canOpenOrder ? (
+                      <Link href={`/orders/${o.id}`} className="inline-flex items-center gap-1">
+                        #{o.id}
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() => onToggle(o.id)}
+                        className="inline-flex items-center gap-1"
+                      >
+                        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}#{o.id}
+                      </button>
+                    )}
                   </td>
                   <td className={CELL}>{formatDate(o.createdAt)}</td>
                   <td className={CELL}>{o.lines.map((l) => `${l.product} ×${l.quantity}`).join(", ")}</td>
@@ -167,7 +177,7 @@ export function OrdersTab({
                     <Badge variant={statusVariant(o.status)}>{label(o.status)}</Badge>
                   </td>
                 </tr>
-                {open && (
+                {open && !canOpenOrder && (
                   <tr>
                     <td colSpan={6} className="whitespace-normal pb-3 text-left">
                       {/* Zero intrinsic width, pinned to the scroll area's visible width: the details never widen

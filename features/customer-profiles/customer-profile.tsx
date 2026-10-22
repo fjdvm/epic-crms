@@ -47,9 +47,11 @@ const TAB_TRIGGER =
 export function CustomerProfileView({
   profile,
   now = new Date(),
+  canOpenOrder = false,
 }: {
   profile: CustomerProfile;
   now?: Date;
+  canOpenOrder?: boolean;
 }) {
   const p = profile;
   const [tab, setTab] = useState("orders");
@@ -147,6 +149,7 @@ export function CustomerProfileView({
                 orders={p.orderHistory}
                 expanded={expanded}
                 onToggle={toggleOrder}
+                canOpenOrder={canOpenOrder}
               />
             </TabsContent>
 

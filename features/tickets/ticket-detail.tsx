@@ -53,10 +53,13 @@ export function TicketDetailView({
   ticket,
   viewerId,
   viewerName = viewerId,
+  canOpenOrder = false,
 }: {
   ticket: TicketDetail;
   viewerId: string;
   viewerName?: string;
+  /** Staff who hold the Orders, Payments or Fulfilment Module open the Order detail page from the Linked order. */
+  canOpenOrder?: boolean;
 }) {
   const { order, customer } = ticket;
   // Until both sides have spoken there is no chat history to read, only what the Ticket was opened with.
@@ -145,7 +148,7 @@ export function TicketDetailView({
               <p className="text-[13px] leading-[normal] text-[#6e6680]">
                 {order.lines.map((l) => `${l.product} ×${l.quantity}`).join(", ")}
               </p>
-              <Link href={`/customer-profiles/${customer.id}#${orderAnchor(order.id)}`} className={CARD_LINK}>
+              <Link href={canOpenOrder ? `/orders/${order.id}` : `/customer-profiles/${customer.id}#${orderAnchor(order.id)}`} className={CARD_LINK}>
                 Open order →
               </Link>
             </section>

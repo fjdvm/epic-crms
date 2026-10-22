@@ -3,7 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { accessFor } from "./access";
 import type { Staff } from "./client";
-import { LOGIN_PATH, NO_ACCESS_PATH, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
+import { LOGIN_PATH, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
 import { safeReturnTo } from "./return-to";
 
 /** One access checker per page load, so the Portal is asked once however many callers there are. */
@@ -53,6 +53,13 @@ export async function requireAnyModule(modules: readonly string[]): Promise<Staf
   }
 
   return result.staff;
+}
+
+/** Whether the Staff member may open the Order detail page, for pages that link to it but don't need it. */
+export async function canOpenOrders(): Promise<boolean> {
+  const result = await proceed(await (await requestAccess()).checkAny(ORDER_DETAIL_MODULES));
+
+  return result.decision === "allowed";
 }
 
 /** The Staff member and the pages they may open, for the shell. No Module at all means no access. */

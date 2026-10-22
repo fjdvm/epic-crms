@@ -5,7 +5,7 @@ import { CustomerProfileView } from "@/features/customer-profiles/customer-profi
 import { loadCustomerProfile } from "@/features/customer-profiles/profile";
 import { database } from "@/lib/db";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
-import { requireModule } from "@/lib/portal/staff";
+import { canOpenOrders, requireModule } from "@/lib/portal/staff";
 
 export default async function CustomerProfilePage({ params }: { params: Promise<{ id: string }> }) {
   await requireModule(CUSTOMER_PROFILES_MODULE);
@@ -31,7 +31,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
 
   return (
     <div className="px-xl py-7">
-      <CustomerProfileView profile={result.profile} />
+      <CustomerProfileView profile={result.profile} canOpenOrder={await canOpenOrders()} />
     </div>
   );
 }
