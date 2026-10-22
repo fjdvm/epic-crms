@@ -2,15 +2,23 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cancelOrder, confirmPickup, quoteDeliveryFee } from "@/features/orders/actions";
+import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee } from "@/features/orders/actions";
 import { BackgroundRefresh, REFRESH_INTERVAL_MS } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
+import type { PaymentQueueOrder } from "@/features/orders/payments";
+import { PaymentQueueView } from "@/features/orders/payment-queue";
 
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
-vi.mock("@/features/orders/actions", () => ({ quoteDeliveryFee: vi.fn(), confirmPickup: vi.fn(), cancelOrder: vi.fn() }));
+vi.mock("@/features/orders/actions", () => ({
+  quoteDeliveryFee: vi.fn(),
+  confirmPickup: vi.fn(),
+  cancelOrder: vi.fn(),
+  cancelPaymentOrder: vi.fn(),
+  markPaid: vi.fn(),
+}));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
@@ -259,9 +267,9 @@ describe("an Order's detail", () => {
     expect(screen.getByText("This Order was cancelled.")).toBeTruthy();
   });
 
-  it("has no action buttons for Staff without the Orders Module", () => {
+  it("has no action buttons for Staff with neither the Orders nor the Payments Module", () => {
     for (const status of ["placed", "confirmed", "awaiting payment", "preparing"]) {
-      for (const modules of [[], ["Payments"], ["Fulfilment"], ["Payments", "Fulfilment"]]) {
+      for (const modules of [[], ["Fulfilment"]]) {
         const { unmount } = render(<OrderDetailView order={detail({ status, deliveryFee: null })} modules={modules} />);
         expect(screen.queryAllByRole("button")).toHaveLength(0);
         unmount();
@@ -450,6 +458,201 @@ describe("the Orders Module's actions on an Order's detail", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed."));
     expect(confirmPickup).toHaveBeenCalledWith(1042);
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+});
+
+const PAYMENTS = ["Payments"];
+
+const queued = (overrides: Partial<PaymentQueueOrder> = {}): PaymentQueueOrder => ({
+  id: 1046,
+  createdAt: new Date("2026-10-19T12:00:00Z"),
+  customer: { id: "c1", name: "Grace Lim" },
+  total: 119_700,
+  paymentProof: {
+    reference: "5012334812",
+    screenshot: "https://files.test/receipt.png",
+    submittedAt: new Date("2026-10-19T12:52:00Z"),
+  },
+  ...overrides,
+});
+
+const paidResult = (id: number) => ({ ok: true as const, order: { id, status: "paid", deliveryFeeInCentavos: null } });
+
+describe("the Payments queue", () => {
+  it("shows each Order's receipt, GCash reference and amount due side by side, with a link to the Order", () => {
+    render(<PaymentQueueView orders={[queued()]} />);
+
+    const row = screen.getByRole("link", { name: "#1046" }).closest("[data-payment-row]") as HTMLElement;
+    expect(screen.getByRole("link", { name: "#1046" }).getAttribute("href")).toBe("/orders/1046");
+    expect(within(row).getByText("Grace Lim")).toBeTruthy();
+    expect(within(row).getByText("5012334812")).toBeTruthy();
+    expect(within(row).getByText("₱1,197.00")).toBeTruthy();
+    expect(within(row).getByRole("img", { name: "Receipt for Order #1046" }).getAttribute("src")).toBe(
+      "https://files.test/receipt.png",
+    );
+  });
+
+  it("keeps the order it is given, which is oldest first", () => {
+    render(<PaymentQueueView orders={[queued({ id: 7 }), queued({ id: 9 }), queued({ id: 8 })]} />);
+
+    expect(screen.getAllByRole("link", { name: /^#\d+$/ }).map((a) => a.textContent)).toEqual(["#7", "#9", "#8"]);
+  });
+
+  it("shows a reference-only proof without a receipt picture, and a missing reference as a dash", () => {
+    render(
+      <PaymentQueueView
+        orders={[queued({ paymentProof: { reference: null, screenshot: null, submittedAt: new Date("2026-10-19T12:52:00Z") } })]}
+      />,
+    );
+
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByText("No receipt")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
+  });
+
+  it("says so when nothing is waiting", () => {
+    render(<PaymentQueueView orders={[]} />);
+
+    expect(screen.getByText("No GCash Orders are waiting for a payment check.")).toBeTruthy();
+  });
+
+  it("has no Reject anywhere, in the list or the dialog", () => {
+    render(<PaymentQueueView orders={[queued()]} />);
+    expect(screen.queryByText(/reject/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(screen.getByRole("dialog", { name: "Verify payment · Order #1046" })).toBeTruthy();
+    expect(screen.queryByText(/reject/i)).toBeNull();
+  });
+
+  it("opens the verify dialog with the proof beside the amount due, offering Mark paid and Cancel order", () => {
+    render(<PaymentQueueView orders={[queued()]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Verify payment · Order #1046" });
+    expect(within(dialog).getByText("Amount due").nextElementSibling?.textContent).toBe("₱1,197.00");
+    expect(within(dialog).getByText("Reference no.").nextElementSibling?.textContent).toBe("5012334812");
+    expect(within(dialog).getByRole("img", { name: "Receipt for Order #1046" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Mark paid" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Cancel order" })).toBeTruthy();
+    expect(markPaid).not.toHaveBeenCalled();
+  });
+
+  it("asks before marking paid, shows a spinner at once, and the result only once the server confirms", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof markPaid>>>();
+    vi.mocked(markPaid).mockReturnValue(pending.promise);
+    render(<PaymentQueueView orders={[queued()]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark paid" }));
+
+    const confirm = screen.getByRole("alertdialog", { name: "Mark Order #1046 as paid?" });
+    expect(markPaid).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Mark paid" }));
+
+    const busy = within(confirm).getByRole("button", { name: "Marking paid…" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.querySelector("svg.animate-spin")).toBeTruthy();
+    expect(markPaid).toHaveBeenCalledWith(1046);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+
+    await act(async () => pending.settle(paidResult(1046)));
+
+    expect(toast.success).toHaveBeenCalledWith("Order #1046 marked paid.");
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("shows a refusal's reason and does not report the Order as paid", async () => {
+    vi.mocked(markPaid).mockResolvedValue({ ok: false, reason: "Order already changed; refresh it before trying again." });
+    render(<PaymentQueueView orders={[queued()]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark paid" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark paid" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Order already changed; refresh it before trying again."));
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("cancels through the Payments Module's own action, after asking", async () => {
+    vi.mocked(cancelPaymentOrder).mockResolvedValue({ ok: true, order: { id: 1046, status: "cancelled", deliveryFeeInCentavos: null } });
+    render(<PaymentQueueView orders={[queued()]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel order" }));
+
+    const confirm = screen.getByRole("alertdialog", { name: "Cancel Order #1046?" });
+    expect(cancelPaymentOrder).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel order" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1046 cancelled."));
+    expect(cancelPaymentOrder).toHaveBeenCalledWith(1046);
+    expect(cancelOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Payments Module's actions on an Order's detail", () => {
+  const awaiting = (overrides: Partial<OrderDetail> = {}) =>
+    detail({
+      status: "awaiting payment",
+      paymentProof: { reference: "1234567890", screenshot: null, submittedAt: new Date("2026-10-20T01:00:00Z") },
+      ...overrides,
+    });
+
+  it("offers Mark paid and Cancel order for a GCash Order awaiting payment, and nothing from the Orders Module", () => {
+    render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
+
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel order", "Mark paid"]);
+  });
+
+  it("marks paid through the dialog, and cancels through the Payments action", async () => {
+    vi.mocked(markPaid).mockResolvedValue(paidResult(1042));
+    vi.mocked(cancelPaymentOrder).mockResolvedValue({ ok: true, order: { id: 1042, status: "cancelled", deliveryFeeInCentavos: null } });
+    render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
+    fireEvent.click(within(screen.getByRole("alertdialog", { name: "Mark Order #1042 as paid?" })).getByRole("button", { name: "Mark paid" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 marked paid."));
+    expect(markPaid).toHaveBeenCalledWith(1042);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel order" }));
+    await waitFor(() => expect(cancelPaymentOrder).toHaveBeenCalledWith(1042));
+  });
+
+  it("offers no Mark paid before proof is submitted, or once the Order has moved on", () => {
+    const { unmount } = render(<OrderDetailView order={detail({ status: "awaiting payment" })} modules={PAYMENTS} />);
+    expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+    unmount();
+
+    for (const status of ["confirmed", "paid", "preparing", "dispatched", "delivered", "cancelled"]) {
+      const view = render(<OrderDetailView order={awaiting({ status })} modules={PAYMENTS} />);
+      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      view.unmount();
+    }
+  });
+
+  it("offers no Mark paid for a Cash on Delivery Order", () => {
+    render(<OrderDetailView order={awaiting({ paymentMethod: "cash-on-delivery" })} modules={PAYMENTS} />);
+
+    expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+  });
+
+  it("shows one Cancel order, not two, to Staff with both the Orders and Payments Modules", () => {
+    render(<OrderDetailView order={awaiting()} modules={[...ORDERS, ...PAYMENTS]} />);
+
+    expect(screen.getAllByRole("button", { name: "Cancel order" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Mark paid" })).toBeTruthy();
+  });
+
+  it("shows who marked an Order paid and when", () => {
+    render(
+      <OrderDetailView
+        order={detail({ status: "paid", paymentLabel: "Paid", paidBy: { id: "s1", name: "Bernice", at: new Date("2026-10-20T08:00:00Z") } })}
+        modules={PAYMENTS}
+      />,
+    );
+
+    expect(screen.getByText("Verified by").nextElementSibling?.textContent).toBe("Bernice · 20 Oct 2026");
   });
 });
 
