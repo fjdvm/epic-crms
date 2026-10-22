@@ -22,7 +22,10 @@ export type TicketActionFailure =
   /** file-storage could not take the image; nothing was saved. */
   | "storage-unavailable";
 
-export type TicketActionResult = { ok: true } | { ok: false; reason: TicketActionFailure };
+export type TicketActionResult =
+  | { ok: true }
+  /** `claimerName` is set when the reason is "claimed", so the refusal can say who holds the Ticket. */
+  | { ok: false; reason: TicketActionFailure; claimerName?: string };
 
 /** A saved reply, with the id the live relay echoes so each side can match its copy. */
 export type ReplyResult = { ok: true; messageId: number } | { ok: false; reason: TicketActionFailure };
@@ -49,8 +52,12 @@ export async function claimTicket(sql: postgres.Sql, id: number, actor: Actor): 
   if (rows.length) return { ok: true };
 
   const reason = await whyNot(sql, id, actor);
+  if (reason !== "not-claimed" && reason !== "claimed") return { ok: false, reason };
 
-  return { ok: false, reason: reason === "not-claimed" ? "claimed" : reason };
+  const [held] = await sql<{ claimed_by_name: string | null }[]>`
+    select claimed_by_name from tickets where id = ${id}`;
+
+  return { ok: false, reason: "claimed", claimerName: held?.claimed_by_name ?? undefined };
 }
 
 /** Only the Claimer can release a Ticket back to Unclaimed. */

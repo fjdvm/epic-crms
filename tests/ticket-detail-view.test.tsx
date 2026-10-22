@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { claim, release } from "@/features/tickets/actions";
 
 import { TicketDetailView } from "@/features/tickets/ticket-detail";
 import type { TicketDetail } from "@/features/tickets/ticket";
@@ -12,9 +16,13 @@ vi.mock("@/features/tickets/actions", () => ({
   resolve: vi.fn(),
   liveUrl: vi.fn(async () => null),
 }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   id: 208,
@@ -83,7 +91,7 @@ describe("the Ticket page as designed", () => {
   });
 
   it("says Unclaimed when nobody has Claimed the Ticket", () => {
-    render(<TicketDetailView ticket={ticket({ claimerName: null })} viewerId="bernice" />);
+    render(<TicketDetailView ticket={ticket({ claimerId: null, claimerName: null })} viewerId="bernice" />);
 
     expect(screen.getByText(/· Unclaimed ·/)).toBeTruthy();
   });
@@ -252,5 +260,79 @@ describe("images on Messages", () => {
 
     expect(screen.queryByText(/Maria · /)).toBeNull();
     expect(screen.getByRole("img", { name: "Image attached by Maria" })).toBeTruthy();
+  });
+});
+
+describe("Claim and Release show at once", () => {
+  const unclaimed = ticket({ claimerId: null, claimerName: null });
+  const view = (t = unclaimed) => render(<TicketDetailView ticket={t} viewerId="carlo" viewerName="Carlo" />);
+
+  it("makes the Staff member the Claimer before the server answers, and keeps it once confirmed", async () => {
+    let confirm: (r: { ok: true }) => void = () => {};
+    vi.mocked(claim).mockReturnValueOnce(new Promise((resolve) => (confirm = resolve)));
+    view();
+
+    await userEvent.click(screen.getByRole("button", { name: "Claim" }));
+
+    expect(screen.getByText(/Claimed by Carlo/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Release" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Claim" })).toBeNull();
+
+    confirm({ ok: true });
+    await vi.waitFor(() =>
+      expect((screen.getByRole("button", { name: "Release" }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(claim).toHaveBeenCalledWith(208);
+    expect(screen.getByText(/Claimed by Carlo/)).toBeTruthy();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("rolls back and says so when the action never reaches the server", async () => {
+    vi.mocked(claim).mockRejectedValueOnce(new Error("offline"));
+    view();
+
+    await userEvent.click(screen.getByRole("button", { name: "Claim" }));
+
+    await screen.findByText(/Unclaimed/);
+    expect(toast.error).toHaveBeenCalledWith("CREOMS could not save that. Try again in a moment.");
+  });
+
+  it("holds the buttons while the claim is pending, so it cannot be sent twice", async () => {
+    vi.mocked(claim).mockReturnValueOnce(new Promise(() => {}));
+    view();
+
+    await userEvent.click(screen.getByRole("button", { name: "Claim" }));
+
+    expect((screen.getByRole("button", { name: "Release" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back a refused claim and says who holds the Ticket", async () => {
+    vi.mocked(claim).mockResolvedValueOnce({ ok: false, reason: "claimed", claimerName: "Bernice" });
+    view();
+
+    await userEvent.click(screen.getByRole("button", { name: "Claim" }));
+
+    await screen.findByText(/Unclaimed/);
+    expect(screen.getByRole("button", { name: "Claim" })).toBeTruthy();
+    expect(toast.error).toHaveBeenCalledWith("Bernice has already claimed this Ticket.");
+  });
+
+  it("returns the Ticket to Unclaimed at once on Release, and rolls back a refused Release", async () => {
+    vi.mocked(release).mockReturnValueOnce(new Promise(() => {}));
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Release" }));
+
+    expect(screen.getByText(/Unclaimed/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Claim" })).toBeTruthy();
+    cleanup();
+
+    vi.mocked(release).mockResolvedValueOnce({ ok: false, reason: "not-claimer" });
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" viewerName="Bernice" />);
+    await userEvent.click(screen.getByRole("button", { name: "Release" }));
+
+    await screen.findByText(/Claimed by Bernice/);
+    expect(toast.error).toHaveBeenCalledWith("Only the Staff member who claimed a Ticket can release it.");
   });
 });
