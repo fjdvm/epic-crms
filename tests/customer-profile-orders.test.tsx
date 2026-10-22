@@ -53,6 +53,21 @@ describe("OrdersTab", () => {
     expect(toggle).toHaveBeenCalledWith(1);
   });
 
+  it("links each Order to its detail page for Staff who can open it, with no inline details", () => {
+    render(<OrdersTab orders={[order({})]} expanded={open} onToggle={() => {}} canOpenOrder />);
+
+    expect(screen.getByRole("link", { name: "#1" }).getAttribute("href")).toBe("/orders/1");
+    expect(screen.queryByRole("button", { name: "#1" })).toBeNull();
+    expect(screen.queryByText(/1 Old St/)).toBeNull();
+  });
+
+  it("keeps the Order as a toggle with no link for Staff who cannot open the detail page", () => {
+    render(<OrdersTab orders={[order({})]} expanded={none} onToggle={() => {}} />);
+
+    expect(screen.queryByRole("link", { name: "#1" })).toBeNull();
+    expect(screen.getByRole("button", { name: "#1" })).toBeTruthy();
+  });
+
   it("shows lines, totals, the checkout Address and feedback for an open Order", () => {
     render(
       <OrdersTab orders={[order({ feedback: { rating: 4, comment: "Tasty", createdAt: new Date("2026-03-02T00:00:00Z"), sentiment: null } })]} expanded={open} onToggle={() => {}} />,
