@@ -17,7 +17,7 @@ const COLUMNS: { key: keyof FulfilmentBoard; title: string }[] = [
 
 /** The Figma "What each move triggers" card, saying only what the storefront really does. */
 const RULES: { move: string; effect: string }[] = [
-  { move: "Ready to prepare → Preparing", effect: "Orders can still cancel it until it is dispatched" },
+  { move: "Ready to prepare → Preparing", effect: "Staff with the Orders Module can still cancel it until it is dispatched" },
   { move: "Preparing → Dispatched", effect: "No courier or tracking number; it can no longer be cancelled" },
   { move: "Dispatched → Delivered", effect: "The Customer is emailed; Feedback request 2 days later" },
 ];

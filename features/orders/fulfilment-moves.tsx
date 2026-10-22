@@ -23,7 +23,7 @@ export function FulfilmentMove({
         trigger="Start preparing"
         triggerClassName={triggerClassName}
         title={`Start preparing Order #${id}?`}
-        description="The Order moves to Preparing. Orders can still cancel it until it is dispatched."
+        description="The Order moves to Preparing. Staff with the Orders Module can still cancel it until it is dispatched."
         confirm="Start preparing"
         busy="Starting…"
         run={() => startPreparing(id)}

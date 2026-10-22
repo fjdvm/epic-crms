@@ -51,7 +51,7 @@ const column = (name: string) => screen.getByRole("region", { name });
 const cardFor = (id: number) => screen.getByRole("link", { name: `#${id}` }).closest("[data-fulfilment-card]") as HTMLElement;
 
 describe("the Fulfilment board", () => {
-  it("has a column per stage with its count, named after the storefront's statuses", () => {
+  it("has a column per status with its count, named after the storefront's statuses", () => {
     board({
       ready: [card({ id: 1 }), card({ id: 2, status: "confirmed", paymentMethod: "cash-on-delivery", paymentLabel: "Unpaid" })],
       preparing: [card({ id: 3, status: "preparing" })],
@@ -239,7 +239,7 @@ const FULFILMENT = ["Fulfilment"];
 const MOVES = ["Start preparing", "Mark as dispatched", "Mark as delivered"];
 
 describe("the Fulfilment Module's moves on an Order's detail", () => {
-  it("offers the next move for each stage", () => {
+  it("offers the next move for each status", () => {
     const cases: [Partial<OrderDetail>, string[]][] = [
       [{ status: "paid" }, ["Start preparing"]],
       [{ status: "confirmed", paymentMethod: "cash-on-delivery", paymentLabel: "Unpaid" }, ["Start preparing"]],
