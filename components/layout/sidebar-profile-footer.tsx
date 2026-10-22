@@ -59,7 +59,7 @@ export function SidebarProfileFooter() {
         {/* Same card as the portal's log out dialog (Figma "Portal UI/UX"): max-w-110, 20/18/16/24 header padding, 14px footer. */}
         <AlertDialogContent
           onEscapeKeyDown={(event) => loggingOut && event.preventDefault()}
-          className="flex w-[calc(100%-2rem)] max-w-110 sm:max-w-110 md:max-w-110 lg:max-w-110 flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0 leading-[normal] shadow-[0_20px_48px_rgb(0_0_0/0.2)] sm:rounded-2xl sm:p-0"
+          className="flex w-[calc(100%-2rem)] max-w-110 sm:max-w-110 md:max-w-110 lg:max-w-110 flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0! leading-[normal] shadow-[0_20px_48px_rgb(0_0_0/0.2)] sm:rounded-2xl"
         >
           <AlertDialogHeader className="flex shrink-0 flex-row items-start gap-3 space-y-0 pt-5 pr-4.5 pb-4 pl-6 text-left">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#f3e8ff] text-primary [&_svg]:size-5">
