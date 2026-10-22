@@ -87,7 +87,7 @@ export const feedbackItem: NavItem = {
 
 export const emailCampaignsItem: NavItem = {
   group: "MARKETING",
-  name: "Email campaigns",
+  name: "Email Campaigns",
   href: "/email-campaigns",
   icon: Mail,
 };

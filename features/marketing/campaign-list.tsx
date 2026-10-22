@@ -18,7 +18,7 @@ export function StatusPill({ state }: { state: AnnouncementState }) {
   return <span className={`rounded-full px-[10px] py-[3px] text-xs font-medium leading-[normal] whitespace-nowrap ${pill}`}>{label}</span>;
 }
 
-const COLUMNS = "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]";
+export const COLUMNS = "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]";
 
 /** The Subscribers card: verified Customers who said yes to marketing, out of every Customer. */
 export function SubscribersCard({ counts }: { counts: { subscribers: number; customers: number } | null }) {

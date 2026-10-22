@@ -175,7 +175,7 @@ describe("access to the Feedback page", () => {
   });
 });
 
-describe("access to the Email campaigns page", () => {
+describe("access to the Email Campaigns page", () => {
   it("is allowed with the Marketing Module", async () => {
     expect((await accessFor(await signInAda([MARKETING])).check(MARKETING)).decision).toBe("allowed");
   });

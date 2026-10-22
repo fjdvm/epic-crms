@@ -90,7 +90,7 @@ _Avoid_: Opt out, remove from list
 **Announcement**:
 One Marketing Email composed by Staff: a title, a description, and zero or more images. A text-only Announcement is valid. It always goes to every Subscriber; Staff cannot pick an audience. Before sending, Staff can send a test copy of it to themselves. Staff either send it now or schedule it for a later date and time, always in Philippine Time. Its recipients are whoever is a Subscriber at the moment it is sent, not when it was scheduled. An Announcement is a Draft (saved, not yet sent or scheduled; Staff can edit or delete it), Scheduled (waiting for its send time; Staff can edit, reschedule, or cancel it back to Draft), Sent (final; it can be viewed but never edited or unsent) or Failed (a send that could not be fully handed over; Staff can retry it, and the retry skips Subscribers it already reached so nobody gets it twice).
 Announcements are shared: any Staff member with the Marketing Module can edit, schedule, cancel or send any Announcement that is not yet Sent, whoever wrote it, and there is no approval step.
-The Marketing Module's page is titled "Email campaigns", following the design, and lists Announcements; it has no audience segments and shows no open, click, order or revenue figures.
+The Marketing Module's page is titled "Email Campaigns", following the design, and lists Announcements; it has no audience segments and shows no open, click, order or revenue figures.
 _Avoid_: Campaign (except as the page title), blast, newsletter, post, pubmat
 
 **Ticket**:
