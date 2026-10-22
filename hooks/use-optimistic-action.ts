@@ -32,13 +32,25 @@ export function useOptimisticAction<S>(server: S) {
     setGuess({ base: server, value: next });
 
     startTransition(async () => {
-      const outcome = await action();
+      let outcome: R;
 
-      if (outcome.ok) router.refresh();
-      else {
+      try {
+        outcome = await action();
+      } catch {
+        // The action never answered (network, crash): the guess is not kept, and Staff are told.
+        setGuess(null);
+        toast.error("CREOMS could not save that. Try again in a moment.");
+
+        return;
+      }
+
+      if (!outcome.ok) {
         setGuess(null);
         toast.error(handlers.refusal(outcome as Exclude<R, { ok: true }>));
       }
+
+      // Either way the page catches up with the server, so a refusal also shows what is really there.
+      router.refresh();
 
       handlers.onDone?.(outcome);
     });

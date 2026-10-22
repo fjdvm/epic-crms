@@ -279,8 +279,22 @@ describe("Claim and Release show at once", () => {
     expect(screen.queryByRole("button", { name: "Claim" })).toBeNull();
 
     confirm({ ok: true });
-    await screen.findByText(/Claimed by Carlo/);
+    await vi.waitFor(() =>
+      expect((screen.getByRole("button", { name: "Release" }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(claim).toHaveBeenCalledWith(208);
+    expect(screen.getByText(/Claimed by Carlo/)).toBeTruthy();
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("rolls back and says so when the action never reaches the server", async () => {
+    vi.mocked(claim).mockRejectedValueOnce(new Error("offline"));
+    view();
+
+    await userEvent.click(screen.getByRole("button", { name: "Claim" }));
+
+    await screen.findByText(/Unclaimed/);
+    expect(toast.error).toHaveBeenCalledWith("CREOMS could not save that. Try again in a moment.");
   });
 
   it("holds the buttons while the claim is pending, so it cannot be sent twice", async () => {
