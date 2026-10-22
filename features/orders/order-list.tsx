@@ -14,13 +14,13 @@ export interface OrderListParams {
   page: number;
 }
 
-const TAB_LABELS: Record<OrderTab, string> = {
+export const TAB_LABELS: Record<OrderTab, string> = {
   all: "All",
   ...Object.fromEntries(ORDER_TABS.slice(1).map((t) => [t, orderLabel(t)])),
 } as Record<OrderTab, string>;
 
 /** The Figma frame's columns; they share the table width in proportion, so the rows fill the card. */
-const COLUMNS: { header: string; className: string }[] = [
+export const COLUMNS: { header: string; className: string }[] = [
   { header: "Order", className: "flex-[1_1_90px]" },
   { header: "Date", className: "flex-[1_1_110px]" },
   { header: "Customer", className: "min-w-0 flex-[2_1_150px]" },
@@ -42,8 +42,8 @@ function href(params: OrderListParams, change: Partial<OrderListParams>): string
   return text ? `/orders?${text}` : "/orders";
 }
 
-const HEAD = "flex items-start overflow-clip";
-const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
+export const HEAD = "flex items-start overflow-clip";
+export const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
 export function OrderListView({ list, params }: { list: OrderList; params: OrderListParams }) {
   return (
