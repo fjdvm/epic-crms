@@ -9,7 +9,7 @@ import { requireModule } from "@/lib/portal/staff";
 import { changeOrderStatus, type OrderChangeResult } from "@/lib/storefront";
 
 import { CANCELLABLE_STATUSES } from "./orders";
-import { paymentQueue, type PaymentQueueResult } from "./payments";
+import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
 
 interface CurrentOrder {
@@ -99,6 +99,17 @@ export async function loadPaymentQueue(): Promise<PaymentQueueResult> {
   await requireModule(PAYMENTS_MODULE);
   try {
     return { ok: true, orders: await paymentQueue(database()) };
+  } catch {
+    return { ok: false, reason: "Payments are temporarily unavailable." };
+  }
+}
+
+/** Everything the Payments page counts and lists, authorized like the queue. */
+export async function loadPayments(): Promise<PaymentsResult> {
+  await requireModule(PAYMENTS_MODULE);
+  try {
+    const now = new Date();
+    return { ok: true, rows: await paymentRows(database(), now), now };
   } catch {
     return { ok: false, reason: "Payments are temporarily unavailable." };
   }

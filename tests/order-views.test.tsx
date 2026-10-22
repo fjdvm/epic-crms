@@ -7,8 +7,8 @@ import { BackgroundRefresh, REFRESH_INTERVAL_MS } from "@/features/orders/backgr
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
-import type { PaymentQueueOrder } from "@/features/orders/payments";
-import { PaymentQueueView } from "@/features/orders/payment-queue";
+import type { PaymentRow } from "@/features/orders/payments";
+import { PaymentsView } from "@/features/orders/payment-queue";
 
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
@@ -465,12 +465,15 @@ describe("the Orders Module's actions on an Order's detail", () => {
 
 const PAYMENTS = ["Payments"];
 
-const queued = (overrides: Partial<PaymentQueueOrder> = {}): PaymentQueueOrder => ({
+const NOW = new Date("2026-10-19T13:02:00Z");
+
+const queued = (overrides: Partial<PaymentRow> = {}): PaymentRow => ({
   id: 1046,
-  createdAt: new Date("2026-10-19T12:00:00Z"),
   customer: { id: "c1", name: "Grace Lim" },
+  method: "gcash",
+  status: "awaiting payment",
   total: 119_700,
-  paymentProof: {
+  proof: {
     reference: "5012334812",
     screenshot: "https://files.test/receipt.png",
     submittedAt: new Date("2026-10-19T12:52:00Z"),
@@ -478,57 +481,81 @@ const queued = (overrides: Partial<PaymentQueueOrder> = {}): PaymentQueueOrder =
   ...overrides,
 });
 
+const cod = (overrides: Partial<PaymentRow> = {}): PaymentRow =>
+  queued({ id: 2001, method: "cash-on-delivery", status: "dispatched", proof: null, total: 50_000, ...overrides });
+
+const renderPayments = (rows: PaymentRow[]) => render(<PaymentsView rows={rows} now={NOW} />);
+
 const paidResult = (id: number) => ({ ok: true as const, order: { id, status: "paid", deliveryFeeInCentavos: null } });
 
-describe("the Payments queue", () => {
+describe("the Payments page", () => {
   it("shows each Order's receipt, GCash reference and amount due side by side, with a link to the Order", () => {
-    render(<PaymentQueueView orders={[queued()]} />);
+    renderPayments([queued()]);
 
     const row = screen.getByRole("link", { name: "#1046" }).closest("[data-payment-row]") as HTMLElement;
     expect(screen.getByRole("link", { name: "#1046" }).getAttribute("href")).toBe("/orders/1046");
     expect(within(row).getByText("Grace Lim")).toBeTruthy();
+    expect(within(row).getByText("GCash")).toBeTruthy();
     expect(within(row).getByText("5012334812")).toBeTruthy();
     expect(within(row).getByText("₱1,197.00")).toBeTruthy();
+    expect(within(row).getByText("10 min ago")).toBeTruthy();
     expect(within(row).getByRole("img", { name: "Receipt for Order #1046" }).getAttribute("src")).toBe(
       "https://files.test/receipt.png",
     );
   });
 
-  it("keeps the order it is given, which is oldest first", () => {
-    render(<PaymentQueueView orders={[queued({ id: 7 }), queued({ id: 9 }), queued({ id: 8 })]} />);
+  it("lists proofs oldest first", () => {
+    const at = (h: number) => ({ reference: null, screenshot: null, submittedAt: new Date(`2026-10-19T0${h}:00:00Z`) });
+    renderPayments([queued({ id: 7, proof: at(3) }), queued({ id: 9, proof: at(1) }), queued({ id: 8, proof: at(2) })]);
 
-    expect(screen.getAllByRole("link", { name: /^#\d+$/ }).map((a) => a.textContent)).toEqual(["#7", "#9", "#8"]);
+    expect(screen.getAllByRole("link", { name: /^#\d+$/ }).map((a) => a.textContent)).toEqual(["#9", "#8", "#7"]);
   });
 
   it("shows a reference-only proof without a receipt picture, and a missing reference as a dash", () => {
-    render(
-      <PaymentQueueView
-        orders={[queued({ paymentProof: { reference: null, screenshot: null, submittedAt: new Date("2026-10-19T12:52:00Z") } })]}
-      />,
-    );
+    renderPayments([queued({ proof: { reference: null, screenshot: null, submittedAt: new Date("2026-10-19T12:52:00Z") } })]);
 
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByText("No receipt")).toBeTruthy();
-    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
   it("says so when nothing is waiting", () => {
-    render(<PaymentQueueView orders={[]} />);
+    renderPayments([]);
 
     expect(screen.getByText("No GCash Orders are waiting for a payment check.")).toBeTruthy();
   });
 
-  it("has no Reject anywhere, in the list or the dialog", () => {
-    render(<PaymentQueueView orders={[queued()]} />);
-    expect(screen.queryByText(/reject/i)).toBeNull();
+  it("counts what is waiting, paid, collected and rejected", () => {
+    renderPayments([
+      queued({ id: 1 }),
+      queued({ id: 2, status: "paid", total: 20_000 }),
+      queued({ id: 3, status: "cancelled", total: 30_000 }),
+      cod({ id: 4 }),
+      cod({ id: 5, status: "delivered", total: 70_000 }),
+    ]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
-    expect(screen.getByRole("dialog", { name: "Verify payment · Order #1046" })).toBeTruthy();
-    expect(screen.queryByText(/reject/i)).toBeNull();
+    expect(screen.getByText("Oldest uploaded 10 min ago")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "For verification 1" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "COD to collect 1" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Paid 2" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Rejected 1" })).toBeTruthy();
+    expect(screen.getByText("2 payments")).toBeTruthy();
+    expect(screen.getByText("₱900")).toBeTruthy();
+    expect(screen.getByText("1 order · ₱700 collected")).toBeTruthy();
+    expect(screen.getByText("₱300 cancelled after proof")).toBeTruthy();
+  });
+
+  it("lists Cash on Delivery Orders under their own tab, without a Review button", () => {
+    renderPayments([cod()]);
+    fireEvent.click(screen.getByRole("tab", { name: "COD to collect 1" }));
+
+    expect(screen.getByRole("link", { name: "#2001" })).toBeTruthy();
+    expect(screen.getByText("Cash on delivery", { selector: "div" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
   });
 
   it("opens the verify dialog with the proof beside the amount due, offering Mark paid and Cancel order", () => {
-    render(<PaymentQueueView orders={[queued()]} />);
+    renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
 
     const dialog = screen.getByRole("dialog", { name: "Verify payment · Order #1046" });
@@ -540,10 +567,10 @@ describe("the Payments queue", () => {
     expect(markPaid).not.toHaveBeenCalled();
   });
 
-  it("asks before marking paid, shows a spinner at once, and the result only once the server confirms", async () => {
+  it("asks before marking paid, then moves the Order to Paid at once, before the server answers", async () => {
     const pending = deferred<Awaited<ReturnType<typeof markPaid>>>();
     vi.mocked(markPaid).mockReturnValue(pending.promise);
-    render(<PaymentQueueView orders={[queued()]} />);
+    renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark paid" }));
 
@@ -551,12 +578,11 @@ describe("the Payments queue", () => {
     expect(markPaid).not.toHaveBeenCalled();
     fireEvent.click(within(confirm).getByRole("button", { name: "Mark paid" }));
 
-    const busy = within(confirm).getByRole("button", { name: "Marking paid…" });
-    expect(busy.getAttribute("aria-busy")).toBe("true");
-    expect(busy.querySelector("svg.animate-spin")).toBeTruthy();
     expect(markPaid).toHaveBeenCalledWith(1046);
+    await waitFor(() => expect(screen.queryByRole("link", { name: "#1046" })).toBeNull());
+    expect(screen.getByRole("tab", { name: "For verification 0" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Paid 1" })).toBeTruthy();
     expect(toast.success).not.toHaveBeenCalled();
-    expect(refresh).not.toHaveBeenCalled();
 
     await act(async () => pending.settle(paidResult(1046)));
 
@@ -564,9 +590,9 @@ describe("the Payments queue", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("shows a refusal's reason and does not report the Order as paid", async () => {
+  it("puts the Order back and says why when the server refuses", async () => {
     vi.mocked(markPaid).mockResolvedValue({ ok: false, reason: "Order already changed; refresh it before trying again." });
-    render(<PaymentQueueView orders={[queued()]} />);
+    renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark paid" }));
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark paid" }));
@@ -574,11 +600,12 @@ describe("the Payments queue", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Order already changed; refresh it before trying again."));
     expect(toast.success).not.toHaveBeenCalled();
     expect(refresh).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("tab", { name: "For verification 1" })).toBeTruthy());
   });
 
   it("cancels through the Payments Module's own action, after asking", async () => {
     vi.mocked(cancelPaymentOrder).mockResolvedValue({ ok: true, order: { id: 1046, status: "cancelled", deliveryFeeInCentavos: null } });
-    render(<PaymentQueueView orders={[queued()]} />);
+    renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel order" }));
 
