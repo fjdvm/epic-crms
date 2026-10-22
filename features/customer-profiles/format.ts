@@ -8,6 +8,14 @@ export function formatPesos(centavos: number): string {
   return pesos.format(centavos / 100);
 }
 
+/** Pesos typed by Staff, like "150" or "150.50", as integer centavos; anything else is not an amount. */
+export function parsePesos(text: string): number | null {
+  const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(text.trim());
+  if (!match) return null;
+
+  return Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+}
+
 /** Centavos shown as whole pesos, as the Customer list does. */
 export function formatWholePesos(centavos: number): string {
   return wholePesos.format(centavos / 100);

@@ -19,6 +19,9 @@ export const ORDER_STATUSES = [
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+/** Staff may cancel an Order up to `preparing`; nobody can cancel a `dispatched` Order. */
+export const CANCELLABLE_STATUSES: readonly string[] = ["placed", "confirmed", "awaiting payment", "paid", "preparing"];
+
 export type OrderTab = "all" | OrderStatus;
 
 export const ORDER_TABS: OrderTab[] = ["all", ...ORDER_STATUSES];

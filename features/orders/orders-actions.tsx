@@ -2,28 +2,17 @@
 
 import { useState } from "react";
 
-import { formatPesos } from "@/features/customer-profiles/format";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatPesos, parsePesos } from "@/features/customer-profiles/format";
 
 import { OrderActionDialog } from "./action-dialog";
 import { cancelOrder, confirmPickup, quoteDeliveryFee } from "./actions";
-import type { OrderDetail } from "./orders";
-
-/** Staff may cancel up to `preparing`; nobody can cancel a `dispatched` Order. */
-const CANCELLABLE = ["placed", "confirmed", "awaiting payment", "paid", "preparing"];
-
-/** "150" or "150.50" pesos as integer centavos; anything else is not a fee. */
-export function pesosToCentavos(text: string): number | null {
-  const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(text.trim());
-  if (!match) return null;
-
-  return Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
-}
+import { CANCELLABLE_STATUSES, type OrderDetail } from "./orders";
 
 function QuoteFee({ order }: { order: OrderDetail }) {
   const [text, setText] = useState("");
-  const fee = pesosToCentavos(text);
+  const fee = parsePesos(text);
 
   return (
     <OrderActionDialog
@@ -34,7 +23,7 @@ function QuoteFee({ order }: { order: OrderDetail }) {
       busy="Confirming…"
       disabled={fee === null}
       run={() => quoteDeliveryFee(order.id, fee as number)}
-      done={`Order #${order.id} confirmed with a ${formatPesos(fee ?? 0)} Delivery fee.`}
+      successMessage={`Order #${order.id} confirmed with a ${formatPesos(fee ?? 0)} Delivery fee.`}
     >
       <div className="space-y-1.5">
         <Label htmlFor="delivery-fee" className="text-[13px] font-medium text-foreground">
@@ -78,17 +67,17 @@ export function OrdersActions({ order }: { order: OrderDetail }) {
 
   return (
     <>
-      {CANCELLABLE.includes(order.status) && (
+      {CANCELLABLE_STATUSES.includes(order.status) && (
         <OrderActionDialog
           trigger="Cancel order"
-          title={`Cancel order #${order.id}?`}
+          title={`Cancel Order #${order.id}?`}
           description="This cannot be undone."
           confirm="Cancel order"
           busy="Cancelling…"
-          keep="Keep order"
+          keepLabel="Keep order"
           tone="destructive"
           run={() => cancelOrder(order.id)}
-          done={`Order #${order.id} cancelled.`}
+          successMessage={`Order #${order.id} cancelled.`}
         />
       )}
       {placed && !pickup && <QuoteFee order={order} />}
@@ -100,7 +89,7 @@ export function OrdersActions({ order }: { order: OrderDetail }) {
           confirm="Confirm order"
           busy="Confirming…"
           run={() => confirmPickup(order.id)}
-          done={`Order #${order.id} confirmed.`}
+          successMessage={`Order #${order.id} confirmed.`}
         />
       )}
     </>

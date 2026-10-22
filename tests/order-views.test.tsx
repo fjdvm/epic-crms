@@ -330,7 +330,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     render(<OrderDetailView order={detail({ status: "paid" })} modules={ORDERS} />);
     fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
 
-    const dialog = screen.getByRole("alertdialog", { name: "Cancel order #1042?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Cancel Order #1042?" });
     expect(within(dialog).getByText("This cannot be undone.")).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Keep order" }));
@@ -366,9 +366,8 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel order" }));
 
-    const dialog = screen.getByRole("alertdialog");
-    expect((await within(dialog).findByRole("alert")).textContent).toContain("Order already changed; refresh it before trying again.");
-    expect(within(dialog).getByRole("button", { name: "Cancel order" })).toBeTruthy();
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Order already changed; refresh it before trying again."));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(toast.success).not.toHaveBeenCalled();
     expect(screen.getAllByText("Confirmed").length).toBeGreaterThan(0);
     // The page catches up with what the server really holds.
@@ -381,7 +380,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel order" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("CREOMS could not reach the store");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("CREOMS could not save that. Try again in a moment."));
     expect(toast.success).not.toHaveBeenCalled();
   });
 
@@ -429,7 +428,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Quote and confirm" }));
 
-    expect((await within(dialog).findByRole("alert")).textContent).toContain("Storefront refused the change.");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Storefront refused the change."));
     expect(screen.getAllByText("Delivery fee")[0].nextElementSibling?.textContent).toBe("Pending");
     expect(toast.success).not.toHaveBeenCalled();
   });

@@ -8,6 +8,7 @@ import type { Staff } from "@/lib/portal/client";
 import { requireModule } from "@/lib/portal/staff";
 import { changeOrderStatus, type OrderChangeResult } from "@/lib/storefront";
 
+import { CANCELLABLE_STATUSES } from "./orders";
 import { paymentQueue, type PaymentQueueResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
 
@@ -78,7 +79,7 @@ export async function confirmPickup(id: number): Promise<OrderChangeResult> {
 /** The same cancel limit applies in Orders and Payments. */
 async function cancel(id: number, module: string): Promise<OrderChangeResult> {
   return act(id, async (order) => {
-    if (!["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(order.status)) {
+    if (!CANCELLABLE_STATUSES.includes(order.status)) {
       return { ok: false, reason: ALREADY_CHANGED };
     }
     return changeOrderStatus(id, { status: "cancelled" });

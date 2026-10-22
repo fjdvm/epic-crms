@@ -16,17 +16,15 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import type { OrderChangeResult } from "@/lib/storefront";
 import { cn } from "@/lib/utils";
-
-/** What every Order action hands back: done, or refused with a reason. */
-type Outcome = { ok: true } | { ok: false; reason: string };
-
-const UNREACHABLE = "CREOMS could not reach the store. Try again in a moment.";
 
 /**
  * One Order action behind a confirmation dialog. Never optimistic: the spinner shows at once, and the
- * Order is shown as changed only once the server confirms. A refusal keeps the dialog open with its
- * reason. The Orders, Payments and Fulfilment actions all go through this.
+ * Order is shown as changed only once the server confirms. A refusal closes the dialog and says why in
+ * a toast, as Ticket refusals do: the refresh that follows may remove the button, and the dialog with
+ * it, when someone else has already moved the Order. The Orders, Payments and Fulfilment actions all
+ * go through this.
  */
 export function OrderActionDialog({
   trigger,
@@ -35,11 +33,11 @@ export function OrderActionDialog({
   children,
   confirm,
   busy,
-  keep = "Cancel",
+  keepLabel = "Cancel",
   tone = "primary",
   disabled = false,
   run,
-  done,
+  successMessage,
 }: {
   /** The button's label on the page. */
   trigger: string;
@@ -51,37 +49,33 @@ export function OrderActionDialog({
   confirm: string;
   busy: string;
   /** The label of the button that closes the dialog without acting. */
-  keep?: string;
+  keepLabel?: string;
   tone?: "primary" | "destructive";
   /** True while what Staff entered cannot be sent. */
   disabled?: boolean;
-  run: () => Promise<Outcome>;
+  run: () => Promise<OrderChangeResult>;
   /** What to tell Staff once the server confirms. */
-  done: string;
+  successMessage: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
 
   async function act() {
     setPending(true);
-    setRefusal(null);
 
-    let outcome: Outcome;
+    let outcome: OrderChangeResult;
     try {
       outcome = await run();
     } catch {
-      outcome = { ok: false, reason: UNREACHABLE };
+      // The action never answered (network, crash): nothing changed that Staff can see.
+      outcome = { ok: false, reason: "CREOMS could not save that. Try again in a moment." };
     }
 
     setPending(false);
-    if (outcome.ok) {
-      setOpen(false);
-      toast.success(done);
-    } else {
-      setRefusal(outcome.reason);
-    }
+    setOpen(false);
+    if (outcome.ok) toast.success(successMessage);
+    else toast.error(outcome.reason);
     // Either way the page catches up with the server, so a refusal also shows what is really there.
     router.refresh();
   }
@@ -91,11 +85,7 @@ export function OrderActionDialog({
   return (
     <AlertDialog
       open={open}
-      onOpenChange={(next) => {
-        if (pending) return;
-        setOpen(next);
-        if (next) setRefusal(null);
-      }}
+      onOpenChange={(next) => !pending && setOpen(next)}
     >
       <AlertDialogTrigger asChild>
         <Button
@@ -134,23 +124,13 @@ export function OrderActionDialog({
             <X aria-hidden className="size-4.5" />
           </AlertDialogCancel>
         </AlertDialogHeader>
-        {(children || refusal) && (
-          <div className="space-y-4 px-6 py-5 text-sm">
-            {children}
-            {refusal && (
-              <p role="alert" className="flex gap-2 rounded-lg bg-[#fef2f2] px-3 py-2.5 text-[13px] text-[#b91c1c]">
-                <AlertTriangle aria-hidden className="mt-px size-4 shrink-0" />
-                {refusal}
-              </p>
-            )}
-          </div>
-        )}
+        {children && <div className="space-y-4 px-6 py-5 text-sm">{children}</div>}
         <AlertDialogFooter className="flex shrink-0 flex-row items-center justify-end gap-2 space-x-0 border-t border-[#f0f0f2] bg-[#fafafa] px-6 py-3.5 sm:space-x-0">
           <AlertDialogCancel
             disabled={pending}
             className="mt-0 h-auto rounded-lg border border-input bg-background px-4 py-[9px] leading-[normal] text-foreground shadow-none hover:bg-accent sm:mt-0"
           >
-            {keep}
+            {keepLabel}
           </AlertDialogCancel>
           {/* A plain button, not AlertDialogAction: that would close the dialog before the server answers. */}
           <Button
