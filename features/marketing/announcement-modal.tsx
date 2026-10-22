@@ -20,19 +20,17 @@ export function AnnouncementModalLink({ announcement }: { announcement: Announce
         {announcement.title}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex max-h-[85vh] max-w-[480px] flex-col gap-4 overflow-hidden sm:max-w-[480px] md:max-w-[480px] lg:max-w-[480px]">
-          <div className="flex shrink-0 items-center gap-3 pr-6">
+        <DialogContent className="flex max-w-[480px] flex-col gap-4 sm:max-w-[480px] md:max-w-[480px] lg:max-w-[480px]">
+          <div className="flex items-center gap-3 pr-6">
             <DialogTitle className="min-w-0 flex-1 truncate leading-[normal]">{announcement.title}</DialogTitle>
             <StatusPill state={announcement.state} />
           </div>
           <DialogDescription asChild>
             <DeliveryNote announcement={announcement} className="text-sm leading-[normal] text-[#71717a]" />
           </DialogDescription>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <InboxPreview title={announcement.title} description={announcement.description} images={announcement.images} imageLayout={announcement.imageLayout} />
-          </div>
+          <InboxPreview title={announcement.title} description={announcement.description} images={announcement.images} imageLayout={announcement.imageLayout} />
           {announcement.state === "failed" && (
-            <div className="flex shrink-0 justify-end">
+            <div className="flex justify-end">
               <RetrySend announcement={announcement} />
             </div>
           )}
