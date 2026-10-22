@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Loader2, LogOut } from "lucide-react";
+import { Loader2, LogOut, X } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,18 +60,25 @@ export function SidebarProfileFooter() {
           onEscapeKeyDown={(event) => loggingOut && event.preventDefault()}
           className="w-[calc(100%-2rem)] max-w-[27.5rem] sm:max-w-[27.5rem] md:max-w-[27.5rem] lg:max-w-[27.5rem] gap-0 overflow-hidden rounded-2xl p-0 sm:p-0"
         >
-          <AlertDialogHeader className="flex-row items-start gap-3 px-6 pt-5 pb-4 text-left">
+          <AlertDialogHeader className="relative flex-row items-start gap-4 px-6 pt-6 pb-5 pr-14 text-left">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#efeaf5] text-primary [&_svg]:size-5">
               <LogOut aria-hidden />
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <AlertDialogTitle className="text-lg font-semibold">Log out?</AlertDialogTitle>
               <AlertDialogDescription className="text-[13px]">
-                Are you sure you want to log out of the Enterprise Suite?
+                You will be signed out of the portal and every system you opened.
               </AlertDialogDescription>
             </div>
+            <AlertDialogCancel
+              disabled={loggingOut}
+              aria-label="Close"
+              className="absolute right-4 top-4 mt-0 size-8 border-0 bg-transparent p-0 text-muted-foreground shadow-none hover:bg-muted sm:mt-0"
+            >
+              <X aria-hidden className="size-4" />
+            </AlertDialogCancel>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-row items-center justify-end gap-2 border-t bg-muted/40 px-6 py-3.5 sm:space-x-0">
+          <AlertDialogFooter className="flex-row items-center justify-end gap-2 border-t border-border-subtle bg-background px-6 py-4 sm:space-x-0">
             <AlertDialogCancel disabled={loggingOut} className="mt-0 sm:mt-0">
               Cancel
             </AlertDialogCancel>
