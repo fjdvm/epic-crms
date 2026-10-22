@@ -1,6 +1,16 @@
-import { DelayedLoadingCard } from "./delayed-loading-card";
+import { Skeleton } from "@/components/ui/skeleton";
 
-/** The loading card for moving between CREOMS pages, used by every route's loading file. */
+/** The skeleton shown while moving between CREOMS pages, used by every route's loading file. */
 export function PageLoading() {
-  return <DelayedLoadingCard title="Loading…" subtitle="Getting this page ready" />;
+  return (
+    <div role="status" aria-label="Loading page" className="p-md sm:p-lg space-y-md">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-10 w-full max-w-md" />
+      <div className="space-y-sm">
+        {Array.from({ length: 6 }, (_, i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
+      </div>
+    </div>
+  );
 }

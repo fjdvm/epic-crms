@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,30 +52,31 @@ export function SidebarProfileFooter() {
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <Button type="button" variant="outline" className="w-full">
+            <LogOut aria-hidden />
             Log out
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent
           onEscapeKeyDown={(event) => loggingOut && event.preventDefault()}
-          className="w-[calc(100%-2rem)] max-w-[24rem] sm:max-w-[24rem] md:max-w-[24rem] lg:max-w-[24rem] gap-4 p-6 sm:p-6 rounded-xl"
+          className="w-[calc(100%-2rem)] max-w-[27.5rem] sm:max-w-[27.5rem] md:max-w-[27.5rem] lg:max-w-[27.5rem] gap-0 overflow-hidden rounded-2xl p-0 sm:p-0"
         >
-          <AlertDialogHeader className="gap-2 text-left">
-            <AlertDialogTitle className="text-lg font-semibold">Log out?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to log out of the Enterprise Suite?
-            </AlertDialogDescription>
+          <AlertDialogHeader className="flex-row items-start gap-3 px-6 pt-5 pb-4 text-left">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#efeaf5] text-primary [&_svg]:size-5">
+              <LogOut aria-hidden />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <AlertDialogTitle className="text-lg font-semibold">Log out?</AlertDialogTitle>
+              <AlertDialogDescription className="text-[13px]">
+                Are you sure you want to log out of the Enterprise Suite?
+              </AlertDialogDescription>
+            </div>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
+          <AlertDialogFooter className="flex-row items-center justify-end gap-2 border-t bg-muted/40 px-6 py-3.5 sm:space-x-0">
             <AlertDialogCancel disabled={loggingOut} className="mt-0 sm:mt-0">
               Cancel
             </AlertDialogCancel>
             {/* A plain button, not AlertDialogAction: that would close the dialog and hide the loading state. */}
-            <Button
-              type="submit"
-              form="logout-form"
-              disabled={loggingOut}
-              className="bg-zinc-900 text-white hover:bg-zinc-800"
-            >
+            <Button type="submit" form="logout-form" disabled={loggingOut}>
               {loggingOut && <Loader2 aria-hidden className="size-4 animate-spin" />}
               {loggingOut ? "Logging out…" : "Log out"}
             </Button>
