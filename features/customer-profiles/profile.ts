@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { getCustomerCart, type Cart } from "./cart";
 import { getCustomerOrders, type CustomerOrder } from "./orders";
+import { listEmailsReceived, type EmailReceived } from "@/features/marketing/announcements";
 import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "./rules";
@@ -47,6 +48,8 @@ export interface CustomerProfile {
   cart: Cart;
   /** Set for a Walk-in Customer: the fields Staff entered. Such a profile has no storefront Orders or Cart. */
   walkIn: WalkInProfileData | null;
+  /** Marketing Emails this Customer was sent, newest first. Null when CREOMS could not read them. */
+  emailsReceived: EmailReceived[] | null;
   /** Tags and internal notes carried over from the Walk-in Customer this Customer used to be. */
   mergedWalkIn: MergedWalkIn | null;
 }
@@ -130,6 +133,7 @@ export async function getCustomerProfile(
     orderHistory,
     cart,
     walkIn: null,
+    emailsReceived: [],
     mergedWalkIn: null,
   };
 }
@@ -158,6 +162,7 @@ export function walkInProfile(w: WalkInProfileData): CustomerProfile {
     orderHistory: [],
     cart: { lines: [], total: 0 },
     walkIn: w,
+    emailsReceived: [],
     mergedWalkIn: null,
   };
 }
@@ -179,7 +184,10 @@ export async function loadCustomerProfile(
     }
 
     const profile = await getCustomerProfile(connect(), id);
-    if (profile) profile.mergedWalkIn = await readMergedWalkIn(connectCrms, profile.email);
+    if (profile) {
+      profile.mergedWalkIn = await readMergedWalkIn(connectCrms, profile.email);
+      profile.emailsReceived = await readEmailsReceived(connectCrms, profile.id);
+    }
 
     return { ok: true, profile };
   } catch (error) {
@@ -194,6 +202,16 @@ async function readMergedWalkIn(connectCrms: () => postgres.Sql, email: string):
     return await getMergedWalkIn(connectCrms(), email);
   } catch (error) {
     console.error("Customer Profile could not read the merged Walk-in Customer", error);
+    return null;
+  }
+}
+
+/** Announcements are CREOMS's own data: if they cannot be read, the profile still opens and the tab says so. */
+async function readEmailsReceived(connectCrms: () => postgres.Sql, customerId: string): Promise<EmailReceived[] | null> {
+  try {
+    return await listEmailsReceived(connectCrms(), customerId);
+  } catch (error) {
+    console.error("Customer Profile could not read the Emails received", error);
     return null;
   }
 }

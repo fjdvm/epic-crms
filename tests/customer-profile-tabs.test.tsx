@@ -6,6 +6,7 @@ import { CartTab } from "@/features/customer-profiles/cart-tab";
 import { EmailsTab } from "@/features/customer-profiles/emails-tab";
 import { FeedbackTab } from "@/features/customer-profiles/feedback-tab";
 import type { CustomerOrder } from "@/features/customer-profiles/orders";
+import type { EmailReceived } from "@/features/marketing/announcements";
 
 afterEach(cleanup);
 
@@ -121,13 +122,56 @@ describe("FeedbackTab", () => {
   });
 });
 
+const email = (over: Partial<EmailReceived>): EmailReceived => ({
+  id: "a1",
+  title: "Undas ube treats",
+  description: "Our ube treats are back.",
+  images: [],
+  imageLayout: null,
+  receivedAt: new Date("2026-10-20T04:00:00Z"),
+  ...over,
+});
+
 describe("EmailsTab", () => {
   it("shows the opt-in status and the empty state", () => {
-    const { rerender } = render(<EmailsTab marketingOptIn />);
+    const { rerender } = render(<EmailsTab marketingOptIn emails={[]} />);
     expect(screen.getByText("Opted in")).toBeTruthy();
     expect(screen.getByText(/no marketing emails/i)).toBeTruthy();
 
-    rerender(<EmailsTab marketingOptIn={false} />);
+    rerender(<EmailsTab marketingOptIn={false} emails={[]} />);
     expect(screen.getByText("Not opted in")).toBeTruthy();
+  });
+
+  it("lists each email with its title and the date it was sent, in the order given", () => {
+    render(
+      <EmailsTab
+        marketingOptIn
+        emails={[email({ id: "b", title: "Halaya restock" }), email({ id: "a", title: "Undas ube treats", receivedAt: new Date("2026-10-01T04:00:00Z") })]}
+      />,
+    );
+
+    const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(items[0]).toContain("Halaya restock");
+    expect(items[0]).toContain("20 Oct 2026");
+    expect(items[1]).toContain("Undas ube treats");
+    expect(items[1]).toContain("1 Oct 2026");
+  });
+
+  it("opens an entry to show the Announcement as it was received", () => {
+    render(<EmailsTab marketingOptIn emails={[email({ title: "Halaya restock", description: "Back in stock today." })]} />);
+    expect(screen.queryByTestId("inbox-preview")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /halaya restock/i }));
+
+    const preview = screen.getByTestId("inbox-preview");
+    expect(preview.textContent).toContain("Halaya restock");
+    expect(preview.textContent).toContain("Back in stock today.");
+  });
+
+  it("says the list could not be read, rather than that nothing was sent", () => {
+    render(<EmailsTab marketingOptIn emails={null} />);
+
+    expect(screen.getByText(/could not be read/i)).toBeTruthy();
+    expect(screen.queryByText(/no marketing emails/i)).toBeNull();
   });
 });
