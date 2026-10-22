@@ -67,11 +67,15 @@ describe("the Announcements list", () => {
     expect(screen.getByText("Draft")).toBeTruthy();
   });
 
-  it("opens every Announcement, a Draft to edit and the rest to read", () => {
+  it("opens a Draft to edit, and a Sent one read-only in a modal rather than another page", () => {
     render(<CampaignList announcements={[row({ id: "s", title: "Halaya restock", state: "sent" }), row({ id: "d", title: "Christmas" })]} />);
 
     expect(screen.getByRole("link", { name: "Christmas" }).getAttribute("href")).toBe("/email-campaigns/d");
-    expect(screen.getByRole("link", { name: "Halaya restock" }).getAttribute("href")).toBe("/email-campaigns/s");
+    expect(screen.queryByRole("link", { name: "Halaya restock" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Halaya restock" }));
+
+    expect(within(screen.getByRole("dialog")).getByTestId("inbox-preview")).toBeTruthy();
   });
 
   it("says when there are none", () => {

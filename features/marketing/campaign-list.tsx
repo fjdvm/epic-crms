@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { formatDate } from "@/features/customer-profiles/format";
 
+import { AnnouncementModalLink } from "./announcement-modal";
 import { formatPhilippineTime } from "./philippine-time";
 import type { AnnouncementRow, AnnouncementState } from "./announcements";
 
@@ -34,7 +35,7 @@ export function SubscribersCard({ counts }: { counts: { subscribers: number; cus
   );
 }
 
-/** The Announcements table. A Draft or Scheduled Announcement opens to be edited; the rest open read-only. */
+/** The Announcements table. A Draft or Scheduled Announcement opens to be edited; a Sent or Failed one opens read-only in a modal. */
 export function CampaignList({ announcements }: { announcements: AnnouncementRow[] }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
@@ -53,9 +54,13 @@ export function CampaignList({ announcements }: { announcements: AnnouncementRow
             <ul className="min-h-0 flex-1 overflow-y-auto">
               {announcements.map((a) => (
                 <li key={a.id} className={`grid ${COLUMNS} items-center gap-4 border-b border-[#efebf4] py-[11px] text-sm leading-[normal] text-[#1f1a2e]`}>
-                  <Link href={`/email-campaigns/${a.id}`} className="truncate font-medium text-[#5b2a86] hover:underline">
-                    {a.title}
-                  </Link>
+                  {a.state === "draft" || a.state === "scheduled" ? (
+                    <Link href={`/email-campaigns/${a.id}`} className="truncate font-medium text-[#5b2a86] hover:underline">
+                      {a.title}
+                    </Link>
+                  ) : (
+                    <AnnouncementModalLink announcement={a} />
+                  )}
                   <span>{a.sentTo ?? "—"}</span>
                   <span>
                     {a.sentAt
