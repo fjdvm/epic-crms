@@ -14,8 +14,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const announcement = await getAnnouncement(crmsDatabase(), (await params).id);
 
   if (!announcement) notFound();
-  // Only a Draft is edited; anything else has moved on and is shown as it was sent.
-  if (announcement.state !== "draft") return <AnnouncementDetail announcement={announcement} />;
+  // A Draft or a Scheduled Announcement is edited; anything else has moved on and is shown as it was sent.
+  if (announcement.state !== "draft" && announcement.state !== "scheduled") return <AnnouncementDetail announcement={announcement} />;
 
   const counts = await subscriberCount(database()).catch(() => null);
 

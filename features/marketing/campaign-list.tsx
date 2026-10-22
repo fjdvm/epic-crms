@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { formatDate } from "@/features/customer-profiles/format";
 
+import { formatPhilippineTime } from "./philippine-time";
 import type { AnnouncementRow, AnnouncementState } from "./announcements";
 
 const STATUS: Record<AnnouncementState, { label: string; pill: string }> = {
@@ -33,7 +34,7 @@ export function SubscribersCard({ counts }: { counts: { subscribers: number; cus
   );
 }
 
-/** The Announcements table. A Draft opens to be edited; every other state opens read-only. */
+/** The Announcements table. A Draft or Scheduled Announcement opens to be edited; the rest open read-only. */
 export function CampaignList({ announcements }: { announcements: AnnouncementRow[] }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
@@ -56,7 +57,13 @@ export function CampaignList({ announcements }: { announcements: AnnouncementRow
                     {a.title}
                   </Link>
                   <span>{a.sentTo ?? "—"}</span>
-                  <span>{a.sentAt ? formatDate(a.sentAt) : "—"}</span>
+                  <span>
+                    {a.sentAt
+                      ? formatDate(a.sentAt)
+                      : a.state === "scheduled" && a.scheduledFor
+                        ? `${formatPhilippineTime(a.scheduledFor)} PHT`
+                        : "—"}
+                  </span>
                   <span>
                     <StatusPill state={a.state} />
                   </span>

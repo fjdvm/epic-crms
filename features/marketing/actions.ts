@@ -10,22 +10,27 @@ import { requireModule } from "@/lib/portal/staff";
 
 import { addImage } from "./add-image";
 import {
+  cancelSchedule,
   deleteDraft,
   editDraft,
   retrySend,
   saveDraft,
+  schedule,
   sendNow,
   storefrontSubscribers,
   sendTestCopy,
   type AnnouncementInput,
+  type CancelScheduleResult,
   type DeleteResult,
   type EditResult,
   type Ports,
   type SaveResult,
+  type ScheduleResult,
   type SendResult,
   type TestCopyResult,
 } from "./announcements";
 import type { AddImageResult } from "./image-limits";
+import { parsePhilippineTime } from "./philippine-time";
 
 export type Unavailable = { ok: false; reason: "unavailable" };
 
@@ -74,6 +79,22 @@ export async function sendNowAction(id: string): Promise<SendResult | Unavailabl
 
 export async function retrySendAction(id: string): Promise<SendResult | Unavailable> {
   return act((actor) => retrySend(crmsDatabase(), actor, id, ports()));
+}
+
+/** `when` is a date and time typed in Philippine Time, as a datetime-local input holds it: "2026-10-25T09:30". */
+export async function scheduleAction(id: string, when: string): Promise<ScheduleResult | Unavailable> {
+  const at = parsePhilippineTime(when);
+  if (!at) {
+    await requireModule(MARKETING_MODULE);
+
+    return { ok: false, reason: "invalid-time" };
+  }
+
+  return act((actor) => schedule(crmsDatabase(), actor, id, at, ports()));
+}
+
+export async function cancelScheduleAction(id: string): Promise<CancelScheduleResult | Unavailable> {
+  return act((actor) => cancelSchedule(crmsDatabase(), actor, id, ports()));
 }
 
 /** Sends to the signed-in Staff member's own email, taken from their session and never from the caller. */

@@ -6,12 +6,15 @@ import sharp from "sharp";
 import { addImage } from "@/features/marketing/add-image";
 import { MAX_IMAGE_BYTES, type ImageStore } from "@/features/marketing/image-limits";
 import {
+  cancelSchedule,
   deleteDraft,
   editDraft,
   getAnnouncement,
   listAnnouncements,
   retrySend,
   saveDraft,
+  schedule,
+  sendDue,
   sendNow,
   SEND_BATCH_SIZE,
   sendTestCopy,
@@ -248,7 +251,7 @@ describe("editing a Draft", () => {
 
     expect(await editDraft(db.sql, ada, id, { title: "Sneaky", description: "x" }, ports())).toEqual({
       ok: false,
-      reason: "not-a-draft",
+      reason: "not-editable",
     });
     expect(await getAnnouncement(db.sql, id)).toMatchObject({ title: "Undas ube treats", state: "sent" });
     expect(audit.events).toEqual([]);
@@ -824,5 +827,362 @@ describe("retrying a Failed send", () => {
     if (!saved.ok) throw new Error("not saved");
 
     expect(await retrySend(db.sql, ada, saved.announcement.id, ports())).toEqual({ ok: false, reason: "not-sendable" });
+  });
+});
+
+const PHT = (local: string) => new Date(`${local}:00+08:00`);
+
+async function savedDraft(input: Parameters<typeof saveDraft>[2] = draft) {
+  const result = await saveDraft(db.sql, ada, input, ports());
+  if (!result.ok) throw new Error("not saved");
+  audit.events = [];
+
+  return result.announcement.id;
+}
+
+describe("scheduling", () => {
+  const later = new Date("2026-10-22T01:00:00Z");
+
+  it("schedules a Draft for a future time and records who scheduled it", async () => {
+    const id = await savedDraft();
+
+    expect(await schedule(db.sql, ada, id, later, ports())).toEqual({ ok: true });
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "scheduled", scheduledFor: later, scheduledByName: "Ada Okafor" });
+    expect(mailer.batches).toEqual([]);
+  });
+
+  it("rejects a time that is not in the future, and changes nothing", async () => {
+    const id = await savedDraft();
+
+    expect(await schedule(db.sql, ada, id, now, ports())).toEqual({ ok: false, reason: "in-the-past" });
+    expect(await schedule(db.sql, ada, id, new Date(now.getTime() - 60_000), ports())).toEqual({ ok: false, reason: "in-the-past" });
+    expect(await schedule(db.sql, ada, id, new Date("nonsense"), ports())).toEqual({ ok: false, reason: "invalid-time" });
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "draft", scheduledFor: null });
+    expect(audit.events).toEqual([]);
+  });
+
+  it("is audited with the acting Staff member and the Philippine Time it is set for", async () => {
+    const id = await savedDraft();
+
+    await schedule(db.sql, ada, id, PHT("2026-10-25T09:30"), ports());
+
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: ada, announcement: { id, title: "Undas ube treats" } });
+    expect(audit.events[0].description).toBe('Ada Okafor scheduled "Undas ube treats" for 25 Oct 2026, 9:30 am Philippine Time.');
+  });
+
+  it("still schedules when the audit log is down", async () => {
+    const id = await savedDraft();
+    audit.down = true;
+
+    expect((await schedule(db.sql, ada, id, later, ports())).ok).toBe(true);
+  });
+
+  it("reschedules, whoever scheduled it first, and names the new Staff member", async () => {
+    const id = await savedDraft();
+    await schedule(db.sql, ada, id, later, ports());
+    audit.events = [];
+    const evening = new Date("2026-10-23T10:00:00Z");
+
+    expect(await schedule(db.sql, ben, id, evening, ports())).toEqual({ ok: true });
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "scheduled", scheduledFor: evening, scheduledByName: "Ben Cruz", updatedByName: "Ben Cruz" });
+    expect(audit.events[0].description).toBe('Ben Cruz rescheduled "Undas ube treats" for 23 Oct 2026, 6:00 pm Philippine Time.');
+  });
+
+  it("will not schedule a Sent or Failed Announcement, or one that does not exist", async () => {
+    const sent = await savedDraft();
+    await db.sql`update crms.announcements set state = 'sent', sent_at = now() where id = ${sent}`;
+    const failed = await savedDraft();
+    await db.sql`update crms.announcements set state = 'failed' where id = ${failed}`;
+
+    expect(await schedule(db.sql, ada, sent, later, ports())).toEqual({ ok: false, reason: "not-schedulable" });
+    expect(await schedule(db.sql, ada, failed, later, ports())).toEqual({ ok: false, reason: "not-schedulable" });
+    expect(await schedule(db.sql, ada, "00000000-0000-0000-0000-000000000000", later, ports())).toEqual({ ok: false, reason: "not-found" });
+    expect(await schedule(db.sql, ada, "nope", later, ports())).toEqual({ ok: false, reason: "not-found" });
+  });
+
+  it("will not reschedule while its send is running", async () => {
+    const id = await savedDraft();
+    await schedule(db.sql, ada, id, later, ports());
+    await db.sql`update crms.announcements set sent_at = ${now} where id = ${id}`;
+
+    expect(await schedule(db.sql, ben, id, new Date("2026-10-23T10:00:00Z"), ports())).toEqual({ ok: false, reason: "in-progress" });
+  });
+
+  it("is listed with the time it is set for", async () => {
+    const id = await savedDraft();
+    await schedule(db.sql, ada, id, later, ports());
+
+    expect((await listAnnouncements(db.sql))[0]).toMatchObject({ id, state: "scheduled", scheduledFor: later });
+  });
+});
+
+describe("editing a Scheduled Announcement", () => {
+  it("changes the content and leaves it Scheduled for the same time", async () => {
+    const id = await savedDraft();
+    const at = new Date("2026-10-22T01:00:00Z");
+    await schedule(db.sql, ada, id, at, ports());
+    audit.events = [];
+
+    expect(await editDraft(db.sql, ben, id, { title: "Halaya restock", description: "Back in stock." }, ports())).toEqual({ ok: true });
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ title: "Halaya restock", state: "scheduled", scheduledFor: at, scheduledByName: "Ada Okafor", updatedByName: "Ben Cruz" });
+    expect(audit.events[0].description).toBe('Ben Cruz edited the Scheduled Announcement "Halaya restock".');
+  });
+
+  it("is refused for a Failed Announcement", async () => {
+    const id = await savedDraft();
+    await db.sql`update crms.announcements set state = 'failed' where id = ${id}`;
+
+    expect(await editDraft(db.sql, ada, id, draft, ports())).toEqual({ ok: false, reason: "not-editable" });
+  });
+
+  it("is refused while its send is running", async () => {
+    const id = await savedDraft();
+    await schedule(db.sql, ada, id, new Date("2026-10-22T01:00:00Z"), ports());
+    await db.sql`update crms.announcements set sent_at = ${now} where id = ${id}`;
+
+    expect(await editDraft(db.sql, ada, id, { title: "Sneaky", description: "x" }, ports())).toEqual({ ok: false, reason: "not-editable" });
+  });
+});
+
+describe("cancelling a schedule", () => {
+  it("puts it back to a Draft with no send time, and audits it", async () => {
+    const id = await savedDraft();
+    await schedule(db.sql, ada, id, new Date("2026-10-22T01:00:00Z"), ports());
+    audit.events = [];
+
+    expect(await cancelSchedule(db.sql, ben, id, ports())).toEqual({ ok: true });
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "draft", scheduledFor: null, updatedByName: "Ben Cruz" });
+    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: ben });
+    expect(audit.events[0].description).toBe('Ben Cruz cancelled the schedule of "Undas ube treats"; it is a Draft again.');
+  });
+
+  it("can then be edited, deleted or scheduled again as a Draft", async () => {
+    const id = await savedDraft();
+    await schedule(db.sql, ada, id, new Date("2026-10-22T01:00:00Z"), ports());
+    await cancelSchedule(db.sql, ada, id, ports());
+
+    expect(await schedule(db.sql, ada, id, new Date("2026-10-23T01:00:00Z"), ports())).toEqual({ ok: true });
+    await cancelSchedule(db.sql, ada, id, ports());
+    expect(await deleteDraft(db.sql, ada, id, ports())).toEqual({ ok: true });
+  });
+
+  it("applies only to a Scheduled Announcement", async () => {
+    const id = await savedDraft();
+
+    expect(await cancelSchedule(db.sql, ada, id, ports())).toEqual({ ok: false, reason: "not-scheduled" });
+    expect(await cancelSchedule(db.sql, ada, "00000000-0000-0000-0000-000000000000", ports())).toEqual({ ok: false, reason: "not-found" });
+  });
+
+  it("is refused while its send is running", async () => {
+    const id = await savedDraft();
+    await schedule(db.sql, ada, id, new Date("2026-10-22T01:00:00Z"), ports());
+    await db.sql`update crms.announcements set sent_at = ${now} where id = ${id}`;
+
+    expect(await cancelSchedule(db.sql, ada, id, ports())).toEqual({ ok: false, reason: "in-progress" });
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "scheduled" });
+  });
+});
+
+describe("the scheduled send", () => {
+  const sendTime = new Date("2026-10-22T01:00:00Z");
+
+  async function scheduledFor(at = sendTime, input: Parameters<typeof saveDraft>[2] = draft) {
+    const id = await savedDraft(input);
+    await schedule(db.sql, ada, id, at, ports());
+    audit.events = [];
+
+    return id;
+  }
+
+  it("sends a due Announcement to every Subscriber and it becomes Sent", async () => {
+    subscribe(3);
+    const id = await scheduledFor();
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 1, failed: 0, skipped: 0, unreadable: 0 });
+
+    expect(mailer.emailed).toEqual(["c1@x.test", "c2@x.test", "c3@x.test"]);
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "sent", sentTo: 3, sentAt: clock });
+  });
+
+  it("leaves an Announcement that is not yet due alone", async () => {
+    subscribe(2);
+    const id = await scheduledFor();
+    clock = new Date("2026-10-22T00:59:59Z");
+
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 0, skipped: 0, unreadable: 0 });
+
+    expect(mailer.batches).toEqual([]);
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "scheduled" });
+  });
+
+  it("ignores Drafts, Failed and Sent Announcements", async () => {
+    subscribe(2);
+    await savedDraft();
+    const failed = await savedDraft();
+    await db.sql`update crms.announcements set state = 'failed', scheduled_for = ${sendTime} where id = ${failed}`;
+    clock = new Date("2026-10-23T00:00:00Z");
+
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 0, skipped: 0, unreadable: 0 });
+    expect(mailer.batches).toEqual([]);
+  });
+
+  it("sends once even when the job runs twice at the same time", async () => {
+    subscribe(2);
+    await scheduledFor();
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    const runs = await Promise.all([sendDue(db.sql, ports()), sendDue(db.sql, ports())]);
+
+    expect(runs.reduce((n, r) => n + r.sent, 0)).toBe(1);
+    expect(mailer.emailed).toEqual(["c1@x.test", "c2@x.test"]);
+  });
+
+  it("sends once when the job runs again afterwards", async () => {
+    subscribe(2);
+    await scheduledFor();
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    await sendDue(db.sql, ports());
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 0, skipped: 0, unreadable: 0 });
+
+    expect(mailer.emailed).toEqual(["c1@x.test", "c2@x.test"]);
+  });
+
+  it("goes to whoever is a Subscriber when it sends, not when it was scheduled", async () => {
+    subscribe(3);
+    await scheduledFor();
+    subscribers.subscribers = subscribers.subscribers.filter((s) => s.customerId !== "c2").concat(subscriber(4));
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    await sendDue(db.sql, ports());
+
+    expect(mailer.emailed).toEqual(["c1@x.test", "c3@x.test", "c4@x.test"]);
+  });
+
+  it("does not email a Customer who unsubscribed after it was scheduled", async () => {
+    subscribe(2);
+    await scheduledFor();
+    subscribers.subscribers = [subscriber(1)];
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    await sendDue(db.sql, ports());
+
+    expect(mailer.emailed).toEqual(["c1@x.test"]);
+  });
+
+  it("sends the content as last edited", async () => {
+    subscribe(1);
+    const id = await scheduledFor();
+    await editDraft(db.sql, ben, id, { title: "Halaya restock", description: "Back in stock." }, ports());
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    await sendDue(db.sql, ports());
+
+    expect(mailer.batches[0].mail).toMatchObject({ title: "Halaya restock", description: "Back in stock." });
+  });
+
+  it("is audited as the Staff member who scheduled it", async () => {
+    subscribe(2);
+    await scheduledFor();
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    await sendDue(db.sql, ports());
+
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: ada, subscribers: 2, occurredAt: clock });
+    expect(audit.events[0].description).toBe('Ada Okafor\'s scheduled send of "Undas ube treats" went to 2 Subscribers.');
+    expect(await getAnnouncement(db.sql, (await listAnnouncements(db.sql))[0].id)).toMatchObject({ updatedByName: "Ada Okafor" });
+  });
+
+  it("is Failed when a batch is not fully handed over, and a retry skips who was reached", async () => {
+    subscribe(3);
+    mailer.refusing.add("c2@x.test");
+    const id = await scheduledFor();
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 1, skipped: 0, unreadable: 0 });
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "failed", sentTo: 2 });
+    expect(audit.events[0].description).toBe('Ada Okafor\'s scheduled send of "Undas ube treats" to 3 Subscribers did not finish; 2 were reached and it is Failed.');
+
+    mailer.refusing.clear();
+    mailer.batches = [];
+    expect(await retrySend(db.sql, ben, id, ports())).toMatchObject({ ok: true, state: "sent" });
+    expect(mailer.emailed).toEqual(["c2@x.test"]);
+  });
+
+  it("is Failed, and not tried again by the job, when there are no Subscribers", async () => {
+    const id = await scheduledFor();
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 1, skipped: 0, unreadable: 0 });
+
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "failed", sentTo: null });
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 0, skipped: 0, unreadable: 0 });
+    expect(audit.events[0].description).toBe('Ada Okafor\'s scheduled send of "Undas ube treats" found no Subscribers, so nothing was sent and it is Failed.');
+  });
+
+  it("stays Scheduled to be tried at the next run when the Subscribers cannot be read", async () => {
+    subscribers.down = true;
+    const id = await scheduledFor();
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 0, skipped: 0, unreadable: 1 });
+    expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "scheduled" });
+
+    subscribers.down = false;
+    subscribe(1);
+    expect(await sendDue(db.sql, ports())).toMatchObject({ sent: 1 });
+  });
+
+  it("still sends when the audit log is down", async () => {
+    subscribe(1);
+    await scheduledFor();
+    audit.down = true;
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    expect(await sendDue(db.sql, ports())).toMatchObject({ sent: 1 });
+  });
+
+  it("sends each due Announcement as its own scheduler, oldest first", async () => {
+    subscribe(1);
+    const second = await savedDraft({ title: "Second", description: "two" });
+    await schedule(db.sql, ben, second, new Date("2026-10-22T02:00:00Z"), ports());
+    await scheduledFor(new Date("2026-10-22T01:00:00Z"), { title: "First", description: "one" });
+    clock = new Date("2026-10-22T03:00:00Z");
+
+    expect(await sendDue(db.sql, ports())).toMatchObject({ sent: 2 });
+
+    expect(mailer.batches.map((b) => b.mail.title)).toEqual(["First", "Second"]);
+    expect(audit.events.map((e) => e.actor)).toEqual([ada, ben]);
+  });
+
+  it("picks up a due send that died part way, skipping who was already reached", async () => {
+    subscribe(2);
+    const id = await scheduledFor();
+    await db.sql`update crms.announcements set sent_at = ${new Date("2026-10-22T01:00:00Z")} where id = ${id}`;
+    await db.sql`insert into crms.announcement_recipients (announcement_id, customer_id) values (${id}, 'c1')`;
+    clock = new Date("2026-10-22T01:30:00Z");
+
+    expect(await sendDue(db.sql, ports())).toMatchObject({ sent: 1 });
+
+    expect(mailer.emailed).toEqual(["c2@x.test"]);
+  });
+
+  it("leaves a send that another run is in the middle of", async () => {
+    subscribe(2);
+    const id = await scheduledFor();
+    await db.sql`update crms.announcements set sent_at = ${new Date("2026-10-22T01:00:10Z")} where id = ${id}`;
+    clock = new Date("2026-10-22T01:00:30Z");
+
+    expect(await sendDue(db.sql, ports())).toEqual({ sent: 0, failed: 0, skipped: 1, unreadable: 0 });
+    expect(mailer.batches).toEqual([]);
   });
 });

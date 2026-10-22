@@ -18,11 +18,30 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { addImageAction, deleteDraftAction, editDraftAction, saveDraftAction, sendNowAction, sendTestCopyAction } from "./actions";
-import { INPUT_REFUSALS, plural, SEND_REFUSALS, TITLE_LIMIT, type AnnouncementInput } from "./announcements";
+import {
+  addImageAction,
+  cancelScheduleAction,
+  deleteDraftAction,
+  editDraftAction,
+  saveDraftAction,
+  scheduleAction,
+  sendNowAction,
+  sendTestCopyAction,
+} from "./actions";
+import {
+  CANCEL_SCHEDULE_REFUSALS,
+  INPUT_REFUSALS,
+  plural,
+  SCHEDULE_REFUSALS,
+  SEND_REFUSALS,
+  TITLE_LIMIT,
+  type AnnouncementInput,
+  type AnnouncementState,
+} from "./announcements";
 import { ImageLayoutGrid } from "./image-layout-grid";
 import { defaultLayout, IMAGE_LAYOUT_LABELS, layoutsFor, type ImageLayout } from "./image-layouts";
 import { IMAGE_REFUSALS, MAX_IMAGE_BYTES, MAX_IMAGE_MB } from "./image-limits";
+import { formatPhilippineTime, parsePhilippineTime, toPhilippineInput } from "./philippine-time";
 import { prepareImage } from "./prepare-image";
 import { InboxPreview } from "./inbox-preview";
 
@@ -30,8 +49,11 @@ const MESSAGES: Record<string, string> = {
   ...INPUT_REFUSALS,
   ...IMAGE_REFUSALS,
   ...SEND_REFUSALS,
+  ...SCHEDULE_REFUSALS,
+  ...CANCEL_SCHEDULE_REFUSALS,
   "not-found": "That Announcement no longer exists.",
   "not-a-draft": "That Announcement is no longer a Draft, so it cannot be changed.",
+  "not-editable": "That Announcement has been sent or is being sent, so it cannot be changed.",
   "send-failed": "The test copy could not be sent. Try again in a moment.",
   unavailable: "CREOMS could not reach its database. Try again in a moment.",
 };
@@ -41,7 +63,7 @@ const CONTROL =
 const LABEL = "flex gap-[3px] text-[13px] font-medium leading-[normal] text-[#27272a]";
 const OUTLINE = "rounded-lg border border-[#e4e4e7] bg-white px-4 py-[9px] text-sm font-medium leading-[normal] text-[#18181b]";
 
-type Submit = "save" | "delete" | "test" | "send";
+type Submit = "save" | "delete" | "test" | "send" | "schedule" | "unschedule";
 
 /** What each submit asks before it runs, and says once it has. */
 const CONFIRMATION: Record<Submit, { title: string; description: string; button: string; done: string }> = {
@@ -63,6 +85,18 @@ const CONFIRMATION: Record<Submit, { title: string; description: string; button:
     button: "Send test",
     done: "Test copy sent to your email.",
   },
+  schedule: {
+    title: "Schedule this Announcement?",
+    description: "It goes out at that time, in Philippine Time, to everyone who is a Subscriber then. Until it goes out you can edit, reschedule or cancel it.",
+    button: "Schedule",
+    done: "Scheduled.",
+  },
+  unschedule: {
+    title: "Cancel the schedule?",
+    description: "It goes back to a Draft and is not sent at its scheduled time.",
+    button: "Cancel schedule",
+    done: "Schedule cancelled. It is a Draft again.",
+  },
   send: {
     title: "Send to every Subscriber?",
     description: "It goes out now to everyone who is a Subscriber at this moment, and cannot be unsent.",
@@ -78,6 +112,8 @@ export interface CampaignFormActions {
   sendTest: typeof sendTestCopyAction;
   addImage: typeof addImageAction;
   send: typeof sendNowAction;
+  schedule: typeof scheduleAction;
+  unschedule: typeof cancelScheduleAction;
 }
 
 const REAL_ACTIONS: CampaignFormActions = {
@@ -87,6 +123,8 @@ const REAL_ACTIONS: CampaignFormActions = {
   sendTest: sendTestCopyAction,
   addImage: addImageAction,
   send: sendNowAction,
+  schedule: scheduleAction,
+  unschedule: cancelScheduleAction,
 };
 
 /** The compose form and its live inbox preview. With `draft`, it edits that Draft instead of starting a new one. */
@@ -95,7 +133,15 @@ export function CampaignForm({
   subscribers = null,
   actions = REAL_ACTIONS,
 }: {
-  draft?: { id: string; title: string; description: string; images?: string[]; imageLayout?: ImageLayout | null };
+  draft?: {
+    id: string;
+    title: string;
+    description: string;
+    images?: string[];
+    imageLayout?: ImageLayout | null;
+    state?: AnnouncementState;
+    scheduledFor?: Date | null;
+  };
   /** How many Subscribers would receive it now; null when they could not be counted. */
   subscribers?: number | null;
   actions?: CampaignFormActions;
@@ -109,6 +155,10 @@ export function CampaignForm({
   const [confirming, setConfirming] = useState<Submit | null>(null);
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
+
+  const scheduled = draft?.state === "scheduled" && !!draft.scheduledFor;
+  // Typed in Philippine Time, whatever zone this browser is in; a reschedule starts from the current time.
+  const [when, setWhen] = useState(scheduled ? toPhilippineInput(draft.scheduledFor!) : "");
 
   // Adding or removing an image changes which layouts hold them all, so the choice is only kept while it still fits.
   const [chosenLayout, setChosenLayout] = useState<ImageLayout | null>(draft?.imageLayout ?? null);
@@ -147,7 +197,9 @@ export function CampaignForm({
   // The dialog keeps its words while it closes, when nothing is being confirmed any more.
   const shown = confirming ?? "save";
   const text =
-    shown === "save" && draft
+    shown === "schedule" && scheduled
+      ? { ...CONFIRMATION.schedule, title: "Reschedule this Announcement?", button: "Reschedule" }
+      : shown === "save" && draft
       ? { ...CONFIRMATION.save, title: "Save your changes?" }
       : shown === "send" && subscribers !== null
         ? subscribers === 0
@@ -155,12 +207,19 @@ export function CampaignForm({
           : { ...CONFIRMATION.send, title: `Send to ${plural(subscribers)}?` }
         : CONFIRMATION[shown];
 
-  const run = (kind: Exclude<Submit, "send">) => {
+  const run = (kind: Exclude<Submit, "send" | "schedule">) => {
     if (kind === "test") return actions.sendTest(draft!.id);
+    if (kind === "unschedule") return actions.unschedule(draft!.id);
     if (kind === "delete") return actions.remove(draft!.id);
 
     return draft ? actions.edit(draft.id, input) : actions.save(input);
   };
+
+  /** Scheduling saves the form as it stands first, like sending, so what goes out is what the preview shows. */
+  const saveFirst = async () =>
+    draft
+      ? { ...(await actions.edit(draft.id, input)), id: draft.id }
+      : await actions.save(input).then((r) => (r.ok ? { ok: true as const, id: r.announcement.id } : r));
 
   const confirm = () => {
     if (busy.current || !confirming) return;
@@ -170,6 +229,7 @@ export function CampaignForm({
     startTransition(async () => {
       try {
         if (kind === "send") return await send();
+        if (kind === "schedule") return await scheduleIt();
 
         const result = await run(kind);
 
@@ -187,9 +247,7 @@ export function CampaignForm({
 
   /** Sending saves the form as it stands first, so what goes out is what the preview shows. */
   const send = async () => {
-    const saved = draft
-      ? { ...(await actions.edit(draft.id, input)), id: draft.id }
-      : await actions.save(input).then((r) => (r.ok ? { ok: true as const, id: r.announcement.id } : r));
+    const saved = await saveFirst();
 
     if (!saved.ok) {
       setConfirming(null);
@@ -213,6 +271,29 @@ export function CampaignForm({
     router.push("/email-campaigns");
   };
 
+  const scheduleIt = async () => {
+    const saved = await saveFirst();
+
+    if (!saved.ok) {
+      setConfirming(null);
+
+      return void toast.error(MESSAGES[saved.reason]);
+    }
+
+    const result = await actions.schedule(saved.id, when);
+
+    setConfirming(null);
+    if (!result.ok) {
+      toast.error(`${MESSAGES[result.reason]} Your work is saved.`);
+
+      return void router.push(`/email-campaigns/${saved.id}`);
+    }
+
+    const at = parsePhilippineTime(when);
+    toast.success(at ? `Scheduled for ${formatPhilippineTime(at)} Philippine Time.` : "Scheduled.");
+    router.push("/email-campaigns");
+  };
+
   return (
     <form onSubmit={ask("save")} noValidate className="flex h-[calc(100vh-4rem)] flex-col bg-[#fafafa]">
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-8 pt-5 pb-4">
@@ -220,7 +301,7 @@ export function CampaignForm({
           <Link href="/email-campaigns" className="inline-flex items-center gap-1 text-[13px] font-medium leading-[normal] text-[#71717a]">
             <ChevronLeft className="size-4" aria-hidden /> Email campaigns
           </Link>
-          <h1 className="text-2xl font-semibold leading-[normal] text-[#18181b]">{draft ? "Edit draft" : "New campaign"}</h1>
+          <h1 className="text-2xl font-semibold leading-[normal] text-[#18181b]">{scheduled ? "Edit scheduled Announcement" : draft ? "Edit draft" : "New campaign"}</h1>
           <p className="text-sm leading-[normal] text-[#71717a]">
             Write it once and it goes to every Subscriber. Save it as a Draft to come back to it.
           </p>
@@ -362,7 +443,11 @@ export function CampaignForm({
 
       <div className="flex shrink-0 items-center gap-2 border-t border-[#ebebeb] bg-white px-8 py-[14px]">
         <p className="min-w-0 flex-1 text-[13px] leading-[normal] text-[#71717a]">
-          {draft ? "Anyone with the Marketing Module can edit or delete this Draft." : "Not saved yet."}
+          {scheduled
+            ? `Scheduled for ${formatPhilippineTime(draft.scheduledFor!)} Philippine Time. Anyone with the Marketing Module can edit, reschedule or cancel it.`
+            : draft
+              ? "Anyone with the Marketing Module can edit or delete this Draft."
+              : "Not saved yet."}
         </p>
         <button
           type="button"
@@ -373,16 +458,25 @@ export function CampaignForm({
         >
           Send a test
         </button>
-        {draft && (
-          <button type="button" onClick={ask("delete")} className={cn(OUTLINE, "text-[#dc2626]")}>
-            Delete draft
+        {scheduled ? (
+          <button type="button" onClick={ask("unschedule")} className={cn(OUTLINE, "text-[#dc2626]")}>
+            Cancel schedule
           </button>
+        ) : (
+          draft && (
+            <button type="button" onClick={ask("delete")} className={cn(OUTLINE, "text-[#dc2626]")}>
+              Delete draft
+            </button>
+          )
         )}
         <Link href="/email-campaigns" className={OUTLINE}>
           Cancel
         </Link>
         <button type="submit" className={OUTLINE}>
-          Save draft
+          {scheduled ? "Save changes" : "Save draft"}
+        </button>
+        <button type="button" onClick={ask("schedule")} className={OUTLINE}>
+          {scheduled ? "Reschedule" : "Schedule"}
         </button>
         <button type="button" onClick={ask("send")} className="rounded-lg bg-[#5b2a86] px-4 py-[9px] text-sm font-medium leading-[normal] text-white">
           Send now
@@ -400,6 +494,21 @@ export function CampaignForm({
             </AlertDialogTitle>
             <AlertDialogDescription>{text.description}</AlertDialogDescription>
           </AlertDialogHeader>
+          {confirming === "schedule" && (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor={`${ids}-when`} className={LABEL}>
+                Send at (Philippine Time)
+              </label>
+              <input
+                id={`${ids}-when`}
+                type="datetime-local"
+                className={CONTROL}
+                value={when}
+                min={toPhilippineInput(new Date())}
+                onChange={(e) => setWhen(e.target.value)}
+              />
+            </div>
+          )}
           <AlertDialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
             <AlertDialogCancel disabled={pending} className="mt-0 sm:mt-0">
               Cancel
@@ -408,8 +517,8 @@ export function CampaignForm({
             <Button
               type="button"
               onClick={confirm}
-              disabled={pending || (confirming === "send" && subscribers === 0)}
-              className={cn("text-white", confirming === "delete" ? "bg-[#dc2626] hover:bg-[#dc2626]/90" : "bg-[#5b2a86] hover:bg-[#5b2a86]/90")}
+              disabled={pending || (confirming === "send" && subscribers === 0) || (confirming === "schedule" && !when)}
+              className={cn("text-white", confirming === "delete" || confirming === "unschedule" ? "bg-[#dc2626] hover:bg-[#dc2626]/90" : "bg-[#5b2a86] hover:bg-[#5b2a86]/90")}
             >
               {pending ? "Working…" : text.button}
             </Button>

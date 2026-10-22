@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 
 import type { AnnouncementRow } from "@/features/marketing/announcements";
 import { AnnouncementDetail } from "@/features/marketing/announcement-detail";
@@ -24,6 +25,7 @@ const row = (overrides: Partial<AnnouncementRow> = {}): AnnouncementRow => ({
   imageLayout: null,
   state: "draft",
   scheduledFor: null,
+  scheduledByName: null,
   sentAt: null,
   sentTo: null,
   createdByName: "Ada",
@@ -42,6 +44,8 @@ function fakeActions(): CampaignFormActions {
     sendTest: vi.fn(async () => ({ ok: true as const })),
     addImage: vi.fn(async (form: FormData) => ({ ok: true as const, url: `https://cdn.test/${imageName(form)}` })),
     send: vi.fn(async () => ({ ok: true as const, state: "sent" as const, subscribers: 412 })),
+    schedule: vi.fn(async () => ({ ok: true as const })),
+    unschedule: vi.fn(async () => ({ ok: true as const })),
   };
 }
 
@@ -470,5 +474,106 @@ describe("an Announcement that is no longer a Draft", () => {
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Retry" }));
 
     await waitFor(() => expect(retry).toHaveBeenCalledWith("a1"));
+  });
+});
+
+describe("scheduling from the form", () => {
+  const scheduledDraft = { id: "d1", title: "Halaya", description: "Restocked.", state: "scheduled" as const, scheduledFor: new Date("2026-10-25T01:30:00Z") };
+
+  function filled(actions: CampaignFormActions, draft?: typeof scheduledDraft | { id: string; title: string; description: string }) {
+    render(<CampaignForm actions={actions} subscribers={3} draft={draft} />);
+    fireEvent.change(screen.getByLabelText(/Title/), { target: { value: "Halaya" } });
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Restocked." } });
+  }
+
+  it("asks for a Philippine Time first, and schedules only on confirming", async () => {
+    const actions = fakeActions();
+    filled(actions);
+
+    fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect((within(dialog).getByRole("button", { name: "Schedule" }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("Send at (Philippine Time)"), { target: { value: "2099-10-25T09:30" } });
+    expect(actions.schedule).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Schedule" }));
+
+    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("new", "2099-10-25T09:30"));
+    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] });
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
+  });
+
+  it("says why when the time is refused, and keeps the work as a Draft", async () => {
+    const actions = fakeActions();
+    actions.schedule = vi.fn(async () => ({ ok: false as const, reason: "in-the-past" as const }));
+    filled(actions);
+
+    fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText("Send at (Philippine Time)"), { target: { value: "2020-01-01T09:00" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Schedule" }));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns/new"));
+    expect(toast.error).toHaveBeenCalledWith("Pick a time in the future, in Philippine Time. Your work is saved.");
+  });
+
+  it("shows a Scheduled one with its time in Philippine Time, with reschedule and cancel instead of delete", () => {
+    filled(fakeActions(), scheduledDraft);
+
+    expect(screen.getByRole("heading", { name: "Edit scheduled Announcement" })).toBeTruthy();
+    expect(screen.getByText(/Scheduled for 25 Oct 2026, 9:30 am Philippine Time/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reschedule" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel schedule" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete draft" })).toBeNull();
+  });
+
+  it("reschedules from the current time", async () => {
+    const actions = fakeActions();
+    filled(actions, scheduledDraft);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reschedule" }));
+    const dialog = await screen.findByRole("alertdialog");
+    const input = within(dialog).getByLabelText("Send at (Philippine Time)") as HTMLInputElement;
+    expect(input.value).toBe("2026-10-25T09:30");
+
+    fireEvent.change(input, { target: { value: "2099-11-01T18:00" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reschedule" }));
+
+    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("d1", "2099-11-01T18:00"));
+    expect(actions.edit).toHaveBeenCalledWith("d1", expect.objectContaining({ title: "Halaya" }));
+  });
+
+  it("cancels the schedule back to a Draft, only after asking", async () => {
+    const actions = fakeActions();
+    filled(actions, scheduledDraft);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel schedule" }));
+    expect(await screen.findByText("Cancel the schedule?")).toBeTruthy();
+    expect(actions.unschedule).not.toHaveBeenCalled();
+
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel schedule" }));
+
+    await waitFor(() => expect(actions.unschedule).toHaveBeenCalledWith("d1"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
+  });
+
+  it("saves edits to a Scheduled one without changing its time", async () => {
+    const actions = fakeActions();
+    filled(actions, scheduledDraft);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(actions.edit).toHaveBeenCalled());
+    expect(actions.schedule).not.toHaveBeenCalled();
+  });
+});
+
+describe("a Scheduled Announcement in the list", () => {
+  it("shows when it will send, in Philippine Time", () => {
+    render(<CampaignList announcements={[row({ state: "scheduled", scheduledFor: new Date("2026-10-25T01:30:00Z") })]} />);
+
+    expect(screen.getByText("25 Oct 2026, 9:30 am PHT")).toBeTruthy();
+    expect(screen.getByText("Scheduled")).toBeTruthy();
   });
 });
