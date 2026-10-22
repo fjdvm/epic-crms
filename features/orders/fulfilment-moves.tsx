@@ -11,9 +11,12 @@ import { readyToPrepare } from "./fulfilment";
 export function FulfilmentMove({
   order,
   triggerClassName,
+  onMove,
 }: {
   order: { id: number; status: string; paymentMethod: string };
   triggerClassName?: string;
+  /** Shows the Order in its next status at once; the moves without an outside effect call it. */
+  onMove?: (status: "preparing" | "dispatched") => void;
 }) {
   const { id } = order;
 
@@ -27,6 +30,7 @@ export function FulfilmentMove({
         confirm="Start preparing"
         busy="Starting…"
         run={() => startPreparing(id)}
+        onOptimistic={onMove && (() => onMove("preparing"))}
         successMessage={`Order #${id} is now preparing.`}
       />
     );
@@ -41,6 +45,7 @@ export function FulfilmentMove({
         confirm="Mark as dispatched"
         busy="Dispatching…"
         run={() => dispatchOrder(id)}
+        onOptimistic={onMove && (() => onMove("dispatched"))}
         successMessage={`Order #${id} dispatched.`}
       />
     );

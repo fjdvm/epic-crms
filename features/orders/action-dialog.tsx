@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -20,8 +20,8 @@ import type { OrderChangeResult } from "@/lib/storefront";
 import { cn } from "@/lib/utils";
 
 /**
- * One Order action behind a confirmation dialog. Never optimistic: the spinner shows at once, and the
- * Order is shown as changed only once the server confirms. A refusal closes the dialog and says why in
+ * One Order action behind a confirmation dialog. Not optimistic unless `onOptimistic` is given: the spinner
+ * shows at once, and the Order is shown as changed only once the server confirms. A refusal closes the dialog and says why in
  * a toast, as Ticket refusals do: the refresh that follows may remove the button, and the dialog with
  * it, when someone else has already moved the Order. The Orders, Payments and Fulfilment actions all
  * go through this.
@@ -39,6 +39,7 @@ export function OrderActionDialog({
   disabled = false,
   run,
   successMessage,
+  onOptimistic,
 }: {
   /** The button's label on the page. */
   trigger: string;
@@ -59,28 +60,40 @@ export function OrderActionDialog({
   run: () => Promise<OrderChangeResult>;
   /** What to tell Staff once the server confirms. */
   successMessage: string;
+  /**
+   * Shows the result at once, inside a transition, so React rolls it back if the server refuses. Only for
+   * moves with no outside effect (ADR-0002); the dialog then closes immediately instead of spinning.
+   */
+  onOptimistic?: () => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
 
-  async function act() {
-    setPending(true);
+  const [, startTransition] = useTransition();
 
-    let outcome: OrderChangeResult;
-    try {
-      outcome = await run();
-    } catch {
-      // The action never answered (network, crash): nothing changed that Staff can see.
-      outcome = { ok: false, reason: "CREOMS could not save that. Try again in a moment." };
-    }
+  function act() {
+    if (onOptimistic) setOpen(false);
+    else setPending(true);
 
-    setPending(false);
-    setOpen(false);
-    if (outcome.ok) toast.success(successMessage);
-    else toast.error(outcome.reason);
-    // Either way the page catches up with the server, so a refusal also shows what is really there.
-    router.refresh();
+    startTransition(async () => {
+      onOptimistic?.();
+
+      let outcome: OrderChangeResult;
+      try {
+        outcome = await run();
+      } catch {
+        // The action never answered (network, crash): nothing changed that Staff can see.
+        outcome = { ok: false, reason: "CREOMS could not save that. Try again in a moment." };
+      }
+
+      setPending(false);
+      setOpen(false);
+      if (outcome.ok) toast.success(successMessage);
+      else toast.error(outcome.reason);
+      // Either way the page catches up with the server, so a refusal also shows what is really there.
+      router.refresh();
+    });
   }
 
   const destructive = tone === "destructive";

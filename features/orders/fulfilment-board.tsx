@@ -1,9 +1,12 @@
+"use client";
+
+import { useOptimistic } from "react";
 import Link from "next/link";
 
 import { formatDate } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
 
-import type { FulfilmentBoard, FulfilmentOrder } from "./fulfilment";
+import { readyToPrepare, type FulfilmentBoard, type FulfilmentOrder } from "./fulfilment";
 import { FulfilmentMove } from "./fulfilment-moves";
 import { StatusPill } from "./status-pill";
 
@@ -22,7 +25,13 @@ const RULES: { move: string; effect: string }[] = [
   { move: "Dispatched → Delivered", effect: "The Customer is emailed; Feedback request 2 days later" },
 ];
 
-function FulfilmentCard({ order }: { order: FulfilmentOrder }) {
+function FulfilmentCard({
+  order,
+  onMove,
+}: {
+  order: FulfilmentOrder;
+  onMove: (id: number, status: "preparing" | "dispatched") => void;
+}) {
   return (
     <li
       data-fulfilment-card
@@ -44,14 +53,34 @@ function FulfilmentCard({ order }: { order: FulfilmentOrder }) {
           : `${orderLabel(order.fulfillmentMethod)} · ${orderLabel(order.paymentMethod)}`}
       </p>
       <div className="mt-1 empty:hidden">
-        <FulfilmentMove order={order} triggerClassName="w-full px-3 py-1.5 text-[13px]" />
+        <FulfilmentMove
+          order={order}
+          triggerClassName="w-full px-3 py-1.5 text-[13px]"
+          onMove={(status) => onMove(order.id, status)}
+        />
       </div>
     </li>
   );
 }
 
+/** The board with one Order moved to a status, as it will be once the server confirms. */
+function moved(board: FulfilmentBoard, { id, status }: { id: number; status: "preparing" | "dispatched" }): FulfilmentBoard {
+  const all = Object.values(board).flat();
+  const order = all.find((o) => o.id === id);
+  if (!order) return board;
+  const next = all.map((o) => (o.id === id ? { ...order, status } : o));
+  return {
+    ready: next.filter(readyToPrepare),
+    preparing: next.filter((o) => o.status === "preparing"),
+    dispatched: next.filter((o) => o.status === "dispatched"),
+    delivered: next.filter((o) => o.status === "delivered"),
+  };
+}
+
 /** Orders move left to right; each card offers only its next move. */
-export function FulfilmentBoardView({ board }: { board: FulfilmentBoard }) {
+export function FulfilmentBoardView({ board: served }: { board: FulfilmentBoard }) {
+  const [board, move] = useOptimistic(served, moved);
+
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -76,7 +105,7 @@ export function FulfilmentBoardView({ board }: { board: FulfilmentBoard }) {
               ) : (
                 <ul className="flex flex-col gap-2.5">
                   {orders.map((order) => (
-                    <FulfilmentCard key={order.id} order={order} />
+                    <FulfilmentCard key={order.id} order={order} onMove={(id, status) => move({ id, status })} />
                   ))}
                 </ul>
               )}
