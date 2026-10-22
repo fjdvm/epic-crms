@@ -5,7 +5,7 @@ import { DEFAULT_SCHEMA, schemaIdent, type NotificationKind, type SyncResult } f
 /** Events older than this cannot newly appear, so reading stops here and the sync stays cheap. */
 const WINDOW_DAYS = 14;
 
-type TicketEventKind = Exclude<NotificationKind, "new-customer" | "feedback-low">;
+type TicketEventKind = Extract<NotificationKind, "ticket-new" | "ticket-message" | "ticket-not-fixed">;
 
 export interface TicketEvent {
   /** Unique per event, so an alert appears once however many times or tabs sync. */
