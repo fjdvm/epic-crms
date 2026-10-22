@@ -5,7 +5,7 @@ import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadOrder } from "@/features/orders/orders";
 import { ORDER_DETAIL_MODULES } from "@/lib/portal/config";
-import { requireAnyModule } from "@/lib/portal/staff";
+import { heldModules, requireAnyModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
@@ -14,7 +14,10 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
 
-  const result = await loadOrder(ticketsDatabase, Number(id));
+  const [result, modules] = await Promise.all([
+    loadOrder(ticketsDatabase, Number(id)),
+    heldModules(ORDER_DETAIL_MODULES),
+  ]);
 
   if (!result.ok) {
     return (
@@ -36,7 +39,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   return (
     <>
       <BackgroundRefresh />
-      <OrderDetailView order={result.order} />
+      <OrderDetailView order={result.order} modules={modules} />
     </>
   );
 }

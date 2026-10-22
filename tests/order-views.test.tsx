@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { cancelOrder, confirmPickup, quoteDeliveryFee } from "@/features/orders/actions";
 import { BackgroundRefresh, REFRESH_INTERVAL_MS } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
@@ -9,11 +10,14 @@ import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders"
 
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
+vi.mock("@/features/orders/actions", () => ({ quoteDeliveryFee: vi.fn(), confirmPickup: vi.fn(), cancelOrder: vi.fn() }));
+const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  refresh.mockClear();
+  vi.clearAllMocks();
 });
 
 const row = (overrides: Partial<OrderRow>): OrderRow => ({
@@ -255,10 +259,198 @@ describe("an Order's detail", () => {
     expect(screen.getByText("This Order was cancelled.")).toBeTruthy();
   });
 
-  it("has no action buttons yet", () => {
-    render(<OrderDetailView order={detail({ status: "awaiting payment" })} />);
+  it("has no action buttons for Staff without the Orders Module", () => {
+    for (const status of ["placed", "confirmed", "awaiting payment", "preparing"]) {
+      for (const modules of [[], ["Payments"], ["Fulfilment"], ["Payments", "Fulfilment"]]) {
+        const { unmount } = render(<OrderDetailView order={detail({ status, deliveryFee: null })} modules={modules} />);
+        expect(screen.queryAllByRole("button")).toHaveLength(0);
+        unmount();
+      }
+    }
+  });
+});
+
+const ORDERS = ["Orders"];
+
+/** A Server Action the test settles by hand, so what shows while it runs can be checked. */
+function deferred<T>() {
+  let settle!: (value: T) => void;
+  const promise = new Promise<T>((resolve) => (settle = resolve));
+  return { promise, settle };
+}
+
+const confirmed = (id: number, deliveryFeeInCentavos: number | null = null) =>
+  ({ ok: true as const, order: { id, status: "confirmed", deliveryFeeInCentavos } });
+
+describe("the Orders Module's actions on an Order's detail", () => {
+  it("offers a placed Delivery Order a fee quote and cancel, but no plain confirm", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
+
+    expect(screen.getByRole("button", { name: "Quote delivery fee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Confirm order" })).toBeNull();
+  });
+
+  it("offers a placed Pickup Order confirm with no fee", () => {
+    render(
+      <OrderDetailView
+        order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null })}
+        modules={ORDERS}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Confirm order" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
+  });
+
+  it("offers cancel up to preparing, and nothing to confirm once past placed", () => {
+    for (const status of ["confirmed", "awaiting payment", "paid", "preparing"]) {
+      const { unmount } = render(<OrderDetailView order={detail({ status })} modules={ORDERS} />);
+      expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel order"]);
+      unmount();
+    }
+  });
+
+  it("never offers cancel once dispatched, and says so plainly", () => {
+    render(<OrderDetailView order={detail({ status: "dispatched" })} modules={ORDERS} />);
 
     expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByText("A dispatched Order cannot be cancelled.")).toBeTruthy();
+  });
+
+  it("offers nothing on a delivered or cancelled Order", () => {
+    for (const status of ["delivered", "cancelled"]) {
+      const { unmount } = render(<OrderDetailView order={detail({ status })} modules={ORDERS} />);
+      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      unmount();
+    }
+  });
+
+  it("asks before cancelling, as in the Figma dialog, and sends nothing if Staff keep the Order", () => {
+    render(<OrderDetailView order={detail({ status: "paid" })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "Cancel order #1042?" });
+    expect(within(dialog).getByText("This cannot be undone.")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep order" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it("shows a spinner at once while cancelling, and the result only once the server confirms", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof cancelOrder>>>();
+    vi.mocked(cancelOrder).mockReturnValue(pending.promise);
+    render(<OrderDetailView order={detail({ status: "confirmed" })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel order" }));
+
+    // Synchronously after the click: the spinner, and nothing shown as done yet.
+    const busy = within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancelling…" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.querySelector("svg.animate-spin")).toBeTruthy();
+    expect(cancelOrder).toHaveBeenCalledWith(1042);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+
+    await act(async () => pending.settle({ ok: true, order: { id: 1042, status: "cancelled", deliveryFeeInCentavos: 15_000 } }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(toast.success).toHaveBeenCalledWith("Order #1042 cancelled.");
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("shows a refusal's reason and does not show the Order as changed", async () => {
+    vi.mocked(cancelOrder).mockResolvedValue({ ok: false, reason: "Order already changed; refresh it before trying again." });
+    render(<OrderDetailView order={detail({ status: "confirmed" })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel order" }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect((await within(dialog).findByRole("alert")).textContent).toContain("Order already changed; refresh it before trying again.");
+    expect(within(dialog).getByRole("button", { name: "Cancel order" })).toBeTruthy();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(screen.getAllByText("Confirmed").length).toBeGreaterThan(0);
+    // The page catches up with what the server really holds.
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("tells Staff when the action could not be reached at all", async () => {
+    vi.mocked(cancelOrder).mockRejectedValue(new Error("offline"));
+    render(<OrderDetailView order={detail({ status: "confirmed" })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel order" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("CREOMS could not reach the store");
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("quotes a Delivery fee in pesos, sends centavos, and confirms once the server does", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof quoteDeliveryFee>>>();
+    vi.mocked(quoteDeliveryFee).mockReturnValue(pending.promise);
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
+    const submit = within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150.50" } });
+    expect(within(dialog).getByText("New total").nextElementSibling?.textContent).toBe("₱1,150.50");
+    fireEvent.click(submit);
+
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050);
+    expect(within(dialog).getByRole("button", { name: "Confirming…" }).getAttribute("aria-busy")).toBe("true");
+    expect(toast.success).not.toHaveBeenCalled();
+
+    await act(async () => pending.settle(confirmed(1042, 15_050)));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed with a ₱150.50 Delivery fee.");
+  });
+
+  it("will not send a fee that is not an amount in pesos", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    const dialog = screen.getByRole("alertdialog");
+
+    for (const value of ["", "-5", "abc", "1.234", "1e3"]) {
+      fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value } });
+      expect((within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(quoteDeliveryFee).not.toHaveBeenCalled();
+  });
+
+  it("shows a refused quote's reason and keeps the fee pending", async () => {
+    vi.mocked(quoteDeliveryFee).mockResolvedValue({ ok: false, reason: "Storefront refused the change." });
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Quote and confirm" }));
+
+    expect((await within(dialog).findByRole("alert")).textContent).toContain("Storefront refused the change.");
+    expect(screen.getAllByText("Delivery fee")[0].nextElementSibling?.textContent).toBe("Pending");
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("asks before confirming a Pickup Order, then confirms once the server does", async () => {
+    vi.mocked(confirmPickup).mockResolvedValue(confirmed(1042));
+    render(
+      <OrderDetailView
+        order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null })}
+        modules={ORDERS}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm order" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    expect(within(dialog).queryByLabelText(/Delivery fee/)).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed."));
+    expect(confirmPickup).toHaveBeenCalledWith(1042);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });
 

@@ -55,6 +55,15 @@ export async function requireAnyModule(modules: readonly string[]): Promise<Staf
   return result.staff;
 }
 
+/** Which of these Modules the Staff member holds, so a page shows only the actions they allow. */
+export async function heldModules(modules: readonly string[]): Promise<string[]> {
+  const access = await requestAccess();
+  const results = await Promise.all(modules.map((module) => access.check(module)));
+
+  // A Module the Portal could not answer is not held: hiding a button is safe, and the action checks again.
+  return modules.filter((_, i) => results[i].decision === "allowed");
+}
+
 /** The Staff member and the pages they may open, for the shell. No Module at all means no access. */
 export async function getShell(): Promise<{ staff: Staff; permittedPages: string[] }> {
   const result = await proceed(await (await requestAccess()).overview());
