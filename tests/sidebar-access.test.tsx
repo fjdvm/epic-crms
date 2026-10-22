@@ -101,11 +101,11 @@ describe("the sidebar", () => {
     renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
-    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns", "Segments"]) {
+    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns"]) {
       expect(screen.getByText(name).closest("[aria-disabled]")?.getAttribute("aria-disabled")).toBe("true");
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
-    for (const label of ["SALES", "MARKETING"]) expect(screen.getByText(label)).toBeTruthy();
+    for (const label of ["SALES"]) expect(screen.getByText(label)).toBeTruthy();
   });
 
   it("shows the Feedback item only with the Feedback page permitted", async () => {

@@ -6,7 +6,6 @@ import {
   Truck,
   LayoutGrid,
   LayoutDashboard,
-  ListFilter,
   Mail,
   MessageCircle,
   RotateCcw,
@@ -89,7 +88,6 @@ export const sidebarItems: NavItem[] = [
   conversationsItem,
   feedbackItem,
   emailCampaignsItem,
-  comingSoon("MARKETING", "Segments", ListFilter),
 ];
 
 export const systems: SystemItem[] = [
