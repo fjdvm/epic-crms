@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useOptimistic, useTransition } from "react";
+import { createContext, useContext, useEffect, useOptimistic, useState, useTransition } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,9 @@ export interface StageTab {
   count: number;
   href: string;
 }
+
+/** A cached Stage settles within this; only a load that takes longer is worth a skeleton. */
+const SKELETON_DELAY_MS = 150;
 
 const PendingContext = createContext(false);
 
@@ -32,6 +35,18 @@ export function StageNavigation({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [optimisticStage, setOptimisticStage] = useOptimistic(activeStage);
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    if (!pending) return;
+
+    const timer = setTimeout(() => setSlow(true), SKELETON_DELAY_MS);
+
+    return () => {
+      clearTimeout(timer);
+      setSlow(false);
+    };
+  }, [pending]);
 
   const select = (stage: Stage | undefined, href: string) => {
     startTransition(() => {
@@ -41,7 +56,7 @@ export function StageNavigation({
   };
 
   return (
-    <PendingContext.Provider value={pending}>
+    <PendingContext.Provider value={pending && slow}>
       <StageTabs tabs={tabs} active={optimisticStage} select={select} />
       {children}
     </PendingContext.Provider>
