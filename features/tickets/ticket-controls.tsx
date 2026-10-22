@@ -7,34 +7,13 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 
-import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "./attachments";
-import type { TicketStatus } from "./tickets";
-import {
-  claim,
-  release,
-  reply,
-  resolve,
-  type ReplyOutcome,
-  type TicketActionOutcome,
-} from "./actions";
+import { useOptimisticAction } from "@/hooks/use-optimistic-action";
 
-const REASONS: Record<
-  Exclude<TicketActionOutcome | ReplyOutcome, { ok: true }>["reason"],
-  string
-> = {
-  "not-found": "This Ticket no longer exists.",
-  claimed: "Another Staff member has already claimed this Ticket.",
-  "not-claimer": "Only the Staff member who claimed a Ticket can release it.",
-  "not-claimed": "This Ticket is no longer claimed by you.",
-  completed:
-    "The Customer has completed this Ticket, so it can no longer change.",
-  "already-resolved": "This Ticket is already resolved.",
-  "empty-message": "Write a reply or attach an image first.",
-  ...IMAGE_REFUSALS,
-  "storage-unavailable":
-    "CREOMS could not store that image. Try again in a moment.",
-  unavailable: "CREOMS could not save that. Try again in a moment.",
-};
+import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "./attachments";
+import { claim, reply, resolve, type ReplyOutcome, type TicketActionOutcome } from "./actions";
+import { useClaim } from "./claim";
+import { refusalMessage } from "./refusals";
+import type { TicketStatus } from "./tickets";
 
 const OUTLINE =
   "rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium leading-[normal] whitespace-nowrap text-[#1f1a2e] disabled:opacity-50";
@@ -53,7 +32,7 @@ function useTicketAction() {
     startTransition(async () => {
       const result = await action();
 
-      if (!result.ok) toast.error(REASONS[result.reason]);
+      if (!result.ok) toast.error(refusalMessage(result));
       else router.refresh();
 
       onDone?.(result);
@@ -64,10 +43,18 @@ function useTicketAction() {
 
 /** Claim from the Tickets list; the Ticket then leaves the list for the Claimer's Conversations inbox. */
 export function ClaimButton({ ticketId }: { ticketId: number }) {
-  const { pending, run } = useTicketAction();
+  const { state: claimed, pending, run } = useOptimisticAction(false);
+
+  if (claimed)
+    return <span className="text-sm leading-[normal] font-medium text-[#6e6680]">Claimed</span>;
 
   return (
-    <button type="button" className={OUTLINE} disabled={pending} onClick={() => run(() => claim(ticketId))}>
+    <button
+      type="button"
+      className={OUTLINE}
+      disabled={pending}
+      onClick={() => run(true, () => claim(ticketId), { refusal: refusalMessage })}
+    >
       Claim
     </button>
   );
@@ -76,20 +63,18 @@ export function ClaimButton({ ticketId }: { ticketId: number }) {
 export function TicketActions({
   ticketId,
   status,
-  claimed,
-  isClaimer,
   withReply = true,
   className,
 }: {
   ticketId: number;
   status: TicketStatus;
-  claimed: boolean;
-  isClaimer: boolean;
   /** Offer the Reply link to the composer; off where the composer sits beside the actions. */
   withReply?: boolean;
   className?: string;
 }) {
   const { pending, run } = useTicketAction();
+  const { claimer, isClaimer, pending: claiming, claim: claimTicket, release: releaseTicket } = useClaim();
+  const claimed = claimer !== null;
 
   return (
     <div className={cn("flex shrink-0 items-center gap-2", className)}>
@@ -97,8 +82,8 @@ export function TicketActions({
         <button
           type="button"
           className={OUTLINE}
-          disabled={pending}
-          onClick={() => run(() => claim(ticketId))}
+          disabled={claiming}
+          onClick={claimTicket}
         >
           Claim
         </button>
@@ -107,8 +92,8 @@ export function TicketActions({
         <button
           type="button"
           className={OUTLINE}
-          disabled={pending}
-          onClick={() => run(() => release(ticketId))}
+          disabled={claiming}
+          onClick={releaseTicket}
         >
           Release
         </button>

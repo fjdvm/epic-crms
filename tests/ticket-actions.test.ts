@@ -68,6 +68,7 @@ describe("Claim and Release", () => {
     expect(await claimTicket(db.sql, id, carlo)).toEqual({
       ok: false,
       reason: "claimed",
+      claimerName: "Bernice",
     });
     expect((await claimer(id)).claimed_by_id).toBe("bernice");
   });

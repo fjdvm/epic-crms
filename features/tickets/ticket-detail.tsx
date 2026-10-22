@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { PILL, Pill, PRIORITY_LABELS } from "./pill";
 import { Bubbles } from "./conversation";
+import { ByClaimer, ClaimerName, ClaimProvider } from "./claim";
 import { TicketActions } from "./ticket-controls";
 import type { TicketDetail, TicketMessage } from "./ticket";
 import type { TicketStatus } from "./tickets";
@@ -51,16 +52,22 @@ export const CARD_LINK =
 export function TicketDetailView({
   ticket,
   viewerId,
+  viewerName = viewerId,
 }: {
   ticket: TicketDetail;
   viewerId: string;
+  viewerName?: string;
 }) {
   const { order, customer } = ticket;
-  const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
   // Until both sides have spoken there is no chat history to read, only what the Ticket was opened with.
   const hasExchange = new Set(ticket.messages.map((m) => m.sender)).size > 1;
 
   return (
+    <ClaimProvider
+      ticketId={ticket.id}
+      claimer={ticket.claimerId !== null ? { id: ticket.claimerId, name: ticket.claimerName ?? "" } : null}
+      viewer={{ id: viewerId, name: viewerName }}
+    >
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1">
@@ -72,15 +79,18 @@ export function TicketDetailView({
           </div>
           <p className="text-sm leading-[normal] text-[#6e6680]">
             Opened {formatDate(ticket.openedAt)} ·{" "}
-            {ticket.claimerName ? `Claimed by ${ticket.claimerName}` : "Unclaimed"} ·{" "}
+            <ByClaimer
+              mine={<>Claimed by <ClaimerName /></>}
+              theirs={<>Claimed by <ClaimerName /></>}
+              nobody="Unclaimed"
+            />{" "}
+            ·{" "}
             {PRIORITY_LABELS[ticket.priority]} priority
           </p>
         </div>
         <TicketActions
           ticketId={ticket.id}
           status={ticket.status}
-          claimed={ticket.claimerId !== null}
-          isClaimer={isClaimer}
           withReply={false}
         />
       </div>
@@ -100,18 +110,23 @@ export function TicketDetailView({
               <Attachments messages={ticket.messages} />
             )}
           </div>
-          {ticket.status !== "completed" &&
-            (isClaimer ? (
-              <Link href={`/conversations?ticket=${ticket.id}`} className={CARD_LINK}>
-                Chat
-              </Link>
-            ) : (
-              <p className="text-sm leading-[normal] text-[#6e6680]">
-                {ticket.claimerName
-                  ? `${ticket.claimerName} claimed this Ticket, so only they can chat.`
-                  : "Claim this Ticket to chat with the Customer."}
-              </p>
-            ))}
+          {ticket.status !== "completed" && (
+            <ByClaimer
+              mine={
+                <Link href={`/conversations?ticket=${ticket.id}`} className={CARD_LINK}>
+                  Chat
+                </Link>
+              }
+              theirs={
+                <p className="text-sm leading-[normal] text-[#6e6680]">
+                  <ClaimerName /> claimed this Ticket, so only they can chat.
+                </p>
+              }
+              nobody={
+                <p className="text-sm leading-[normal] text-[#6e6680]">Claim this Ticket to chat with the Customer.</p>
+              }
+            />
+          )}
         </section>
 
         <div className="w-full space-y-4 lg:h-full lg:w-[380px] lg:shrink-0 lg:overflow-y-auto">
@@ -152,6 +167,7 @@ export function TicketDetailView({
         </div>
       </div>
     </div>
+    </ClaimProvider>
   );
 }
 

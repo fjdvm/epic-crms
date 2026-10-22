@@ -18,6 +18,7 @@ import {
   STATUS_LABELS,
   STATUS_PILLS,
 } from "./ticket-detail";
+import { ClaimerName, ClaimProvider } from "./claim";
 import { TicketActions } from "./ticket-controls";
 
 const FACT = "flex items-center gap-2 text-[13px] leading-[normal]";
@@ -106,7 +107,11 @@ function SelectedChat({
   const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
 
   return (
-    <>
+    <ClaimProvider
+      ticketId={ticket.id}
+      claimer={ticket.claimerId !== null ? { id: ticket.claimerId, name: ticket.claimerName ?? "" } : null}
+      viewer={{ id: viewerId, name: viewerName }}
+    >
       <section aria-label="Chat" className={cn(CARD, "flex h-[70vh] min-h-0 w-full min-w-0 flex-col space-y-0 gap-3 lg:h-full lg:flex-1")}>
         <div className="flex items-center gap-2">
           <h2 className={cn(CARD_TITLE, "min-w-0 flex-1 truncate")}>{customer.name}</h2>
@@ -161,7 +166,9 @@ function SelectedChat({
             </p>
             <p className={FACT}>
               Assigned to{" "}
-              <span className="text-[#1f1a2e]">{ticket.claimerName ?? "Unclaimed"}</span>
+              <span className="text-[#1f1a2e]">
+                <ClaimerName />
+              </span>
             </p>
             <p className={FACT}>Opened {formatDate(ticket.openedAt)}</p>
             <div className={FACT}>
@@ -187,8 +194,6 @@ function SelectedChat({
           <TicketActions
             ticketId={ticket.id}
             status={ticket.status}
-            claimed={ticket.claimerId !== null}
-            isClaimer={isClaimer}
             withReply={false}
             className="flex-wrap"
           />
@@ -197,6 +202,6 @@ function SelectedChat({
           </Link>
         </section>
       </div>
-    </>
+    </ClaimProvider>
   );
 }
