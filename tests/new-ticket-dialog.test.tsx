@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { NewTicketActions } from "@/features/tickets/new-ticket-dialog";
@@ -75,7 +75,7 @@ describe("choosing a Customer and a Linked order", () => {
     await chooseMark();
 
     await screen.findByRole("option", { name: /#1033 · Delivered 15 Oct/ });
-    expect(actions.findCustomerOrders).toHaveBeenCalledWith("c2");
+    expect(actions.findCustomerOrders).toHaveBeenCalledWith("c2", expect.anything());
     expect((screen.getByLabelText("Linked order") as HTMLSelectElement).disabled).toBe(false);
   });
 
@@ -153,4 +153,95 @@ describe("creating the Ticket", () => {
     await waitFor(() => expect(actions.openNewTicket).toHaveBeenCalled());
     expect((vi.mocked(actions.openNewTicket).mock.calls[0][0].get("image") as File).name).toBe("lid.png");
   });
+});
+
+
+describe("New ticket responsiveness", () => {
+  it("starts a fresh search within 100 ms of typing", async () => {
+    const actions = setup();
+    type(/Customer/, "mark");
+    await waitFor(() => expect(actions.findCustomers).toHaveBeenCalledWith("mark", expect.anything()), { timeout: 100 });
+  });
+
+  it("never restores a previous Customer's Orders after the Customer is cleared", async () => {
+    let finish!: (orders: { id: number; status: string; createdAt: Date }[]) => void;
+    setup({ findCustomerOrders: vi.fn(() => new Promise<Awaited<ReturnType<NewTicketActions["findCustomerOrders"]>>>((resolve) => { finish = resolve; })) });
+    await chooseMark();
+    type(/Customer/, "maria");
+    await act(async () => finish([{ id: 999, status: "delivered", createdAt: new Date() }]));
+    await waitFor(() => expect(screen.queryByRole("option", { name: /#999/ })).toBeNull());
+  });
+});
+
+
+describe("lookup caching and pending saves", () => {
+  it("shows a repeated exact search immediately without another request", async () => {
+    const actions = setup();
+    await chooseMark();
+    type(/Customer/, "mark");
+    expect(screen.getByRole("button", { name: /Mark Tan/ })).toBeTruthy();
+    expect(actions.findCustomers).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /Mark Tan/ }));
+    await screen.findByRole("option", { name: /#1033/ });
+    type(/Customer/, "mark");
+    fireEvent.click(screen.getByRole("button", { name: /Mark Tan/ }));
+    expect(screen.getByRole("option", { name: /#1033/ })).toBeTruthy();
+    expect(actions.findCustomerOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears old results and ignores a slower obsolete search", async () => {
+    let finish!: (customers: typeof mark[]) => void;
+    const maria = { id: "c1", name: "Maria Santos", email: "maria@example.com" };
+    setup({ findCustomers: vi.fn((term) => term === "mark"
+      ? new Promise<typeof mark[]>((resolve) => { finish = resolve; })
+      : Promise.resolve([maria])) });
+    type(/Customer/, "mark");
+    type(/Customer/, "maria");
+    await screen.findByRole("button", { name: /Maria Santos/ });
+    await act(async () => finish([mark]));
+    expect(screen.queryByRole("button", { name: /Mark Tan/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Maria Santos/ })).toBeTruthy();
+  });
+
+  it("acknowledges a save immediately and prevents duplicate requests", async () => {
+    let finish!: (result: { ok: true; id: number; emailed: null }) => void;
+    const actions = setup({ openNewTicket: vi.fn(() => new Promise<{ ok: true; id: number; emailed: null }>((resolve) => { finish = resolve; })) });
+    type(/Subject/, "Cracked lid");
+    await chooseMark();
+    fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+    const saving = screen.getByRole("button", { name: "Creating ticket…" });
+    expect((saving as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(saving);
+    expect(actions.openNewTicket).toHaveBeenCalledTimes(1);
+    expect(push).not.toHaveBeenCalled();
+    await act(async () => finish({ ok: true, id: 210, emailed: null }));
+    expect(push).toHaveBeenCalledWith("/tickets/210");
+    expect(toast.success).toHaveBeenCalledWith("TKT-210 opened.");
+  });
+
+  it("preserves the form and allows retry after a network failure", async () => {
+    setup({ openNewTicket: vi.fn().mockRejectedValue(new Error("offline")) });
+    type(/Subject/, "Cracked lid");
+    await chooseMark();
+    fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("could not open")));
+    expect((screen.getByLabelText(/Subject/) as HTMLInputElement).value).toBe("Cracked lid");
+    expect((screen.getByRole("button", { name: "Create ticket" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+
+it("refreshes expired lookup results instead of keeping them indefinitely", async () => {
+  const actions = setup();
+  await chooseMark();
+  const now = Date.now();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now + 31_000);
+  try {
+    type(/Customer/, "mark");
+    expect(screen.queryByRole("button", { name: /Mark Tan/ })).toBeNull();
+    await screen.findByRole("button", { name: /Mark Tan/ });
+    expect(actions.findCustomers).toHaveBeenCalledTimes(2);
+  } finally {
+    clock.mockRestore();
+  }
 });

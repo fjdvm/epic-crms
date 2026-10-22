@@ -186,3 +186,28 @@ describe("the optional image", () => {
     expect(storage.files.size).toBe(0);
   });
 });
+
+
+describe("responding as soon as the Ticket is persisted", () => {
+  it("defers email and image linking until after the save response", async () => {
+    const tasks: (() => Promise<void>)[] = [];
+    const result = await open({ image: { filename: "lid.png", bytes: PNG } }, deps({
+      afterSave: (task) => { tasks.push(task); },
+    }));
+    expect(result).toMatchObject({ ok: true, emailed: null });
+    expect(await db.sql`select 1 from tickets`).toHaveLength(1);
+    expect(await db.sql`select 1 from ticket_messages`).toHaveLength(1);
+    expect(sent).toHaveLength(0);
+    expect(storage.files.get("file-1")?.link).toBeUndefined();
+    expect(tasks).toHaveLength(1);
+    await tasks[0]();
+    expect(sent).toHaveLength(1);
+    expect(storage.files.get("file-1")?.link).toEqual(expect.any(Number));
+  });
+
+  it("does not schedule follow-up work for refused Tickets", async () => {
+    const afterSave = vi.fn();
+    expect(await open({ customerId: "lead" }, deps({ afterSave }))).toMatchObject({ ok: false });
+    expect(afterSave).not.toHaveBeenCalled();
+  });
+});

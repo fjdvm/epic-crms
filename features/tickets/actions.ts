@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 
 import {
   gatewayFileStorage,
@@ -123,7 +124,7 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
           ? { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) }
           : undefined,
       },
-      { storefrontTicketUrl, sendEmail: sendAppEmail, storage: gatewayFileStorage },
+      { storefrontTicketUrl, sendEmail: sendAppEmail, storage: gatewayFileStorage, afterSave: after },
     );
     if (result.ok) revalidatePath("/tickets");
 
