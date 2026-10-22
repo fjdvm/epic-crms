@@ -4,9 +4,11 @@ import Link from "next/link";
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
+import { ORDERS_MODULE } from "@/lib/portal/config";
 import { cn } from "@/lib/utils";
 
 import type { OrderDetail } from "./orders";
+import { OrdersActions } from "./orders-actions";
 import { PaymentPill, StatusPill } from "./status-pill";
 
 /** The steps an Order moves through. Only GCash Delivery Orders go through the payment steps, plus any Order already in one. */
@@ -137,8 +139,8 @@ function PaymentProof({ order }: { order: OrderDetail }) {
   );
 }
 
-/** An Order with everything Staff need to read it. Read-only: nothing here changes the Order. */
-export function OrderDetailView({ order }: { order: OrderDetail }) {
+/** An Order with everything Staff need to read it, and the actions the viewer's Modules allow. */
+export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; modules?: readonly string[] }) {
   const address = order.address;
 
   return (
@@ -147,17 +149,26 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
         <Link href="/orders" className="text-sm font-medium text-[#5b2a86]">
           ← Orders
         </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
-            Order #{order.id}
-          </h1>
-          <StatusPill status={order.status} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
+                Order #{order.id}
+              </h1>
+              <StatusPill status={order.status} />
+            </div>
+            <p className="text-sm leading-[normal] text-[#6e6680]">
+              Placed {formatDate(order.createdAt)} ·{" "}
+              {orderLabel(order.fulfillmentMethod)} ·{" "}
+              {orderLabel(order.paymentMethod)}
+            </p>
+          </div>
+          {modules.includes(ORDERS_MODULE) && (
+            <div className="flex flex-wrap items-center gap-2">
+              <OrdersActions order={order} />
+            </div>
+          )}
         </div>
-        <p className="text-sm leading-[normal] text-[#6e6680]">
-          Placed {formatDate(order.createdAt)} ·{" "}
-          {orderLabel(order.fulfillmentMethod)} ·{" "}
-          {orderLabel(order.paymentMethod)}
-        </p>
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
