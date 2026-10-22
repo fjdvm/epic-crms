@@ -5,7 +5,7 @@ import { TicketDetailView } from "@/features/tickets/ticket-detail";
 import { loadTicket } from "@/features/tickets/ticket";
 import { gatewayFileStorage } from "@/lib/gateway";
 import { TICKETS_MODULE } from "@/lib/portal/config";
-import { requireModule } from "@/lib/portal/staff";
+import { canOpenOrders, requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 export default async function TicketPage({ params }: { params: Promise<{ id: string }> }) {
@@ -32,5 +32,5 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 
   if (!result.ticket) notFound();
 
-  return <TicketDetailView ticket={result.ticket} viewerId={staff.username} viewerName={staff.name} />;
+  return <TicketDetailView ticket={result.ticket} viewerId={staff.username} viewerName={staff.name} canOpenOrder={await canOpenOrders()} />;
 }

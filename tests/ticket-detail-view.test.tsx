@@ -138,6 +138,14 @@ describe("the Ticket page as designed", () => {
     );
   });
 
+  it("links the Linked order to the Order detail for Staff who can open it", () => {
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" canOpenOrder />);
+
+    const card = screen.getByRole("region", { name: "Linked order" });
+
+    expect(within(card).getByRole("link", { name: "Open order →" }).getAttribute("href")).toBe("/orders/1042");
+  });
+
   it("hides the Linked order card when the Ticket has no Order", () => {
     render(<TicketDetailView ticket={ticket({ order: null })} viewerId="bernice" />);
 
