@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 
-export type OrderStatusUpdate = { status: "confirmed" | "cancelled" | "preparing" | "dispatched" | "delivered"; deliveryFeeInCentavos?: number };
+export type OrderStatusUpdate =
+  | { status: "confirmed" | "cancelled" | "preparing" | "dispatched" | "delivered"; deliveryFeeInCentavos?: number }
+  | { status: "paid"; staffId: string; staffName: string; deliveryFeeInCentavos?: never };
 export type OrderChangeResult =
   | { ok: true; order: { id: number; status: string; deliveryFeeInCentavos: number | null } }
   | { ok: false; reason: string };

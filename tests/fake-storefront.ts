@@ -41,7 +41,11 @@ export class FakeStorefront {
       (order.status === "confirmed" && order.payment_method === "cash-on-delivery"));
     const mayDispatch = update.status === "dispatched" && order.status === "preparing";
     const mayDeliver = update.status === "delivered" && order.status === "dispatched";
-    if (!mayConfirm && !mayCancel && !mayPrepare && !mayDispatch && !mayDeliver) return Response.json({ error: "Order already changed." }, { status: 409 });
+    const mayMarkPaid = update.status === "paid" && order.status === "awaiting payment";
+    if (mayMarkPaid && (!update.staffId || !update.staffName)) {
+      return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    }
+    if (!mayConfirm && !mayCancel && !mayPrepare && !mayDispatch && !mayDeliver && !mayMarkPaid) return Response.json({ error: "Order already changed." }, { status: 409 });
     if (mayConfirm && order.fulfillment_method === "delivery" &&
       (!Number.isSafeInteger(update.deliveryFeeInCentavos) || update.deliveryFeeInCentavos < 0)) {
       return Response.json({ error: "A Delivery fee is required." }, { status: 400 });
@@ -49,7 +53,10 @@ export class FakeStorefront {
     const [changed] = await this.sql`
       update orders set status = ${update.status},
         delivered_at = ${mayDeliver ? new Date() : order.delivered_at},
-        delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos}
+        delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos},
+        paid_by_id = ${mayMarkPaid ? update.staffId : order.paid_by_id},
+        paid_by_name = ${mayMarkPaid ? update.staffName : order.paid_by_name},
+        paid_at = ${mayMarkPaid ? new Date() : order.paid_at}
       where id = ${id} and status = ${order.status} returning id, status, delivery_fee_in_centavos`;
     if (!changed) return Response.json({ error: "Order already changed." }, { status: 409 });
     return Response.json({ id: changed.id, status: changed.status, deliveryFeeInCentavos: changed.delivery_fee_in_centavos });

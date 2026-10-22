@@ -179,6 +179,11 @@ describe("the Orders list", () => {
 });
 
 describe("an Order's detail", () => {
+  it("keeps legacy paid Orders readable without Staff attribution", async () => {
+    const id = await order({ status: "paid" });
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "paid", paidBy: null } });
+  });
+
   it("has the items, Delivery fee, address, Payment proof and Customer", async () => {
     const id = await order({
       status: "awaiting payment",

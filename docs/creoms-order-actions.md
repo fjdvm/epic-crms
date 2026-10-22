@@ -30,3 +30,33 @@ Run `npx vitest run tests/order-actions.test.ts --maxWorkers=2`. The reusable
 Postgres database used for reads. It checks the signed credential and performs a conditional
 status update. Its refusal override lets tests exercise reasons returned by the storefront.
 No live storefront credential or production database is used by these tests.
+
+
+## Payments (#141)
+
+`loadPaymentQueue()` checks the Payments Module and returns `{ ok: true, orders }`,
+or `{ ok: false, reason }` when the database cannot be read. Each row has its Order
+number, creation time, Customer, total in centavos (subtotal plus Delivery fee),
+and Payment proof (GCash reference, optional screenshot pathname, submission time).
+Only GCash Orders awaiting payment with a submitted proof appear, oldest submission
+first; ties use the Order number. Reads use the existing read-only connection.
+The Payments page and its refresh behavior are delivered separately.
+
+`markPaid(id)` and `cancelPaymentOrder(id)` check the Payments Module on every call.
+They do not depend on an Orders grant. Orders-only Staff cannot use these endpoints.
+`markPaid` requires a submitted GCash proof awaiting payment. It sends
+`{ status: "paid", staffId: staff.username, staffName: staff.name }`, using the same
+Portal username identity as Ticket claims, with no caller-supplied identity or time.
+The storefront records the time and sends the Customer's email. `loadOrder` exposes
+`paidBy: { id, name, at }`, or null for legacy Orders without attribution. It remains
+available through later status changes.
+
+`cancelPaymentOrder` uses the same cancel limit as Orders: through preparing, never
+from dispatched, delivered or cancelled. There is no Reject or re-upload action.
+Storefront refusals keep their reason; stale Orders seen before a request receive
+an "already changed" reason. Neither a refusal nor an uncertain response is reported
+as success. Successful writes invalidate the existing Orders and Payments views.
+
+The storefront migration `0018_daffy_peter_quill` (ticket #113) must be applied before
+these detail reads ship: it adds nullable `paid_by_id`, `paid_by_name` and `paid_at`
+columns. CREOMS does not migrate or write the storefront's tables.
