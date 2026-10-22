@@ -9,7 +9,8 @@ import { toast } from "sonner";
 import { Dialog, DialogClose, DialogOverlay, DialogPortal, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-import { findCustomerOrders, findCustomers, openNewTicket, type OpenTicketOutcome } from "./actions";
+import { openNewTicket, type OpenTicketOutcome } from "./actions";
+import { findCustomerOrders, findCustomers } from "./ticket-choices-client";
 import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "./attachments";
 import type { CustomerChoice, OrderChoice } from "./new-ticket";
 import { PRIORITY_LABELS } from "./pill";
@@ -27,12 +28,23 @@ const REASONS: Record<Exclude<OpenTicketOutcome, { ok: true }>["reason"], string
 };
 
 export interface NewTicketActions {
-  findCustomers: (term: string) => Promise<CustomerChoice[]>;
-  findCustomerOrders: (customerId: string) => Promise<OrderChoice[]>;
+  findCustomers: (term: string, signal?: AbortSignal) => Promise<CustomerChoice[]>;
+  findCustomerOrders: (customerId: string, signal?: AbortSignal) => Promise<OrderChoice[]>;
   openNewTicket: (form: FormData) => Promise<OpenTicketOutcome>;
 }
 
 const REAL_ACTIONS: NewTicketActions = { findCustomers, findCustomerOrders, openNewTicket };
+
+const CACHE_TTL = 30_000;
+type ChoiceCache<T> = Map<string, { at: number; value: T[] }>;
+function cached<T>(cache: ChoiceCache<T>, key: string): T[] | undefined {
+  const entry = cache.get(key);
+  return entry && Date.now() - entry.at < CACHE_TTL ? entry.value : undefined;
+}
+function remember<T>(cache: ChoiceCache<T>, key: string, value: T[]) {
+  if (cache.size >= 40) cache.delete(cache.keys().next().value!);
+  cache.set(key, { at: Date.now(), value });
+}
 
 const CONTROL =
   "w-full rounded-lg border border-[#e4e4e7] bg-white px-3 py-2.5 text-sm leading-[normal] text-[#18181b] placeholder:text-[#a1a1aa] focus-visible:border-[#5b2a86] focus-visible:outline-none";
@@ -60,6 +72,8 @@ export function NewTicketDialog({ actions = REAL_ACTIONS }: { actions?: NewTicke
   const [image, setImage] = useState<File | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const sending = useRef(false);
+  const customerCache = useRef<ChoiceCache<CustomerChoice>>(new Map());
+  const orderCache = useRef<ChoiceCache<OrderChoice>>(new Map());
 
   const reset = () => {
     setSubject("");
@@ -73,28 +87,40 @@ export function NewTicketDialog({ actions = REAL_ACTIONS }: { actions?: NewTicke
     setImage(null);
   };
 
-  // Search as Staff type, a beat after the last key; a reply for an older search is dropped.
+  // Lookups use independent GET requests, so an obsolete search cannot queue ahead of saving.
   useEffect(() => {
-    if (customer || !term.trim()) return;
+    const key = term.trim().toLowerCase();
+    if (!open || customer || !key || cached(customerCache.current, key)) return;
+    const controller = new AbortController();
+    void actions.findCustomers(term.trim(), controller.signal).then((results) => {
+      if (controller.signal.aborted) return;
+      remember(customerCache.current, key, results);
+      setFound(results);
+    }).catch(() => {
+      if (!controller.signal.aborted) toast.error("Customers could not be searched. Try again.");
+    });
+    return () => controller.abort();
+  }, [open, term, customer, actions]);
 
-    let current = true;
-    const timer = setTimeout(async () => {
-      const results = await actions.findCustomers(term);
-      if (current) setFound(results);
-    }, 250);
+  useEffect(() => {
+    if (!open || !customer || cached(orderCache.current, customer.id)) return;
+    const controller = new AbortController();
+    void actions.findCustomerOrders(customer.id, controller.signal).then((results) => {
+      if (controller.signal.aborted) return;
+      remember(orderCache.current, customer.id, results);
+      setOrders(results);
+    }).catch(() => {
+      if (!controller.signal.aborted) toast.error("Orders could not be read. Choose the Customer again to retry.");
+    });
+    return () => controller.abort();
+  }, [open, customer, actions]);
 
-    return () => {
-      current = false;
-      clearTimeout(timer);
-    };
-  }, [term, customer, actions]);
-
-  const choose = async (picked: CustomerChoice) => {
+  const choose = (picked: CustomerChoice) => {
     setCustomer(picked);
     setTerm(picked.name);
     setFound([]);
     setOrderId("");
-    setOrders(await actions.findCustomerOrders(picked.id));
+    setOrders(cached(orderCache.current, picked.id) ?? []);
   };
 
   const clearCustomer = (text: string) => {
@@ -102,7 +128,7 @@ export function NewTicketDialog({ actions = REAL_ACTIONS }: { actions?: NewTicke
     setOrders([]);
     setOrderId("");
     setTerm(text);
-    if (!text.trim()) setFound([]);
+    setFound(cached(customerCache.current, text.trim().toLowerCase()) ?? []);
   };
 
   const pickImage = (file: File | undefined) => {
@@ -137,11 +163,14 @@ export function NewTicketDialog({ actions = REAL_ACTIONS }: { actions?: NewTicke
 
         if (!result.ok) return void toast.error(REASONS[result.reason]);
 
-        if (result.emailed) toast.success(`TKT-${result.id} opened and ${customer.name} emailed.`);
+        if (result.emailed === null) toast.success(`TKT-${result.id} opened.`);
+        else if (result.emailed) toast.success(`TKT-${result.id} opened and ${customer.name} emailed.`);
         else toast.warning(`TKT-${result.id} opened, but ${customer.name} could not be emailed.`);
         setOpen(false);
         reset();
         router.push(`/tickets/${result.id}`);
+      } catch {
+        toast.error(REASONS.unavailable);
       } finally {
         sending.current = false;
       }
@@ -149,7 +178,7 @@ export function NewTicketDialog({ actions = REAL_ACTIONS }: { actions?: NewTicke
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => { if (!sending.current) setOpen(next); }}>
       <DialogTrigger asChild>
         <button
           type="button"
@@ -354,9 +383,10 @@ export function NewTicketDialog({ actions = REAL_ACTIONS }: { actions?: NewTicke
               <button
                 type="submit"
                 disabled={pending}
+                aria-busy={pending}
                 className="rounded-lg bg-[#5b2a86] px-4 py-[9px] text-sm leading-[normal] font-medium text-white disabled:opacity-50"
               >
-                Create ticket
+                {pending ? "Creating ticket…" : "Create ticket"}
               </button>
             </div>
           </form>

@@ -73,13 +73,16 @@ export type OpenTicketFailure =
   | "storage-unavailable";
 
 export type OpenTicketResult =
-  | { ok: true; id: number; emailed: boolean }
+  // null means the email is scheduled after the save response.
+  | { ok: true; id: number; emailed: boolean | null }
   | { ok: false; reason: OpenTicketFailure };
 
 export interface OpenTicketDeps {
   storefrontTicketUrl: (id: number) => string;
   sendEmail: SendAppEmail;
   storage?: FileStorage;
+  /** Schedule nonessential work after the save response, once the Ticket and Message exist. */
+  afterSave?: (task: () => Promise<void>) => void;
 }
 
 /**
@@ -158,27 +161,35 @@ export async function openTicket(
     throw error;
   }
 
-  if (fileId !== null && deps.storage) {
-    try {
-      await deps.storage.linkToMessage(fileId, saved.messageId);
-    } catch (error) {
-      // The Message already shows the image through its file id; the Link only helps record lookups.
-      console.error(`Ticket TKT-${saved.id} image was saved but could not be Linked to its Message`, error);
+  const followUp = async (): Promise<boolean> => {
+    if (fileId !== null && deps.storage) {
+      try {
+        await deps.storage.linkToMessage(fileId, saved.messageId);
+      } catch (error) {
+        // The Message already shows the image through its file id; the Link only helps record lookups.
+        console.error(`Ticket TKT-${saved.id} image was saved but could not be Linked to its Message`, error);
+      }
     }
+
+    try {
+      await deps.sendEmail({
+        to: customer.email,
+        title: `We opened ticket TKT-${saved.id} for you`,
+        body: `Hi ${customer.first_name || customer.full_name}, we opened a ticket for you about "${subject}". You can read our message and reply to it from your account.`,
+        button: { label: "View your ticket", link: deps.storefrontTicketUrl(saved.id) },
+      });
+    } catch (error) {
+      console.error(`Ticket TKT-${saved.id} was opened but the Customer was not emailed`, error);
+
+      return false;
+    }
+
+    return true;
+  };
+
+  if (deps.afterSave) {
+    deps.afterSave(async () => { await followUp(); });
+    return { ok: true, id: saved.id, emailed: null };
   }
-
-  try {
-    await deps.sendEmail({
-      to: customer.email,
-      title: `We opened ticket TKT-${saved.id} for you`,
-      body: `Hi ${customer.first_name || customer.full_name}, we opened a ticket for you about "${subject}". You can read our message and reply to it from your account.`,
-      button: { label: "View your ticket", link: deps.storefrontTicketUrl(saved.id) },
-    });
-  } catch (error) {
-    console.error(`Ticket TKT-${saved.id} was opened but the Customer was not emailed`, error);
-
-    return { ok: true, id: saved.id, emailed: false };
-  }
-
-  return { ok: true, id: saved.id, emailed: true };
+  return { ok: true, id: saved.id, emailed: await followUp() };
 }
