@@ -49,23 +49,12 @@ const pageLoadings = [
   ["a Ticket", TicketLoading],
 ] as const;
 
-describe("the page navigation loading card", () => {
-  it.each(pageLoadings)("shows nothing, not a skeleton, before the wait on %s passes about 300 ms", (_page, Loading) => {
+describe("the page navigation skeleton", () => {
+  it.each(pageLoadings)("shows a skeleton straight away, not the loading card, on %s", (_page, Loading) => {
     render(<Loading />);
 
-    act(() => void vi.advanceTimersByTime(299));
-
-    expect(screen.queryByRole("status")).toBeNull();
-  });
-
-  it.each(pageLoadings)("shows the loading page card once the wait on %s passes 300 ms", (_page, Loading) => {
-    render(<Loading />);
-
-    act(() => void vi.advanceTimersByTime(300));
-
-    expect(screen.getByRole("status")).toBeTruthy();
-    expect(screen.getByText("Loading…")).toBeTruthy();
-    expect(screen.getByText("Getting this page ready")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
+    expect(screen.queryByText("Getting this page ready")).toBeNull();
   });
 });
 
