@@ -57,7 +57,7 @@ function OrderDetails({ order }: { order: CustomerOrder }) {
       </table>
       </div>
 
-      <dl className="ml-auto max-w-xs space-y-1 text-sm">
+      <dl className="ml-auto w-full max-w-[20rem] space-y-1 text-sm">
         <div className="flex justify-between">
           <dt className="text-muted-foreground">Subtotal</dt>
           <dd>{formatPesos(order.subtotal)}</dd>
@@ -129,7 +129,7 @@ export function OrdersTab({
       {orders.length === 0 ? (
         <div className="p-xl text-center text-muted-foreground">This customer has no orders yet.</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="@container overflow-x-auto">
         <table className="w-full min-w-max whitespace-nowrap">
           <thead>
             <tr className="border-b border-border-subtle">
@@ -170,8 +170,9 @@ export function OrdersTab({
                 {open && (
                   <tr>
                     <td colSpan={6} className="whitespace-normal pb-3 text-left">
-                      {/* inline-size containment: the details never widen the table's columns. */}
-                      <div className="[contain:inline-size]">
+                      {/* Zero intrinsic width, pinned to the scroll area's visible width: the details never widen
+                          the table's columns and never scroll out of sight with them. */}
+                      <div className="sticky left-0 w-[100cqw]">
                         <OrderDetails order={o} />
                       </div>
                     </td>
