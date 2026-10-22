@@ -35,7 +35,7 @@ function Progress({ order }: { order: OrderDetail }) {
   const current = steps.indexOf(order.status);
 
   return (
-    <ol aria-label="Order progress" className="flex items-start">
+    <ol aria-label="Order progress" className="flex min-w-max items-start">
       {steps.map((step, i) => (
         <li
           key={step}
@@ -54,14 +54,27 @@ function Progress({ order }: { order: OrderDetail }) {
               )}
             >
               {i < current && <Check className="size-4" />}
-              {i === current && <span className="size-2.5 rounded-full bg-[#5b2a86]" />}
+              {i === current && (
+                <span className="size-2.5 rounded-full bg-[#5b2a86]" />
+              )}
             </span>
-            <span className={cn("text-xs leading-[normal]", i <= current ? "font-medium text-[#1f1a2e]" : "text-[#9a93a8]")}>
+            <span
+              className={cn(
+                "text-xs leading-[normal]",
+                i <= current ? "font-medium text-[#1f1a2e]" : "text-[#9a93a8]",
+              )}
+            >
               {orderLabel(step)}
             </span>
           </div>
           {i < steps.length - 1 && (
-            <span aria-hidden className={cn("mt-4 h-0.5 flex-1", i < current ? "bg-[#5b2a86]" : "bg-[#e6e1ee]")} />
+            <span
+              aria-hidden
+              className={cn(
+                "mt-4 h-0.5 flex-1",
+                i < current ? "bg-[#5b2a86]" : "bg-[#e6e1ee]",
+              )}
+            />
           )}
         </li>
       ))}
@@ -73,7 +86,11 @@ function DeliveryFee({ order }: { order: OrderDetail }) {
   if (order.fulfillmentMethod === "pickup") return null;
 
   const text =
-    order.deliveryFee !== null ? formatPesos(order.deliveryFee) : order.status === "cancelled" ? "Not quoted" : "Pending";
+    order.deliveryFee !== null
+      ? formatPesos(order.deliveryFee)
+      : order.status === "cancelled"
+        ? "Not quoted"
+        : "Pending";
 
   return (
     <div className="flex justify-between">
@@ -86,8 +103,16 @@ function DeliveryFee({ order }: { order: OrderDetail }) {
 function PaymentProof({ order }: { order: OrderDetail }) {
   const proof = order.paymentProof;
 
-  if (order.paymentMethod !== "gcash") return <p className="text-sm text-[#6e6680]">Cash on delivery: no proof needed.</p>;
-  if (!proof) return <p className="text-sm text-[#6e6680]">No Payment proof submitted yet.</p>;
+  if (order.paymentMethod !== "gcash")
+    return (
+      <p className="text-sm text-[#6e6680]">
+        Cash on delivery: no proof needed.
+      </p>
+    );
+  if (!proof)
+    return (
+      <p className="text-sm text-[#6e6680]">No Payment proof submitted yet.</p>
+    );
 
   return (
     <div className="space-y-2 text-sm text-[#1f1a2e]">
@@ -104,7 +129,9 @@ function PaymentProof({ order }: { order: OrderDetail }) {
             className="max-h-64 rounded-md border border-[#e6e1ee]"
           />
         ) : (
-          <p className="text-xs text-[#6e6680]">Screenshot: {proof.screenshot}</p>
+          <p className="text-xs text-[#6e6680]">
+            Screenshot: {proof.screenshot}
+          </p>
         ))}
     </div>
   );
@@ -121,44 +148,53 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
           ← Orders
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Order #{order.id}</h1>
+          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
+            Order #{order.id}
+          </h1>
           <StatusPill status={order.status} />
         </div>
         <p className="text-sm leading-[normal] text-[#6e6680]">
-          Placed {formatDate(order.createdAt)} · {orderLabel(order.fulfillmentMethod)} ·{" "}
+          Placed {formatDate(order.createdAt)} ·{" "}
+          {orderLabel(order.fulfillmentMethod)} ·{" "}
           {orderLabel(order.paymentMethod)}
         </p>
       </div>
 
-      <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[2fr_1fr] lg:overflow-y-auto">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
         <div className="space-y-5">
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Order status</h2>
-            <Progress order={order} />
+            <div className="overflow-x-auto">
+              <Progress order={order} />
+            </div>
           </section>
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Items</h2>
-            <table className="w-full text-sm text-[#1f1a2e]">
-              <thead>
-                <tr className="text-left text-xs text-[#6e6680]">
-                  <th className="py-1 font-medium">Product</th>
-                  <th className="py-1 font-medium">Size</th>
-                  <th className="py-1 text-right font-medium">Qty</th>
-                  <th className="py-1 text-right font-medium">Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {order.lines.map((l, i) => (
-                  <tr key={i} className="border-t border-[#efebf4]">
-                    <td className="py-2">{l.product}</td>
-                    <td className="py-2">{l.size}</td>
-                    <td className="py-2 text-right">{l.quantity}</td>
-                    <td className="py-2 text-right">{formatPesos(l.price)}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-[#1f1a2e]">
+                <thead>
+                  <tr className="text-left text-xs text-[#6e6680]">
+                    <th className="py-1 font-medium">Product</th>
+                    <th className="py-1 font-medium">Size</th>
+                    <th className="py-1 text-right font-medium">Qty</th>
+                    <th className="py-1 text-right font-medium">Price</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {order.lines.map((l, i) => (
+                    <tr key={i} className="border-t border-[#efebf4]">
+                      <td className="py-2">{l.product}</td>
+                      <td className="py-2">{l.size}</td>
+                      <td className="py-2 text-right">{l.quantity}</td>
+                      <td className="py-2 text-right">
+                        {formatPesos(l.price)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <dl className="ml-auto w-full max-w-[20rem] space-y-1 text-sm text-[#1f1a2e]">
               <div className="flex justify-between">
                 <dt className="text-[#6e6680]">Subtotal</dt>
@@ -173,7 +209,9 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
           </section>
 
           <section className={CARD}>
-            <h2 className={CARD_TITLE}>{address ? "Delivery address" : "Pickup"}</h2>
+            <h2 className={CARD_TITLE}>
+              {address ? "Delivery address" : "Pickup"}
+            </h2>
             <p className="text-sm text-[#1f1a2e]">
               {address
                 ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
@@ -211,7 +249,10 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>
-            <Link href={`/customer-profiles/${order.customer.id}`} className="text-sm font-medium text-[#5b2a86]">
+            <Link
+              href={`/customer-profiles/${order.customer.id}`}
+              className="text-sm font-medium text-[#5b2a86]"
+            >
               {order.customer.name}
             </Link>
           </section>
