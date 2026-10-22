@@ -5,7 +5,7 @@ import { cancelPaymentOrder, markPaid } from "./actions";
 import type { OrderDetail } from "./orders";
 
 /** Marks a GCash Order paid. No Reject: a Customer submits proof once, so Staff mark it paid or cancel the Order. */
-export function MarkPaidDialog({ id }: { id: number }) {
+export function MarkPaidDialog({ id, onMarkPaid }: { id: number; onMarkPaid?: () => void }) {
   return (
     <OrderActionDialog
       trigger="Mark paid"
@@ -14,6 +14,7 @@ export function MarkPaidDialog({ id }: { id: number }) {
       confirm="Mark paid"
       busy="Marking paid…"
       run={() => markPaid(id)}
+      onOptimistic={onMarkPaid}
       successMessage={`Order #${id} marked paid.`}
     />
   );
