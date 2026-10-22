@@ -24,7 +24,7 @@ import { StatusPill } from "./campaign-list";
 import { InboxPreview } from "./inbox-preview";
 
 
-/** An Announcement that is no longer a Draft: read-only, as it was sent, with Retry when it Failed. */
+/** An Announcement that is Sent or Failed: read-only, as it was sent, with Retry when it Failed. */
 export function AnnouncementDetail({
   announcement,
   retry = retrySendAction,
@@ -76,7 +76,6 @@ export function AnnouncementDetail({
               `Sent to ${plural(announcement.sentTo ?? 0)}${announcement.sentAt ? ` on ${formatDate(announcement.sentAt)}` : ""}. It can no longer be changed.`}
             {announcement.state === "failed" &&
               `Not every Subscriber could be reached. ${announcement.sentTo ?? 0} ${announcement.sentTo === 1 ? "was" : "were"} emailed. Retry skips them, so nobody gets it twice.`}
-            {announcement.state === "scheduled" && "Waiting for its send time."}
           </p>
         </div>
         {announcement.state === "failed" && (

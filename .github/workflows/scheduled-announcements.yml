@@ -1,0 +1,21 @@
+name: Scheduled announcements
+
+# Sends the Scheduled Announcements whose time has come, every 5 minutes (GitHub's shortest interval; runs can start a few
+# minutes late). Vercel Cron on the Hobby plan runs once a day at most, so GitHub Actions calls the route instead.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  send-due:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the scheduled send route
+        env:
+          CREOMS_APP_URL: ${{ secrets.CREOMS_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$CREOMS_APP_URL/api/cron/scheduled-announcements"

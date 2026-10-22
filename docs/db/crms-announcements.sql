@@ -5,7 +5,8 @@
 -- created_by and updated_by only say who touched it last, never who may. images holds the public
 -- HTTPS addresses of the shrunk images, in order (empty for a text-only Announcement). image_layout is
 -- how Staff chose to arrange them (see features/marketing/image-layouts.ts); null means the default
--- for the number of images.
+-- for the number of images. scheduled_by is the Staff member who scheduled it, who the scheduled send is
+-- audited as; both are null unless the Announcement is Scheduled.
 CREATE TABLE crms.announcements (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title           text NOT NULL CHECK (title <> '' AND char_length(title) <= 60),
@@ -16,6 +17,8 @@ CREATE TABLE crms.announcements (
                                                'four-feature-top')),
   state           text NOT NULL DEFAULT 'draft' CHECK (state IN ('draft', 'scheduled', 'sent', 'failed')),
   scheduled_for   timestamptz,
+  scheduled_by_id   text,
+  scheduled_by_name text,
   sent_at         timestamptz,
   created_by_id   text NOT NULL,
   created_by_name text NOT NULL,

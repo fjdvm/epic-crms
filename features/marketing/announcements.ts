@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { defaultLayout, isImageLayout, layoutsFor, type ImageLayout } from "./image-layouts";
 import type { ImageStore } from "./image-limits";
+import { formatPhilippineTime } from "./philippine-time";
 
 /** An email's subject is cut off in inboxes past about this many characters. */
 export const TITLE_LIMIT = 60;
@@ -33,6 +34,8 @@ export interface AnnouncementRow {
   imageLayout: ImageLayout | null;
   state: AnnouncementState;
   scheduledFor: Date | null;
+  /** The Staff member who scheduled it, while it is Scheduled. */
+  scheduledByName: string | null;
   sentAt: Date | null;
   /** Customers it was handed to; null until something has been handed over. */
   sentTo: number | null;
@@ -111,6 +114,9 @@ export interface Ports {
   now: () => Date;
 }
 
+/** What sending to Subscribers needs; the scheduled job has no use for the rest. */
+export type SendPorts = Pick<Ports, "audit" | "subscribers" | "mailer" | "now">;
+
 /** The most recipients the notifications service accepts in one batch. */
 export const SEND_BATCH_SIZE = 100;
 
@@ -120,8 +126,12 @@ const STALE_SEND_MS = 10 * 60 * 1000;
 export type InputRefusal = "empty-title" | "title-too-long" | "empty-description" | "invalid-image" | "layout-mismatch";
 
 export type SaveResult = { ok: true; announcement: { id: string } } | { ok: false; reason: InputRefusal };
-export type EditResult = { ok: true } | { ok: false; reason: InputRefusal | "not-found" | "not-a-draft" };
+export type EditResult = { ok: true } | { ok: false; reason: InputRefusal | "not-found" | "not-editable" };
 export type TestCopyResult = { ok: true } | { ok: false; reason: "not-found" | "send-failed" };
+export type ScheduleResult =
+  | { ok: true }
+  | { ok: false; reason: "not-found" | "not-schedulable" | "in-the-past" | "invalid-time" | "in-progress" };
+export type CancelScheduleResult = { ok: true } | { ok: false; reason: "not-found" | "not-scheduled" | "in-progress" };
 export type DeleteResult = { ok: true } | { ok: false; reason: "not-found" | "not-a-draft" };
 
 export type SendResult =
@@ -132,6 +142,20 @@ export const SEND_REFUSALS: Record<Exclude<SendResult, { ok: true }>["reason"], 
   "not-found": "That Announcement no longer exists.",
   "not-sendable": "That Announcement has already been sent, or cannot be sent from where it is.",
   "no-subscribers": "There are no Subscribers, so there is nobody to send it to.",
+  "in-progress": "That Announcement is being sent right now. Check the list in a moment.",
+};
+
+export const SCHEDULE_REFUSALS: Record<Exclude<ScheduleResult, { ok: true }>["reason"], string> = {
+  "not-found": "That Announcement no longer exists.",
+  "not-schedulable": "Only a Draft or a Scheduled Announcement can be scheduled.",
+  "in-the-past": "Pick a time in the future, in Philippine Time.",
+  "invalid-time": "That is not a valid date and time.",
+  "in-progress": "That Announcement is being sent right now. Check the list in a moment.",
+};
+
+export const CANCEL_SCHEDULE_REFUSALS: Record<Exclude<CancelScheduleResult, { ok: true }>["reason"], string> = {
+  "not-found": "That Announcement no longer exists.",
+  "not-scheduled": "That Announcement is no longer Scheduled.",
   "in-progress": "That Announcement is being sent right now. Check the list in a moment.",
 };
 
@@ -175,7 +199,7 @@ function check(
  * The audit trail is a record of what happened, not a gate on it: a change that is already saved is
  * not undone because audit-logs could not be reached.
  */
-async function audited({ audit }: Ports, event: AuditEvent) {
+async function audited({ audit }: Pick<Ports, "audit">, event: AuditEvent) {
   try {
     await audit.record(event);
   } catch (error) {
@@ -216,7 +240,10 @@ async function whyNotDraft(sql: postgres.Sql, id: string): Promise<"not-found" |
 
 const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-/** Edits a Draft, whoever wrote it. Only a Draft changes this way: Sent is final. */
+/** No send is running: sent_at holds the claim of one, and counts only until it has gone stale. */
+const notSending = (sql: postgres.Sql, at: Date) => sql`(sent_at is null or sent_at < ${new Date(at.getTime() - STALE_SEND_MS)})`;
+
+/** Edits a Draft or a Scheduled Announcement, whoever wrote it; a Scheduled one stays Scheduled. Sent and Failed are not edited. */
 export async function editDraft(sql: postgres.Sql, actor: Actor, id: string, input: AnnouncementInput, ports: Ports): Promise<EditResult> {
   const checked = check(input);
   if (!checked.ok) return checked;
@@ -226,21 +253,21 @@ export async function editDraft(sql: postgres.Sql, actor: Actor, id: string, inp
   // which reads back as the default if the images no longer suit it.
   if (input.imageLayout !== undefined && !fits(input.imageLayout, checked.images.length)) return { ok: false, reason: "layout-mismatch" };
 
-  const [row] = await sql<{ id: string }[]>`
+  const [row] = await sql<{ id: string; state: AnnouncementState }[]>`
     update crms.announcements
     set title = ${checked.title}, description = ${checked.description}, images = ${checked.images},
         image_layout = ${input.imageLayout === undefined ? sql`image_layout` : input.imageLayout},
         updated_by_id = ${actor.id}, updated_by_name = ${actor.name}, updated_at = ${ports.now()}
-    where id = ${id} and state = 'draft'
-    returning id`;
+    where id = ${id} and state in ('draft', 'scheduled') and ${notSending(sql, ports.now())}
+    returning id, state`;
 
-  if (!row) return { ok: false, reason: await whyNotDraft(sql, id) };
+  if (!row) return { ok: false, reason: (await whyNotDraft(sql, id)) === "not-found" ? "not-found" : "not-editable" };
 
   await audited(ports, {
     action: "record.updated",
     actor,
     announcement: { id, title: checked.title },
-    description: `${actor.name} edited the Draft "${checked.title}".`,
+    description: `${actor.name} edited the ${row.state === "scheduled" ? "Scheduled Announcement" : "Draft"} "${checked.title}".`,
     occurredAt: ports.now(),
   });
 
@@ -268,7 +295,7 @@ export async function deleteDraft(sql: postgres.Sql, actor: Actor, id: string, p
 }
 
 const SELECT = (sql: postgres.Sql) => sql`
-  select a.id, a.title, a.description, a.images, a.image_layout, a.state, a.scheduled_for, a.sent_at,
+  select a.id, a.title, a.description, a.images, a.image_layout, a.state, a.scheduled_for, a.scheduled_by_name, a.sent_at,
     a.created_by_name, a.updated_by_name, a.updated_at,
     nullif((select count(*) from crms.announcement_recipients r where r.announcement_id = a.id), 0)::int as sent_to
   from crms.announcements a`;
@@ -285,6 +312,7 @@ function toRow(r: Record<string, unknown>): AnnouncementRow {
     imageLayout: chosen && fits(chosen, images.length) ? chosen : defaultLayout(images.length),
     state: r.state as AnnouncementState,
     scheduledFor: r.scheduled_for as Date | null,
+    scheduledByName: r.scheduled_by_name as string | null,
     sentAt: r.state === "sent" ? (r.sent_at as Date | null) : null,
     sentTo: r.sent_to as number | null,
     createdByName: r.created_by_name as string,
@@ -330,7 +358,9 @@ async function deliver(
   actor: Actor,
   id: string,
   from: AnnouncementState[],
-  ports: Ports,
+  ports: SendPorts,
+  /** A send the job makes for the Staff member who scheduled it, rather than one Staff start. */
+  scheduled = false,
 ): Promise<SendResult> {
   if (!isUuid(id)) return { ok: false, reason: "not-found" };
 
@@ -339,19 +369,42 @@ async function deliver(
   if (!from.includes(current.state)) return { ok: false, reason: "not-sendable" };
 
   const audience = await ports.subscribers.list();
-  if (audience.length === 0 && (await reachedCustomers(sql, id)).size === 0) return { ok: false, reason: "no-subscribers" };
+  if (audience.length === 0 && (await reachedCustomers(sql, id)).size === 0) {
+    if (!scheduled) return { ok: false, reason: "no-subscribers" };
+
+    // Nobody is there to ask, so a scheduled send that finds no Subscribers is Failed rather than tried again every run.
+    const [failed] = await sql<{ id: string }[]>`
+      update crms.announcements set state = 'failed', updated_at = ${ports.now()}, updated_by_id = ${actor.id}, updated_by_name = ${actor.name}
+      where id = ${id} and state = 'scheduled' and ${notSending(sql, ports.now())}
+      returning id`;
+    if (!failed) return { ok: false, reason: "in-progress" };
+
+    await audited(ports, {
+      action: "record.updated",
+      actor,
+      announcement: { id, title: current.title },
+      description: `${actor.name}'s scheduled send of "${current.title}" found no Subscribers, so nothing was sent and it is Failed.`,
+      subscribers: 0,
+      occurredAt: ports.now(),
+    });
+
+    return { ok: true, state: "failed", subscribers: 0 };
+  }
 
   const startedAt = ports.now();
   const [claimed] = await sql<{ id: string }[]>`
     update crms.announcements set sent_at = ${startedAt}
     where id = ${id} and state = any(${from}) and (sent_at is null or sent_at < ${new Date(startedAt.getTime() - STALE_SEND_MS)})
+      and (${!scheduled} or scheduled_for <= ${startedAt})
     returning id`;
 
   if (!claimed) return { ok: false, reason: (await getAnnouncement(sql, id)) ? "in-progress" : "not-found" };
 
   // Read after the claim: a send that finished just before it has already recorded who it reached.
   const reachedBefore = await reachedCustomers(sql, id);
-  const mail: MarketingContent = { title: current.title, description: current.description, images: current.images, imageLayout: current.imageLayout };
+  // Edits are refused once the claim is held, so the content read now is what goes out, not what was there before it.
+  const latest = (await getAnnouncement(sql, id)) ?? current;
+  const mail: MarketingContent = { title: latest.title, description: latest.description, images: latest.images, imageLayout: latest.imageLayout };
   const remaining = audience.filter((s) => !reachedBefore.has(s.customerId));
   let complete = true;
 
@@ -372,7 +425,7 @@ async function deliver(
     await sql`
       update crms.announcements set state = ${complete ? "sent" : "failed"}, sent_at = ${complete ? ports.now() : null}, updated_at = ${ports.now()},
         updated_by_id = ${actor.id}, updated_by_name = ${actor.name}
-      where id = ${id}`;
+      where id = ${id} and sent_at = ${startedAt}`;
   }
 
   const state = complete ? "sent" : "failed";
@@ -382,9 +435,13 @@ async function deliver(
     action: "record.updated",
     actor,
     announcement: { id, title: current.title },
-    description: complete
-      ? `${actor.name} sent "${current.title}" to ${plural(audience.length)}.`
-      : `${actor.name} tried to send "${current.title}" to ${plural(audience.length)}; ${reached} ${reached === 1 ? "was" : "were"} reached and it is Failed.`,
+    description: scheduled
+      ? complete
+        ? `${actor.name}'s scheduled send of "${current.title}" went to ${plural(audience.length)}.`
+        : `${actor.name}'s scheduled send of "${current.title}" to ${plural(audience.length)} did not finish; ${reached} ${reached === 1 ? "was" : "were"} reached and it is Failed.`
+      : complete
+        ? `${actor.name} sent "${current.title}" to ${plural(audience.length)}.`
+        : `${actor.name} tried to send "${current.title}" to ${plural(audience.length)}; ${reached} ${reached === 1 ? "was" : "were"} reached and it is Failed.`,
     subscribers: audience.length,
     occurredAt: ports.now(),
   });
@@ -413,6 +470,106 @@ export function sendNow(sql: postgres.Sql, actor: Actor, id: string, ports: Port
 /** Finishes a Failed send. Subscribers it already reached are skipped. */
 export function retrySend(sql: postgres.Sql, actor: Actor, id: string, ports: Ports): Promise<SendResult> {
   return deliver(sql, actor, id, ["failed"], ports);
+}
+
+/** Schedules a Draft, or reschedules a Scheduled Announcement, for a time in the future. Whoever does it is who the send is audited as. */
+export async function schedule(sql: postgres.Sql, actor: Actor, id: string, at: Date, ports: Ports): Promise<ScheduleResult> {
+  if (!isUuid(id)) return { ok: false, reason: "not-found" };
+  if (Number.isNaN(at.getTime())) return { ok: false, reason: "invalid-time" };
+  if (at.getTime() <= ports.now().getTime()) return { ok: false, reason: "in-the-past" };
+
+  const before = await getAnnouncement(sql, id);
+  if (!before) return { ok: false, reason: "not-found" };
+
+  const [row] = await sql<{ id: string }[]>`
+    update crms.announcements
+    set state = 'scheduled', scheduled_for = ${at}, scheduled_by_id = ${actor.id}, scheduled_by_name = ${actor.name},
+        updated_by_id = ${actor.id}, updated_by_name = ${actor.name}, updated_at = ${ports.now()}
+    where id = ${id} and state in ('draft', 'scheduled') and ${notSending(sql, ports.now())}
+    returning id`;
+
+  if (!row) {
+    const now = await getAnnouncement(sql, id);
+
+    return { ok: false, reason: !now ? "not-found" : now.state === "draft" || now.state === "scheduled" ? "in-progress" : "not-schedulable" };
+  }
+
+  await audited(ports, {
+    action: "record.updated",
+    actor,
+    announcement: { id, title: before.title },
+    description: `${actor.name} ${before.state === "scheduled" ? "rescheduled" : "scheduled"} "${before.title}" for ${formatPhilippineTime(at)} Philippine Time.`,
+    occurredAt: ports.now(),
+  });
+
+  return { ok: true };
+}
+
+/** Takes a Scheduled Announcement back to a Draft, with no send time. */
+export async function cancelSchedule(sql: postgres.Sql, actor: Actor, id: string, ports: Ports): Promise<CancelScheduleResult> {
+  if (!isUuid(id)) return { ok: false, reason: "not-found" };
+
+  const [row] = await sql<{ title: string }[]>`
+    update crms.announcements
+    set state = 'draft', scheduled_for = null, scheduled_by_id = null, scheduled_by_name = null,
+        updated_by_id = ${actor.id}, updated_by_name = ${actor.name}, updated_at = ${ports.now()}
+    where id = ${id} and state = 'scheduled' and ${notSending(sql, ports.now())}
+    returning title`;
+
+  if (!row) {
+    const now = await getAnnouncement(sql, id);
+
+    return { ok: false, reason: !now ? "not-found" : now.state === "scheduled" ? "in-progress" : "not-scheduled" };
+  }
+
+  await audited(ports, {
+    action: "record.updated",
+    actor,
+    announcement: { id, title: row.title },
+    description: `${actor.name} cancelled the schedule of "${row.title}"; it is a Draft again.`,
+    occurredAt: ports.now(),
+  });
+
+  return { ok: true };
+}
+
+export interface DueRun {
+  sent: number;
+  failed: number;
+  /** Due, but another run has it or it has just been sent. */
+  skipped: number;
+  /** Due, but the Subscribers could not be read; it stays Scheduled for the next run. */
+  unreadable: number;
+}
+
+/**
+ * The recurring job: sends every Scheduled Announcement whose time has come, to whoever is a Subscriber now,
+ * as the Staff member who scheduled it. Safe to run twice at once, because each send claims its Announcement
+ * first (see deliver), so a second run finds it in progress or already Sent.
+ */
+export async function sendDue(sql: postgres.Sql, ports: SendPorts): Promise<DueRun> {
+  const due = await sql<{ id: string; scheduled_by_id: string | null; scheduled_by_name: string | null }[]>`
+    select id, scheduled_by_id, scheduled_by_name from crms.announcements
+    where state = 'scheduled' and scheduled_for <= ${ports.now()}
+    order by scheduled_for, id`;
+  const run: DueRun = { sent: 0, failed: 0, skipped: 0, unreadable: 0 };
+
+  for (const row of due) {
+    const actor = { id: row.scheduled_by_id ?? "schedule", name: row.scheduled_by_name ?? "Scheduled send" };
+
+    try {
+      const result = await deliver(sql, actor, row.id, ["scheduled"], ports, true);
+
+      if (!result.ok) run.skipped++;
+      else if (result.state === "sent") run.sent++;
+      else run.failed++;
+    } catch (error) {
+      console.error("A scheduled Announcement could not be sent", error);
+      run.unreadable++;
+    }
+  }
+
+  return run;
 }
 
 /** Every Subscriber now: verified Customers who said yes to marketing. Walk-in Customers and Leads have no verified account. */
