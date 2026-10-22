@@ -1,5 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { COLUMNS, RULES } from "@/features/orders/fulfilment-board";
+import { COLUMNS, RULES } from "@/features/orders/fulfilment-layout";
 
 /** Static chrome renders as-is; only the data (counts and cards) is skeleton. */
 export default function Loading() {
