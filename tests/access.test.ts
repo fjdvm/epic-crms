@@ -189,3 +189,51 @@ describe("access to the Email campaigns page", () => {
     expect(await accessFor(await signInAda([FEEDBACK])).overview()).toMatchObject({ pages: ["/feedback"] });
   });
 });
+
+describe("access to the Orders, Payments and Fulfilment pages", () => {
+  const ORDERS = "Orders";
+  const PAYMENTS = "Payments";
+  const FULFILMENT = "Fulfilment";
+
+  it("gives each Module its own page", async () => {
+    expect(await accessFor(await signInAda([ORDERS])).overview()).toMatchObject({ pages: ["/orders"] });
+    expect(await accessFor(await signInAda([PAYMENTS])).overview()).toMatchObject({ pages: ["/payments"] });
+    expect(await accessFor(await signInAda([FULFILMENT])).overview()).toMatchObject({ pages: ["/fulfilment"] });
+  });
+
+  it("opens an Order's detail with any one of the three Modules", async () => {
+    for (const module of [ORDERS, PAYMENTS, FULFILMENT]) {
+      const access = accessFor(await signInAda([module]));
+
+      expect(await access.checkAny([ORDERS, PAYMENTS, FULFILMENT])).toMatchObject({ decision: "allowed", staff: ada });
+    }
+  });
+
+  it("refuses an Order's detail to Staff with none of the three", async () => {
+    const access = accessFor(await signInAda([CUSTOMER_PROFILES, TICKETS]));
+
+    expect((await access.checkAny([ORDERS, PAYMENTS, FULFILMENT])).decision).toBe("denied");
+  });
+
+  it("refuses an Order's detail with no session, and is blocked while the Portal is down", async () => {
+    expect((await accessFor(undefined).checkAny([ORDERS, PAYMENTS, FULFILMENT])).decision).toBe("invalid");
+
+    const handle = await signInAda([ORDERS]);
+    vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+
+    expect((await accessFor(handle).checkAny([ORDERS, PAYMENTS, FULFILMENT])).decision).toBe("unavailable");
+  });
+});
+
+describe("an Order's detail when the Portal cannot answer for one Module", () => {
+  it("still opens for a Module the Portal did answer for", async () => {
+    const handle = await signInAda(["Orders"]);
+    const real = portalFetch(portal);
+    let calls = 0;
+    vi.stubGlobal("fetch", (...args: Parameters<typeof fetch>) =>
+      ++calls === 1 ? real(...args) : Promise.reject(new Error("flaky")),
+    );
+
+    expect((await accessFor(handle).checkAny(["Orders", "Payments"])).decision).toBe("allowed");
+  });
+});

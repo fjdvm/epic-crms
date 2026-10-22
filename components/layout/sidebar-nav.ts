@@ -43,6 +43,27 @@ export const customerProfilesItem: NavItem = {
   icon: Users,
 };
 
+export const ordersItem: NavItem = {
+  group: "SALES",
+  name: "Orders",
+  href: "/orders",
+  icon: ShoppingCart,
+};
+
+export const paymentsItem: NavItem = {
+  group: "SALES",
+  name: "Payments",
+  href: "/payments",
+  icon: CreditCard,
+};
+
+export const fulfilmentItem: NavItem = {
+  group: "SALES",
+  name: "Fulfilment",
+  href: "/fulfilment",
+  icon: Truck,
+};
+
 export const ticketsItem: NavItem = {
   group: "SERVICE",
   name: "Tickets",
@@ -80,9 +101,9 @@ function comingSoon(group: string, name: string, icon: LucideIcon): NavItem {
 export const sidebarItems: NavItem[] = [
   comingSoon("", "Dashboard", LayoutDashboard),
   customerProfilesItem,
-  comingSoon("SALES", "Orders", ShoppingCart),
-  comingSoon("SALES", "Payments", CreditCard),
-  comingSoon("SALES", "Fulfilment", Truck),
+  ordersItem,
+  paymentsItem,
+  fulfilmentItem,
   comingSoon("SALES", "Returns", RotateCcw),
   ticketsItem,
   conversationsItem,

@@ -37,6 +37,19 @@ export function accessFor(
     return answer;
   }
 
+  /** Allowed when the Staff member holds at least one of the Modules, as the Order detail page needs. */
+  async function checkAny(modules: readonly string[]): Promise<Validation> {
+    const results = await Promise.all(modules.map(check));
+
+    // One Module held is enough, so an allowed answer wins over a Module the Portal could not answer.
+    return (
+      results.find((r) => r.decision === "allowed") ??
+      results.find((r) => r.decision === "unavailable") ??
+      results.find((r) => r.decision === "invalid") ??
+      results[0]
+    );
+  }
+
   /** Every page's Module at once: who the Staff member is and which pages they may open. */
   async function overview(): Promise<Overview> {
     const results = await Promise.all(pages.map((page) => check(page.module)));
@@ -56,5 +69,5 @@ export function accessFor(
       : { decision: "allowed", staff: allowed[0].staff, pages: allowed.map((a) => a.href) };
   }
 
-  return { check, overview };
+  return { check, checkAny, overview };
 }

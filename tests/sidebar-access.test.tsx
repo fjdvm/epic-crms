@@ -101,11 +101,26 @@ describe("the sidebar", () => {
     renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
-    for (const name of ["Dashboard", "Orders", "Payments", "Fulfilment", "Returns"]) {
+    for (const name of ["Dashboard", "Returns"]) {
       expect(screen.getByText(name).closest("[aria-disabled]")?.getAttribute("aria-disabled")).toBe("true");
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
     for (const label of ["SALES"]) expect(screen.getByText(label)).toBeTruthy();
+  });
+
+  it("links Orders, Payments and Fulfilment only for the Modules the Staff member holds", async () => {
+    renderSidebar(["/orders", "/fulfilment"]);
+
+    expect((await screen.findByRole("link", { name: "Orders" })).getAttribute("href")).toBe("/orders");
+    expect(screen.getByRole("link", { name: "Fulfilment" }).getAttribute("href")).toBe("/fulfilment");
+    expect(screen.queryByText("Payments")).toBeNull();
+  });
+
+  it("hides Orders, Payments and Fulfilment entirely, not even dimmed, without their Modules", async () => {
+    renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+
+    for (const name of ["Orders", "Payments", "Fulfilment"]) expect(screen.queryByText(name)).toBeNull();
   });
 
   it("shows the Feedback item only with the Feedback page permitted", async () => {
