@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { viewerFor } from "@/features/notifications/load";
-import { listNotifications } from "@/features/notifications/notifications";
+import { listNotifications, type Viewer } from "@/features/notifications/notifications";
 import { syncFeedbackEvents } from "@/features/notifications/feedback-events";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -37,11 +37,11 @@ beforeEach(async () => {
 // The reader and the writer are one connection here; production uses two roles on one database.
 const sync = () => syncFeedbackEvents(db.sql, db.sql);
 
-const withFeedbackModule = { customerProfiles: false, ticketsStaffId: null, feedback: true };
-const withTicketsModule = { customerProfiles: false, ticketsStaffId: "ada", feedback: false };
-const withProfilesModule = { customerProfiles: true, ticketsStaffId: null, feedback: false };
+const withFeedbackModule = { customerProfiles: false, ticketsStaffId: null, feedback: true, orders: false, payments: false };
+const withTicketsModule = { customerProfiles: false, ticketsStaffId: "ada", feedback: false, orders: false, payments: false };
+const withProfilesModule = { customerProfiles: true, ticketsStaffId: null, feedback: false, orders: false, payments: false };
 
-async function alertsFor(viewer: { customerProfiles: boolean; ticketsStaffId: string | null; feedback: boolean }) {
+async function alertsFor(viewer: Viewer) {
   const feed = await listNotifications(db.sql, "crms", 20, viewer);
 
   return feed.notifications.map((n) => `${n.kind}:${n.orderId}:${n.rating}`).sort();
@@ -95,7 +95,7 @@ describe("Feedback notifications", () => {
     const order = await feedback(1);
     await sync();
 
-    const both = { customerProfiles: false, ticketsStaffId: "ada", feedback: true };
+    const both = { customerProfiles: false, ticketsStaffId: "ada", feedback: true, orders: false, payments: false };
     const feed = await listNotifications(db.sql, "crms", 20, both);
 
     expect(feed.notifications.map((n) => n.orderId)).toEqual([order]);
@@ -143,14 +143,14 @@ describe("who the bell is for", () => {
   const staff = { username: "ada" };
 
   it("shows the Feedback alerts to Staff who may open the Feedback page", () => {
-    expect(viewerFor(staff, ["/feedback"])).toEqual({ customerProfiles: false, ticketsStaffId: null, feedback: true });
+    expect(viewerFor(staff, ["/feedback"])).toEqual({ customerProfiles: false, ticketsStaffId: null, feedback: true, orders: false, payments: false });
   });
 
   it("gives Staff with only the Tickets Module no Feedback alerts", () => {
     expect(viewerFor(staff, ["/tickets", "/conversations"])).toMatchObject({ feedback: false });
   });
 
-  it("shows nothing to Staff with none of the three Modules", () => {
+  it("shows nothing to Staff with none of the notification Modules", () => {
     expect(viewerFor(staff, [])).toBeNull();
   });
 });

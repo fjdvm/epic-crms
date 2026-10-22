@@ -18,6 +18,10 @@ export function describeNotification(n: Notification): { text: string; href: str
       return { text: `${n.customerName} sent a message on ${ticket}`, href };
     case "feedback-low":
       return { text: `${n.customerName} rated Order #${n.orderId} ${stars}`, href: `/feedback#${feedbackAnchor(n.orderId!)}` };
+    case "order-delivery-fee":
+      return { text: `${n.customerName} placed Order #${n.orderId}, which needs a Delivery fee`, href: `/orders/${n.orderId}` };
+    case "order-payment-proof":
+      return { text: `${n.customerName} submitted Payment proof for Order #${n.orderId}`, href: `/orders/${n.orderId}` };
     case "ticket-not-fixed":
       return { text: `${n.customerName} says ${ticket} is not fixed`, href };
   }

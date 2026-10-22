@@ -7,7 +7,7 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "feedback-low";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "feedback-low" | "order-delivery-fee" | "order-payment-proof";
 
 export interface Notification {
   id: string;
@@ -16,7 +16,7 @@ export interface Notification {
   customerName: string;
   /** The Ticket a Ticket notification is about; null for a New Customer. */
   ticketId: number | null;
-  /** The Order and star rating a Feedback notification is about; null for the other kinds. */
+  /** The Order a Feedback or Order notification is about. Rating is only for Feedback. */
   orderId: number | null;
   rating: number | null;
   /** When CREOMS first saw the event, such as the person becoming a Customer. */
@@ -28,21 +28,25 @@ export interface Notification {
  * Whose bell is being read. New Customer alerts go to Staff with the Customer Profiles Module.
  * Ticket alerts go to Staff with the Tickets Module (`ticketsStaffId` is their Portal id, null
  * without the Module): to everyone when addressed to no one, otherwise to the Claimer alone.
- * Feedback alerts go to Staff with the Feedback Module.
+ * Feedback alerts go to Staff with the Feedback Module; Order alerts require Orders or Payments.
  */
 export interface Viewer {
   customerProfiles: boolean;
   ticketsStaffId: string | null;
   feedback: boolean;
+  orders: boolean;
+  payments: boolean;
 }
 
-const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null, feedback: false };
+const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null, feedback: false, orders: false, payments: false };
 
 /** The rows of `crms.notifications` this viewer may see and mark read. */
 function visibleTo(sql: postgres.Sql, viewer: Viewer) {
   return sql`(
     (kind = 'new-customer' and ${viewer.customerProfiles})
     or (kind = 'feedback-low' and ${viewer.feedback})
+    or (kind = 'order-delivery-fee' and ${viewer.orders})
+    or (kind = 'order-payment-proof' and ${viewer.payments})
     or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))
   )`;

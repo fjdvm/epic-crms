@@ -22,7 +22,9 @@ export function viewerFor(staff: { username: string }, permittedPages: string[])
     customerProfiles: permittedPages.includes("/customer-profiles"),
     ticketsStaffId: permittedPages.includes("/tickets") ? staff.username : null,
     feedback: permittedPages.includes("/feedback"),
+    orders: permittedPages.includes("/orders"),
+    payments: permittedPages.includes("/payments"),
   };
 
-  return viewer.customerProfiles || viewer.ticketsStaffId !== null || viewer.feedback ? viewer : null;
+  return viewer.customerProfiles || viewer.ticketsStaffId !== null || viewer.feedback || viewer.orders || viewer.payments ? viewer : null;
 }

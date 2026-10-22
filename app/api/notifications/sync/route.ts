@@ -1,3 +1,4 @@
+import { syncOrderEvents } from "@/features/notifications/order-events";
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -18,7 +19,7 @@ function authorised(header: string | null, secret: string): boolean {
 }
 
 /**
- * Finds Customers, Ticket events and low-rating Feedback CREOMS has not seen yet and creates their notifications.
+ * Finds Customers, Ticket and Order events and low-rating Feedback CREOMS has not seen yet and creates their notifications.
  * Called by a scheduler, not by a browser, so it is outside the Portal session and
  * authenticated by a bearer secret instead.
  */
@@ -34,14 +35,20 @@ export async function POST(request: NextRequest) {
     // The reply keeps the New Customer fields at the top level, as before.
     const tickets = await syncTicketEvents(crmsDatabase(), ticketsDatabase());
 
-    // Feedback is last and isolated: its failure must not hide the syncs that already succeeded.
+    // Feedback is isolated: its failure must not hide the syncs that already succeeded.
     const feedback = await syncFeedbackEvents(crmsDatabase(), ticketsDatabase()).catch((error) => {
       console.error("Feedback notification sync failed", error);
 
       return { error: "sync failed" };
     });
 
-    return NextResponse.json({ ...customers, tickets, feedback });
+    const orders = await syncOrderEvents(crmsDatabase(), ticketsDatabase()).catch((error) => {
+      console.error("Order notification sync failed", error);
+
+      return { error: "sync failed" };
+    });
+
+    return NextResponse.json({ ...customers, tickets, feedback, orders });
   } catch (error) {
     console.error("Notification sync failed", error);
 
