@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
  */
 export function OrderActionDialog({
   trigger,
+  triggerClassName,
   title,
   description,
   children,
@@ -41,6 +42,8 @@ export function OrderActionDialog({
 }: {
   /** The button's label on the page. */
   trigger: string;
+  /** Extra classes for that button, such as a smaller one on a board card. */
+  triggerClassName?: string;
   title: string;
   description: string;
   /** Anything Staff fill in or should read before confirming. */
@@ -94,6 +97,7 @@ export function OrderActionDialog({
           className={cn(
             "h-auto rounded-lg px-4 py-[9px] leading-[normal] shadow-none",
             destructive && "text-[#dc2626] hover:text-[#dc2626]",
+            triggerClassName,
           )}
         >
           {trigger}
