@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { getReturns, getReturnStats, getReturnDetail } from "@/features/returns/actions";
+import { getReturns, getReturnStats, getReturnDetail, approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded } from "@/features/returns/actions";
 import { canOpenOrders, getShell, requireAnyModule } from "@/lib/portal/staff";
 import { ORDER_DETAIL_MODULES } from "@/lib/portal/config";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
+import { revalidatePath } from "next/cache";
+import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 const session = vi.hoisted(() => ({ handle: "" }));
@@ -11,14 +13,25 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: session.handle }) }),
   headers: async () => new Headers(),
 }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 let db: TestDatabase;
 let portal: FakePortal;
+let storefront: FakeStorefront;
 beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   portal = new FakePortal();
-  vi.stubGlobal("fetch", portalFetch(portal));
+  storefront = new FakeStorefront(db.sql);
+  const portalRequest = portalFetch(portal);
+  const storefrontRequest = storefrontFetch(storefront);
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    return new URL(request.url).origin === FAKE_PORTAL_URL ? portalRequest(request) : storefrontRequest(request);
+  });
+  vi.stubEnv("CREOMS_STOREFRONT_URL", FAKE_STOREFRONT_URL);
+  vi.stubEnv("CREOMS_SERVICE_SECRET", FAKE_SERVICE_SECRET);
+  vi.clearAllMocks();
   vi.stubEnv("PORTAL_URL", FAKE_PORTAL_URL);
   vi.stubEnv("PORTAL_SYSTEM_NAME", FAKE_SYSTEM);
   vi.stubEnv("PORTAL_SYSTEM_SECRET", FAKE_SECRET);
@@ -47,10 +60,29 @@ async function signIn(modules: string[]) {
 }
 
 describe('Returns server access', () => {
+  it('allows Returns-only Staff decisions and rechecks the Portal after revocation', async () => {
+    await signIn(['Returns']);
+    expect(await approveReturn(1, true)).toMatchObject({ ok: true });
+    expect(await markReturnGoodsReceived(1)).toMatchObject({ ok: true });
+    portal.revoke('ana', 'Returns');
+    await expect(markReturnRefunded(1)).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
+    portal.grant('ana', 'Returns');
+    expect(await markReturnRefunded(1)).toMatchObject({ ok: true });
+    expect(await getReturnDetail(1)).toMatchObject({ ok: true, detail: {
+      history: [
+        { status: 'approved', actor: { id: 'ana', name: 'Ana Reyes' } },
+        { status: 'goods received', actor: { id: 'ana', name: 'Ana Reyes' } },
+        { status: 'refunded', actor: { id: 'ana', name: 'Ana Reyes' } },
+      ],
+    } });
+    expect(storefront.requests).toBe(3);
+  });
   it('returns no data to other Modules or after Returns access is revoked', async () => {
     await signIn(['Orders', 'Payments', 'Fulfilment']);
     const denied = async () => {
-      for (const read of [getReturns, getReturnStats, () => getReturnDetail(1)]) {
+      for (const read of [getReturns, getReturnStats, () => getReturnDetail(1),
+        () => approveReturn(1, false), () => declineReturn(1, "Wrong Order"),
+        () => markReturnGoodsReceived(1), () => markReturnRefunded(1)]) {
         await expect(read()).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
       }
     };
@@ -59,6 +91,8 @@ describe('Returns server access', () => {
     expect((await getReturns()).ok).toBe(true);
     portal.revoke('ana', 'Returns');
     await denied();
+    expect(storefront.requests).toBe(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
   it('allows Returns Staff to read the list, stats, detail and Order detail access', async () => {
     await signIn(['Returns']);
