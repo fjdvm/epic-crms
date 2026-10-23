@@ -17,7 +17,7 @@ afterEach(() => vi.restoreAllMocks());
 const NOW = new Date();
 
 /** Written out here on purpose, so a wrong status list in the module cannot pass both sides. */
-const COUNTS_TOWARD_TOTAL_SPENT = new Set(["paid", "preparing", "dispatched", "delivered"]);
+const COUNTS_TOWARD_TOTAL_SPENT = new Set(["paid", "preparing", "dispatched", "delivered", "received"]);
 
 describe("loadCustomerProfile", () => {
   it("reports unavailable instead of throwing when the database cannot be read", async () => {
@@ -36,6 +36,7 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
     const customers = await sql`select * from public.customers`;
     const users = await sql`select id::text as id, "emailVerified" as verified, "createdAt" as created from neon_auth."user"`;
     const orders = await sql`select id, customer_id, status, subtotal_in_centavos, delivery_fee_in_centavos, created_at from public.orders`;
+    const refunds = await sql`select order_id, amount_in_centavos from public.order_returns where status = 'refunded'`;
     const feedback = await sql`select order_id, rating, created_at from public.order_feedback`;
     const addresses = await sql`select * from public.addresses order by id`;
     const lines = await sql`select * from public.order_lines`;
@@ -56,7 +57,8 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
       const mine = orders.filter((o) => o.customer_id === c.id);
       const paid = mine.filter((o) => COUNTS_TOWARD_TOTAL_SPENT.has(o.status));
       const total = (o: (typeof mine)[number]) => o.subtotal_in_centavos + (o.delivery_fee_in_centavos ?? 0);
-      const spent = paid.reduce((sum, o) => sum + total(o), 0);
+      const spent = paid.reduce((sum, o) => sum + total(o), 0)
+        - refunds.filter(r => paid.some(o => o.id === r.order_id)).reduce((sum, r) => sum + r.amount_in_centavos, 0);
       const counted = mine.filter((o) => o.status !== "cancelled");
       const ratings = feedback.filter((f) => mine.some((o) => o.id === f.order_id)).map((f) => f.rating);
       const mineAddresses = addresses.filter((a) => a.customer_id === c.id);

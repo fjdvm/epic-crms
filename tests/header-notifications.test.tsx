@@ -19,8 +19,8 @@ afterEach(() => {
 const feed = {
   unread: 1,
   notifications: [
-    { id: "2", kind: "new-customer" as const, ticketId: null, orderId: null, rating: null, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
-    { id: "1", kind: "new-customer" as const, ticketId: null, orderId: null, rating: null, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(Date.now() - 3 * 86_400_000), read: true },
+    { id: "2", kind: "new-customer" as const, ticketId: null, orderId: null, rating: null, returnId: null, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
+    { id: "1", kind: "new-customer" as const, ticketId: null, orderId: null, rating: null, returnId: null, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(Date.now() - 3 * 86_400_000), read: true },
   ],
 };
 
@@ -72,7 +72,7 @@ describe("the header bell", () => {
         kind,
         ticketId: 208,
         orderId: null,
-        rating: null,
+        rating: null, returnId: null,
         customerId: "u-ada",
         customerName: "Ada Lim",
         createdAt: new Date(),
@@ -91,8 +91,8 @@ describe("the header bell", () => {
     const lowFeed = {
       unread: 2,
       notifications: [
-        { id: "21", kind: "feedback-low" as const, ticketId: null, orderId: 1042, rating: 1, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(), read: false },
-        { id: "20", kind: "feedback-low" as const, ticketId: null, orderId: 1040, rating: 3, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
+        { id: "21", kind: "feedback-low" as const, ticketId: null, orderId: 1042, rating: 1, returnId: null, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(), read: false },
+        { id: "20", kind: "feedback-low" as const, ticketId: null, orderId: 1040, rating: 3, returnId: null, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
       ],
     };
     render(<HeaderNotifications feed={lowFeed} />);

@@ -141,7 +141,7 @@ describe("the Orders list", () => {
   });
 
   it("derives the payment label from the status", async () => {
-    for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing", "dispatched", "delivered", "cancelled"]) {
+    for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing", "dispatched", "delivered", "received", "cancelled"]) {
       await order({ status });
     }
 
@@ -155,6 +155,7 @@ describe("the Orders list", () => {
       preparing: "Paid",
       dispatched: "Paid",
       delivered: "Paid",
+      received: "Paid",
       cancelled: "Cancelled",
     });
   });

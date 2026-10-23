@@ -12,7 +12,7 @@ The shared Order detail access gate also accepts Returns. Returns-only Staff see
 
 ## Storefront prerequisite and schema
 
-The storefront owns Return tables and all migrations on those tables. Its main branch had no Return schema when #170 was implemented. The **proposed read contract**, to be coordinated with #179 and the storefront implementation, is executable only in `tests/returns-schema.sql`:
+The storefront owns Return tables and all migrations on those tables. Its main branch had no Return schema when #170 was implemented. The read contract was initially proposed in `tests/returns-schema.sql`; storefront Drizzle migration `0019_order_returns` now implements it (applied to production during #171). Storefront endpoints remain separate work under #179:
 
 | Table | Fields consumed |
 | --- | --- |
@@ -31,7 +31,7 @@ Order context uses existing `orders.delivered_at`. The optional `delivery_photo_
 2. As the shared database owner, run `docs/db/creoms-returns-readonly.sql` with SQL error-stop enabled. This transactional, rerunnable permissions migration grants SELECT on the four Return tables to the existing `creoms_readonly` role and revokes direct write privileges on those tables. It fails without partial grants if a prerequisite table/role is absent. Existing Orders and Customer grants are unchanged.
 3. Configure the existing read-only `CREOMS_DATABASE_URL` securely and verify the Returns loaders against the deployed schema. No new database writer role or credential is needed for CREOMS.
 
-The permission migration was applied twice and verified in a throwaway database, including removal of pre-existing write grants and rejection of writes. It was **not applied to production**: this environment has no live database binding, and no Return schema exists in the inspected storefront main branch. Live schema availability is unverified. Until those prerequisites are supplied, live reads correctly report unavailable.
+The permission migration was initially verified in a throwaway database. During #171, Staff requested the missing schema migration: storefront migration `0019_order_returns` was tested on an isolated production copy and applied to production on 2026-10-23, followed by this permissions migration. The four Return tables and SELECT-only privileges are verified, and the live CREOMS Returns loaders succeed. See `docs/return-decisions.md` for the rollout record and the remaining storefront endpoint dependency.
 
 ## Fake and validation
 

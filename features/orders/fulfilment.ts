@@ -35,8 +35,8 @@ export async function loadFulfilmentBoard(
         o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total
       from public.orders o join public.customers c on c.id = o.customer_id
       where o.status in ('confirmed', 'paid', 'preparing', 'dispatched')
-        or (o.status = 'delivered' and o.delivered_at >= ${deliveredSince} and o.delivered_at <= ${now})
-      order by case when o.status = 'delivered' then o.delivered_at end desc, o.created_at, o.id`;
+        or (o.status in ('delivered', 'received') and o.delivered_at >= ${deliveredSince} and o.delivered_at <= ${now})
+      order by case when o.status in ('delivered', 'received') then o.delivered_at end desc, o.created_at, o.id`;
     const lines = rows.length === 0 ? [] : await sql<{ order_id: number; product_name: string; quantity: number }[]>`
       select order_id, product_name, quantity from public.order_lines
       where order_id in ${sql(rows.map(row => row.id))} order by id`;
@@ -51,7 +51,7 @@ export async function loadFulfilmentBoard(
       ready: orders.filter(readyToPrepare),
       preparing: orders.filter(order => order.status === "preparing"),
       dispatched: orders.filter(order => order.status === "dispatched"),
-      delivered: orders.filter(order => order.status === "delivered"),
+      delivered: orders.filter(order => ["delivered", "received"].includes(order.status)),
     } };
   } catch {
     return { ok: false };

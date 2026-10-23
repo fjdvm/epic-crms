@@ -7,7 +7,7 @@ export interface OrderAmounts {
   deliveryFeeInCentavos: number | null;
 }
 
-/** Total spent, in centavos: subtotal plus delivery fee of paid or fulfilled Orders. */
+/** Gross Order contribution to Total spent; profile reads additionally subtract Refunded Returns. */
 export function totalSpent(orders: OrderAmounts[]): number {
   return orders
     .filter((o) => PAID_OR_FULFILLED.includes(o.status))

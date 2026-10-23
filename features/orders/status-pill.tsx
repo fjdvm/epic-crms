@@ -11,7 +11,7 @@ const STATUS_PILLS: Record<string, string> = {
   preparing: PILL.purple,
   dispatched: PILL.blue,
   delivered: PILL.green,
-  received: PILL.blue,
+  received: PILL.green,
   cancelled: PILL.grey,
 };
 
