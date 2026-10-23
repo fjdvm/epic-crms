@@ -1,4 +1,4 @@
-import type { FileStorage } from "@/features/tickets/attachments";
+import type { FileStorage, ImageContentType } from "@/features/tickets/attachments";
 
 /** An in-memory file-storage: Private Files, short-lived addresses, and whatever failures a test asks for. */
 export class FakeFileStorage implements FileStorage {
@@ -14,7 +14,7 @@ export class FakeFileStorage implements FileStorage {
     this.next = 1;
   }
 
-  async upload(file: { filename: string; contentType: string; bytes: Uint8Array }) {
+  async upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array }) {
     if (this.failUpload) throw new Error("file-storage is down");
 
     const id = `file-${this.next++}`;

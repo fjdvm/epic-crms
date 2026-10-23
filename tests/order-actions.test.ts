@@ -12,6 +12,17 @@ import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, p
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 
+import { FakeFileStorage, PNG, JPEG, PDF } from "./fake-file-storage";
+
+const storage = new FakeFileStorage();
+vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
+
+function deliveryPhoto() {
+  const form = new FormData();
+  form.append("photo", new File([PNG], "delivery.png", { type: "image/png" }));
+  return form;
+}
+
 const session = vi.hoisted(() => ({ handle: "" }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }) }));
 vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn() }));
@@ -24,13 +35,14 @@ afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   await db.sql`truncate ticket_messages, tickets, order_lines, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria Santos', 'maria@example.com')`;
+  storage.reset();
   storefront = new FakeStorefront(db.sql);
   vi.stubGlobal("fetch", storefrontFetch(storefront));
   vi.stubEnv("CREOMS_STOREFRONT_URL", FAKE_STOREFRONT_URL);
   vi.stubEnv("CREOMS_SERVICE_SECRET", FAKE_SERVICE_SECRET);
   vi.mocked(requireModule).mockResolvedValue({ username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 async function order(method = "delivery", status = "placed", payment = "cash-on-delivery") {
   const [row] = await db.sql`insert into orders (customer_id, fulfillment_method, status, payment_method)
     values ('c1', ${method}, ${status}, ${payment}) returning id`;
@@ -175,6 +187,156 @@ describe("Order actions", () => {
 });
 
 describe("Fulfilment Order actions", () => {
+  it("requires a Delivery photo before contacting the storefront, including Pickup", async () => {
+    for (const method of ["delivery", "pickup"]) {
+      expect(await deliverOrder(await order(method, "dispatched"))).toEqual({
+        ok: false, reason: "Choose exactly one Delivery photo.",
+      });
+    }
+    expect(storefront.requests).toBe(0);
+    expect(storage.files.size).toBe(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("refuses invalid, empty and oversized photos by their bytes before uploading", async () => {
+    const id = await order("delivery", "dispatched");
+    for (const [bytes, reason] of [
+      [PDF, "Only JPG or PNG"],
+      [new Uint8Array(), "empty"],
+      [new Uint8Array(5 * 1024 * 1024 + 1), "over 5 MB"],
+    ] as const) {
+      const form = new FormData();
+      form.append("photo", new File([bytes], "delivery.png", { type: "image/png" }));
+      expect(await deliverOrder(id, form)).toMatchObject({ ok: false, reason: expect.stringContaining(reason) });
+    }
+    const duplicate = deliveryPhoto();
+    duplicate.append("photo", new File([PNG], "second.png"));
+    expect(await deliverOrder(id, duplicate)).toEqual({ ok: false, reason: "Choose exactly one Delivery photo." });
+    const text = new FormData();
+    text.append("photo", "file-id-from-browser");
+    expect(await deliverOrder(id, text)).toEqual({ ok: false, reason: "Choose exactly one Delivery photo." });
+    expect(storefront.requests).toBe(0);
+    expect(storage.files.size).toBe(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("uploads a real JPG or PNG and sends its File id for Delivery and Pickup", async () => {
+    for (const [method, bytes, contentType] of [
+      ["delivery", PNG, "image/png"], ["pickup", JPEG, "image/jpeg"],
+    ] as const) {
+      const id = await order(method, "dispatched");
+      const form = new FormData();
+      // The browser's extension and MIME claim do not decide the stored type.
+      form.append("photo", new File([bytes], "handover.bin", { type: "application/octet-stream" }));
+      expect(await deliverOrder(id, form)).toMatchObject({ ok: true, order: { id, status: "delivered" } });
+      const fileId = [...storage.files.keys()].at(-1)!;
+      expect(storage.files.get(fileId)).toMatchObject({ filename: "handover.bin", contentType, size: bytes.length });
+      expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: fileId } });
+    }
+  });
+
+  it("stores the Delivery photo Private and Permanent through the gateway", async () => {
+    const { gatewayFileStorage } = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
+    vi.spyOn(storage, "upload").mockImplementation(gatewayFileStorage.upload);
+    vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
+    vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "fake-gateway-key");
+    const registrations: unknown[] = [];
+    const uploads: Uint8Array[] = [];
+    let confirmed = false;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.url.startsWith(FAKE_STOREFRONT_URL)) {
+        expect(confirmed).toBe(true);
+        return storefront.handle(request);
+      }
+      if (request.url === "https://bucket.test/photo" && request.method === "PUT") {
+        expect(request.headers.has("authorization")).toBe(false);
+        uploads.push(new Uint8Array(await request.arrayBuffer()));
+        return new Response(null, { status: 200 });
+      }
+      expect(request.headers.get("authorization")).toBe("Bearer fake-gateway-key");
+      if (request.url === "https://gateway.test/files" && request.method === "POST") {
+        registrations.push(await request.json());
+        return Response.json({ id: "delivery-file", uploadUrl: "https://bucket.test/photo" });
+      }
+      if (request.url === "https://gateway.test/files/delivery-file/confirm" && request.method === "POST") {
+        confirmed = true;
+        return Response.json({});
+      }
+      throw new Error("Unexpected file request");
+    });
+    const id = await order("delivery", "dispatched");
+    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: true });
+    expect(registrations).toEqual([{
+      filename: "delivery.png", contentType: "image/png", size: PNG.length,
+      visibility: "private", retentionType: "permanent",
+    }]);
+    expect(uploads).toEqual([PNG]);
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: "delivery-file" } });
+  });
+
+  it("accepts a photo of exactly 5 MB", async () => {
+    const bytes = new Uint8Array(5 * 1024 * 1024);
+    bytes.set(PNG);
+    const form = new FormData();
+    form.append("photo", new File([bytes], "delivery.png"));
+    expect(await deliverOrder(await order("pickup", "dispatched"), form)).toMatchObject({ ok: true });
+    expect(storage.files.get("file-1")?.size).toBe(5 * 1024 * 1024);
+  });
+
+  it("does not contact the storefront if the photo cannot be stored", async () => {
+    storage.failUpload = true;
+    expect(await deliverOrder(await order("delivery", "dispatched"), deliveryPhoto())).toEqual({
+      ok: false, reason: "Delivery photo could not be stored. The Order was not marked delivered.",
+    });
+    expect(storefront.requests).toBe(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("keeps delivery evidence after an accepted write whose response was lost, without retrying", async () => {
+    const id = await order("delivery", "dispatched");
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      await storefront.handle(new Request(input, init));
+      throw new Error("Response lost after commit");
+    });
+    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
+    expect(storefront.requests).toBe(1);
+    expect(storage.files.has("file-1")).toBe(true);
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "delivered", deliveryPhotoFileId: "file-1" } });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("requires the storefront to confirm the photo id as well as the status", async () => {
+    const id = await order("delivery", "dispatched");
+    vi.stubGlobal("fetch", async () => Response.json({ id, status: "delivered", deliveryFeeInCentavos: null }));
+    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
+    expect(storage.files.has("file-1")).toBe(true);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("does not replace or remove an attached Delivery photo", async () => {
+    const id = await order("delivery", "dispatched");
+    expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(true);
+    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
+    expect(storage.files.size).toBe(1);
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: "file-1" } });
+    expect(storefront.requests).toBe(1);
+  });
+
+  it("reads legacy delivered Orders as No photo, including before the storefront schema changes", async () => {
+    const id = await order("delivery", "delivered");
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: null } });
+    const legacy = await startTestDatabase();
+    try {
+      await legacy.sql`alter table orders drop column delivery_photo_file_id`;
+      await legacy.sql`insert into customers (id, full_name, email) values ('legacy', 'Maria', 'legacy@example.com')`;
+      const [row] = await legacy.sql`insert into orders (customer_id, status) values ('legacy', 'delivered') returning id`;
+      expect(await loadOrder(() => legacy.sql, row.id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: null } });
+    } finally {
+      await legacy.close();
+    }
+  });
+
   it("denies Orders and Payments Staff, and rechecks a revoked Fulfilment grant", async () => {
     const id = await order("delivery", "confirmed");
     const portal = await signInWithModules(["Orders", "Payments"]);
@@ -186,6 +348,8 @@ describe("Fulfilment Order actions", () => {
     expect((await startPreparing(id)).ok).toBe(true);
     portal.revoke("ben", "Fulfilment");
     await expect(dispatchOrder(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    await expect(deliverOrder(id, deliveryPhoto())).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(1);
   });
 
@@ -211,7 +375,7 @@ describe("Fulfilment Order actions", () => {
   it("preserves the storefront refusal for each move without reporting success", async () => {
     storefront.refusal = "Another Staff member has already moved this Order.";
     for (const [status, move] of [["confirmed", startPreparing], ["preparing", dispatchOrder], ["dispatched", deliverOrder]] as const) {
-      expect(await move(await order("delivery", status))).toEqual({ ok: false, reason: storefront.refusal });
+      expect(await move(await order("delivery", status), deliveryPhoto())).toEqual({ ok: false, reason: storefront.refusal });
     }
     expect(revalidatePath).not.toHaveBeenCalled();
   });
@@ -219,7 +383,7 @@ describe("Fulfilment Order actions", () => {
   it("only confirms one of two Staff making the same move", async () => {
     for (const [status, move] of [["confirmed", startPreparing], ["preparing", dispatchOrder], ["dispatched", deliverOrder]] as const) {
       const id = await order("delivery", status);
-      const results = await Promise.all([move(id), move(id)]);
+      const results = await Promise.all([move(id, deliveryPhoto()), move(id, deliveryPhoto())]);
       expect(results.filter(result => result.ok)).toHaveLength(1);
       expect(results.find(result => !result.ok)).toMatchObject({ reason: expect.stringMatching(/already changed/) });
     }
@@ -232,7 +396,7 @@ describe("Fulfilment Order actions", () => {
   });
   it("marks a dispatched Order delivered through the storefront and records its Delivery time", async () => {
     const id = await order("delivery", "dispatched");
-    expect(await deliverOrder(id)).toEqual({ ok: true, order: { id, status: "delivered", deliveryFeeInCentavos: null } });
+    expect(await deliverOrder(id, deliveryPhoto())).toEqual({ ok: true, order: { id, status: "delivered", deliveryFeeInCentavos: null } });
     const { loadFulfilmentBoard } = await import("@/features/orders/fulfilment");
     const result = await loadFulfilmentBoard(() => db.sql);
     expect(result.ok && result.board.delivered).toEqual([expect.objectContaining({ id, deliveredAt: expect.any(Date) })]);

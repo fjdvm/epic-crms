@@ -130,6 +130,8 @@ export interface OrderDetail extends CustomerOrder {
   customer: { id: string; name: string };
   /** Null for legacy Orders and Orders never marked paid. */
   paidBy: { id: string; name: string; at: Date } | null;
+  /** Null means No photo, including legacy delivered Orders. */
+  deliveryPhotoFileId: string | null;
 }
 
 export type OrderResult = { ok: true; order: OrderDetail | null } | { ok: false };
@@ -142,8 +144,9 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number): P
 
     if (!order) return { ok: true, order: null };
 
-    const [customer] = await sql<{ id: string; full_name: string; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null }[]>`
-      select c.id, c.full_name, o.paid_by_id, o.paid_by_name, o.paid_at from public.orders o
+    const [customer] = await sql<{ id: string; full_name: string; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null; delivery_photo_file_id: string | null }[]>`
+      select c.id, c.full_name, o.paid_by_id, o.paid_by_name, o.paid_at,
+        to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id from public.orders o
       join public.customers c on c.id = o.customer_id
       where o.id = ${orderId}`;
 
@@ -152,6 +155,7 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number): P
       order: {
         ...order,
         paymentLabel: paymentStatusOf(order.status),
+        deliveryPhotoFileId: customer.delivery_photo_file_id,
         customer: { id: customer.id, name: customer.full_name },
         paidBy: customer.paid_by_id && customer.paid_by_name && customer.paid_at
           ? { id: customer.paid_by_id, name: customer.paid_by_name, at: customer.paid_at }
