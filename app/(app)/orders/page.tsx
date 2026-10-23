@@ -1,10 +1,14 @@
+import { Suspense } from "react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
-import { OrderListView } from "@/features/orders/order-list";
+import { OrderListView, type OrderListParams } from "@/features/orders/order-list";
+import { OrdersSkeleton } from "@/features/orders/orders-skeleton";
 import { loadOrders, ORDER_TABS } from "@/features/orders/orders";
 import { ticketsDatabase } from "@/lib/tickets-db";
 import { ORDERS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
+import { PageHeader } from "./page-header";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -19,13 +23,34 @@ export default async function OrdersPage({ searchParams }: { searchParams: Searc
   const tab = ORDER_TABS.find((t) => t === first(raw.tab)) ?? "all";
   const page = Math.max(1, Number.parseInt(first(raw.page), 10) || 1);
 
-  const result = await loadOrders(ticketsDatabase, { tab, page });
+  const params = { tab, page };
+
+  return (
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
+      <BackgroundRefresh />
+      {/* Keyed so switching tab or page shows the skeleton at once instead of holding the old tab until the data lands. */}
+      <Suspense
+        key={`${tab}:${page}`}
+        fallback={
+          <>
+            <PageHeader />
+            <OrdersSkeleton params={params} />
+          </>
+        }
+      >
+        <OrdersData params={params} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function OrdersData({ params }: { params: OrderListParams }) {
+  const result = await loadOrders(ticketsDatabase, params);
 
   if (!result.ok) {
     return (
-      <div className="p-md sm:p-lg space-y-md">
-        <BackgroundRefresh />
-        <h1 className="text-2xl font-semibold leading-[normal] text-foreground">Orders</h1>
+      <>
+        <PageHeader />
         <Alert variant="destructive">
           <AlertTitle>Orders are temporarily unavailable</AlertTitle>
           <AlertDescription>
@@ -33,22 +58,16 @@ export default async function OrdersPage({ searchParams }: { searchParams: Searc
             tell whoever maintains CREOMS.
           </AlertDescription>
         </Alert>
-      </div>
+      </>
     );
   }
 
   const { list } = result;
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
-      <BackgroundRefresh />
-      <div className="shrink-0 space-y-1">
-        <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Orders</h1>
-        <p className="text-sm leading-[normal] text-[#6e6680]">
-          {list.counts.all} Orders · placed on the store, shown here as the store has them
-        </p>
-      </div>
-      <OrderListView list={list} params={{ tab, page: list.page }} />
-    </div>
+    <>
+      <PageHeader count={list.counts.all} />
+      <OrderListView list={list} params={{ tab: params.tab, page: list.page }} />
+    </>
   );
 }
