@@ -97,15 +97,14 @@ describe("the sidebar", () => {
     expect(screen.queryByText("CUSTOMERS")).toBeNull();
   });
 
-  it("lists the rest of the design as dimmed entries that are not links", async () => {
+  it("lists the rest of the design as a dimmed entry that is not a link", async () => {
     renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
-    for (const name of ["Dashboard", "Returns"]) {
+    for (const name of ["Dashboard"]) {
       expect(screen.getByText(name).closest("[aria-disabled]")?.getAttribute("aria-disabled")).toBe("true");
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
-    for (const label of ["SALES"]) expect(screen.getByText(label)).toBeTruthy();
   });
 
   it("links Orders, Payments and Fulfilment only for the Modules the Staff member holds", async () => {
@@ -114,6 +113,17 @@ describe("the sidebar", () => {
     expect((await screen.findByRole("link", { name: "Orders" })).getAttribute("href")).toBe("/orders");
     expect(screen.getByRole("link", { name: "Fulfilment" }).getAttribute("href")).toBe("/fulfilment");
     expect(screen.queryByText("Payments")).toBeNull();
+  });
+
+  it("links Returns only for Staff holding the Returns Module", async () => {
+    renderSidebar(["/returns"]);
+
+    expect((await screen.findByRole("link", { name: "Returns" })).getAttribute("href")).toBe("/returns");
+    cleanup();
+    renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+
+    expect(screen.queryByText("Returns")).toBeNull();
   });
 
   it("hides Orders, Payments and Fulfilment entirely, not even dimmed, without their Modules", async () => {

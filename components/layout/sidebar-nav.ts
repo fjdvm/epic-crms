@@ -64,6 +64,13 @@ export const fulfilmentItem: NavItem = {
   icon: Truck,
 };
 
+export const returnsItem: NavItem = {
+  group: "SALES",
+  name: "Returns",
+  href: "/returns",
+  icon: RotateCcw,
+};
+
 export const ticketsItem: NavItem = {
   group: "SERVICE",
   name: "Tickets",
@@ -104,7 +111,7 @@ export const sidebarItems: NavItem[] = [
   ordersItem,
   paymentsItem,
   fulfilmentItem,
-  comingSoon("SALES", "Returns", RotateCcw),
+  returnsItem,
   ticketsItem,
   conversationsItem,
   feedbackItem,
