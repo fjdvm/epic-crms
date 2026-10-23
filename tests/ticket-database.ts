@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createServer } from "node:net";
@@ -33,6 +34,7 @@ const SCHEMA = `
     payment_proof_screenshot_pathname text,
     payment_proof_submitted_at timestamptz,
     delivered_at timestamptz,
+    delivery_photo_file_id text,
     paid_by_id text,
     paid_by_name text,
     paid_at timestamptz,
@@ -133,6 +135,7 @@ export interface TestDatabase {
 export async function startTestDatabase(): Promise<TestDatabase> {
   const db = await PGlite.create();
   await db.exec(SCHEMA);
+  await db.exec(readFileSync(new URL("./returns-schema.sql", import.meta.url), "utf8"));
 
   const port = await freePort();
   const server = new PGLiteSocketServer({ db, port, host: "127.0.0.1" });

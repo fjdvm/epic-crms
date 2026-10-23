@@ -34,3 +34,5 @@ ALTER ROLE creoms_readonly SET default_transaction_read_only = on;
 
 -- The Feedback page's Response rate card (#84) reads feedback_requests. On a database where this role
 -- already exists, run only: GRANT SELECT ON public.feedback_requests TO creoms_readonly;
+
+-- After the storefront Returns schema exists, also run creoms-returns-readonly.sql (#170).

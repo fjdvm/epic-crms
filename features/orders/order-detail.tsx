@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ORDERS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
@@ -66,13 +67,14 @@ function PaymentProof({ order }: { order: OrderDetail }) {
 /** An Order with everything Staff need to read it, and the actions the viewer's Modules allow. */
 export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; modules?: readonly string[] }) {
   const address = order.address;
+  const backToReturns = modules.includes(RETURNS_MODULE) && !modules.includes(ORDERS_MODULE);
 
   return (
     <OrderLiveProvider status={order.status}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="shrink-0 space-y-2">
-        <Link href="/orders" className="text-sm font-medium text-[#5b2a86]">
-          ← Orders
+        <Link href={backToReturns ? "/returns" : "/orders"} className="text-sm font-medium text-[#5b2a86]">
+          {backToReturns ? "← Returns" : "← Orders"}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-2">
