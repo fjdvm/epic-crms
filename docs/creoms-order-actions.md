@@ -1,5 +1,9 @@
 # Staff Order actions
 
+For Customer Returns, Staff decisions, Received, the Delivery photo upload and the
+four Customer emails and Notifications, see the
+[storefront Returns and Delivery photo contract](creoms-returns-and-delivery-photo.md).
+
 `features/orders/actions.ts` exposes `quoteDeliveryFee(id, deliveryFeeInCentavos)`,
 `confirmPickup(id)` and `cancelOrder(id)` for the Orders Module. Every server action checks
 that Module itself. Delivery fees are nonnegative integer centavos; zero is valid. Only
