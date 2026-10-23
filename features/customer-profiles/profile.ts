@@ -3,7 +3,7 @@ import type postgres from "postgres";
 import { getCustomerCart, type Cart } from "./cart";
 import { getCustomerOrders, type CustomerOrder } from "./orders";
 import { listEmailsReceived, type EmailReceived } from "@/features/marketing/announcements";
-import { loadReturns, type ReturnRow } from "@/features/returns/returns";
+import { loadEmbeddedReturns, type ReturnRow } from "@/features/returns/returns";
 import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "./rules";
@@ -51,7 +51,7 @@ export interface CustomerProfile {
   walkIn: WalkInProfileData | null;
   /** Marketing Emails this Customer was sent, newest first. Null when CREOMS could not read them. */
   emailsReceived: EmailReceived[] | null;
-  /** The Customer's Returns, Requested ones first, as the Returns page orders them. Null when CREOMS could not read them. */
+  /** The Customer's Returns, Requested ones first, as the Returns page orders them. Empty unless loaded for Staff with the Returns Module; null when CREOMS could not read them. */
   returns: ReturnRow[] | null;
   /** Tags and internal notes carried over from the Walk-in Customer this Customer used to be. */
   mergedWalkIn: MergedWalkIn | null;
@@ -180,6 +180,8 @@ export async function loadCustomerProfile(
   connect: () => postgres.Sql,
   id: string,
   connectCrms: () => postgres.Sql = crmsDatabase,
+  /** Returns reads belong to the Returns Module: without it the Returns are never loaded. */
+  withReturns = false,
 ): Promise<CustomerProfileResult> {
   try {
     if (isWalkInId(id)) {
@@ -192,7 +194,7 @@ export async function loadCustomerProfile(
     if (profile) {
       profile.mergedWalkIn = await readMergedWalkIn(connectCrms, profile.email);
       profile.emailsReceived = await readEmailsReceived(connectCrms, profile.id);
-      profile.returns = await readReturns(connect, profile.id);
+      if (withReturns) profile.returns = await loadEmbeddedReturns(connect, { customerId: profile.id });
     }
 
     return { ok: true, profile };
@@ -213,12 +215,6 @@ async function readMergedWalkIn(connectCrms: () => postgres.Sql, email: string):
 }
 
 /** The Returns are the storefront's: if they cannot be read, the profile still opens and the tab says so. */
-async function readReturns(connect: () => postgres.Sql, customerId: string): Promise<ReturnRow[] | null> {
-  const result = await loadReturns(connect, { customerId, pageSize: 100 });
-
-  return result.ok ? result.list.rows : null;
-}
-
 /** Announcements are CREOMS's own data: if they cannot be read, the profile still opens and the tab says so. */
 async function readEmailsReceived(connectCrms: () => postgres.Sql, customerId: string): Promise<EmailReceived[] | null> {
   try {

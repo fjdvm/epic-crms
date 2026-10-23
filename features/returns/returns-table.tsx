@@ -2,10 +2,18 @@ import Link from "next/link";
 
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
-import { Pill } from "@/features/tickets/pill";
+import { PILL, Pill } from "@/features/tickets/pill";
 
-import { STATUS_PILLS } from "./return-list";
-import type { ReturnRow } from "./returns";
+import type { ReturnRow, ReturnStatus } from "./returns";
+
+export const STATUS_PILLS: Record<ReturnStatus, string> = {
+  requested: PILL.amber,
+  approved: PILL.purple,
+  "goods received": PILL.blue,
+  refunded: PILL.grey,
+  declined: PILL.red,
+  cancelled: PILL.grey,
+};
 
 const HEAD = "py-1.5 pr-3 text-left text-xs font-medium text-[#6e6680]";
 const CELL = "py-[11px] pr-3 text-sm leading-[normal] text-[#1f1a2e]";

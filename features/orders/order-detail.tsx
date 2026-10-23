@@ -94,7 +94,7 @@ export function OrderDetailView({
   modules?: readonly string[];
   /** A short-lived address for the Delivery photo; null when it exists but could not be reached. */
   deliveryPhotoUrl?: string | null;
-  /** This Order's Returns, read-only; null when CREOMS could not read them. */
+  /** This Order's Returns, shown read-only to Staff with the Returns Module; null when CREOMS could not read them. */
   returns?: ReturnRow[] | null;
 }) {
   const address = order.address;
@@ -173,10 +173,12 @@ export function OrderDetailView({
             </dl>
           </section>
 
-          <section className={CARD}>
-            <h2 className={CARD_TITLE}>Returns</h2>
-            <ReturnsTable returns={returns} empty="No Returns on this Order." />
-          </section>
+          {modules.includes(RETURNS_MODULE) && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Returns</h2>
+              <ReturnsTable returns={returns} empty="No Returns on this Order." />
+            </section>
+          )}
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>

@@ -34,6 +34,8 @@ const ret = (overrides: Partial<ReturnRow>): ReturnRow => ({
   ...overrides,
 });
 
+const RETURNS = ["Returns"];
+
 const detail = (overrides: Partial<OrderDetail> = {}): OrderDetail => ({
   deliveryPhotoFileId: null,
   paidBy: null,
@@ -59,6 +61,7 @@ describe("Returns on the Order detail page", () => {
     render(
       <OrderDetailView
         order={detail()}
+        modules={RETURNS}
         returns={[ret({}), ret({ id: 16, number: "RMA-16", status: "refunded", amount: 5_000 })]}
       />,
     );
@@ -76,27 +79,35 @@ describe("Returns on the Order detail page", () => {
   });
 
   it("says so when the Order has no Returns", () => {
-    render(<OrderDetailView order={detail()} returns={[]} />);
+    render(<OrderDetailView order={detail()} modules={RETURNS} returns={[]} />);
 
     expect(screen.getByText("No Returns on this Order.")).toBeTruthy();
   });
 
   it("says so when the Returns could not be read, without hiding the Order", () => {
-    render(<OrderDetailView order={detail()} returns={null} />);
+    render(<OrderDetailView order={detail()} modules={RETURNS} returns={null} />);
 
     expect(screen.getByText(/Returns could not be loaded/)).toBeTruthy();
     expect(screen.getByText("Halaya")).toBeTruthy();
   });
 
-  it("offers no Return action to Staff, whatever their Modules", () => {
-    for (const modules of [[], ["Orders"], ["Payments", "Fulfilment"], ["Returns"]]) {
+  it("shows no Returns, and no Return action, to Staff without the Returns Module", () => {
+    for (const modules of [[], ["Orders"], ["Payments", "Fulfilment"]]) {
       const view = render(<OrderDetailView order={detail()} returns={[ret({})]} modules={modules} />);
-      const card = screen.getByRole("heading", { name: "Returns" }).closest("section") as HTMLElement;
 
-      expect(within(card).queryAllByRole("button")).toHaveLength(0);
-      expect(within(card).queryAllByRole("link")).toHaveLength(0);
+      expect(screen.queryByRole("heading", { name: "Returns" })).toBeNull();
+      expect(screen.queryByText("RMA-15")).toBeNull();
       view.unmount();
     }
+  });
+
+  it("offers Returns Staff no Return action yet: the card only reads", () => {
+    render(<OrderDetailView order={detail()} returns={[ret({})]} modules={RETURNS} />);
+
+    const card = screen.getByRole("heading", { name: "Returns" }).closest("section") as HTMLElement;
+
+    expect(within(card).queryAllByRole("button")).toHaveLength(0);
+    expect(within(card).queryAllByRole("link")).toHaveLength(0);
   });
 
   it("shows a received Order as a status with its own step", () => {
@@ -150,6 +161,7 @@ describe("Returns on the Customer Profile", () => {
       <CustomerProfileView
         profile={profile({ returns: [ret({}), ret({ id: 16, number: "RMA-16", orderId: 1001, status: "declined" })] })}
         canOpenOrder
+        canViewReturns
       />,
     );
 
@@ -166,7 +178,7 @@ describe("Returns on the Customer Profile", () => {
   });
 
   it("does not link to Orders the viewer cannot open", () => {
-    render(<CustomerProfileView profile={profile({ returns: [ret({})] })} />);
+    render(<CustomerProfileView profile={profile({ returns: [ret({})] })} canViewReturns />);
 
     openReturnsTab("Returns (1)");
 
@@ -174,8 +186,15 @@ describe("Returns on the Customer Profile", () => {
     expect(screen.getByText("#1042")).toBeTruthy();
   });
 
+  it("shows no Returns tab to Staff without the Returns Module", () => {
+    render(<CustomerProfileView profile={profile({ returns: [ret({})] })} />);
+
+    expect(screen.queryByRole("tab", { name: /Returns/ })).toBeNull();
+    expect(screen.queryByText("RMA-15")).toBeNull();
+  });
+
   it("says so for a Customer with no Returns", () => {
-    render(<CustomerProfileView profile={profile()} />);
+    render(<CustomerProfileView profile={profile()} canViewReturns />);
 
     openReturnsTab("Returns (0)");
 
@@ -183,7 +202,7 @@ describe("Returns on the Customer Profile", () => {
   });
 
   it("says so when the Returns could not be read", () => {
-    render(<CustomerProfileView profile={profile({ returns: null })} />);
+    render(<CustomerProfileView profile={profile({ returns: null })} canViewReturns />);
 
     openReturnsTab("Returns");
 
