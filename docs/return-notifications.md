@@ -4,7 +4,7 @@
 
 The first successful sync records existing Returns without alerts, matching Order and Ticket notifications. Subsequent syncs use a transaction advisory lock and unique ledger keys to prevent duplicates, including concurrent runs. A failed source read cannot establish the baseline.
 
-Alerts use the existing shared feed and shared read state: every Staff member currently permitted to open `/returns` can see them. Other Modules cannot see or clear them. Portal access is resolved anew for each poll or mark-read action, so revocation takes effect immediately. Text includes the Customer and `RMA-<number>`; the link opens the existing Order detail page, which already admits Returns Staff. Return detail UI belongs to later tickets.
+Alerts use the existing shared feed and shared read state: every Staff member currently permitted to open `/returns` can see them. Other Modules cannot see or clear them. Portal access is resolved anew for each poll or mark-read action, so revocation takes effect immediately. Text includes the Customer and `RMA-<number>`; the link opens `/returns#return-<id>`, the Return's row on the Returns page (#178). The anchor only finds the row while it is on the page being shown, so a Return that has left Requested is not scrolled to.
 
 Both browser polling and the bearer-authenticated scheduler sync Returns. A Return sync failure is isolated so the other notification feeds remain available; the scheduler reports `returns: { error: "sync failed" }`.
 

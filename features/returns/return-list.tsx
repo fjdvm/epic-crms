@@ -7,6 +7,7 @@ import { orderLabel } from "@/features/customer-profiles/rules";
 import { Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
 
+import { returnAnchor } from "./anchor";
 import { RETURN_TABS, type ReturnList, type ReturnStats, type ReturnTab } from "./returns";
 import { STATUS_PILLS } from "./returns-table";
 
@@ -123,7 +124,7 @@ export function ReturnListView({
                 ))}
               </div>
               {list.rows.map((row) => (
-                <div key={row.id} data-return-row className="flex items-center border-b border-[#efebf4] py-[11px]">
+                <div key={row.id} id={returnAnchor(row.id)} data-return-row className="flex scroll-mt-10 items-center border-b border-[#efebf4] py-[11px]">
                   <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>{row.number}</div>
                   <div className={cn(CELL, COLUMNS[1].className)}>
                     <span className="truncate pr-3">{row.customer.name}</span>

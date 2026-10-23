@@ -1,4 +1,5 @@
 import { feedbackAnchor } from "@/features/feedback/anchor";
+import { returnAnchor } from "@/features/returns/anchor";
 
 import type { Notification } from "./notifications";
 
@@ -23,7 +24,7 @@ export function describeNotification(n: Notification): { text: string; href: str
     case "order-payment-proof":
       return { text: `${n.customerName} submitted Payment proof for Order #${n.orderId}`, href: `/orders/${n.orderId}` };
     case "return-requested":
-      return { text: `${n.customerName} requested Return RMA-${n.returnId}`, href: `/orders/${n.orderId}` };
+      return { text: `${n.customerName} requested Return RMA-${n.returnId}`, href: `/returns#${returnAnchor(n.returnId!)}` };
     case "ticket-not-fixed":
       return { text: `${n.customerName} says ${ticket} is not fixed`, href };
   }
