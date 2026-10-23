@@ -1,5 +1,8 @@
 # Staff Return decisions (#171)
 
+The complete [storefront contract](creoms-returns-and-delivery-photo.md) also covers
+Customer requests and cancellation, Received, Delivery photos and Customer Notifications.
+
 `features/returns/actions.ts` exposes these server actions:
 
 | Action | Eligible Return | Decision sent |
