@@ -127,6 +127,20 @@ describe("Returns read model", () => {
     expect((await list({ status: 'requested', pageSize: 1 })).rows[0].id).toBe(first);
     expect((await list({ orderId: 999 })).rows).toEqual([]);
   });
+  it("lists one Order's or one Customer's Returns, with counts for just those", async () => {
+    const mine = await request('requested', '2026-10-21T00:00:00Z');
+    await db.sql`insert into customers (id, full_name, email) values ('c2', 'Ben Cruz', 'ben@example.com')`;
+    await db.sql`insert into orders (customer_id, status, delivered_at) values ('c2', 'delivered', '2026-10-20T00:00:00Z')`;
+    await db.sql`insert into order_returns (order_id, status, reason, amount_in_centavos, requested_at)
+      values (2, 'refunded', 'damaged', 5000, '2026-10-22T00:00:00Z')`;
+    const customer = await list({ customerId: 'c1' });
+    expect(customer.rows.map(row => row.id)).toEqual([mine]);
+    expect(customer.counts).toMatchObject({ requested: 1, refunded: 0 });
+    const order = await list({ orderId: 2 });
+    expect(order.rows).toHaveLength(1);
+    expect(order.counts).toMatchObject({ requested: 0, refunded: 1 });
+    expect((await list({ customerId: 'nobody' })).rows).toEqual([]);
+  });
   it("puts Requested first, oldest first, and breaks ties by Return number", async () => {
     const approved = await request('approved', '2026-10-01T00:00:00Z');
     const newer = await request('requested', '2026-10-22T00:00:00Z');
