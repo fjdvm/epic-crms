@@ -16,8 +16,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { OrderChangeResult } from "@/lib/storefront";
 import { cn } from "@/lib/utils";
+
+/** What any storefront change answers with; Order and Return changes both fit. */
+export type ChangeResult = { ok: true } | { ok: false; reason: string };
 
 /**
  * One Order action behind a confirmation dialog. Not optimistic unless `onOptimistic` is given: the spinner
@@ -57,7 +59,7 @@ export function OrderActionDialog({
   tone?: "primary" | "destructive";
   /** True while what Staff entered cannot be sent. */
   disabled?: boolean;
-  run: () => Promise<OrderChangeResult>;
+  run: () => Promise<ChangeResult>;
   /** What to tell Staff once the server confirms. */
   successMessage: string;
   /**
@@ -79,7 +81,7 @@ export function OrderActionDialog({
     startTransition(async () => {
       onOptimistic?.();
 
-      let outcome: OrderChangeResult;
+      let outcome: ChangeResult;
       try {
         outcome = await run();
       } catch {
