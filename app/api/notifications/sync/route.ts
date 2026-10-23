@@ -1,4 +1,5 @@
 import { syncOrderEvents } from "@/features/notifications/order-events";
+import { syncReturnEvents } from "@/features/notifications/return-events";
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -19,7 +20,7 @@ function authorised(header: string | null, secret: string): boolean {
 }
 
 /**
- * Finds Customers, Ticket and Order events and low-rating Feedback CREOMS has not seen yet and creates their notifications.
+ * Finds Customers, Ticket, Order and Return events and low-rating Feedback CREOMS has not seen yet and creates their notifications.
  * Called by a scheduler, not by a browser, so it is outside the Portal session and
  * authenticated by a bearer secret instead.
  */
@@ -48,7 +49,13 @@ export async function POST(request: NextRequest) {
       return { error: "sync failed" };
     });
 
-    return NextResponse.json({ ...customers, tickets, feedback, orders });
+    const returns = await syncReturnEvents(crmsDatabase(), database()).catch((error) => {
+      console.error("Return notification sync failed", error);
+
+      return { error: "sync failed" };
+    });
+
+    return NextResponse.json({ ...customers, tickets, feedback, orders, returns });
   } catch (error) {
     console.error("Notification sync failed", error);
 

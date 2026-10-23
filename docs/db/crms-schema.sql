@@ -33,19 +33,20 @@ CREATE TABLE crms.sync_state (
 );
 
 -- Bell notifications. kind says what happened: a New Customer (at most one per Customer) or a
--- Ticket event, Order event or low-rating Feedback. recipient_id is the Claimer's Portal id; NULL means every
+-- Ticket event, Order event, Return request or low-rating Feedback. recipient_id is the Claimer's Portal id; NULL means every
 -- Staff member who may see that kind (Customer Profiles for new-customer, Tickets for the Ticket
--- kinds, Feedback for feedback-low, Orders for order-delivery-fee, Payments for order-payment-proof).
+-- kinds, Feedback for feedback-low, Orders for order-delivery-fee, Payments for order-payment-proof, Returns for return-requested).
 -- read_at is shared.
 CREATE TABLE crms.notifications (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   kind          text NOT NULL DEFAULT 'new-customer'
-                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'feedback-low', 'order-delivery-fee', 'order-payment-proof')),
+                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'feedback-low', 'order-delivery-fee', 'order-payment-proof', 'return-requested')),
   customer_id   text NOT NULL,
   customer_name text NOT NULL,
   ticket_id     integer,
   order_id      integer,
   rating        smallint,
+  return_id     integer,
   recipient_id  text,
   created_at    timestamptz NOT NULL DEFAULT now(),
   read_at       timestamptz
@@ -117,6 +118,17 @@ CREATE TABLE crms.seen_order_events (
 );
 
 CREATE TABLE crms.order_sync_state (
+  singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  baselined_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Each Return request alerts once, regardless of later Return progress.
+CREATE TABLE crms.seen_returns (
+  return_id integer PRIMARY KEY,
+  seen_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE crms.return_sync_state (
   singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
   baselined_at timestamptz NOT NULL DEFAULT now()
 );

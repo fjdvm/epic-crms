@@ -24,7 +24,8 @@ export function viewerFor(staff: { username: string }, permittedPages: string[])
     feedback: permittedPages.includes("/feedback"),
     orders: permittedPages.includes("/orders"),
     payments: permittedPages.includes("/payments"),
+    returns: permittedPages.includes("/returns"),
   };
 
-  return viewer.customerProfiles || viewer.ticketsStaffId !== null || viewer.feedback || viewer.orders || viewer.payments ? viewer : null;
+  return viewer.customerProfiles || viewer.ticketsStaffId !== null || viewer.feedback || viewer.orders || viewer.payments || viewer.returns ? viewer : null;
 }
