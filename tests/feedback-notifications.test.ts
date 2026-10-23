@@ -37,9 +37,9 @@ beforeEach(async () => {
 // The reader and the writer are one connection here; production uses two roles on one database.
 const sync = () => syncFeedbackEvents(db.sql, db.sql);
 
-const withFeedbackModule = { customerProfiles: false, ticketsStaffId: null, feedback: true, orders: false, payments: false };
-const withTicketsModule = { customerProfiles: false, ticketsStaffId: "ada", feedback: false, orders: false, payments: false };
-const withProfilesModule = { customerProfiles: true, ticketsStaffId: null, feedback: false, orders: false, payments: false };
+const withFeedbackModule = { customerProfiles: false, ticketsStaffId: null, feedback: true, orders: false, payments: false, returns: false };
+const withTicketsModule = { customerProfiles: false, ticketsStaffId: "ada", feedback: false, orders: false, payments: false, returns: false };
+const withProfilesModule = { customerProfiles: true, ticketsStaffId: null, feedback: false, orders: false, payments: false, returns: false };
 
 async function alertsFor(viewer: Viewer) {
   const feed = await listNotifications(db.sql, "crms", 20, viewer);
@@ -95,7 +95,7 @@ describe("Feedback notifications", () => {
     const order = await feedback(1);
     await sync();
 
-    const both = { customerProfiles: false, ticketsStaffId: "ada", feedback: true, orders: false, payments: false };
+    const both = { customerProfiles: false, ticketsStaffId: "ada", feedback: true, orders: false, payments: false, returns: false };
     const feed = await listNotifications(db.sql, "crms", 20, both);
 
     expect(feed.notifications.map((n) => n.orderId)).toEqual([order]);
@@ -143,7 +143,7 @@ describe("who the bell is for", () => {
   const staff = { username: "ada" };
 
   it("shows the Feedback alerts to Staff who may open the Feedback page", () => {
-    expect(viewerFor(staff, ["/feedback"])).toEqual({ customerProfiles: false, ticketsStaffId: null, feedback: true, orders: false, payments: false });
+    expect(viewerFor(staff, ["/feedback"])).toEqual({ customerProfiles: false, ticketsStaffId: null, feedback: true, orders: false, payments: false, returns: false });
   });
 
   it("gives Staff with only the Tickets Module no Feedback alerts", () => {

@@ -1,6 +1,7 @@
 "use server";
 
 import { syncOrderEvents } from "./order-events";
+import { syncReturnEvents } from "./return-events";
 
 import { revalidatePath } from "next/cache";
 
@@ -38,7 +39,7 @@ export async function markAllNotificationsRead() {
 }
 
 /**
- * What the browser polls: looks for newly verified Customers and new Ticket and Order events and low-rating Feedback, then returns
+ * What the browser polls: looks for newly verified Customers and new Ticket, Order and Return events and low-rating Feedback, then returns
  * the latest feed. A failed sync is logged and the feed is still returned, so the bell keeps working.
  */
 export async function pollNotifications(): Promise<NotificationFeed | null> {
@@ -67,6 +68,12 @@ export async function pollNotifications(): Promise<NotificationFeed | null> {
     await syncOrderEvents(crmsDatabase(), ticketsDatabase());
   } catch (error) {
     console.error("Order notification sync failed", error);
+  }
+
+  try {
+    await syncReturnEvents(crmsDatabase(), database());
+  } catch (error) {
+    console.error("Return notification sync failed", error);
   }
 
   return loadNotifications(crmsDatabase, viewer);

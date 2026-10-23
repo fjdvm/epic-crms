@@ -7,7 +7,7 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "feedback-low" | "order-delivery-fee" | "order-payment-proof";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "feedback-low" | "order-delivery-fee" | "order-payment-proof" | "return-requested";
 
 export interface Notification {
   id: string;
@@ -19,6 +19,8 @@ export interface Notification {
   /** The Order a Feedback or Order notification is about. Rating is only for Feedback. */
   orderId: number | null;
   rating: number | null;
+  /** The Return whose request raised this alert; null for other kinds. */
+  returnId: number | null;
   /** When CREOMS first saw the event, such as the person becoming a Customer. */
   createdAt: Date;
   read: boolean;
@@ -28,7 +30,7 @@ export interface Notification {
  * Whose bell is being read. New Customer alerts go to Staff with the Customer Profiles Module.
  * Ticket alerts go to Staff with the Tickets Module (`ticketsStaffId` is their Portal id, null
  * without the Module): to everyone when addressed to no one, otherwise to the Claimer alone.
- * Feedback alerts go to Staff with the Feedback Module; Order alerts require Orders or Payments.
+ * Feedback alerts require Feedback; Order alerts require Orders or Payments; Return alerts require Returns.
  */
 export interface Viewer {
   customerProfiles: boolean;
@@ -36,9 +38,10 @@ export interface Viewer {
   feedback: boolean;
   orders: boolean;
   payments: boolean;
+  returns: boolean;
 }
 
-const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null, feedback: false, orders: false, payments: false };
+const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null, feedback: false, orders: false, payments: false, returns: false };
 
 /** The rows of `crms.notifications` this viewer may see and mark read. */
 function visibleTo(sql: postgres.Sql, viewer: Viewer) {
@@ -47,6 +50,7 @@ function visibleTo(sql: postgres.Sql, viewer: Viewer) {
     or (kind = 'feedback-low' and ${viewer.feedback})
     or (kind = 'order-delivery-fee' and ${viewer.orders})
     or (kind = 'order-payment-proof' and ${viewer.payments})
+    or (kind = 'return-requested' and ${viewer.returns})
     or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))
   )`;
@@ -141,11 +145,12 @@ export async function listNotifications(
       ticket_id: number | null;
       order_id: number | null;
       rating: number | null;
+      return_id: number | null;
       created_at: Date;
       read_at: Date | null;
     }[]
   >`
-    select id::text, kind, customer_id, customer_name, ticket_id, order_id, rating, created_at, read_at
+    select id::text, kind, customer_id, customer_name, ticket_id, order_id, rating, return_id, created_at, read_at
     from ${s}.notifications
     where ${visibleTo(writer, viewer)}
     order by created_at desc, id desc
@@ -161,6 +166,7 @@ export async function listNotifications(
       ticketId: r.ticket_id,
       orderId: r.order_id,
       rating: r.rating,
+      returnId: r.return_id,
       createdAt: r.created_at,
       read: r.read_at !== null,
     })),

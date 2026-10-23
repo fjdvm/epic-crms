@@ -151,7 +151,7 @@ describe("Order notifications", () => {
     const feed = await listNotifications(db.sql, "crms", 20, both);
     for (const pages of [["/fulfilment"], ["/feedback"], ["/tickets"], ["/customer-profiles"]]) {
       const viewer = viewerFor(staff, pages) ?? {
-        customerProfiles: false, ticketsStaffId: null, feedback: false, orders: false, payments: false,
+        customerProfiles: false, ticketsStaffId: null, feedback: false, orders: false, payments: false, returns: false,
       };
       expect(await listNotifications(db.sql, "crms", 20, viewer)).toEqual({ unread: 0, notifications: [] });
       await markRead(db.sql, feed.notifications[0].id, "crms", viewer);
