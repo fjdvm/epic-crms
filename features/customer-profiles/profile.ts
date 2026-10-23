@@ -36,7 +36,7 @@ export interface CustomerProfile {
   orders: number;
   /** Centavos. */
   totalSpent: number;
-  /** Centavos; Total spent over the paid or fulfilled Orders. Null with none. */
+  /** Centavos; net Total spent over the original paid/fulfilled Order count. Null with none. */
   averageOrder: number | null;
   /** Latest non-cancelled Order. */
   lastOrder: Date | null;
@@ -72,11 +72,13 @@ export async function getCustomerProfile(
       select
         count(*)::int as orders,
         coalesce(sum(case when status = any(${PAID_OR_FULFILLED})
-                          then subtotal_in_centavos + coalesce(delivery_fee_in_centavos, 0) end), 0)::bigint as total_spent,
+                          then subtotal_in_centavos + coalesce(delivery_fee_in_centavos, 0)
+                            - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
+                                where r.order_id = customer_order.id and r.status = 'refunded'), 0) end), 0)::bigint as total_spent,
         (count(*) filter (where status = any(${PAID_OR_FULFILLED})))::int as paid_orders,
         (count(*) filter (where status <> 'cancelled'))::int as stage_orders,
         max(created_at) filter (where status <> 'cancelled') as last_order
-      from public.orders where customer_id = c.id
+      from public.orders customer_order where customer_order.customer_id = c.id
     ) o
     cross join lateral (
       select count(*)::int as feedback_count, avg(ff.rating)::float8 as average_rating

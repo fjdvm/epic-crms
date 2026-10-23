@@ -85,7 +85,7 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date()): Pr
 
 export type PaymentTab = "verify" | "cod" | "paid" | "rejected";
 
-const GCASH_PAID = ["paid", "preparing", "dispatched", "delivered"];
+const GCASH_PAID = ["paid", "preparing", "dispatched", "delivered", "received"];
 const COD_OPEN = ["confirmed", "preparing", "dispatched"];
 
 /** GCash proof waiting for a check. */
@@ -95,7 +95,7 @@ export const awaitingCheck = (r: PaymentRow): boolean =>
 export const codToCollect = (r: PaymentRow): boolean => r.method === "cash-on-delivery" && COD_OPEN.includes(r.status);
 /** Money in: GCash accepted, or Cash on Delivery collected on delivery. */
 export const settled = (r: PaymentRow): boolean =>
-  r.method === "gcash" ? GCASH_PAID.includes(r.status) : r.status === "delivered";
+  r.method === "gcash" ? GCASH_PAID.includes(r.status) : ["delivered", "received"].includes(r.status);
 /** A GCash Order Staff cancelled after the Customer sent proof. */
 export const rejected = (r: PaymentRow): boolean => r.method === "gcash" && r.status === "cancelled" && r.proof !== null;
 
@@ -109,7 +109,7 @@ export function summarize(rows: PaymentRow[], now: Date) {
     rejected: rows.filter(rejected).sort((a, b) => b.id - a.id),
   };
   const sum = (list: PaymentRow[]) => list.reduce((total, r) => total + r.total, 0);
-  const collected = rows.filter((r) => r.method === "cash-on-delivery" && r.status === "delivered");
+  const collected = rows.filter((r) => r.method === "cash-on-delivery" && ["delivered", "received"].includes(r.status));
   const gcashPaid = tabs.paid.filter((r) => r.method === "gcash");
 
   return {

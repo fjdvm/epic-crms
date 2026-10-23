@@ -15,7 +15,7 @@ afterAll(async () => {
 const NOW = new Date();
 
 /** Written out here on purpose, so a wrong status list in the module cannot pass both sides. */
-const COUNTS_TOWARD_TOTAL_SPENT = new Set(["paid", "preparing", "dispatched", "delivered"]);
+const COUNTS_TOWARD_TOTAL_SPENT = new Set(["paid", "preparing", "dispatched", "delivered", "received"]);
 
 /** Written out here too, not imported: whole days since the last non-cancelled Order. */
 function stageFor(orders: number, lastOrder: Date | null): string {
@@ -30,7 +30,8 @@ function stageFor(orders: number, lastOrder: Date | null): string {
 async function expected() {
   const customers = await sql`select * from public.customers`;
   const users = await sql`select id::text as id, "emailVerified" as verified, "createdAt" as created from neon_auth."user"`;
-  const orders = await sql`select customer_id, status, subtotal_in_centavos, delivery_fee_in_centavos, created_at from public.orders`;
+  const orders = await sql`select id, customer_id, status, subtotal_in_centavos, delivery_fee_in_centavos, created_at from public.orders`;
+  const refunds = await sql`select order_id, amount_in_centavos from public.order_returns where status = 'refunded'`;
   const carts = await sql`select distinct customer_id from public.cart_lines`;
 
   return customers
@@ -50,7 +51,9 @@ async function expected() {
         orders: mine.length,
         totalSpent: mine
           .filter((o) => COUNTS_TOWARD_TOTAL_SPENT.has(o.status))
-          .reduce((sum, o) => sum + o.subtotal_in_centavos + (o.delivery_fee_in_centavos ?? 0), 0),
+          .reduce((sum, o) => sum + o.subtotal_in_centavos + (o.delivery_fee_in_centavos ?? 0), 0)
+          - refunds.filter(r => mine.some(o => o.id === r.order_id && COUNTS_TOWARD_TOTAL_SPENT.has(o.status)))
+            .reduce((sum, r) => sum + r.amount_in_centavos, 0),
         lastOrder: lastOrder?.getTime() ?? null,
         stage: stageFor(counted.length, lastOrder),
         cartHasItems: carts.some((x) => x.customer_id === c.id),

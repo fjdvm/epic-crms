@@ -36,7 +36,7 @@ _Avoid_: Contact, account, user
 The date a Customer first signed up. It is the sign-up date, not the date they verified their email.
 
 **Total spent**:
-The sum of a Customer's Order totals (subtotal plus delivery fee) for Orders that have been paid for or fulfilled: `paid`, `preparing`, `dispatched` and `delivered`. Cancelled and merely placed or confirmed Orders do not count.
+The sum of a Customer's Order totals (subtotal plus delivery fee) for Orders that have been paid for or fulfilled: `paid`, `preparing`, `dispatched`, `delivered` and `received`, minus Refunded Return amounts. Returns still in progress, Declined Returns and Customer-cancelled Returns do not reduce it. Cancelled and merely placed or confirmed Orders do not count.
 _Avoid_: Revenue, lifetime value
 
 **Order**:
@@ -44,7 +44,7 @@ A Customer's request to buy, placed on the storefront. CREOMS never creates an O
 _Avoid_: Purchase, transaction
 
 **Order status**:
-Where an Order is in its life: `placed`, `confirmed`, `awaiting payment`, `paid`, `preparing`, `dispatched`, `delivered` or `cancelled`. Pickup and Cash on Delivery Orders skip the payment steps. These are the storefront's statuses; the design's "Pending", "Packed" and "Shipped" mean `placed`, `preparing` and `dispatched`. Payment is part of the status, not a separate field. Staff can cancel an Order up to `preparing`; nobody can cancel a `dispatched` Order yet.
+Where an Order is in its life: `placed`, `confirmed`, `awaiting payment`, `paid`, `preparing`, `dispatched`, `delivered`, `received` or `cancelled`. Only the Customer marks an Order `received`; it acknowledges delivery without resetting the Refund window. Pickup and Cash on Delivery Orders skip the payment steps. These are the storefront's statuses; the design's "Pending", "Packed" and "Shipped" mean `placed`, `preparing` and `dispatched`. Payment is part of the status, not a separate field. Staff can cancel an Order up to `preparing`; nobody can cancel a `dispatched` Order yet.
 _Avoid_: Order state, fulfillment status, payment status
 
 **Delivery fee**:
