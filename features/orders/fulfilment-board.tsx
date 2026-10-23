@@ -34,7 +34,7 @@ function FulfilmentCard({
         {order.lines.map((l) => `${l.product} ×${l.quantity}`).join(", ")}
       </p>
       <p className="truncate text-xs text-[#6e6680]">
-        {order.status === "delivered" && order.deliveredAt
+        {["delivered", "received"].includes(order.status) && order.deliveredAt
           ? `Delivered ${formatDate(order.deliveredAt)}`
           : `${orderLabel(order.fulfillmentMethod)} · ${orderLabel(order.paymentMethod)}`}
       </p>
@@ -59,7 +59,7 @@ function moved(board: FulfilmentBoard, { id, status }: { id: number; status: "pr
     ready: next.filter(readyToPrepare),
     preparing: next.filter((o) => o.status === "preparing"),
     dispatched: next.filter((o) => o.status === "dispatched"),
-    delivered: next.filter((o) => o.status === "delivered"),
+    delivered: next.filter((o) => ["delivered", "received"].includes(o.status)),
   };
 }
 

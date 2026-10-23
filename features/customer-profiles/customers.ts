@@ -119,10 +119,12 @@ export async function listCustomers(
         select
           count(*) as orders,
           sum(case when status = any(${PAID_OR_FULFILLED})
-                   then subtotal_in_centavos + coalesce(delivery_fee_in_centavos, 0) else 0 end) as total_spent,
+                   then subtotal_in_centavos + coalesce(delivery_fee_in_centavos, 0)
+                            - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
+                                where r.order_id = customer_order.id and r.status = 'refunded'), 0) else 0 end) as total_spent,
           max(created_at) filter (where status <> 'cancelled') as last_order,
           count(*) filter (where status <> 'cancelled') as stage_orders
-        from public.orders where customer_id = c.id
+        from public.orders customer_order where customer_order.customer_id = c.id
       ) o on true
       union all
       select

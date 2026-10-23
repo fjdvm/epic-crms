@@ -9,11 +9,11 @@ const order = (status: string, subtotal: number, fee: number | null) => ({
 });
 
 describe("totalSpent", () => {
-  it("counts paid, preparing, dispatched and delivered orders", () => {
-    const orders = ["paid", "preparing", "dispatched", "delivered"].map((s) =>
+  it("counts paid, preparing, dispatched, delivered and received orders", () => {
+    const orders = ["paid", "preparing", "dispatched", "delivered", "received"].map((s) =>
       order(s, 1000, 0),
     );
-    expect(totalSpent(orders)).toBe(4000);
+    expect(totalSpent(orders)).toBe(5000);
   });
 
   it("adds the delivery fee to the subtotal", () => {

@@ -52,6 +52,7 @@ function list(rows: OrderRow[]) {
       preparing: 1,
       dispatched: 1,
       delivered: 1,
+      received: 0,
       cancelled: 1,
     },
     page: 1,
@@ -744,5 +745,16 @@ describe("Returns-only Order detail access", () => {
       expect(screen.queryAllByRole("button")).toHaveLength(0);
       view.unmount();
     }
+  });
+});
+
+
+describe("received Orders", () => {
+  it("shows completed progress and paid status without allowing another Staff move", () => {
+    render(<OrderDetailView order={detail({ status: "received", paymentLabel: "Paid" })} modules={["Orders", "Payments", "Fulfilment"]} />);
+    const progress = screen.getByRole("list", { name: "Order progress" });
+    const current = within(progress).getAllByRole("listitem").find(item => item.getAttribute("aria-current") === "step");
+    expect(current?.textContent).toBe("Received");
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 });

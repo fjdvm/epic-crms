@@ -15,7 +15,7 @@ const PAYMENT_VARIANTS: Record<ReturnType<typeof paymentStatusOf>, BadgeProps["v
 };
 
 function statusVariant(status: string): BadgeProps["variant"] {
-  if (status === "delivered") return "success";
+  if (status === "delivered" || status === "received") return "success";
   if (status === "cancelled") return "secondary";
 
   return "info";

@@ -47,6 +47,7 @@ function progressFor(order: OrderDetail): string[] {
     "preparing",
     "dispatched",
     "delivered",
+    ...(order.status === "received" ? ["received"] : []),
   ];
 }
 
