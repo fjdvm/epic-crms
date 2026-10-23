@@ -48,7 +48,7 @@ Actions return `{ ok: true, return: { id, status } }` only after confirmation. S
 
 No new CREOMS schema or environment variable is required for #171. The prerequisite #170 contract already contains `goods_required`, `decline_reason`, `refunded_at` and the Staff history fields. The storefront must deploy its own schema/migrations and the decision endpoint, then the database owner can run the existing `docs/db/creoms-returns-readonly.sql` permissions migration. CREOMS never writes the Return tables.
 
-A read-only catalog inspection of the configured live database during #171 found that `public.order_returns` and `public.order_return_history` are absent. Consequently the prerequisite permissions migration cannot run yet. No live schema changes were applied; `tests/returns-schema.sql` is explicitly proposed test DDL, not a production migration. Live decision execution remains dependent on the storefront deployment. The application reports unavailable data rather than an empty queue or success until it exists.
+The initial live inspection found the Return tables absent. After Staff explicitly requested the migration, storefront Drizzle migration `0019_order_returns` was created and tested on an isolated copy of production, then applied to production on 2026-10-23 along with `docs/db/creoms-returns-readonly.sql`. All four tables are present and recorded in Drizzle migration history; `creoms_readonly` has SELECT and no INSERT/UPDATE/DELETE/TRUNCATE privileges. Existing Order and Customer counts were unchanged. The real CREOMS Returns list, stats and detail loaders were verified against the migrated live database. Storefront decision endpoint deployment remains a separate dependency; migrating tables does not deploy those endpoints.
 
 ## Verification
 
