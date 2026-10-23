@@ -58,12 +58,47 @@ export class FakeStorefront {
     });
   }
 
+  private async decideReturn(request: Request, id: number): Promise<Response> {
+    if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+    const update = await request.json();
+    if (typeof update.staffId !== "string" || !update.staffId.trim() ||
+      typeof update.staffName !== "string" || !update.staffName.trim()) {
+      return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    }
+    if (update.status === "approved" && typeof update.goodsRequired !== "boolean") {
+      return Response.json({ error: "Say whether the goods must come back." }, { status: 400 });
+    }
+    if (update.status === "declined" && (typeof update.declineReason !== "string" || !update.declineReason.trim())) {
+      return Response.json({ error: "Enter a reason for declining the Return." }, { status: 400 });
+    }
+    return this.sql.begin(async tx => {
+      const [current] = await tx`select * from order_returns where id = ${id} for update`;
+      if (!current) return Response.json({ error: "Return was not found." }, { status: 404 });
+      const allowed = (update.status === "approved" || update.status === "declined") && current.status === "requested" ||
+        update.status === "goods received" && current.status === "approved" && current.goods_required === true ||
+        update.status === "refunded" && (current.status === "goods received" || current.status === "approved" && current.goods_required === false);
+      if (!allowed) return Response.json({ error: "Return already changed." }, { status: 409 });
+      const at = this.now();
+      const [changed] = await tx`update order_returns set status = ${update.status},
+        goods_required = ${update.status === "approved" ? update.goodsRequired : current.goods_required},
+        decline_reason = ${update.status === "declined" ? update.declineReason.trim() : current.decline_reason},
+        refunded_at = ${update.status === "refunded" ? at : current.refunded_at}
+        where id = ${id} returning *`;
+      await tx`insert into order_return_history (return_id, status, actor_type, actor_id, actor_name, occurred_at, note)
+        values (${id}, ${update.status}, 'staff', ${update.staffId}, ${update.staffName}, ${at}, ${changed.decline_reason})`;
+      return Response.json({ id, status: changed.status, goodsRequired: changed.goods_required,
+        declineReason: changed.decline_reason, actedBy: { id: update.staffId, name: update.staffName, at: at.toISOString() } });
+    });
+  }
+
   handle = async (request: Request): Promise<Response> => {
     this.requests++;
     if (this.unavailable) throw new Error("Storefront unavailable");
     // Customer authentication in the fake only. Production uses the storefront's own session.
     const returnRequest = new URL(request.url).pathname.match(/^\/api\/orders\/(\d+)\/returns$/);
     if (returnRequest && request.method === "POST") return this.requestReturn(request, Number(returnRequest[1]));
+    const returnDecision = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/status$/);
+    const resource = returnDecision ? "returns" : "orders";
     const parts = request.headers.get("authorization")?.replace(/^Bearer /, "").split(".");
     if (!parts || parts.length !== 3) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const [header, payload, signature] = parts;
@@ -72,10 +107,11 @@ export class FakeStorefront {
     const now = Math.floor(Date.now() / 1000);
     if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected)) ||
       JSON.parse(Buffer.from(header, "base64url").toString()).alg !== "HS256" ||
-      claims.iss !== "creoms" || claims.aud !== "brenraphaels-orders" || claims.scope !== "orders:status" ||
+      claims.iss !== "creoms" || claims.aud !== `brenraphaels-${resource}` || claims.scope !== `${resource}:status` ||
       claims.iat > now || claims.exp <= now || claims.exp - claims.iat > 900) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (returnDecision && request.method === "POST") return this.decideReturn(request, Number(returnDecision[1]));
     const match = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/status$/);
     if (!match || request.method !== "POST") return new Response(null, { status: 404 });
     if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
