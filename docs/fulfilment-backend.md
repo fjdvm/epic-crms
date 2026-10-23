@@ -65,5 +65,7 @@ the storefront's nullable `delivery_photo_file_id` through the Order's JSON repr
 so old Orders and a storefront schema without that field remain readable. No CREOMS
 migration or backfill is needed. The test schema models the new nullable field. Adding
 and writing the storefront column and accepting/confirming the File id belong to the
-storefront implementation, excluded by parent spec #168. The photo picker (#176) lives in the Mark as delivered dialog; the Order detail page shows the
-photo through the file-storage view URL, or "No photo" when `deliveryPhotoFileId` is null.
+storefront implementation, excluded by parent spec #168.
+
+The photo picker (#176) lives in the Mark as delivered dialog. The Order detail page shows
+the photo through the file-storage view URL, or "No photo" when `deliveryPhotoFileId` is null.
