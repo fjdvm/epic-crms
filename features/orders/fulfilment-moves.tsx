@@ -1,8 +1,42 @@
 "use client";
 
+import { useState } from "react";
+
 import { OrderActionDialog } from "./action-dialog";
 import { deliverOrder, dispatchOrder, startPreparing } from "./actions";
+import { DeliveryPhotoPicker } from "./delivery-photo-picker";
 import { readyToPrepare } from "./fulfilment";
+
+/** Marking delivered needs the Delivery photo, so this keeps the chosen file for the dialog. */
+function MarkDelivered({ id, triggerClassName }: { id: number; triggerClassName?: string }) {
+  const [photo, setPhoto] = useState<File | null>(null);
+
+  return (
+    <OrderActionDialog
+      trigger="Mark as delivered"
+      triggerClassName={triggerClassName}
+      title={`Mark Order #${id} as delivered?`}
+      description="The store records the delivery time now and emails the Customer."
+      confirm="Mark as delivered"
+      busy="Marking delivered…"
+      disabled={photo === null}
+      run={() => {
+        const form = new FormData();
+        form.set("photo", photo as File);
+
+        return deliverOrder(id, form);
+      }}
+      successMessage={`Order #${id} delivered.`}
+    >
+      <DeliveryPhotoPicker photo={photo} onChange={setPhoto} />
+      {/* The Figma dialog's Feedback request row; the storefront always schedules it, so there is no toggle. */}
+      <div className="space-y-1">
+        <p className="font-medium text-foreground">Send Feedback request in 2 days</p>
+        <p className="text-xs text-[#71717a]">Scheduled automatically by the store.</p>
+      </div>
+    </OrderActionDialog>
+  );
+}
 
 /**
  * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. The
@@ -51,24 +85,7 @@ export function FulfilmentMove({
     );
   }
   if (order.status === "dispatched") {
-    return (
-      <OrderActionDialog
-        trigger="Mark as delivered"
-        triggerClassName={triggerClassName}
-        title={`Mark Order #${id} as delivered?`}
-        description="The store records the delivery time now and emails the Customer."
-        confirm="Mark as delivered"
-        busy="Marking delivered…"
-        run={() => deliverOrder(id)}
-        successMessage={`Order #${id} delivered.`}
-      >
-        {/* The Figma dialog's Feedback request row; the storefront always schedules it, so there is no toggle. */}
-        <div className="space-y-1">
-          <p className="font-medium text-foreground">Send Feedback request in 2 days</p>
-          <p className="text-xs text-[#71717a]">Scheduled automatically by the store.</p>
-        </div>
-      </OrderActionDialog>
-    );
+    return <MarkDelivered id={id} triggerClassName={triggerClassName} />;
   }
   return null;
 }
