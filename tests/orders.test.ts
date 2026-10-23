@@ -67,6 +67,7 @@ describe("the Orders list", () => {
       "preparing",
       "dispatched",
       "delivered",
+      "received",
       "cancelled",
     ]);
   });
@@ -89,6 +90,7 @@ describe("the Orders list", () => {
       preparing: 0,
       dispatched: 0,
       delivered: 1,
+      received: 0,
       cancelled: 1,
     });
   });

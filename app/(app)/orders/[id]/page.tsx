@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadOrder } from "@/features/orders/orders";
+import { loadReturns } from "@/features/returns/returns";
 import { gatewayFileStorage } from "@/lib/gateway";
 import { ORDER_DETAIL_MODULES } from "@/lib/portal/config";
 import { heldModules, requireAnyModule } from "@/lib/portal/staff";
@@ -48,10 +49,17 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  const returned = await loadReturns(ticketsDatabase, { orderId: order.id, pageSize: 100 });
+
   return (
     <>
       <BackgroundRefresh />
-      <OrderDetailView order={order} modules={modules} deliveryPhotoUrl={deliveryPhotoUrl} />
+      <OrderDetailView
+        order={order}
+        modules={modules}
+        deliveryPhotoUrl={deliveryPhotoUrl}
+        returns={returned.ok ? returned.list.rows : null}
+      />
     </>
   );
 }

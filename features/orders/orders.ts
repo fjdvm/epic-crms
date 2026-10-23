@@ -14,6 +14,7 @@ export const ORDER_STATUSES = [
   "preparing",
   "dispatched",
   "delivered",
+  "received",
   "cancelled",
 ] as const;
 

@@ -52,6 +52,7 @@ function list(rows: OrderRow[]) {
       preparing: 1,
       dispatched: 1,
       delivered: 1,
+      received: 1,
       cancelled: 1,
     },
     page: 1,
@@ -75,6 +76,7 @@ describe("the Orders list", () => {
       "Preparing 1",
       "Dispatched 1",
       "Delivered 1",
+      "Received 1",
       "Cancelled 1",
     ]) {
       expect(screen.getByRole("link", { name })).toBeTruthy();

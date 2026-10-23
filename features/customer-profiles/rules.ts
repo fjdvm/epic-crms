@@ -1,5 +1,5 @@
 /** Order statuses whose totals count toward a Customer's Total spent. */
-export const PAID_OR_FULFILLED = ["paid", "preparing", "dispatched", "delivered"];
+export const PAID_OR_FULFILLED = ["paid", "preparing", "dispatched", "delivered", "received"];
 
 export interface OrderAmounts {
   status: string;

@@ -18,7 +18,7 @@ export const TAB_LABELS: Record<ReturnTab, string> = Object.fromEntries(
   RETURN_TABS.map((t) => [t, orderLabel(t)]),
 ) as Record<ReturnTab, string>;
 
-const STATUS_PILLS: Record<ReturnStatus, string> = {
+export const STATUS_PILLS: Record<ReturnStatus, string> = {
   requested: PILL.amber,
   approved: PILL.purple,
   "goods received": PILL.blue,
