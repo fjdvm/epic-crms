@@ -215,6 +215,7 @@ describe("moving an Order on the board", () => {
 });
 
 const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
+  deliveryPhotoFileId: null,
   paidBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),

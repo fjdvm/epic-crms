@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { database } from "@/lib/db";
+import { gatewayFileStorage } from "@/lib/gateway";
+import { checkImage, IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "@/features/tickets/attachments";
 import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 import type { Staff } from "@/lib/portal/client";
 import { requireModule } from "@/lib/portal/staff";
@@ -146,12 +148,29 @@ export async function dispatchOrder(id: number): Promise<OrderChangeResult> {
 }
 
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
-export async function deliverOrder(id: number): Promise<OrderChangeResult> {
+export async function deliverOrder(id: number, form?: FormData): Promise<OrderChangeResult> {
   return act(id, async (order) => {
     if (order.status !== "dispatched") {
       return { ok: false, reason: "Only a dispatched Order can be delivered; it may have already changed. Refresh it before trying again." };
     }
-    return changeOrderStatus(id, { status: "delivered" });
+    if (!(form instanceof FormData) || form.getAll("photo").length !== 1) {
+      return { ok: false, reason: "Choose exactly one Delivery photo." };
+    }
+    const file = form.get("photo");
+    if (!(file instanceof File)) return { ok: false, reason: "Choose exactly one Delivery photo." };
+    if (file.size > MAX_IMAGE_BYTES) return { ok: false, reason: IMAGE_REFUSALS["image-too-large"] };
+    const image = { filename: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
+    const checked = checkImage(image);
+    if (!checked.ok) return { ok: false, reason: IMAGE_REFUSALS[checked.reason] };
+    let deliveryPhotoFileId: string;
+    try {
+      deliveryPhotoFileId = await gatewayFileStorage.upload({ ...image, contentType: checked.contentType });
+      if (!deliveryPhotoFileId) throw new Error("Missing File id");
+    } catch {
+      return { ok: false, reason: "Delivery photo could not be stored. The Order was not marked delivered." };
+    }
+    // Keep the Permanent File even if the storefront response is uncertain: it may be attached.
+    return changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId });
   }, FULFILMENT_MODULE);
 }
 

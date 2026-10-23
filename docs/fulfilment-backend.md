@@ -3,7 +3,7 @@
 The Fulfilment Module's backend lives at the Order actions boundary:
 
 - `getFulfilmentBoard()` returns `{ ok: true, board }` or `{ ok: false }` when reads are unavailable.
-- `startPreparing(id)`, `dispatchOrder(id)` and `deliverOrder(id)` return the existing Order change result.
+- `startPreparing(id)`, `dispatchOrder(id)` and `deliverOrder(id, form)` return the existing Order change result.
 
 Every entry point checks the Fulfilment Module, including direct calls and calls after a
 Module is revoked. Holding Orders or Payments alone is insufficient. The Fulfilment page
@@ -39,3 +39,31 @@ now mirrors that existing field. Live credentials are the same as for #140.
 Run `npx vitest run tests/fulfilment.test.ts tests/order-actions.test.ts --maxWorkers=2`.
 These tests use the shared fake storefront and a throwaway Postgres database. Storefront
 email delivery and Feedback scheduling remain covered by the storefront's own tests.
+
+## Delivery photo (#169)
+
+`deliverOrder(id, form)` requires a `FormData` containing exactly one `photo` File.
+Missing, duplicate, empty, non-JPG/PNG and over-5-MB photos are refused before any
+storefront request. The real bytes determine the content type; the filename and browser
+MIME claim are ignored for validation. Exactly 5 MB is accepted. Pickup uses the same rule.
+Every call checks the Fulfilment Module before reading the Order or storing a photo.
+
+The existing Ticket Message file-storage boundary uploads the photo through the gateway:
+register with `visibility: "private"`, `retentionType: "permanent"`, PUT the bytes to the
+signed URL without credentials, then confirm the File. Only then does CREOMS POST
+`{ status: "delivered", deliveryPhotoFileId: "<File id>" }` to the storefront's existing
+Order status endpoint with its service credential. Storage failure leaves the Order alone.
+The storefront must atomically store that id with the status and Delivery time, accept it
+only for a dispatched Order without an existing photo, and return the same
+`deliveryPhotoFileId` alongside `id`, `status` and `deliveryFeeInCentavos`. A response
+missing or changing the photo id is uncertain, never success. No automatic retry occurs.
+CREOMS exposes no operation to replace or remove the photo. Uploaded evidence is retained
+even on refusal or uncertainty, because a lost response may follow an accepted write.
+
+`loadOrder` exposes `deliveryPhotoFileId: string | null`; null means "No photo". It reads
+the storefront's nullable `delivery_photo_file_id` through the Order's JSON representation,
+so old Orders and a storefront schema without that field remain readable. No CREOMS
+migration or backfill is needed. The test schema models the new nullable field. Adding
+and writing the storefront column and accepting/confirming the File id belong to the
+storefront implementation, excluded by parent spec #168. The photo picker is ticket #176;
+until then the existing dialog cannot supply a photo and delivery is refused clearly.
