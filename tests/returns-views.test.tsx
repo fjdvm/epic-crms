@@ -116,6 +116,7 @@ describe("the Returns page", () => {
     ]);
 
     const r = document.querySelector("[data-return-row]") as HTMLElement;
+    expect(r.id).toBe("return-15");
     expect(within(r).getByText("RMA-15")).toBeTruthy();
     expect(within(r).getByText("Maria Santos")).toBeTruthy();
     expect(within(r).getByRole("link", { name: "#1042" }).getAttribute("href")).toBe("/orders/1042");

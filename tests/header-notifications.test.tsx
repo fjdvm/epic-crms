@@ -103,4 +103,26 @@ describe("the header bell", () => {
     const three = await screen.findByRole("link", { name: /Ben Cruz rated Order #1040 3 stars/ });
     expect(three.getAttribute("href")).toBe("/feedback#feedback-1040");
   });
+
+  it("words a Requested Return alert and links it to that Return on the Returns page", async () => {
+    const returnFeed = {
+      unread: 1,
+      notifications: [
+        { id: "30", kind: "return-requested" as const, ticketId: null, orderId: 1042, rating: null, returnId: 7, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(), read: false },
+      ],
+    };
+    render(<HeaderNotifications feed={returnFeed} />);
+    await userEvent.click(screen.getByTitle("Notifications"));
+
+    const link = await screen.findByRole("link", { name: /Ada Lim requested Return RMA-7/ });
+    expect(link.getAttribute("href")).toBe("/returns#return-7");
+  });
+
+  it("shows nothing for Staff without the Returns Module, whose feed carries no Return alert", async () => {
+    render(<HeaderNotifications feed={{ unread: 0, notifications: [] }} />);
+    await userEvent.click(screen.getByTitle("Notifications"));
+
+    expect(await screen.findByText("No notifications yet.")).toBeTruthy();
+    expect(screen.queryByText(/requested Return/)).toBeNull();
+  });
 });
