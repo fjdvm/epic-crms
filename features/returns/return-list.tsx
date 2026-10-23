@@ -73,6 +73,35 @@ function href(params: ReturnListParams, change: Partial<ReturnListParams>): stri
   return text ? `/returns?${text}` : "/returns";
 }
 
+/**
+ * The tab bar. Shared with the loading skeleton so the active tab is highlighted, and every tab
+ * clickable, before the data arrives. Links prefetch the whole tab, so a tab is usually already there when clicked.
+ */
+export function TabNav({ params, count }: { params: ReturnListParams; count: (tab: ReturnTab) => React.ReactNode }) {
+  return (
+    <nav className="flex shrink-0 gap-1 overflow-x-auto" aria-label="Return tabs">
+      {RETURN_TABS.map((tab) => {
+        const active = tab === params.tab;
+
+        return (
+          <Link
+            key={tab}
+            href={href(params, { tab, page: 1 })}
+            prefetch
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] whitespace-nowrap",
+              active ? "bg-[#efe6f8] text-[#5b2a86]" : "text-[#6e6680]",
+            )}
+          >
+            {TAB_LABELS[tab]} {count(tab)}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function ReturnListView({
   list,
   stats,
@@ -86,25 +115,7 @@ export function ReturnListView({
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       <Stats stats={stats} />
 
-      <nav className="flex shrink-0 gap-1 overflow-x-auto" aria-label="Return tabs">
-        {RETURN_TABS.map((tab) => {
-          const active = tab === params.tab;
-
-          return (
-            <Link
-              key={tab}
-              href={href(params, { tab, page: 1 })}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] whitespace-nowrap",
-                active ? "bg-[#efe6f8] text-[#5b2a86]" : "text-[#6e6680]",
-              )}
-            >
-              {TAB_LABELS[tab]} {list.counts[tab]}
-            </Link>
-          );
-        })}
-      </nav>
+      <TabNav params={params} count={(tab) => list.counts[tab]} />
 
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
         {list.rows.length === 0 ? (
