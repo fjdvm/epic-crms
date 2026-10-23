@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { deliverOrder, dispatchOrder, startPreparing } from "@/features/orders/actions";
 import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
@@ -20,6 +20,11 @@ vi.mock("@/features/orders/actions", () => ({
 }));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
+
+beforeEach(() => {
+  URL.createObjectURL = vi.fn(() => "blob:preview");
+  URL.revokeObjectURL = vi.fn();
+});
 
 afterEach(() => {
   cleanup();
@@ -46,6 +51,10 @@ const EMPTY: FulfilmentBoard = { ready: [], preparing: [], dispatched: [], deliv
 function board(columns: Partial<FulfilmentBoard>) {
   return render(<FulfilmentBoardView board={{ ...EMPTY, ...columns }} />);
 }
+
+const png = (name = "delivered.png") => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: "image/png" });
+const choosePhoto = (dialog: HTMLElement, file: File) =>
+  fireEvent.change(within(dialog).getByLabelText("Delivery photo"), { target: { files: [file] } });
 
 const column = (name: string) => screen.getByRole("region", { name });
 const cardFor = (id: number) => screen.getByRole("link", { name: `#${id}` }).closest("[data-fulfilment-card]") as HTMLElement;
@@ -184,10 +193,74 @@ describe("moving an Order on the board", () => {
 
     const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 as delivered?" });
     expect(within(dialog).getByText(/Feedback request/)).toBeTruthy();
+    const photo = png();
+    choosePhoto(dialog, photo);
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as delivered" }));
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 delivered."));
-    expect(deliverOrder).toHaveBeenCalledWith(1042);
+    expect(deliverOrder).toHaveBeenCalledTimes(1);
+    const [id, form] = vi.mocked(deliverOrder).mock.calls[0];
+    expect(id).toBe(1042);
+    expect(form?.getAll("photo")).toEqual([photo]);
+  });
+
+  it("cannot confirm delivery until a Delivery photo is chosen, and says so", () => {
+    board({ dispatched: [card({ status: "dispatched" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+
+    expect(within(dialog).getByText(/Delivery photo/)).toBeTruthy();
+    expect(within(dialog).getByText("JPG or PNG, up to 5 MB")).toBeTruthy();
+    const confirm = within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(deliverOrder).not.toHaveBeenCalled();
+  });
+
+  it("previews the chosen photo before confirming, and lets Staff remove it", () => {
+    board({ dispatched: [card({ status: "dispatched" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+
+    choosePhoto(dialog, png("door.png"));
+
+    expect((within(dialog).getByAltText("Preview of door.png") as HTMLImageElement).src).toBe("blob:preview");
+    expect((within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove door.png" }));
+    expect(within(dialog).queryByAltText("Preview of door.png")).toBeNull();
+    expect((within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it.each([
+    ["a file that is not a JPG or PNG", new File(["%PDF"], "slip.pdf", { type: "application/pdf" }), "Only JPG or PNG images can be attached."],
+    ["an empty file", new File([], "empty.png", { type: "image/png" }), "That image is empty. Choose a JPG or PNG with something in it."],
+    [
+      "a file over 5 MB",
+      new File([new Uint8Array(5 * 1024 * 1024 + 1)], "huge.png", { type: "image/png" }),
+      "That image is over 5 MB. Choose a smaller JPG or PNG.",
+    ],
+  ])("refuses %s clearly inside the dialog and keeps confirm disabled", (_name, file, message) => {
+    board({ dispatched: [card({ status: "dispatched" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+
+    choosePhoto(dialog, file);
+
+    expect(within(dialog).getByRole("alert").textContent).toBe(message);
+    expect(within(dialog).queryByRole("img")).toBeNull();
+    expect((within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("clears a refusal once a good photo is chosen", () => {
+    board({ dispatched: [card({ status: "dispatched" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+
+    choosePhoto(dialog, new File([], "empty.png", { type: "image/png" }));
+    choosePhoto(dialog, png());
+
+    expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 
   it("starts preparing once the server confirms", async () => {
@@ -205,6 +278,7 @@ describe("moving an Order on the board", () => {
     vi.mocked(deliverOrder).mockResolvedValue({ ok: false, reason });
     board({ dispatched: [card({ status: "dispatched" })] });
     fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    choosePhoto(screen.getByRole("alertdialog"), png());
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark as delivered" }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(reason));
@@ -283,5 +357,58 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
         unmount();
       }
     }
+  });
+});
+
+describe("the Delivery photo on an Order's detail", () => {
+  it("asks for the photo in the same dialog when delivering from the detail page", async () => {
+    vi.mocked(deliverOrder).mockResolvedValue(moved(1042, "delivered"));
+    render(<OrderDetailView order={detail({ status: "dispatched" })} modules={FULFILMENT} />);
+    fireEvent.click(screen.getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+
+    expect((within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement).disabled).toBe(true);
+    choosePhoto(dialog, png());
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark as delivered" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 delivered."));
+  });
+
+  it("shows the photo on a delivered Order", () => {
+    render(
+      <OrderDetailView
+        order={detail({ status: "delivered", deliveryPhotoFileId: "file-1" })}
+        deliveryPhotoUrl="https://files.test/signed"
+      />,
+    );
+
+    expect((screen.getByAltText("Delivery photo for Order #1042") as HTMLImageElement).src).toBe("https://files.test/signed");
+    expect(screen.queryByText("No photo")).toBeNull();
+  });
+
+  it("says No photo on a legacy delivered Order", () => {
+    render(<OrderDetailView order={detail({ status: "delivered", deliveryPhotoFileId: null })} />);
+
+    expect(screen.getByRole("heading", { name: "Delivery photo" })).toBeTruthy();
+    expect(screen.getByText("No photo")).toBeTruthy();
+  });
+
+  it("says the photo cannot be shown, not No photo, when it exists but cannot be reached", () => {
+    render(<OrderDetailView order={detail({ status: "delivered", deliveryPhotoFileId: "file-1" })} deliveryPhotoUrl={null} />);
+
+    expect(screen.queryByText("No photo")).toBeNull();
+    expect(screen.getByText("The Delivery photo could not be loaded. Reload to try again.")).toBeTruthy();
+  });
+
+  it("shows nothing for an Order not yet delivered", () => {
+    render(<OrderDetailView order={detail({ status: "dispatched" })} />);
+
+    expect(screen.queryByRole("heading", { name: "Delivery photo" })).toBeNull();
+  });
+
+  it("also shows it once the Customer has marked the Order received", () => {
+    render(<OrderDetailView order={detail({ status: "received" })} />);
+
+    expect(screen.getByText("No photo")).toBeTruthy();
   });
 });

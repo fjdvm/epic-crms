@@ -64,8 +64,34 @@ function PaymentProof({ order }: { order: OrderDetail }) {
   );
 }
 
+/** Delivered Orders show the photo; legacy ones never had one. */
+function DeliveryPhoto({ order, url }: { order: OrderDetail; url: string | null | undefined }) {
+  return (
+    <section className={CARD}>
+      <h2 className={CARD_TITLE}>Delivery photo</h2>
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={`Delivery photo for Order #${order.id}`} className="max-h-64 rounded-md border border-[#e6e1ee]" />
+      ) : order.deliveryPhotoFileId ? (
+        <p className="text-sm text-[#6e6680]">The Delivery photo could not be loaded. Reload to try again.</p>
+      ) : (
+        <p className="text-sm text-[#6e6680]">No photo</p>
+      )}
+    </section>
+  );
+}
+
 /** An Order with everything Staff need to read it, and the actions the viewer's Modules allow. */
-export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; modules?: readonly string[] }) {
+export function OrderDetailView({
+  order,
+  modules = [],
+  deliveryPhotoUrl,
+}: {
+  order: OrderDetail;
+  modules?: readonly string[];
+  /** A short-lived address for the Delivery photo; null when it exists but could not be reached. */
+  deliveryPhotoUrl?: string | null;
+}) {
   const address = order.address;
   const backToReturns = modules.includes(RETURNS_MODULE) && !modules.includes(ORDERS_MODULE);
 
@@ -180,6 +206,10 @@ export function OrderDetailView({ order, modules = [] }: { order: OrderDetail; m
             </dl>
             <PaymentProof order={order} />
           </section>
+
+          {(order.status === "delivered" || order.status === "received") && (
+            <DeliveryPhoto order={order} url={deliveryPhotoUrl} />
+          )}
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>

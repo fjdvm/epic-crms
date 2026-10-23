@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadOrder } from "@/features/orders/orders";
+import { gatewayFileStorage } from "@/lib/gateway";
 import { ORDER_DETAIL_MODULES } from "@/lib/portal/config";
 import { heldModules, requireAnyModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -36,10 +37,21 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
 
   if (!result.order) notFound();
 
+  const { order } = result;
+  let deliveryPhotoUrl: string | null | undefined;
+  if (order.deliveryPhotoFileId) {
+    try {
+      deliveryPhotoUrl = await gatewayFileStorage.viewUrl(order.deliveryPhotoFileId);
+    } catch (error) {
+      console.error(`The Delivery photo of Order #${order.id} could not be reached`, error);
+      deliveryPhotoUrl = null;
+    }
+  }
+
   return (
     <>
       <BackgroundRefresh />
-      <OrderDetailView order={result.order} modules={modules} />
+      <OrderDetailView order={order} modules={modules} deliveryPhotoUrl={deliveryPhotoUrl} />
     </>
   );
 }
