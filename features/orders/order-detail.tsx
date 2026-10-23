@@ -3,6 +3,8 @@ import { ORDERS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
+import type { ReturnRow } from "@/features/returns/returns";
+import { ReturnsTable } from "@/features/returns/returns-table";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
 import type { OrderDetail } from "./orders";
@@ -86,11 +88,14 @@ export function OrderDetailView({
   order,
   modules = [],
   deliveryPhotoUrl,
+  returns = [],
 }: {
   order: OrderDetail;
   modules?: readonly string[];
   /** A short-lived address for the Delivery photo; null when it exists but could not be reached. */
   deliveryPhotoUrl?: string | null;
+  /** This Order's Returns, shown read-only to Staff with the Returns Module; null when CREOMS could not read them. */
+  returns?: ReturnRow[] | null;
 }) {
   const address = order.address;
   const backToReturns = modules.includes(RETURNS_MODULE) && !modules.includes(ORDERS_MODULE);
@@ -167,6 +172,13 @@ export function OrderDetailView({
               </div>
             </dl>
           </section>
+
+          {modules.includes(RETURNS_MODULE) && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Returns</h2>
+              <ReturnsTable returns={returns} empty="No Returns on this Order." />
+            </section>
+          )}
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>

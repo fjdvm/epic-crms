@@ -8,7 +8,7 @@ The public Returns server boundary is `features/returns/actions.ts`:
 
 Every endpoint checks the Returns Module before connecting to the database. Denied or revoked access redirects to no-access; missing sessions and Portal outages use the existing Portal flow. Data is not cached across Staff or requests. Database failure is `{ ok: false }`, distinct from an empty successful list or a missing detail (`detail: null`). The raw SQL loaders are internal application modules, not Server Action endpoints.
 
-The shared Order detail access gate also accepts Returns. Returns-only Staff see the Order context without Orders, Payments or Fulfilment controls and return to `/returns`. The protected `/returns` landing route is reserved here so Returns-only Staff can enter the shell. Its list/tabs/cards UI, sidebar activation, Return displays and decisions remain the separate #172, #175, #177 and #171 work; this ticket does not invent Staff-created Returns or decision buttons.
+The shared Order detail access gate also accepts Returns. Returns-only Staff see the Order context without Orders, Payments or Fulfilment controls and return to `/returns`. The protected `/returns` landing route is reserved here so Returns-only Staff can enter the shell. Its list/tabs/cards UI, sidebar activation, Return decisions remain the separate #177 and #171 work; this ticket does not invent Staff-created Returns or decision buttons.
 
 ## Storefront prerequisite and schema
 

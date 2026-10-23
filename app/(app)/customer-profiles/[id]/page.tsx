@@ -4,14 +4,15 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CustomerProfileView } from "@/features/customer-profiles/customer-profile";
 import { loadCustomerProfile } from "@/features/customer-profiles/profile";
 import { database } from "@/lib/db";
-import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
-import { canOpenOrders, requireModule } from "@/lib/portal/staff";
+import { CUSTOMER_PROFILES_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
+import { canOpenOrders, heldModules, requireModule } from "@/lib/portal/staff";
 
 export default async function CustomerProfilePage({ params }: { params: Promise<{ id: string }> }) {
   await requireModule(CUSTOMER_PROFILES_MODULE);
 
   const { id } = await params;
-  const result = await loadCustomerProfile(database, id);
+  const canViewReturns = (await heldModules([RETURNS_MODULE])).includes(RETURNS_MODULE);
+  const result = await loadCustomerProfile(database, id, undefined, canViewReturns);
 
   if (!result.ok) {
     return (
@@ -31,7 +32,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
 
   return (
     <div className="px-xl py-7">
-      <CustomerProfileView profile={result.profile} canOpenOrder={await canOpenOrders()} />
+      <CustomerProfileView profile={result.profile} canOpenOrder={await canOpenOrders()} canViewReturns={canViewReturns} />
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { Field } from "./field";
 import { formatAgo, formatDate, formatMonthYear, formatPesos } from "./format";
 import { orderAnchor } from "./orders";
 import { OrdersTab } from "./orders-tab";
+import { ReturnsTab } from "./returns-tab";
 import type { CustomerProfile } from "./profile";
 import { StageBadge } from "./stage-badge";
 import { TabCard } from "./tab-card";
@@ -48,10 +49,13 @@ export function CustomerProfileView({
   profile,
   now = new Date(),
   canOpenOrder = false,
+  canViewReturns = false,
 }: {
   profile: CustomerProfile;
   now?: Date;
   canOpenOrder?: boolean;
+  /** Staff with the Returns Module get the Returns tab. */
+  canViewReturns?: boolean;
 }) {
   const p = profile;
   const [tab, setTab] = useState("orders");
@@ -128,6 +132,11 @@ export function CustomerProfileView({
           <TabsTrigger className={TAB_TRIGGER} value="orders">
             Orders ({p.orders})
           </TabsTrigger>
+          {canViewReturns && (
+            <TabsTrigger className={TAB_TRIGGER} value="returns">
+              Returns{p.returns && ` (${p.returns.length})`}
+            </TabsTrigger>
+          )}
           <TabsTrigger className={TAB_TRIGGER} value="cart">
             Cart
           </TabsTrigger>
@@ -152,6 +161,12 @@ export function CustomerProfileView({
                 canOpenOrder={canOpenOrder}
               />
             </TabsContent>
+
+            {canViewReturns && (
+              <TabsContent value="returns" className="mt-0">
+                <ReturnsTab returns={p.returns} canOpenOrder={canOpenOrder} />
+              </TabsContent>
+            )}
 
             <TabsContent value="cart" className="mt-0">
               <CartTab cart={p.cart} />

@@ -5,7 +5,7 @@ export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 /** The Returns page's tabs: a Return the Customer cancelled while Requested has none. */
 export const RETURN_TABS = ["requested", "approved", "goods received", "refunded", "declined"] as const;
 export type ReturnTab = (typeof RETURN_TABS)[number];
-export interface ReturnQuery { status?: ReturnStatus | "all"; orderId?: number; page?: number; pageSize?: number }
+export interface ReturnQuery { status?: ReturnStatus | "all"; orderId?: number; customerId?: string; page?: number; pageSize?: number }
 export interface ReturnItem { orderLineId: number; product: string; size: string; quantity: number; price: number }
 export interface ReturnRow {
   id: number;
@@ -64,9 +64,12 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
     const orderId = query.orderId;
     if (orderId !== undefined && (!Number.isSafeInteger(orderId) || orderId < 1)) return { ok: false };
     const status = RETURN_STATUSES.includes(query.status as ReturnStatus) ? query.status as ReturnStatus : "all";
+    const customerId = query.customerId;
+    const scope = sql`${orderId === undefined ? sql`` : sql`and r.order_id = ${orderId}`}
+      ${customerId === undefined ? sql`` : sql`and o.customer_id = ${customerId}`}`;
     const grouped = await sql<{ status: ReturnStatus; count: number }[]>`
-      select status, count(*)::int as count from public.order_returns
-      ${orderId === undefined ? sql`` : sql`where order_id = ${orderId}`} group by status`;
+      select r.status, count(*)::int as count from public.order_returns r join public.orders o on o.id = r.order_id
+      where true ${scope} group by r.status`;
     const counts = Object.fromEntries(RETURN_STATUSES.map(status => [status, 0])) as Record<ReturnStatus, number>;
     for (const row of grouped) counts[row.status] = row.count;
     const total = status === "all" ? Object.values(counts).reduce((sum, count) => sum + count, 0) : counts[status];
@@ -77,7 +80,7 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
       select r.id, r.order_id, o.customer_id, c.full_name, r.status, r.requested_at, r.amount_in_centavos
       from public.order_returns r join public.orders o on o.id = r.order_id
       join public.customers c on c.id = o.customer_id
-      where true ${orderId === undefined ? sql`` : sql`and r.order_id = ${orderId}`}
+      where true ${scope}
         ${status === "all" ? sql`` : sql`and r.status = ${status}`}
       order by (r.status = 'requested') desc, r.requested_at, r.id
       limit ${pageSize} offset ${(page - 1) * pageSize}`;
@@ -87,6 +90,19 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
   } catch {
     return { ok: false };
   }
+}
+
+/** Most Returns a page that embeds them (an Order, a Customer Profile) shows; the Returns page itself pages. */
+export const EMBEDDED_RETURNS_LIMIT = 100;
+
+/** One Order's or one Customer's Returns for embedding in another page; null when they could not be read. */
+export async function loadEmbeddedReturns(
+  connect: () => postgres.Sql,
+  scope: { orderId: number } | { customerId: string },
+): Promise<ReturnRow[] | null> {
+  const result = await loadReturns(connect, { ...scope, pageSize: EMBEDDED_RETURNS_LIMIT });
+
+  return result.ok ? result.list.rows : null;
 }
 
 export interface ReturnStats {

@@ -4,10 +4,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
-import { PILL, Pill } from "@/features/tickets/pill";
+import { Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
 
-import { RETURN_TABS, type ReturnList, type ReturnStats, type ReturnStatus, type ReturnTab } from "./returns";
+import { RETURN_TABS, type ReturnList, type ReturnStats, type ReturnTab } from "./returns";
+import { STATUS_PILLS } from "./returns-table";
 
 export interface ReturnListParams {
   tab: ReturnTab;
@@ -17,15 +18,6 @@ export interface ReturnListParams {
 export const TAB_LABELS: Record<ReturnTab, string> = Object.fromEntries(
   RETURN_TABS.map((t) => [t, orderLabel(t)]),
 ) as Record<ReturnTab, string>;
-
-const STATUS_PILLS: Record<ReturnStatus, string> = {
-  requested: PILL.amber,
-  approved: PILL.purple,
-  "goods received": PILL.blue,
-  refunded: PILL.grey,
-  declined: PILL.red,
-  cancelled: PILL.grey,
-};
 
 /** The Figma frame's columns, less Resolution; they share the table width in proportion. */
 export const COLUMNS: { header: string; className: string }[] = [
