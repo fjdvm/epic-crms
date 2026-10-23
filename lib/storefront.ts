@@ -1,7 +1,8 @@
 import { createHmac } from "node:crypto";
 
 export type OrderStatusUpdate =
-  | { status: "confirmed" | "cancelled" | "preparing" | "dispatched" | "delivered"; deliveryFeeInCentavos?: number }
+  | { status: "confirmed" | "cancelled" | "preparing" | "dispatched"; deliveryFeeInCentavos?: number }
+  | { status: "delivered"; deliveryPhotoFileId: string; deliveryFeeInCentavos?: never }
   | { status: "paid"; staffId: string; staffName: string; deliveryFeeInCentavos?: never };
 export type OrderChangeResult =
   | { ok: true; order: { id: number; status: string; deliveryFeeInCentavos: number | null } }
@@ -30,7 +31,8 @@ export async function changeOrderStatus(id: number, update: OrderStatusUpdate): 
     });
     const body = await response.json();
     if (!response.ok) return { ok: false, reason: typeof body.error === "string" ? body.error : "Storefront refused the change." };
-    if (body.id !== id || body.status !== update.status ||
+    if ((update.status === "delivered" && body.deliveryPhotoFileId !== update.deliveryPhotoFileId) ||
+      body.id !== id || body.status !== update.status ||
       (update.deliveryFeeInCentavos !== undefined && body.deliveryFeeInCentavos !== update.deliveryFeeInCentavos) ||
       !(body.deliveryFeeInCentavos === null || Number.isSafeInteger(body.deliveryFeeInCentavos))) {
       return { ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." };
