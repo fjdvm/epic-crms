@@ -1,6 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { CELL, COLUMNS, HEAD, STAT_LABELS, StatCard, TAB_LABELS } from "@/features/returns/return-list";
+import { CELL, COLUMNS, HEAD, RATE_CAPTION, STAT_LABELS, StatCard, TAB_LABELS } from "@/features/returns/return-list";
 import { RETURN_TABS } from "@/features/returns/returns";
 
 /** Static chrome renders as-is; only the data (stats, counts and rows) is skeleton. */
@@ -21,7 +21,7 @@ export default function Loading() {
       <div className="flex min-h-0 flex-1 flex-col gap-5">
         <div className="grid shrink-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-3">
           {STAT_LABELS.map((label) => (
-            <StatCard key={label} label={label} caption={label === "Return rate" ? "Of delivered Orders" : undefined}>
+            <StatCard key={label} label={label} caption={label === "Return rate" ? RATE_CAPTION : undefined}>
               <Skeleton className="h-8 w-16" />
             </StatCard>
           ))}

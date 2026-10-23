@@ -68,7 +68,7 @@ describe("the Returns page", () => {
     expect(within(open).getByText("6")).toBeTruthy();
     const rate = screen.getByText("Return rate").parentElement!;
     expect(within(rate).getByText("0.6%")).toBeTruthy();
-    expect(within(rate).getByText("Of delivered Orders")).toBeTruthy();
+    expect(within(rate).getByText("Of Orders delivered this month")).toBeTruthy();
     const refunded = screen.getByText("Refunded this month").parentElement!;
     expect(within(refunded).getByText("₱2,950.00")).toBeTruthy();
     expect(screen.queryByText(/replacement/i)).toBeNull();

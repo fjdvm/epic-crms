@@ -40,6 +40,7 @@ export const COLUMNS: { header: string; className: string }[] = [
 export const HEAD = "flex items-start overflow-clip";
 export const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
+export const RATE_CAPTION = "Of Orders delivered this month";
 export const STAT_LABELS = ["Open returns", "Return rate", "Refunded this month"] as const;
 
 export function StatCard({ label, caption, children }: { label: string; caption?: string; children: React.ReactNode }) {
@@ -60,7 +61,7 @@ function Stats({ stats }: { stats: ReturnStats | null }) {
   return (
     <div className="grid shrink-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-3">
       <StatCard label="Open returns">{value(stats && String(stats.openReturns))}</StatCard>
-      <StatCard label="Return rate" caption="Of delivered Orders">
+      <StatCard label="Return rate" caption={RATE_CAPTION}>
         {value(rate)}
       </StatCard>
       <StatCard label="Refunded this month">{value(stats && formatPesos(stats.refundedThisMonth))}</StatCard>
