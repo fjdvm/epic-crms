@@ -135,7 +135,10 @@ export function ReturnListView({
               </div>
               {list.rows.map((row) => (
                 <div key={row.id} data-return-row className="flex items-center border-b border-[#efebf4] py-[11px]">
-                  <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}><Link href={`/returns/${row.id}`}>{row.number}</Link>
+                  <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
+                    <Link href={`/returns/${row.id}`} className="hover:underline">
+                      {row.number}
+                    </Link>
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className)}>
                     <span className="truncate pr-3">{row.customer.name}</span>

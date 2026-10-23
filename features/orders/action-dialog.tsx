@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 export type ChangeResult = { ok: true } | { ok: false; reason: string };
 
 /**
- * One Order action behind a confirmation dialog. Not optimistic unless `onOptimistic` is given: the spinner
+ * One Order or Return action behind a confirmation dialog. Not optimistic unless `onOptimistic` is given: the spinner
  * shows at once, and the Order is shown as changed only once the server confirms. A refusal closes the dialog and says why in
  * a toast, as Ticket refusals do: the refresh that follows may remove the button, and the dialog with
  * it, when someone else has already moved the Order. The Orders, Payments and Fulfilment actions all
