@@ -2,6 +2,9 @@ import type postgres from "postgres";
 
 export const RETURN_STATUSES = ["requested", "approved", "goods received", "refunded", "declined", "cancelled"] as const;
 export type ReturnStatus = (typeof RETURN_STATUSES)[number];
+/** The Returns page's tabs: a Return the Customer cancelled while Requested has none. */
+export const RETURN_TABS = ["requested", "approved", "goods received", "refunded", "declined"] as const;
+export type ReturnTab = (typeof RETURN_TABS)[number];
 export interface ReturnQuery { status?: ReturnStatus | "all"; orderId?: number; page?: number; pageSize?: number }
 export interface ReturnItem { orderLineId: number; product: string; size: string; quantity: number; price: number }
 export interface ReturnRow {
