@@ -10,11 +10,60 @@ export class FakeStorefront {
   unavailable = false;
   requests = 0;
 
-  constructor(private sql: postgres.Sql) {}
+  constructor(private sql: postgres.Sql, private now: () => Date = () => new Date()) {}
+
+  private async requestReturn(request: Request, orderId: number): Promise<Response> {
+    const customerId = request.headers.get("X-Test-Customer");
+    if (!customerId) return Response.json({ error: "Sign in first." }, { status: 401 });
+    const body = await request.json();
+    if (!Array.isArray(body.lineIds) || body.lineIds.length === 0 ||
+      body.lineIds.some((id: unknown) => !Number.isSafeInteger(id) || Number(id) < 1) ||
+      new Set(body.lineIds).size !== body.lineIds.length ||
+      !["damaged", "defective", "wrong item", "other"].includes(body.reason) ||
+      typeof body.note !== "string" || !Array.isArray(body.imageFileIds) ||
+      body.imageFileIds.length < 1 || body.imageFileIds.length > 3 ||
+      body.imageFileIds.some((id: unknown) => typeof id !== "string" || !id.trim())) {
+      return Response.json({ error: "Invalid Return request." }, { status: 400 });
+    }
+    return this.sql.begin(async tx => {
+      const [order] = await tx`select o.*, c.full_name from orders o join customers c on c.id = o.customer_id
+        where o.id = ${orderId} and o.customer_id = ${customerId} for update of o`;
+      if (!order) return Response.json({ error: "Order was not found." }, { status: 404 });
+      const now = this.now();
+      const deliveredAt = order.delivered_at as Date | null;
+      if (!["delivered", "received"].includes(order.status) || !deliveredAt || now < deliveredAt ||
+        now.getTime() >= deliveredAt.getTime() + 24 * 60 * 60 * 1000) {
+        return Response.json({ error: "The 24-hour Refund window is closed." }, { status: 409 });
+      }
+      const lines = await tx`select * from order_lines where order_id = ${orderId} and id in ${tx(body.lineIds)}`;
+      if (lines.length !== body.lineIds.length) return Response.json({ error: "Choose this Order's whole line items." }, { status: 400 });
+      const [overlap] = await tx`select 1 from order_return_items i join order_returns r on r.id = i.return_id
+        where r.order_id = ${orderId} and r.status not in ('declined','cancelled') and i.order_line_id in ${tx(body.lineIds)} limit 1`;
+      if (overlap) return Response.json({ error: "Those items already have a Return." }, { status: 409 });
+      const [total] = await tx`select count(*)::int as count from order_lines where order_id = ${orderId}`;
+      const amount = lines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.price_in_centavos), 0) +
+        (lines.length === total.count ? Number(order.delivery_fee_in_centavos ?? 0) : 0);
+      const [created] = await tx`insert into order_returns (order_id, reason, note, amount_in_centavos, requested_at)
+        values (${orderId}, ${body.reason}, ${body.note}, ${amount}, ${now}) returning id`;
+      for (const line of lines) {
+        await tx`insert into order_return_items (return_id, order_line_id, product_name, size_label, quantity, price_in_centavos)
+          values (${created.id}, ${line.id}, ${line.product_name}, ${line.size_label}, ${line.quantity}, ${line.price_in_centavos})`;
+      }
+      for (const [index, fileId] of body.imageFileIds.entries()) {
+        await tx`insert into order_return_images (return_id, position, file_id) values (${created.id}, ${index + 1}, ${fileId})`;
+      }
+      await tx`insert into order_return_history (return_id, status, actor_type, actor_id, actor_name, occurred_at)
+        values (${created.id}, 'requested', 'customer', ${customerId}, ${order.full_name}, ${now})`;
+      return Response.json({ id: created.id }, { status: 201 });
+    });
+  }
 
   handle = async (request: Request): Promise<Response> => {
     this.requests++;
     if (this.unavailable) throw new Error("Storefront unavailable");
+    // Customer authentication in the fake only. Production uses the storefront's own session.
+    const returnRequest = new URL(request.url).pathname.match(/^\/api\/orders\/(\d+)\/returns$/);
+    if (returnRequest && request.method === "POST") return this.requestReturn(request, Number(returnRequest[1]));
     const parts = request.headers.get("authorization")?.replace(/^Bearer /, "").split(".");
     if (!parts || parts.length !== 3) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const [header, payload, signature] = parts;

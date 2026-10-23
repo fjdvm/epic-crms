@@ -5,6 +5,7 @@ import {
   MARKETING_MODULE,
   ORDERS_MODULE,
   PAYMENTS_MODULE,
+  RETURNS_MODULE,
   TICKETS_MODULE,
 } from "./config";
 
@@ -14,6 +15,7 @@ export const pages = [
   { href: "/orders", module: ORDERS_MODULE },
   { href: "/payments", module: PAYMENTS_MODULE },
   { href: "/fulfilment", module: FULFILMENT_MODULE },
+  { href: "/returns", module: RETURNS_MODULE },
   { href: "/tickets", module: TICKETS_MODULE },
   { href: "/conversations", module: TICKETS_MODULE },
   { href: "/feedback", module: FEEDBACK_MODULE },

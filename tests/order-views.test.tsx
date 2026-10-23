@@ -733,3 +733,16 @@ describe("keeping a page fresh", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 });
+
+
+describe("Returns-only Order detail access", () => {
+  it("shows Order context and a Returns back link without Orders, Payments or Fulfilment actions", () => {
+    for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing", "dispatched", "delivered"]) {
+      const view = render(<OrderDetailView order={detail({ status })} modules={["Returns"]} />);
+      expect(screen.getByRole("heading", { name: "Order #1042" })).toBeTruthy();
+      expect(screen.getByRole("link", { name: /← Returns/ }).getAttribute("href")).toBe("/returns");
+      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      view.unmount();
+    }
+  });
+});

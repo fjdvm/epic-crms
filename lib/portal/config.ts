@@ -13,8 +13,9 @@ export const MARKETING_MODULE = "Marketing";
 export const ORDERS_MODULE = "Orders";
 export const PAYMENTS_MODULE = "Payments";
 export const FULFILMENT_MODULE = "Fulfilment";
+export const RETURNS_MODULE = "Returns";
 /** The Order detail page opens for Staff with any of these. */
-export const ORDER_DETAIL_MODULES = [ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE];
+export const ORDER_DETAIL_MODULES = [ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, RETURNS_MODULE];
 
 function required(name: string): string {
   const value = process.env[name];

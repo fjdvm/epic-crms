@@ -13,7 +13,7 @@ The central sign-in site that Staff sign in through and are sent into CREOMS fro
 _Avoid_: Auth app, login site
 
 **Module**:
-A feature area of CREOMS that the Portal grants or revokes per Staff member, such as Customer Profiles. Each CREOMS page belongs to exactly one Module. The Customer Profiles Module is the permission to open the Customer Profiles pages; it is not the Customer Profile itself. The Tickets Module covers both the Tickets and the Conversations pages, since they show the same Tickets. The Feedback Module covers the Feedback page and is separate from the Tickets Module. The Marketing Module covers composing and sending Announcements; the Portal used to call it Campaigns. Orders work is split across three Modules: Orders (view Orders, quote the Delivery fee and confirm, cancel), Payments (check Payment proof and mark an Order paid) and Fulfilment (`preparing`, `dispatched`, `delivered`). The Orders, Payments and Fulfilment pages each belong to their own Module, but the Order detail page opens for Staff with any of the three; it is the one exception to "one page, one Module". Staff see only the actions their Modules allow. The Portal also lists Returns and Dashboard Modules, which are not part of this work.
+A feature area of CREOMS that the Portal grants or revokes per Staff member, such as Customer Profiles. Each CREOMS page belongs to exactly one Module. The Customer Profiles Module is the permission to open the Customer Profiles pages; it is not the Customer Profile itself. The Tickets Module covers both the Tickets and the Conversations pages, since they show the same Tickets. The Feedback Module covers the Feedback page and is separate from the Tickets Module. The Marketing Module covers composing and sending Announcements; the Portal used to call it Campaigns. Orders work is split across three Modules: Orders (view Orders, quote the Delivery fee and confirm, cancel), Payments (check Payment proof and mark an Order paid) and Fulfilment (`preparing`, `dispatched`, `delivered`). The Returns Module covers Returns reads and decisions. The Orders, Payments, Fulfilment and Returns pages each belong to their own Module, but the Order detail page opens for Staff with any of the four; it is the one exception to "one page, one Module". Staff see only the actions their Modules allow. The Dashboard Module is outside this work.
 _Avoid_: Permission, feature, role
 
 **Customer**:
@@ -144,3 +144,10 @@ _Avoid_: Survey, review request
 **Conversation**:
 The live two-way chat inside one Ticket, between its Customer and Staff. Every Conversation belongs to exactly one Ticket; there is no chat without a Ticket. The Conversations page is Staff's inbox of these chats, and the Ticket page shows the same chat.
 _Avoid_: Chat thread, inbox message, Messenger or Instagram chat
+
+
+**Return**:
+A Customer's request to refund one or more whole Order line items. The storefront owns it; CREOMS reads it and asks the storefront to make Staff decisions. It has a Return number (`RMA-` followed by its number) and is Requested, Approved, Goods received, Refunded, Declined or cancelled by the Customer while Requested. Refunded and Declined are final. A Return never changes its Order's status.
+
+**Refund window**:
+The 24 hours starting at the storefront's `delivered_at`, during which the Customer may request a Return. It limits the request, not Staff handling: an in-time Return remains valid. A Customer marking the Order `received` does not restart the window.
