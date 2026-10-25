@@ -148,6 +148,17 @@ export function visibleWidgets(modules: readonly string[]) {
   };
 }
 
+/** The last six months of Buyers, whatever the chosen period; empty when none of them had a Buyer. */
+export async function monthlyBuyersAt(sql: postgres.Sql, now: Date): Promise<MonthlyBuyers> {
+  const months = await Promise.all(lastSixMonths(now).map(async (month) => {
+    const buyers = await returningBuyersIn(sql, month);
+    const returning = Math.round((buyers.share ?? 0) * buyers.buyers);
+    return { label: month.label, soFar: month.soFar, new: buyers.buyers - returning, returning, share: buyers.share };
+  }));
+
+  return { months: months.some((month) => month.new + month.returning > 0) ? months : [] };
+}
+
 async function loadDashboardAnalytics(
   connect: () => postgres.Sql,
   { period, modules, now = new Date() }: { period: Period; modules: readonly string[]; now?: Date },
@@ -163,14 +174,7 @@ async function loadDashboardAnalytics(
     visible.returningBuyers ? loadWidget(connect, period, returningBuyersIn) : undefined,
     visible.monthlySales ? loadMonthlySales(connect, now) : undefined,
     visible.breakdowns ? loadBreakdown(connect, async (sql) => bestSellersIn(sql, period, await salesIn(sql, period))) : undefined,
-    visible.breakdowns ? loadBreakdown(connect, async (sql) => {
-      const months = await Promise.all(lastSixMonths(now).map(async (month) => {
-        const buyers = await returningBuyersIn(sql, month);
-        const returning = Math.round((buyers.share ?? 0) * buyers.buyers);
-        return { label: month.label, soFar: month.soFar, new: buyers.buyers - returning, returning, share: buyers.share };
-      }));
-      return { months: months.some((month) => month.new + month.returning > 0) ? months : [] };
-    }) : undefined,
+    visible.breakdowns ? loadBreakdown(connect, (sql) => monthlyBuyersAt(sql, now)) : undefined,
     visible.breakdowns ? loadBreakdown(connect, (sql) => paymentAndReceivingIn(sql, period)) : undefined,
     visible.customers ? loadWidget(connect, period, newCustomersIn) : undefined,
     visible.customers ? loadBreakdown(connect, unverifiedLeads) : undefined,

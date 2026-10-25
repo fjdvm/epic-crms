@@ -2,12 +2,17 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  BestSellersCard, BestSellersSkeleton, BuyersCard, BuyersSkeleton, PaymentCard, PaymentSkeleton,
+} from "@/features/dashboard/breakdown-cards";
+import { bestSellersIn, loadBreakdown, paymentAndReceivingIn } from "@/features/dashboard/breakdowns";
 import { hasAttentionQueue, loadAttention } from "@/features/dashboard/attention";
 import { NeedsAttention, NeedsAttentionFailed, NeedsAttentionSkeleton } from "@/features/dashboard/needs-attention";
 import {
   averageOrderIn,
   averageRatingIn,
   loadMonthlySales,
+  monthlyBuyersAt,
   loadWidget,
   ordersIn,
   returningBuyersIn,
@@ -62,6 +67,20 @@ async function MonthlySalesChart() {
   const widget = await loadMonthlySales(() => ticketsDatabase(), new Date());
 
   return <SalesChart widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
+}
+
+async function BestSellersSection({ period }: { period: Period }) {
+  const widget = await loadBreakdown(() => ticketsDatabase(), async (sql) => bestSellersIn(sql, period, await salesIn(sql, period)));
+
+  return <BestSellersCard widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
+}
+
+async function BuyersSection() {
+  return <BuyersCard widget={await loadBreakdown(() => ticketsDatabase(), (sql) => monthlyBuyersAt(sql, new Date()))} />;
+}
+
+async function PaymentSection({ period }: { period: Period }) {
+  return <PaymentCard widget={await loadBreakdown(() => ticketsDatabase(), (sql) => paymentAndReceivingIn(sql, period))} />;
 }
 
 /** Always live, and on its own boundary so the queue never waits on the analytics. */
@@ -140,6 +159,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <Suspense fallback={<SalesChartSkeleton />}>
               <MonthlySalesChart />
             </Suspense>
+          )}
+          {show.breakdowns && (
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-3">
+              <Suspense fallback={<BestSellersSkeleton />}>
+                <BestSellersSection period={period} />
+              </Suspense>
+              <Suspense fallback={<BuyersSkeleton />}>
+                <BuyersSection />
+              </Suspense>
+              <Suspense fallback={<PaymentSkeleton />}>
+                <PaymentSection period={period} />
+              </Suspense>
+            </div>
           )}
           {attention && (
             <Suspense fallback={<NeedsAttentionSkeleton />}>
