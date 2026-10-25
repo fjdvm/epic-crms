@@ -36,6 +36,13 @@ export interface SystemItem {
 
 export type SystemChild = SystemItem;
 
+export const dashboardItem: NavItem = {
+  group: "",
+  name: "Dashboard",
+  href: "/dashboard",
+  icon: LayoutDashboard,
+};
+
 export const customerProfilesItem: NavItem = {
   group: "CUSTOMERS",
   name: "Customer Profiles",
@@ -99,14 +106,9 @@ export const emailCampaignsItem: NavItem = {
   icon: Mail,
 };
 
-/** An entry from the Figma sidebar whose page is still to come. */
-function comingSoon(group: string, name: string, icon: LucideIcon): NavItem {
-  return { group, name, href: null, icon };
-}
-
-/** The Figma sidebar, top to bottom. Entries with no page yet are dimmed and do nothing. */
+/** The Figma sidebar, top to bottom. */
 export const sidebarItems: NavItem[] = [
-  comingSoon("", "Dashboard", LayoutDashboard),
+  dashboardItem,
   customerProfilesItem,
   ordersItem,
   paymentsItem,

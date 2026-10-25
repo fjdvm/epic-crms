@@ -237,3 +237,24 @@ describe("an Order's detail when the Portal cannot answer for one Module", () =>
     expect((await accessFor(handle).checkAny(["Orders", "Payments"])).decision).toBe("allowed");
   });
 });
+
+describe("access to the Dashboard page", () => {
+  const DASHBOARD = "Dashboard";
+
+  it("is allowed with the Dashboard Module and denied without it", async () => {
+    expect((await accessFor(await signInAda([DASHBOARD])).check(DASHBOARD)).decision).toBe("allowed");
+    expect((await accessFor(await signInAda([CUSTOMER_PROFILES, "Orders"])).check(DASHBOARD)).decision).toBe("denied");
+  });
+
+  it("is the first page `/` tries, so it lands there for Staff who hold it", async () => {
+    expect(await accessFor(await signInAda([CUSTOMER_PROFILES, DASHBOARD])).overview()).toMatchObject({
+      pages: ["/dashboard", "/customer-profiles"],
+    });
+  });
+
+  it("leaves the first permitted page first for Staff without it", async () => {
+    expect(await accessFor(await signInAda([CUSTOMER_PROFILES, TICKETS])).overview()).toMatchObject({
+      pages: ["/customer-profiles", "/tickets", "/conversations"],
+    });
+  });
+});
