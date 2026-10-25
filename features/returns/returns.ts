@@ -4,7 +4,7 @@ export const RETURN_STATUSES = ["requested", "approved", "goods received", "refu
 export type ReturnResolution = "refund" | "replacement";
 export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 /** The Returns page's tabs: a Return the Customer cancelled while Requested has none. */
-export const RETURN_TABS = ["requested", "approved", "goods received", "refunded", "declined"] as const;
+export const RETURN_TABS = ["requested", "approved", "goods received", "refunded", "replaced", "declined"] as const;
 export type ReturnTab = (typeof RETURN_TABS)[number];
 export interface ReturnQuery { status?: ReturnStatus | "all"; orderId?: number; customerId?: string; page?: number; pageSize?: number }
 export interface ReturnItem { orderLineId: number; product: string; size: string; quantity: number; price: number }
@@ -118,6 +118,8 @@ export interface ReturnStats {
   returnRate: number;
   /** Centavos; based on refunded_at, not the request date. */
   refundedThisMonth: number;
+  /** Returns marked Replaced this month, by replaced_at. */
+  replacedThisMonth: number;
 }
 export type ReturnStatsResult = { ok: true; stats: ReturnStats } | { ok: false };
 
@@ -130,16 +132,17 @@ export async function loadReturnStats(connect: () => postgres.Sql, now = new Dat
     const start = new Date(Date.UTC(year, month, 1) - 8 * 60 * 60 * 1000);
     const end = new Date(Date.UTC(year, month + 1, 1) - 8 * 60 * 60 * 1000);
     const sql = connect();
-    const [totals] = await sql<{ open: number; requested: number; refunded: number }[]>`
+    const [totals] = await sql<{ open: number; requested: number; refunded: number; replaced: number }[]>`
       select count(*) filter (where status in ('requested','approved','goods received'))::int as open,
         count(*) filter (where requested_at >= ${start} and requested_at < ${end})::int as requested,
-        coalesce(sum(amount_in_centavos) filter (where status = 'refunded' and refunded_at >= ${start} and refunded_at < ${end}), 0)::bigint as refunded
+        coalesce(sum(amount_in_centavos) filter (where status = 'refunded' and refunded_at >= ${start} and refunded_at < ${end}), 0)::bigint as refunded,
+        count(*) filter (where status = 'replaced' and replaced_at >= ${start} and replaced_at < ${end})::int as replaced
       from public.order_returns`;
     const [delivered] = await sql<{ count: number }[]>`select count(*)::int as count from public.orders
       where delivered_at >= ${start} and delivered_at < ${end}`;
     return { ok: true, stats: { openReturns: totals.open, requestedThisMonth: totals.requested,
       deliveredThisMonth: delivered.count, returnRate: delivered.count === 0 ? 0 : totals.requested / delivered.count * 100,
-      refundedThisMonth: Number(totals.refunded) } };
+      refundedThisMonth: Number(totals.refunded), replacedThisMonth: totals.replaced } };
   } catch {
     return { ok: false };
   }

@@ -122,6 +122,10 @@ describe("Returns read model", () => {
     const previous = await request('refunded', '2026-09-22T00:00:00Z');
     await request('declined', '2026-10-15T00:00:00Z');
     await request('cancelled', '2026-10-31T16:00:00Z');
+    const replaced = await request('replaced', '2026-10-05T00:00:00Z');
+    const replacedBefore = await request('replaced', '2026-09-05T00:00:00Z');
+    await db.sql`update order_returns set replaced_at = '2026-10-31T15:59:59.999Z' where id = ${replaced}`;
+    await db.sql`update order_returns set replaced_at = '2026-09-30T15:59:59.999Z' where id = ${replacedBefore}`;
     await db.sql`update order_returns set amount_in_centavos = 25000, refunded_at = '2026-10-31T15:59:59.999Z' where id = ${refunded}`;
     await db.sql`update order_returns set refunded_at = '2026-09-30T15:59:59.999Z' where id = ${previous}`;
     await db.sql`insert into orders (customer_id, status, delivered_at) values
@@ -129,7 +133,7 @@ describe("Returns read model", () => {
       ('c1', 'delivered', '2026-10-31T15:59:59.999Z'), ('c1', 'delivered', '2026-10-31T16:00:00Z'),
       ('c1', 'delivered', '2026-09-30T15:59:59.999Z')`;
     expect(await loadReturnStats(() => db.sql, new Date('2026-10-23T00:00:00Z'))).toEqual({ ok: true,
-      stats: { openReturns: 3, requestedThisMonth: 2, deliveredThisMonth: 4, returnRate: 50, refundedThisMonth: 25000 } });
+      stats: { openReturns: 3, requestedThisMonth: 3, deliveredThisMonth: 4, returnRate: 75, refundedThisMonth: 25000, replacedThisMonth: 1 } });
   });
   it("provides item snapshots and pages a status-filtered list without losing counts", async () => {
     const first = await request('requested', '2026-10-21T00:00:00Z');
