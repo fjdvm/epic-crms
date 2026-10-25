@@ -109,11 +109,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       </div>
       {Object.values(show).some(Boolean) || attention ? (
         <>
-          {attention && (
-            <Suspense fallback={<NeedsAttentionSkeleton />}>
-              <NeedsAttentionCard modules={modules} />
-            </Suspense>
-          )}
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {show.sales && (
               <Suspense fallback={<StatTileSkeleton title="Sales" />}>
@@ -144,6 +139,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           {show.monthlySales && (
             <Suspense fallback={<SalesChartSkeleton />}>
               <MonthlySalesChart />
+            </Suspense>
+          )}
+          {attention && (
+            <Suspense fallback={<NeedsAttentionSkeleton />}>
+              <NeedsAttentionCard modules={modules} />
             </Suspense>
           )}
         </>

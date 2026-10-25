@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { Attention } from "@/features/dashboard/attention";
+import { hasAttentionQueue, type Attention } from "@/features/dashboard/attention";
 import { NeedsAttention, NeedsAttentionSkeleton, oldestAge } from "@/features/dashboard/needs-attention";
 
 afterEach(cleanup);
@@ -105,5 +105,12 @@ describe("the Needs attention card", () => {
 
     expect(screen.getByRole("status", { name: "Loading Needs attention" })).toBeTruthy();
     expect(screen.getByText("Needs attention")).toBeTruthy();
+  });
+});
+
+describe("which Staff get the card", () => {
+  it("is only those holding a Module that has a queue", () => {
+    expect(hasAttentionQueue(["Returns"])).toBe(true);
+    expect(hasAttentionQueue(["Marketing", "Customer Profiles"])).toBe(false);
   });
 });
