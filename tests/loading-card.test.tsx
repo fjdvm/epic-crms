@@ -15,6 +15,8 @@ import ConversationsLoading from "@/app/(app)/conversations/loading";
 import EmailCampaignsLoading from "@/app/(app)/email-campaigns/loading";
 import TicketLoading from "@/app/(app)/tickets/[id]/loading";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), back: vi.fn() }), usePathname: () => "/" }));
+
 beforeEach(() => vi.useFakeTimers());
 
 afterEach(() => {
