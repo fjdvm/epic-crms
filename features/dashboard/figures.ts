@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import { PAID_OR_FULFILLED } from "@/features/customer-profiles/rules";
 import { ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 
+import { loadAttention, type Attention } from "./attention";
 import type { Period, Span } from "./period";
 
 /** One widget's figure for the period and the one before it, or the fact that it could not be read. */
@@ -13,6 +14,8 @@ export interface DashboardFigures {
   /** Centavos. */
   sales?: Widget;
   orders?: Widget;
+  /** The Needs attention queues, always read live and never cached. */
+  attention?: Attention;
 }
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
@@ -63,17 +66,19 @@ export function visibleWidgets(modules: readonly string[]): { sales: boolean; or
 
 export async function loadDashboardFigures(
   connect: () => postgres.Sql,
-  { period, modules }: { period: Period; modules: readonly string[] },
+  { period, modules, now = new Date() }: { period: Period; modules: readonly string[]; now?: Date },
 ): Promise<DashboardFigures> {
   const visible = visibleWidgets(modules);
 
-  const [sales, orders] = await Promise.all([
+  const [sales, orders, attention] = await Promise.all([
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
     visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
+    loadAttention(connect, { modules, now }),
   ]);
 
   return {
     ...(sales && { sales }),
     ...(orders && { orders }),
+    attention,
   };
 }
