@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { hasAttentionQueue, loadAttention } from "@/features/dashboard/attention";
+import { NeedsAttention, NeedsAttentionFailed, NeedsAttentionSkeleton } from "@/features/dashboard/needs-attention";
 import {
   averageOrderIn,
   averageRatingIn,
@@ -15,7 +17,9 @@ import {
 import { PERIOD_LABELS, PERIOD_PRESETS, resolvePeriod, type Period } from "@/features/dashboard/period";
 import { SalesChart, SalesChartSkeleton } from "@/features/dashboard/sales-chart";
 import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
-import { DASHBOARD_MODULE, FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
+import {
+  DASHBOARD_MODULE, FEEDBACK_MODULE, FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, TICKETS_MODULE,
+} from "@/lib/portal/config";
 import { heldModules, requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
@@ -60,14 +64,28 @@ async function MonthlySalesChart() {
   return <SalesChart widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
 }
 
+/** Always live, and on its own boundary so the queue never waits on the analytics. */
+async function NeedsAttentionCard({ modules }: { modules: readonly string[] }) {
+  try {
+    const now = new Date();
+
+    return <NeedsAttention attention={await loadAttention(() => ticketsDatabase(), { modules, now })} now={now} />;
+  } catch {
+    return <NeedsAttentionFailed />;
+  }
+}
+
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   await requireModule(DASHBOARD_MODULE);
 
   const raw = (await searchParams).period;
   const preset = PERIOD_PRESETS.find((p) => p === (Array.isArray(raw) ? raw[0] : raw)) ?? "7-days";
   const period = resolvePeriod(preset, new Date());
-  const modules = await heldModules([ORDERS_MODULE, PAYMENTS_MODULE, FEEDBACK_MODULE]);
+  const modules = await heldModules([
+    ORDERS_MODULE, PAYMENTS_MODULE, FEEDBACK_MODULE, FULFILMENT_MODULE, TICKETS_MODULE, RETURNS_MODULE,
+  ]);
   const show = visibleWidgets(modules);
+  const attention = hasAttentionQueue(modules);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-7 sm:px-8">
@@ -89,7 +107,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           ))}
         </nav>
       </div>
-      {Object.values(show).some(Boolean) ? (
+      {Object.values(show).some(Boolean) || attention ? (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {show.sales && (
@@ -121,6 +139,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           {show.monthlySales && (
             <Suspense fallback={<SalesChartSkeleton />}>
               <MonthlySalesChart />
+            </Suspense>
+          )}
+          {attention && (
+            <Suspense fallback={<NeedsAttentionSkeleton />}>
+              <NeedsAttentionCard modules={modules} />
             </Suspense>
           )}
         </>
