@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { getReturns, getReturnStats, getReturnDetail, approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
+import { getReturns, getReturnStats, getReturnDetail, approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, reconcileRefundProof } from "@/features/returns/actions";
 import { canOpenOrders, getShell, requireAnyModule } from "@/lib/portal/staff";
 import { ORDER_DETAIL_MODULES } from "@/lib/portal/config";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
@@ -75,6 +75,7 @@ describe('Returns server access', () => {
     expect(await markReturnGoodsReceived(1)).toMatchObject({ ok: true });
     portal.revoke('ana', 'Returns');
     await expect(markReturnRefunded(1, proof())).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
+    await expect(reconcileRefundProof(1)).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
     expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(2);
     portal.grant('ana', 'Returns');
@@ -93,7 +94,7 @@ describe('Returns server access', () => {
     const denied = async () => {
       for (const read of [getReturns, getReturnStats, () => getReturnDetail(1),
         () => approveReturn(1, false), () => declineReturn(1, "Wrong Order"),
-        () => markReturnGoodsReceived(1), () => markReturnReplaced(1), () => markReturnRefunded(1, proof())]) {
+        () => markReturnGoodsReceived(1), () => markReturnReplaced(1), () => reconcileRefundProof(1), () => markReturnRefunded(1, proof())]) {
         await expect(read()).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
       }
     };

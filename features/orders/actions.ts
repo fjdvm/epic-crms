@@ -187,3 +187,20 @@ export async function getFulfilmentBoard(): Promise<FulfilmentBoardResult> {
   await requireModule(FULFILMENT_MODULE);
   return loadFulfilmentBoard(database);
 }
+
+/** Settle uncertain delivery evidence from the recorded Order, never by replaying delivery. */
+export async function reconcileDeliveryPhoto(id: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+  await requireModule(FULFILMENT_MODULE);
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
+  try {
+    const [order] = await database()<{ status: string; file_id: string | null }[]>`
+      select status, to_jsonb(o)->>'delivery_photo_file_id' as file_id from public.orders o where id = ${id}`;
+    if (!order || !["delivered", "received"].includes(order.status) || !order.file_id) {
+      return { ok: false, reason: "The Order has no confirmed Delivery photo. Refresh the Order before trying again." };
+    }
+    await gatewayFileStorage.promote(order.file_id);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "The Delivery photo could not be made Permanent. Refresh the Order; do not repeat delivery." };
+  }
+}

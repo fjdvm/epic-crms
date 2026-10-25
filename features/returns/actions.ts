@@ -118,3 +118,20 @@ export async function markReturnRefunded(id: number, form?: FormData): Promise<R
 export async function markReturnReplaced(id: number): Promise<ReturnChangeResult> {
   return decide(id, { status: "replaced" });
 }
+
+/** Settle uncertain proof from the recorded Return without repeating the refund decision. */
+export async function reconcileRefundProof(id: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+  await requireModule(RETURNS_MODULE);
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
+  try {
+    const [record] = await database()<{ status: string; refund_proof_file_id: string | null }[]>`
+      select status, refund_proof_file_id from public.order_returns where id = ${id}`;
+    if (!record || record.status !== "refunded" || !record.refund_proof_file_id) {
+      return { ok: false, reason: "The Return has no confirmed refund proof. Refresh the Return before trying again." };
+    }
+    await gatewayFileStorage.promote(record.refund_proof_file_id);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "The refund proof could not be made Permanent. Refresh the Return; do not repeat the refund." };
+  }
+}

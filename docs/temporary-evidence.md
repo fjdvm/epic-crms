@@ -12,17 +12,21 @@ promotes the File. File-storage removes Temporary Files after seven days.
 
 ## Recovery within seven days
 
-After an uncertain response, Staff refresh the Order or Return and read its status and
-Delivery photo/refund proof id. A committed record is the source of truth; never repeat a
-delivery or refund to recover its proof. If it holds the uploaded File id, an operator can
-promote that exact File through authenticated `PATCH /files/<id>` with
-`{ "retentionType": "permanent" }`, checking the id, retention and null expiry returned.
-If the record has no matching reference, leave the File Temporary. Do this before its
-seven-day expiry. CREOMS does not introduce a reconciliation job in this ticket.
+After an uncertain response, read the Order or Return rather than repeat its mutation.
+The backend exposes `reconcileDeliveryPhoto(orderId)` and `reconcileRefundProof(returnId)`
+for this recovery. Each checks Fulfilment or Returns access afresh, reads the record,
+and derives the File id entirely from its persisted reference. It accepts no browser File
+id. Only a delivered/received Order or refunded Return with a recorded File can promote;
+otherwise recovery refuses. Promotion verifies the returned id, Permanent retention and
+null expiry. Recovery is repeatable and never sends a storefront status request.
+
+Invoke recovery before the Temporary File's seven-day expiry. Read/storage failures return
+a clear failure and can be recovered later through the same action. No frontend recovery
+control or scheduled reconciliation job is added by this backend ticket.
 
 Promotion can also fail after a confirmed write. The action returns an explicit message
 that the Order was delivered or the Return was refunded and says not to repeat it. The
-same read-and-promote recovery applies; the confirmed storefront write stays committed.
+same reconciliation actions apply; the confirmed storefront write stays committed.
 
 ## Rollout dependency
 

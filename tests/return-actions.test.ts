@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, getReturnDetail } from "@/features/returns/actions";
+import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, getReturnDetail, reconcileRefundProof } from "@/features/returns/actions";
 import { requireModule } from "@/lib/portal/staff";
 import { database } from "@/lib/db";
 import { revalidatePath } from "next/cache";
@@ -43,6 +43,28 @@ async function requested() {
 }
 
 describe("Staff Return decisions", () => {
+  it("reconciles only the proof recorded on a Refunded Return", async () => {
+    const id = await requested();
+    expect((await reconcileRefundProof(id)).ok).toBe(false);
+    expect((await reconcileRefundProof(999)).ok).toBe(false);
+    expect(await reconcileRefundProof(0)).toEqual({ ok: false, reason: "Invalid Return number." });
+    await approveReturn(id);
+    storefront.refusal = "Refund refused.";
+    await markReturnRefunded(id, proof());
+    expect((await reconcileRefundProof(id)).ok).toBe(false);
+    storefront.refusal = null;
+    storage.failPromote = true;
+    expect((await markReturnRefunded(id, proof())).ok).toBe(false);
+    expect((await reconcileRefundProof(id)).ok).toBe(false);
+    expect(storage.files.get("file-2")?.retentionType).toBe("temporary");
+    storage.failPromote = false;
+    expect(await reconcileRefundProof(id)).toEqual({ ok: true });
+    expect(await reconcileRefundProof(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")?.retentionType).toBe("temporary");
+    expect(storage.files.get("file-2")?.retentionType).toBe("permanent");
+    expect(storefront.requests).toBe(3);
+  });
+
   it("leaves Temporary evidence after malformed responses and transport failures without retrying", async () => {
     const id = await requested();
     await approveReturn(id);
@@ -241,6 +263,9 @@ describe("Staff Return decisions", () => {
     expect(storage.files.get("file-1")).toMatchObject({ returnId: id, retentionType: "temporary" });
     expect(revalidatePath).not.toHaveBeenCalled();
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded", refundProofFileId: "file-1" } });
+    expect(await reconcileRefundProof(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "permanent" });
+    expect(storefront.requests).toBe(2);
   });
 
   it("rejects mismatched refund proof confirmations and preserves refused proof", async () => {

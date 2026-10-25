@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOrder, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee,
-  startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard,
+  startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
@@ -187,6 +187,29 @@ describe("Order actions", () => {
 });
 
 describe("Fulfilment Order actions", () => {
+  it("reconciles only the photo recorded on a delivered or received Order", async () => {
+    const id = await order("delivery", "dispatched");
+    storefront.refusal = "Delivery refused.";
+    await deliverOrder(id, deliveryPhoto());
+    expect((await reconcileDeliveryPhoto(id)).ok).toBe(false);
+    expect((await reconcileDeliveryPhoto(999)).ok).toBe(false);
+    expect(await reconcileDeliveryPhoto(0)).toEqual({ ok: false, reason: "Invalid Order number." });
+    storefront.refusal = null;
+    await deliverOrder(id, deliveryPhoto());
+    // Simulate a failed promotion of the committed File; refused file-1 is still unrelated.
+    storage.files.get("file-2")!.retentionType = "temporary";
+    storage.failPromote = true;
+    expect((await reconcileDeliveryPhoto(id)).ok).toBe(false);
+    expect(storage.files.get("file-2")?.retentionType).toBe("temporary");
+    storage.failPromote = false;
+    await db.sql`update orders set status = 'received' where id = ${id}`;
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")?.retentionType).toBe("temporary");
+    expect(storage.files.get("file-2")?.retentionType).toBe("permanent");
+    expect(storefront.requests).toBe(2);
+  });
+
   it("leaves Temporary evidence after malformed responses and transport failures without retrying", async () => {
     const id = await order("delivery", "dispatched");
     vi.mocked(revalidatePath).mockClear();
@@ -369,6 +392,9 @@ describe("Fulfilment Order actions", () => {
     expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary" });
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "delivered", deliveryPhotoFileId: "file-1" } });
     expect(revalidatePath).not.toHaveBeenCalled();
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "permanent" });
+    expect(storefront.requests).toBe(1);
   });
 
   it("requires the storefront to confirm the photo id as well as the status", async () => {
@@ -409,7 +435,7 @@ describe("Fulfilment Order actions", () => {
   it("denies Orders and Payments Staff, and rechecks a revoked Fulfilment grant", async () => {
     const id = await order("delivery", "confirmed");
     const portal = await signInWithModules(["Orders", "Payments"]);
-    for (const action of [() => startPreparing(id), () => dispatchOrder(id), () => deliverOrder(id), getFulfilmentBoard]) {
+    for (const action of [() => startPreparing(id), () => dispatchOrder(id), () => deliverOrder(id), () => reconcileDeliveryPhoto(id), getFulfilmentBoard]) {
       await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     }
     expect(storefront.requests).toBe(0);
@@ -418,6 +444,7 @@ describe("Fulfilment Order actions", () => {
     portal.revoke("ben", "Fulfilment");
     await expect(dispatchOrder(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     await expect(deliverOrder(id, deliveryPhoto())).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    await expect(reconcileDeliveryPhoto(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(1);
   });
