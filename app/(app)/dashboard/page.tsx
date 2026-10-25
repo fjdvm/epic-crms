@@ -1,9 +1,11 @@
-import Link from "next/link";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CustomersByStageCard, CustomersByStageSkeleton, NewCustomersCard, NewCustomersSkeleton } from "@/features/dashboard/customer-cards";
-import { DashboardExportButton } from "@/features/dashboard/export-button";
+import {
+  BestSellersCard, BestSellersSkeleton, BuyersCard, BuyersSkeleton, PaymentCard, PaymentSkeleton,
+} from "@/features/dashboard/breakdown-cards";
+import { PeriodNavigation, PeriodPicker, WhilePending } from "@/features/dashboard/period-navigation";
 import { hasAttentionQueue, type Attention } from "@/features/dashboard/attention";
 import { NeedsAttention, NeedsAttentionFailed, NeedsAttentionSkeleton } from "@/features/dashboard/needs-attention";
 import { loadDashboardFigures, visibleWidgets, type DashboardWidgets } from "@/features/dashboard/figures";
@@ -74,6 +76,23 @@ async function NewCustomers({ figures, periodLabel }: FigureProps & { periodLabe
   return widget && leads ? <NewCustomersCard widget={widget} leads={leads} periodLabel={periodLabel} /> : null;
 }
 
+async function BestSellersSection({ figures }: FigureProps) {
+  const widget = await (await figures).bestSellers;
+  if (!widget) return null;
+
+  return <BestSellersCard widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
+}
+
+async function BuyersSection({ figures }: FigureProps) {
+  const widget = await (await figures).monthlyBuyers;
+  return widget ? <BuyersCard widget={widget} /> : null;
+}
+
+async function PaymentSection({ figures }: FigureProps) {
+  const widget = await (await figures).paymentAndReceiving;
+  return widget ? <PaymentCard widget={widget} /> : null;
+}
+
 /** Always live, and on its own boundary so the queue never waits on the analytics. */
 async function NeedsAttentionCard({ figures, now }: FigureProps & { now: Date }) {
   let attention: Attention | undefined;
@@ -98,53 +117,52 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const attention = hasAttentionQueue(modules);
 
   return (
+    <PeriodNavigation preset={preset}>
     <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-7 sm:px-8">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1 leading-[normal]">
           <h1 className="text-2xl font-semibold text-[#18181b]">Dashboard</h1>
           <p className="text-sm text-[#71717a]">How the business is doing, at a glance</p>
         </div>
-        <nav aria-label="Period" className="flex flex-wrap gap-2">
-          {PERIOD_PRESETS.map((p) => (
-            <Link
-              key={p}
-              href={`/dashboard?period=${p}`}
-              aria-current={p === preset ? "true" : undefined}
-              className="rounded-lg border border-[#e4e4e7] bg-white px-3 py-2 text-sm font-medium text-[#18181b] aria-[current=true]:border-[#5b2a86] aria-[current=true]:bg-[#5b2a86] aria-[current=true]:text-white"
-            >
-              {PERIOD_LABELS[p]}
-            </Link>
-          ))}
-        </nav>
-        <DashboardExportButton period={preset} />
+        <PeriodPicker />
       </div>
       {Object.values(show).some(Boolean) || attention ? (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {show.sales && (
-              <Suspense fallback={<StatTileSkeleton title="Sales" />}>
-                <SalesTile figures={figures} />
-              </Suspense>
+              <WhilePending fallback={<StatTileSkeleton title="Sales" />}>
+                <Suspense fallback={<StatTileSkeleton title="Sales" />}>
+                  <SalesTile figures={figures} />
+                </Suspense>
+              </WhilePending>
             )}
             {show.orders && (
-              <Suspense fallback={<StatTileSkeleton title="Orders" />}>
-                <OrdersTile figures={figures} />
-              </Suspense>
+              <WhilePending fallback={<StatTileSkeleton title="Orders" />}>
+                <Suspense fallback={<StatTileSkeleton title="Orders" />}>
+                  <OrdersTile figures={figures} />
+                </Suspense>
+              </WhilePending>
             )}
             {show.averageOrder && (
-              <Suspense fallback={<StatTileSkeleton title="Average order" />}>
-                <AverageOrderTile figures={figures} />
-              </Suspense>
+              <WhilePending fallback={<StatTileSkeleton title="Average order" />}>
+                <Suspense fallback={<StatTileSkeleton title="Average order" />}>
+                  <AverageOrderTile figures={figures} />
+                </Suspense>
+              </WhilePending>
             )}
             {show.returningBuyers && (
-              <Suspense fallback={<StatTileSkeleton title="Returning Buyers" />}>
-                <ReturningBuyersTile figures={figures} />
-              </Suspense>
+              <WhilePending fallback={<StatTileSkeleton title="Returning Buyers" />}>
+                <Suspense fallback={<StatTileSkeleton title="Returning Buyers" />}>
+                  <ReturningBuyersTile figures={figures} />
+                </Suspense>
+              </WhilePending>
             )}
             {show.averageRating && (
-              <Suspense fallback={<StatTileSkeleton title="Average rating" />}>
-                <AverageRatingTile figures={figures} />
-              </Suspense>
+              <WhilePending fallback={<StatTileSkeleton title="Average rating" />}>
+                <Suspense fallback={<StatTileSkeleton title="Average rating" />}>
+                  <AverageRatingTile figures={figures} />
+                </Suspense>
+              </WhilePending>
             )}
           </div>
           {show.monthlySales && (
@@ -152,14 +170,33 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               <MonthlySalesChart figures={figures} />
             </Suspense>
           )}
+          {show.breakdowns && (
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-3">
+              <WhilePending fallback={<BestSellersSkeleton />}>
+                <Suspense fallback={<BestSellersSkeleton />}>
+                  <BestSellersSection figures={figures} />
+                </Suspense>
+              </WhilePending>
+              <Suspense fallback={<BuyersSkeleton />}>
+                <BuyersSection figures={figures} />
+              </Suspense>
+              <WhilePending fallback={<PaymentSkeleton />}>
+                <Suspense fallback={<PaymentSkeleton />}>
+                  <PaymentSection figures={figures} />
+                </Suspense>
+              </WhilePending>
+            </div>
+          )}
           {show.customers && (
             <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
               <Suspense fallback={<CustomersByStageSkeleton />}>
                 <CustomersByStage figures={figures} />
               </Suspense>
-              <Suspense key={preset} fallback={<NewCustomersSkeleton periodLabel={PERIOD_LABELS[preset]} />}>
-                <NewCustomers figures={figures} periodLabel={PERIOD_LABELS[preset]} />
-              </Suspense>
+              <WhilePending fallback={<NewCustomersSkeleton periodLabel={PERIOD_LABELS[preset]} />}>
+                <Suspense key={preset} fallback={<NewCustomersSkeleton periodLabel={PERIOD_LABELS[preset]} />}>
+                  <NewCustomers figures={figures} periodLabel={PERIOD_LABELS[preset]} />
+                </Suspense>
+              </WhilePending>
             </div>
           )}
           {attention && (
@@ -175,5 +212,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </Alert>
       )}
     </div>
+    </PeriodNavigation>
   );
 }
