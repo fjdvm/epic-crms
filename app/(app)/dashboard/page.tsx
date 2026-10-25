@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { DashboardExportButton } from "@/features/dashboard/export-button";
 import { hasAttentionQueue, type Attention } from "@/features/dashboard/attention";
 import { NeedsAttention, NeedsAttentionFailed, NeedsAttentionSkeleton } from "@/features/dashboard/needs-attention";
 import { loadDashboardFigures, visibleWidgets, type DashboardWidgets } from "@/features/dashboard/figures";
@@ -103,6 +104,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             </Link>
           ))}
         </nav>
+        <DashboardExportButton period={preset} />
       </div>
       {Object.values(show).some(Boolean) || attention ? (
         <>
