@@ -1,13 +1,14 @@
 import type postgres from "postgres";
 
 import { PAID_OR_FULFILLED } from "@/features/customer-profiles/rules";
-import { FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
+import { CUSTOMER_PROFILES_MODULE, FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 
 import { loadAttention, type Attention } from "./attention";
 import {
   bestSellersIn, cachedAnalytics, forgetAnalytics, loadBreakdown, paymentAndReceivingIn,
   type BestSellers, type Breakdown, type MonthlyBuyers, type PaymentAndReceiving,
 } from "./breakdowns";
+import { customersByStageAt, newCustomersIn, unverifiedLeads, type CustomersByStage } from "./customers";
 import { lastSixMonths, type Period, type SalesMonth, type Span } from "./period";
 
 /** One widget's figure for the period and the one before it, or the fact that it could not be read. */
@@ -42,6 +43,11 @@ export interface DashboardFigures {
   monthlySales?: ({ ok: true } & MonthlySales) | { ok: false };
   /** The Needs attention queues, always read live and never cached. */
   attention?: Attention;
+  /** Stage and At risk are as of now, regardless of the selected period. */
+  customersByStage?: Breakdown<CustomersByStage>;
+  atRisk?: Breakdown<{ count: number }>;
+  newCustomers?: Widget;
+  unverifiedLeads?: Breakdown<{ count: number }>;
   bestSellers?: Breakdown<BestSellers>;
   monthlyBuyers?: Breakdown<MonthlyBuyers>;
   paymentAndReceiving?: Breakdown<PaymentAndReceiving>;
@@ -138,6 +144,7 @@ export function visibleWidgets(modules: readonly string[]) {
     averageRating: modules.includes(FEEDBACK_MODULE),
     monthlySales: sales,
     breakdowns: modules.includes(ORDERS_MODULE),
+    customers: modules.includes(CUSTOMER_PROFILES_MODULE),
   };
 }
 
@@ -148,7 +155,7 @@ async function loadDashboardAnalytics(
   const visible = visibleWidgets(modules);
 
   const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales,
-    bestSellers, monthlyBuyers, paymentAndReceiving] = await Promise.all([
+    bestSellers, monthlyBuyers, paymentAndReceiving, newCustomers, leads, customersByStage] = await Promise.all([
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
     visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
     visible.averageOrder ? loadWidget(connect, period, averageOrderIn) : undefined,
@@ -165,9 +172,18 @@ async function loadDashboardAnalytics(
       return { months: months.some((month) => month.new + month.returning > 0) ? months : [] };
     }) : undefined,
     visible.breakdowns ? loadBreakdown(connect, (sql) => paymentAndReceivingIn(sql, period)) : undefined,
+    visible.customers ? loadWidget(connect, period, newCustomersIn) : undefined,
+    visible.customers ? loadBreakdown(connect, unverifiedLeads) : undefined,
+    visible.customers ? loadBreakdown(connect, (sql) => customersByStageAt(sql, now)) : undefined,
   ]);
 
   return {
+    ...(customersByStage && {
+      customersByStage,
+      atRisk: customersByStage.ok ? { ok: true as const, count: customersByStage.counts["at-risk"] } : { ok: false as const },
+    }),
+    ...(newCustomers && { newCustomers }),
+    ...(leads && { unverifiedLeads: leads }),
     ...(sales && { sales }),
     ...(orders && { orders }),
     ...(averageOrder && { averageOrder }),
@@ -200,6 +216,7 @@ export async function loadDashboardFigures(
     try { sql = connect(); } catch { return loadDashboardAnalytics(connect, options); }
     const key = JSON.stringify([
       visibleWidgets(modules), period, lastSixMonths(now)[5].label,
+      new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10),
     ]);
     const result = await cachedAnalytics(sql, key, () => loadDashboardAnalytics(connect, options));
     if (Object.values(result).some((widget) => widget && "ok" in widget && !widget.ok)) forgetAnalytics(sql, key);
