@@ -12,6 +12,7 @@ import {
   Star,
   Ticket,
   Users2,
+  Package,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -127,41 +128,34 @@ export const systems: SystemItem[] = [
     icon: LayoutGrid,
     active: false,
     portal: true,
-    url: process.env.NEXT_PUBLIC_HOST_URL ?? "https://localhost:3000/",
+    url: process.env.NEXT_PUBLIC_HOST_URL ?? "https://br-auth-three.vercel.app/",
   },
   {
     fullName: "Customer Relationship Management",
     desc: "Contact profiles, tickets & marketing",
     icon: Building2,
     active: true,
-    url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://localhost:3005/",
+    url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://epic-crms.vercel.app/",
   },
   {
     fullName: "Human Resource Management",
     desc: "Staff directory & payroll",
     icon: Users2,
     active: false,
-    url: process.env.NEXT_PUBLIC_HRMS_URL ?? "https://localhost:3001/",
-  },
-  {
-    fullName: "E-Commerce Storefront",
-    desc: "Online orders & products",
-    icon: ShoppingCart,
-    active: false,
-    url: process.env.NEXT_PUBLIC_OOS_URL ?? "https://localhost:3004/",
+    url: process.env.NEXT_PUBLIC_HRMS_URL ?? "https://hrms-arae.vercel.app/",
   },
   {
     fullName: "Point of Sale",
     desc: "Retail & register checkout",
     icon: CreditCard,
     active: false,
-    url: process.env.NEXT_PUBLIC_POS_URL ?? "https://localhost:3002/",
+    url: process.env.NEXT_PUBLIC_POS_URL ?? "https://web-pos-alpha-vert.vercel.app/",
   },
   {
-    fullName: "Supply Chain Management",
-    desc: "Inventory & logistics",
-    icon: Truck,
+    fullName: "Inventory Management System",
+    desc: "Inventory & stock management",
+    icon: Package,
     active: false,
-    url: process.env.NEXT_PUBLIC_SCMS_URL ?? "https://localhost:3003/",
+    url: process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/",
   },
 ];
