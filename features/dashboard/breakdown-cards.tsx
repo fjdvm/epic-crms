@@ -33,6 +33,15 @@ function Failed({ title }: { title: string }) {
   );
 }
 
+function Empty({ title }: { title: string }) {
+  return (
+    <section className={CARD}>
+      <h2 className={TITLE}>{title}</h2>
+      <p className={MUTED}>{EMPTY}</p>
+    </section>
+  );
+}
+
 function CardSkeleton({ title, rows }: { title: string; rows: number }) {
   return (
     <section role="status" aria-label={`Loading ${title}`} className={CARD}>
@@ -52,14 +61,7 @@ export function BestSellersCard({
   format: (centavos: number) => string;
 }) {
   if (!widget.ok) return <Failed title="Best sellers" />;
-  if (widget.products.length === 0) {
-    return (
-      <section className={CARD}>
-        <h2 className={TITLE}>Best sellers</h2>
-        <p className={MUTED}>{EMPTY}</p>
-      </section>
-    );
-  }
+  if (widget.products.length === 0) return <Empty title="Best sellers" />;
 
   return (
     <section className={CARD}>
@@ -75,6 +77,12 @@ export function BestSellersCard({
             <span className="text-xs text-[#71717a]">{`${p.units} sold · ${format(p.sales)}`}</span>
           </li>
         ))}
+        {widget.remainder.sales > 0 && (
+          <li className="flex items-baseline justify-between gap-2 text-xs text-[#71717a]">
+            <span>Other products and Delivery fees</span>
+            <span>{percent(widget.remainder.share)}</span>
+          </li>
+        )}
       </ol>
     </section>
   );
@@ -86,22 +94,13 @@ export function BestSellersSkeleton() {
 
 export function BuyersCard({ widget }: { widget: Breakdown<MonthlyBuyers> }) {
   if (!widget.ok) return <Failed title="New vs returning Buyers" />;
-  if (widget.months.length === 0) {
-    return (
-      <section className={CARD}>
-        <h2 className={TITLE}>New vs returning Buyers</h2>
-        <p className={MUTED}>{EMPTY}</p>
-      </section>
-    );
-  }
+  if (widget.months.length === 0) return <Empty title="New vs returning Buyers" />;
 
   return (
     <section className={CARD}>
       <h2 className="text-base font-semibold text-[#18181b]">{buyersHeadline(widget.months)}</h2>
       <ol className="flex w-full flex-col gap-3">
         {widget.months.map((m) => {
-          const total = m.new + m.returning;
-
           return (
             <li key={m.label} className="flex flex-col gap-1">
               <div className="flex items-baseline justify-between gap-2 text-sm">
@@ -111,7 +110,7 @@ export function BuyersCard({ widget }: { widget: Breakdown<MonthlyBuyers> }) {
                 </span>
                 <span className="text-xs text-[#71717a]">{m.share === null ? "No Buyers" : `${percent(m.share)} returning`}</span>
               </div>
-              <Bar share={total === 0 ? 0 : m.returning / total} soft={m.soFar} />
+              <Bar share={m.share ?? 0} soft={m.soFar} />
               <span className="text-xs text-[#71717a]">{`${m.new} new · ${m.returning} returning`}</span>
             </li>
           );
@@ -125,12 +124,11 @@ export function BuyersSkeleton() {
   return <CardSkeleton title="New vs returning Buyers" rows={6} />;
 }
 
-/** The two methods Staff care about are always listed, even at zero; anything else the data holds follows. */
+/** Only the two methods Staff care about are listed, even at zero; the design's Maya and Bank transfer are dropped. */
 function section(rows: PaymentAndReceiving["payment"], known: string[]) {
   const total = rows.reduce((sum, r) => sum + r.orders, 0);
-  const methods = [...known, ...rows.map((r) => r.method).filter((m) => !known.includes(m))];
 
-  return methods.map((method) => {
+  return known.map((method) => {
     const orders = rows.find((r) => r.method === method)?.orders ?? 0;
 
     return { method, orders, share: total === 0 ? 0 : orders / total };
@@ -157,14 +155,7 @@ function Section({ title, rows }: { title: string; rows: ReturnType<typeof secti
 
 export function PaymentCard({ widget }: { widget: Breakdown<PaymentAndReceiving> }) {
   if (!widget.ok) return <Failed title="How customers pay" />;
-  if (widget.payment.length === 0 && widget.receiving.length === 0) {
-    return (
-      <section className={CARD}>
-        <h2 className={TITLE}>How customers pay</h2>
-        <p className={MUTED}>{EMPTY}</p>
-      </section>
-    );
-  }
+  if (widget.payment.length === 0 && widget.receiving.length === 0) return <Empty title="How customers pay" />;
 
   return (
     <section className={CARD}>

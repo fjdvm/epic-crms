@@ -53,6 +53,8 @@ describe("the Best sellers card", () => {
     expect(screen.getByText("60%")).toBeTruthy();
     expect(screen.getByText("6 sold · ₱600")).toBeTruthy();
     expect(screen.getByText("Leche Flan")).toBeTruthy();
+    expect(screen.getByText("Other products and Delivery fees")).toBeTruthy();
+    expect(screen.getByText("10%")).toBeTruthy();
   });
 
   it("says there are no Orders in an empty period", () => {
@@ -109,7 +111,7 @@ describe("the How customers pay card", () => {
       <PaymentCard
         widget={{
           ok: true,
-          payment: [{ method: "cash-on-delivery", orders: 1, sales: 100 }, { method: "gcash", orders: 3, sales: 300 }],
+          payment: [{ method: "cash-on-delivery", orders: 1, sales: 100 }, { method: "gcash", orders: 3, sales: 300 }, { method: "maya", orders: 2, sales: 200 }],
           receiving: [{ method: "pickup", orders: 4, sales: 400 }],
         }}
       />,
@@ -120,7 +122,7 @@ describe("the How customers pay card", () => {
     expect(screen.getByText("Pickup")).toBeTruthy();
     expect(screen.getByText("Delivery")).toBeTruthy();
     expect(screen.getByText("3 Orders")).toBeTruthy();
-    expect(screen.getByText("75%")).toBeTruthy();
+    expect(screen.getByText("50%")).toBeTruthy();
     expect(screen.queryByText(/Maya|Bank transfer/)).toBeNull();
   });
 
