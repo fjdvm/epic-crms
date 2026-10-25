@@ -193,7 +193,7 @@ function loadDashboardAnalytics(
   };
 }
 
-async function loadMonthlySales(connect: () => postgres.Sql, now: Date): Promise<NonNullable<DashboardFigures["monthlySales"]>> {
+export async function loadMonthlySales(connect: () => postgres.Sql, now: Date): Promise<NonNullable<DashboardFigures["monthlySales"]>> {
   try {
     return { ok: true, ...(await monthlySalesAt(connect(), now)) };
   } catch {

@@ -2,30 +2,74 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { hasAttentionQueue, type Attention } from "@/features/dashboard/attention";
+import { NeedsAttention, NeedsAttentionFailed, NeedsAttentionSkeleton } from "@/features/dashboard/needs-attention";
 import { loadDashboardFigures, visibleWidgets, type DashboardWidgets } from "@/features/dashboard/figures";
 import { PERIOD_LABELS, PERIOD_PRESETS, resolvePeriod } from "@/features/dashboard/period";
-import { StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
+import { SalesChart, SalesChartSkeleton } from "@/features/dashboard/sales-chart";
+import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
 import { DASHBOARD_DATA_MODULES, DASHBOARD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-const pesos = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
+const pesos = new Intl.NumberFormat("en-PH", {
+  style: "currency",
+  currency: "PHP",
+  maximumFractionDigits: 0,
+});
 
-/** Both tiles use the same cached figures snapshot as the PDF. The shell still renders immediately. */
-async function SalesTile({ figures }: { figures: Promise<DashboardWidgets> }) {
+type FigureProps = { figures: Promise<DashboardWidgets> };
+
+/** Each widget awaits its own result from the same cached generation as the PDF. */
+async function SalesTile({ figures }: FigureProps) {
   const widget = await (await figures).sales;
   if (!widget) return null;
 
   return <StatTile title="Sales" widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
 }
 
-async function OrdersTile({ figures }: { figures: Promise<DashboardWidgets> }) {
+async function OrdersTile({ figures }: FigureProps) {
   const widget = await (await figures).orders;
   if (!widget) return null;
 
   return <StatTile title="Orders" widget={widget} format={String} />;
+}
+
+async function AverageOrderTile({ figures }: FigureProps) {
+  const widget = await (await figures).averageOrder;
+  if (!widget) return null;
+
+  return <StatTile title="Average order" widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
+}
+
+async function ReturningBuyersTile({ figures }: FigureProps) {
+  const widget = await (await figures).returningBuyers;
+  return widget ? <BuyersTile widget={widget} /> : null;
+}
+
+async function AverageRatingTile({ figures }: FigureProps) {
+  const widget = await (await figures).averageRating;
+  return widget ? <RatingTile widget={widget} /> : null;
+}
+
+async function MonthlySalesChart({ figures }: FigureProps) {
+  const widget = await (await figures).monthlySales;
+  if (!widget) return null;
+
+  return <SalesChart widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
+}
+
+/** Always live, and on its own boundary so the queue never waits on the analytics. */
+async function NeedsAttentionCard({ figures, now }: FigureProps & { now: Date }) {
+  let attention: Attention | undefined;
+  try {
+    attention = await (await figures).attention;
+  } catch {
+    return <NeedsAttentionFailed />;
+  }
+  return attention ? <NeedsAttention attention={attention} now={now} /> : null;
 }
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
@@ -36,8 +80,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const now = new Date();
   const period = resolvePeriod(preset, now);
   const modules = await heldModules(DASHBOARD_DATA_MODULES);
-  const { sales: showSales, orders: showOrders } = visibleWidgets(modules);
   const figures = loadDashboardFigures(ticketsDatabase, { period, modules, now, stream: true });
+  const show = visibleWidgets(modules);
+  const attention = hasAttentionQueue(modules);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-7 sm:px-8">
@@ -59,19 +104,46 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           ))}
         </nav>
       </div>
-      {showSales || showOrders ? (
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {showSales && (
-            <Suspense fallback={<StatTileSkeleton title="Sales" />}>
-              <SalesTile figures={figures} />
+      {Object.values(show).some(Boolean) || attention ? (
+        <>
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {show.sales && (
+              <Suspense fallback={<StatTileSkeleton title="Sales" />}>
+                <SalesTile figures={figures} />
+              </Suspense>
+            )}
+            {show.orders && (
+              <Suspense fallback={<StatTileSkeleton title="Orders" />}>
+                <OrdersTile figures={figures} />
+              </Suspense>
+            )}
+            {show.averageOrder && (
+              <Suspense fallback={<StatTileSkeleton title="Average order" />}>
+                <AverageOrderTile figures={figures} />
+              </Suspense>
+            )}
+            {show.returningBuyers && (
+              <Suspense fallback={<StatTileSkeleton title="Returning Buyers" />}>
+                <ReturningBuyersTile figures={figures} />
+              </Suspense>
+            )}
+            {show.averageRating && (
+              <Suspense fallback={<StatTileSkeleton title="Average rating" />}>
+                <AverageRatingTile figures={figures} />
+              </Suspense>
+            )}
+          </div>
+          {show.monthlySales && (
+            <Suspense fallback={<SalesChartSkeleton />}>
+              <MonthlySalesChart figures={figures} />
             </Suspense>
           )}
-          {showOrders && (
-            <Suspense fallback={<StatTileSkeleton title="Orders" />}>
-              <OrdersTile figures={figures} />
+          {attention && (
+            <Suspense fallback={<NeedsAttentionSkeleton />}>
+              <NeedsAttentionCard figures={figures} now={now} />
             </Suspense>
           )}
-        </div>
+        </>
       ) : (
         <Alert>
           <AlertTitle>Nothing to show yet</AlertTitle>

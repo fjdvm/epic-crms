@@ -90,6 +90,11 @@ const queues: { key: keyof Attention; module: string; read: Read<object> }[] = [
   },
 ];
 
+/** Whether any Needs attention row is open to Staff holding these Modules. */
+export function hasAttentionQueue(modules: readonly string[]): boolean {
+  return queues.some(({ module }) => modules.includes(module));
+}
+
 async function one(rows: Promise<Row[]>): Promise<Row> {
   const [row] = await rows;
 
