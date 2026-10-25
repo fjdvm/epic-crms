@@ -62,7 +62,7 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData): Pr
       const checked = checkImage(image);
       if (!checked.ok) return { ok: false, reason: IMAGE_REFUSALS[checked.reason] };
       try {
-        const fileId = await gatewayFileStorage.upload({ ...image, contentType: checked.contentType });
+        const fileId = await gatewayFileStorage.upload({ ...image, contentType: checked.contentType, retentionType: "temporary" });
         if (!fileId) throw new Error("Missing File id");
         await gatewayFileStorage.linkRefundProof(fileId, id);
         decision = { status: "refunded", refundProofFileId: fileId };
@@ -80,6 +80,13 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData): Pr
           ? { ...actor, status: "refunded", refundProofFileId: decision.refundProofFileId }
           : { ...actor, status: decision.status };
     result = await changeReturnStatus(id, update);
+    if (result.ok && update.status === "refunded") {
+      try {
+        await gatewayFileStorage.promote(update.refundProofFileId);
+      } catch {
+        return { ok: false, reason: "The Return was marked refunded, but its refund proof could not be made Permanent. Refresh the Return; do not repeat the refund." };
+      }
+    }
   } catch {
     return { ok: false, reason: "Return is temporarily unavailable." };
   }

@@ -75,6 +75,8 @@ describe('Returns server access', () => {
     expect(await markReturnGoodsReceived(1)).toMatchObject({ ok: true });
     portal.revoke('ana', 'Returns');
     await expect(markReturnRefunded(1, proof())).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
+    expect(storage.files.size).toBe(0);
+    expect(storefront.requests).toBe(2);
     portal.grant('ana', 'Returns');
     expect(await markReturnRefunded(1, proof())).toMatchObject({ ok: true });
     expect(await getReturnDetail(1)).toMatchObject({ ok: true, detail: {

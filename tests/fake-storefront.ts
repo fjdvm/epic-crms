@@ -82,8 +82,10 @@ export class FakeStorefront {
       return Response.json({ error: "Enter a reason for declining the Return." }, { status: 400 });
     }
     if (update.status === "refunded") {
+      // #232 contract: linked Active Private proof may still be Temporary until confirmation.
+      // Deploy the storefront refund validator update before enabling the CREOMS flow.
       const file = this.files?.files.get(update.refundProofFileId);
-      if (!file || file.returnId !== id || file.visibility !== "private" || file.retentionType !== "permanent" || file.status !== "active") {
+      if (!file || file.returnId !== id || file.visibility !== "private" || file.status !== "active") {
         return Response.json({ error: "Refund proof must be linked to this Return." }, { status: 400 });
       }
     }
