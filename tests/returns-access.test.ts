@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { getReturns, getReturnStats, getReturnDetail, approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded } from "@/features/returns/actions";
+import { getReturns, getReturnStats, getReturnDetail, approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
 import { canOpenOrders, getShell, requireAnyModule } from "@/lib/portal/staff";
 import { ORDER_DETAIL_MODULES } from "@/lib/portal/config";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
@@ -8,6 +8,14 @@ import { revalidatePath } from "next/cache";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
+import { FakeFileStorage, PNG } from "./fake-file-storage";
+const storage = new FakeFileStorage();
+vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
+function proof() {
+  const form = new FormData();
+  form.set("proof", new File([PNG], "refund.png"));
+  return form;
+}
 const session = vi.hoisted(() => ({ handle: "" }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: session.handle }) }),
@@ -22,7 +30,8 @@ beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   portal = new FakePortal();
-  storefront = new FakeStorefront(db.sql);
+  storefront = new FakeStorefront(db.sql, undefined, storage);
+  storage.reset();
   const portalRequest = portalFetch(portal);
   const storefrontRequest = storefrontFetch(storefront);
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
@@ -65,9 +74,9 @@ describe('Returns server access', () => {
     expect(await approveReturn(1, true)).toMatchObject({ ok: true });
     expect(await markReturnGoodsReceived(1)).toMatchObject({ ok: true });
     portal.revoke('ana', 'Returns');
-    await expect(markReturnRefunded(1)).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
+    await expect(markReturnRefunded(1, proof())).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
     portal.grant('ana', 'Returns');
-    expect(await markReturnRefunded(1)).toMatchObject({ ok: true });
+    expect(await markReturnRefunded(1, proof())).toMatchObject({ ok: true });
     expect(await getReturnDetail(1)).toMatchObject({ ok: true, detail: {
       history: [
         { status: 'approved', actor: { id: 'ana', name: 'Ana Reyes' } },
@@ -82,7 +91,7 @@ describe('Returns server access', () => {
     const denied = async () => {
       for (const read of [getReturns, getReturnStats, () => getReturnDetail(1),
         () => approveReturn(1, false), () => declineReturn(1, "Wrong Order"),
-        () => markReturnGoodsReceived(1), () => markReturnRefunded(1)]) {
+        () => markReturnGoodsReceived(1), () => markReturnReplaced(1), () => markReturnRefunded(1, proof())]) {
         await expect(read()).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
       }
     };
@@ -92,6 +101,7 @@ describe('Returns server access', () => {
     portal.revoke('ana', 'Returns');
     await denied();
     expect(storefront.requests).toBe(0);
+    expect(storage.files.size).toBe(0);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
   it('allows Returns Staff to read the list, stats, detail and Order detail access', async () => {

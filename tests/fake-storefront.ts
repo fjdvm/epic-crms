@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { FakeFileStorage } from "./fake-file-storage";
 import type postgres from "postgres";
 
 export const FAKE_STOREFRONT_URL = "https://storefront.test";
@@ -10,7 +11,7 @@ export class FakeStorefront {
   unavailable = false;
   requests = 0;
 
-  constructor(private sql: postgres.Sql, private now: () => Date = () => new Date()) {}
+  constructor(private sql: postgres.Sql, private now: () => Date = () => new Date(), private files?: FakeFileStorage) {}
 
   private async requestReturn(request: Request, orderId: number): Promise<Response> {
     const customerId = request.headers.get("X-Test-Customer");
@@ -22,7 +23,9 @@ export class FakeStorefront {
       !["damaged", "defective", "wrong item", "other"].includes(body.reason) ||
       typeof body.note !== "string" || !Array.isArray(body.imageFileIds) ||
       body.imageFileIds.length < 1 || body.imageFileIds.length > 3 ||
-      body.imageFileIds.some((id: unknown) => typeof id !== "string" || !id.trim())) {
+      body.imageFileIds.some((id: unknown) => typeof id !== "string" || !id.trim()) ||
+      (body.preferredResolution !== undefined && !["refund", "replacement"].includes(body.preferredResolution)) ||
+      (body.videoFileId !== undefined && (typeof body.videoFileId !== "string" || !body.videoFileId.trim()))) {
       return Response.json({ error: "Invalid Return request." }, { status: 400 });
     }
     return this.sql.begin(async tx => {
@@ -31,7 +34,7 @@ export class FakeStorefront {
       if (!order) return Response.json({ error: "Order was not found." }, { status: 404 });
       const now = this.now();
       const deliveredAt = order.delivered_at as Date | null;
-      if (!["delivered", "received"].includes(order.status) || !deliveredAt || now < deliveredAt ||
+      if (order.status !== "delivered" || !deliveredAt || now < deliveredAt ||
         now.getTime() >= deliveredAt.getTime() + 24 * 60 * 60 * 1000) {
         return Response.json({ error: "The 24-hour Refund window is closed." }, { status: 409 });
       }
@@ -43,8 +46,8 @@ export class FakeStorefront {
       const [total] = await tx`select count(*)::int as count from order_lines where order_id = ${orderId}`;
       const amount = lines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.price_in_centavos), 0) +
         (lines.length === total.count ? Number(order.delivery_fee_in_centavos ?? 0) : 0);
-      const [created] = await tx`insert into order_returns (order_id, reason, note, amount_in_centavos, requested_at)
-        values (${orderId}, ${body.reason}, ${body.note}, ${amount}, ${now}) returning id`;
+      const [created] = await tx`insert into order_returns (order_id, reason, note, amount_in_centavos, requested_at, preferred_resolution, video_file_id)
+        values (${orderId}, ${body.reason}, ${body.note}, ${amount}, ${now}, ${body.preferredResolution ?? "refund"}, ${body.videoFileId ?? null}) returning id`;
       for (const line of lines) {
         await tx`insert into order_return_items (return_id, order_line_id, product_name, size_label, quantity, price_in_centavos)
           values (${created.id}, ${line.id}, ${line.product_name}, ${line.size_label}, ${line.quantity}, ${line.price_in_centavos})`;
@@ -68,18 +71,36 @@ export class FakeStorefront {
     if (update.status === "approved" && typeof update.goodsRequired !== "boolean") {
       return Response.json({ error: "Say whether the goods must come back." }, { status: 400 });
     }
+    if (update.status === "approved" && update.finalResolution !== undefined &&
+      !["refund", "replacement"].includes(update.finalResolution)) {
+      return Response.json({ error: "Invalid Resolution." }, { status: 400 });
+    }
+    if (update.status === "refunded" && (typeof update.refundProofFileId !== "string" || !update.refundProofFileId.trim())) {
+      return Response.json({ error: "Refund proof is required." }, { status: 400 });
+    }
     if (update.status === "declined" && (typeof update.declineReason !== "string" || !update.declineReason.trim())) {
       return Response.json({ error: "Enter a reason for declining the Return." }, { status: 400 });
+    }
+    if (update.status === "refunded") {
+      const file = this.files?.files.get(update.refundProofFileId);
+      if (!file || file.returnId !== id || file.visibility !== "private" || file.retentionType !== "permanent" || file.status !== "active") {
+        return Response.json({ error: "Refund proof must be linked to this Return." }, { status: 400 });
+      }
     }
     return this.sql.begin(async tx => {
       const [current] = await tx`select * from order_returns where id = ${id} for update`;
       if (!current) return Response.json({ error: "Return was not found." }, { status: 404 });
       const allowed = (update.status === "approved" || update.status === "declined") && current.status === "requested" ||
         update.status === "goods received" && current.status === "approved" && current.goods_required === true ||
-        update.status === "refunded" && (current.status === "goods received" || current.status === "approved" && current.goods_required === false);
+        (update.status === "refunded" || update.status === "replaced") &&
+          (current.status === "goods received" || current.status === "approved" && current.goods_required === false) &&
+          current.final_resolution === (update.status === "refunded" ? "refund" : "replacement");
       if (!allowed) return Response.json({ error: "Return already changed." }, { status: 409 });
       const at = this.now();
       const [changed] = await tx`update order_returns set status = ${update.status},
+        final_resolution = ${update.status === "approved" ? update.finalResolution ?? current.preferred_resolution : current.final_resolution},
+        refund_proof_file_id = ${update.status === "refunded" ? update.refundProofFileId : current.refund_proof_file_id},
+        replaced_at = ${update.status === "replaced" ? at : current.replaced_at},
         goods_required = ${update.status === "approved" ? update.goodsRequired : current.goods_required},
         decline_reason = ${update.status === "declined" ? update.declineReason.trim() : current.decline_reason},
         refunded_at = ${update.status === "refunded" ? at : current.refunded_at}
@@ -87,6 +108,7 @@ export class FakeStorefront {
       await tx`insert into order_return_history (return_id, status, actor_type, actor_id, actor_name, occurred_at, note)
         values (${id}, ${update.status}, 'staff', ${update.staffId}, ${update.staffName}, ${at}, ${changed.decline_reason})`;
       return Response.json({ id, status: changed.status, goodsRequired: changed.goods_required,
+        finalResolution: changed.final_resolution, refundProofFileId: changed.refund_proof_file_id,
         declineReason: changed.decline_reason, actedBy: { id: update.staffId, name: update.staffName, at: at.toISOString() } });
     });
   }

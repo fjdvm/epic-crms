@@ -15,6 +15,7 @@ import {
 afterEach(cleanup);
 
 const row = (overrides: Partial<ReturnRow>): ReturnRow => ({
+  preferredResolution: "refund", finalResolution: null,
   id: 15,
   number: "RMA-15",
   orderId: 1042,

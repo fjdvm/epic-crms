@@ -23,6 +23,24 @@ async function list(query: Parameters<typeof loadReturns>[1] = {}) {
   return result.list;
 }
 describe("Returns read model", () => {
+  it("reads preferred/final Resolution, video, refund proof and Replaced history", async () => {
+    const id = await request('replaced', '2026-10-20T01:00:00Z');
+    await db.sql`update order_returns set preferred_resolution = 'refund', final_resolution = 'replacement',
+      video_file_id = 'video', replaced_at = '2026-10-22T00:00:00Z' where id = ${id}`;
+    await db.sql`insert into order_return_history (return_id, status, actor_type, actor_id, actor_name, occurred_at)
+      values (${id}, 'replaced', 'staff', 'ana', 'Ana Reyes', '2026-10-22T00:00:00Z')`;
+    expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: {
+      status: 'replaced', preferredResolution: 'refund', finalResolution: 'replacement', videoFileId: 'video',
+      refundProofFileId: null, replacedAt: new Date('2026-10-22T00:00:00Z'), history: [{ status: 'replaced' }],
+    } });
+    const result = await list({ status: 'replaced' });
+    expect(result).toMatchObject({ total: 1, counts: { replaced: 1 }, rows: [{ id, finalResolution: 'replacement' }] });
+    expect(await loadReturnStats(() => db.sql, new Date('2026-10-23T00:00:00Z'))).toMatchObject({ ok: true,
+      stats: { openReturns: 0, refundedThisMonth: 0 } });
+    await db.sql`update order_returns set status = 'refunded', final_resolution = 'refund', refund_proof_file_id = 'proof' where id = ${id}`;
+    expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { refundProofFileId: 'proof' } });
+  });
+
   it("reads legacy Order context even before the Delivery photo column is deployed", async () => {
     const id = await request('requested', '2026-10-20T01:00:00Z');
     await db.sql`alter table orders drop column delivery_photo_file_id`;
@@ -64,13 +82,13 @@ describe("Returns read model", () => {
     const storefront = new FakeStorefront(db.sql, () => new Date('2026-10-20T23:59:59.999Z'));
     const response = await storefront.handle(new Request(`${FAKE_STOREFRONT_URL}/api/orders/1/returns`, {
       method: 'POST', headers: { 'X-Test-Customer': 'c1' },
-      body: JSON.stringify({ lineIds: [line.id], reason: 'damaged', note: 'Leaking jar', imageFileIds: ['defect-1'] }),
+      body: JSON.stringify({ lineIds: [line.id], reason: 'damaged', note: 'Leaking jar', preferredResolution: 'replacement', videoFileId: 'video-1', imageFileIds: ['defect-1'] }),
     }));
     expect(response.status).toBe(201);
     const { id } = await response.json();
     expect((await list()).rows).toEqual([expect.objectContaining({ id, amount: 11500, status: 'requested' })]);
     const result = await loadReturnDetail(() => db.sql, id);
-    expect(result).toMatchObject({ ok: true, detail: { note: 'Leaking jar',
+    expect(result).toMatchObject({ ok: true, detail: { note: 'Leaking jar', preferredResolution: 'replacement', finalResolution: null, videoFileId: 'video-1', refundProofFileId: null,
       history: [{ status: 'requested', actor: { type: 'customer', id: 'c1', name: 'Maria Santos' } }] } });
   });
   it("exposes the reason, evidence, amount and accountable history of one Return", async () => {

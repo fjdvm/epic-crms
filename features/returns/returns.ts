@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 
-export const RETURN_STATUSES = ["requested", "approved", "goods received", "refunded", "declined", "cancelled"] as const;
+export const RETURN_STATUSES = ["requested", "approved", "goods received", "refunded", "replaced", "declined", "cancelled"] as const;
+export type ReturnResolution = "refund" | "replacement";
 export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 /** The Returns page's tabs: a Return the Customer cancelled while Requested has none. */
 export const RETURN_TABS = ["requested", "approved", "goods received", "refunded", "declined"] as const;
@@ -13,6 +14,8 @@ export interface ReturnRow {
   orderId: number;
   customer: { id: string; name: string };
   status: ReturnStatus;
+  preferredResolution: ReturnResolution;
+  finalResolution: ReturnResolution | null;
   requestedAt: Date;
   /** Centavos, captured by the storefront when the Customer requests the Return. */
   amount: number;
@@ -30,12 +33,14 @@ export type ReturnListResult = { ok: true; list: ReturnList } | { ok: false };
 
 type Row = {
   id: number; order_id: number; customer_id: string; full_name: string;
+  preferred_resolution: ReturnResolution; final_resolution: ReturnResolution | null;
   status: ReturnStatus; requested_at: Date; amount_in_centavos: number;
 };
 function returnRow(row: Row, items: ReturnItem[]): ReturnRow {
   return {
     id: row.id, number: `RMA-${row.id}`, orderId: row.order_id,
     customer: { id: row.customer_id, name: row.full_name }, status: row.status,
+    preferredResolution: row.preferred_resolution, finalResolution: row.final_resolution,
     requestedAt: row.requested_at, amount: row.amount_in_centavos, items,
   };
 }
@@ -77,7 +82,7 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const page = Math.min(totalPages, positiveInteger(query.page, 1));
     const rows = await sql<Row[]>`
-      select r.id, r.order_id, o.customer_id, c.full_name, r.status, r.requested_at, r.amount_in_centavos
+      select r.id, r.order_id, o.customer_id, c.full_name, r.status, r.preferred_resolution, r.final_resolution, r.requested_at, r.amount_in_centavos
       from public.order_returns r join public.orders o on o.id = r.order_id
       join public.customers c on c.id = o.customer_id
       where true ${scope}
@@ -146,6 +151,9 @@ export interface ReturnDetail extends ReturnRow {
   goodsRequired: boolean | null;
   declineReason: string | null;
   refundedAt: Date | null;
+  replacedAt: Date | null;
+  videoFileId: string | null;
+  refundProofFileId: string | null;
   orderStatus: string;
   paymentMethod: string;
   deliveredAt: Date | null;
@@ -163,7 +171,7 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
     const sql = connect();
     const [row] = await sql<(Row & {
       reason: ReturnDetail["reason"]; note: string; goods_required: boolean | null; decline_reason: string | null;
-      refunded_at: Date | null; order_status: string; payment_method: string;
+      refunded_at: Date | null; replaced_at: Date | null; video_file_id: string | null; refund_proof_file_id: string | null; order_status: string; payment_method: string;
       delivered_at: Date | null; delivery_photo_file_id: string | null;
     })[]>`select r.*, o.customer_id, o.status as order_status, o.payment_method, o.delivered_at,
       to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id, c.full_name from public.order_returns r
@@ -178,6 +186,7 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
     }[]>`select * from public.order_return_history where return_id = ${id} order by occurred_at, id`;
     return { ok: true, detail: {
       ...returnRow(row, items.get(id) ?? []), reason: row.reason, note: row.note,
+      videoFileId: row.video_file_id, refundProofFileId: row.refund_proof_file_id, replacedAt: row.replaced_at,
       goodsRequired: row.goods_required, declineReason: row.decline_reason, refundedAt: row.refunded_at,
       orderStatus: row.order_status, paymentMethod: row.payment_method, deliveredAt: row.delivered_at,
       deliveryPhotoFileId: row.delivery_photo_file_id,

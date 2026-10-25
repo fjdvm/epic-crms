@@ -1,3 +1,4 @@
+import type { ReturnResolution } from "@/features/returns/returns";
 import { createHmac } from "node:crypto";
 
 export type OrderStatusUpdate =
@@ -44,9 +45,10 @@ export async function changeOrderStatus(id: number, update: OrderStatusUpdate): 
 }
 
 export type ReturnDecision =
-  | { status: "approved"; goodsRequired: boolean }
+  | { status: "approved"; goodsRequired: boolean; finalResolution?: ReturnResolution }
   | { status: "declined"; declineReason: string }
-  | { status: "goods received" | "refunded" };
+  | { status: "goods received" | "replaced" }
+  | { status: "refunded"; refundProofFileId: string };
 export type ReturnStatusUpdate = ReturnDecision & { staffId: string; staffName: string };
 export type ReturnChangeResult =
   | { ok: true; return: { id: number; status: ReturnStatusUpdate["status"] } }
@@ -67,7 +69,8 @@ export async function changeReturnStatus(id: number, update: ReturnStatusUpdate)
     const body = await response.json();
     if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the change." };
     if (body?.id !== id || body.status !== update.status ||
-      (update.status === "approved" && body.goodsRequired !== update.goodsRequired) ||
+      (update.status === "approved" && (body.goodsRequired !== update.goodsRequired || body.finalResolution !== update.finalResolution)) ||
+      (update.status === "refunded" && body.refundProofFileId !== update.refundProofFileId) ||
       (update.status === "declined" && body.declineReason !== update.declineReason) ||
       body.actedBy?.id !== update.staffId || body.actedBy?.name !== update.staffName ||
       typeof body.actedBy?.at !== "string" || !Number.isFinite(Date.parse(body.actedBy.at))) {

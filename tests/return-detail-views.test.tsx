@@ -25,6 +25,8 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
+  replacedAt: null, videoFileId: null, refundProofFileId: null,
+  preferredResolution: "refund", finalResolution: null,
   id: 15,
   number: "RMA-15",
   orderId: 1042,
