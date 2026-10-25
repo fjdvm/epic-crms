@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import { PAID_OR_FULFILLED } from "@/features/customer-profiles/rules";
 import { FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 
+import { loadAttention, type Attention } from "./attention";
 import { lastSixMonths, type Period, type SalesMonth, type Span } from "./period";
 
 /** One widget's figure for the period and the one before it, or the fact that it could not be read. */
@@ -35,6 +36,8 @@ export interface DashboardFigures {
   returningBuyers?: Widget<BuyersFigure>;
   /** The last six months, whatever the chosen period. */
   monthlySales?: ({ ok: true } & MonthlySales) | { ok: false };
+  /** The Needs attention queues, always read live and never cached. */
+  attention?: Attention;
 }
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
@@ -138,13 +141,14 @@ export async function loadDashboardFigures(
 ): Promise<DashboardFigures> {
   const visible = visibleWidgets(modules);
 
-  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales] = await Promise.all([
+  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales, attention] = await Promise.all([
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
     visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
     visible.averageOrder ? loadWidget(connect, period, averageOrderIn) : undefined,
     visible.averageRating ? loadWidget(connect, period, averageRatingIn) : undefined,
     visible.returningBuyers ? loadWidget(connect, period, returningBuyersIn) : undefined,
     visible.monthlySales ? loadMonthlySales(connect, now) : undefined,
+    loadAttention(connect, { modules, now }),
   ]);
 
   return {
@@ -154,6 +158,7 @@ export async function loadDashboardFigures(
     ...(averageRating && { averageRating }),
     ...(returningBuyers && { returningBuyers }),
     ...(monthlySales && { monthlySales }),
+    attention,
   };
 }
 
