@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { loadAttention } from "@/features/dashboard/attention";
 import { loadDashboardFigures } from "@/features/dashboard/figures";
 import { resolvePeriod } from "@/features/dashboard/period";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -151,13 +152,15 @@ describe("Needs attention", () => {
   });
 
   it("fails one queue without failing the others", async () => {
-    await db.sql`alter table order_feedback rename to order_feedback_gone`;
-    try {
-      const result = await attention(ALL);
-      expect(result?.lowFeedback).toEqual({ ok: false });
-      expect(result?.returns).toMatchObject({ ok: true });
-    } finally {
-      await db.sql`alter table order_feedback_gone rename to order_feedback`;
-    }
+    let calls = 0;
+    const flaky = () => {
+      if (++calls === 2) throw new Error("offline");
+      return db.sql;
+    };
+
+    const result = await loadAttention(flaky, { modules: ["Returns", "Feedback"], now });
+
+    expect(result.returns).toMatchObject({ ok: true });
+    expect(result.lowFeedback).toEqual({ ok: false });
   });
 });
