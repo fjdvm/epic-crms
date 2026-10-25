@@ -52,6 +52,14 @@ describe("the so-far note", () => {
     expect(soFarNote(months(0, 0, 0, 0, 100_000, 150_000), pesos)).toBe("Already ahead of September's ₱1,000");
   });
 
+  it("says when the month is level, not ahead", () => {
+    expect(soFarNote(months(0, 0, 0, 0, 100_000, 100_000), pesos)).toBe("Level with September's ₱1,000");
+  });
+
+  it("never rounds a month that is still behind up to 100%", () => {
+    expect(soFarNote(months(0, 0, 0, 0, 100_000, 99_900), pesos)).toBe("99% of September's ₱1,000 so far");
+  });
+
   it("says there were no Sales last month", () => {
     expect(soFarNote(months(0, 0, 0, 0, 0, 50_000), pesos)).toBe("No Sales last month");
   });

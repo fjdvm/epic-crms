@@ -92,9 +92,7 @@ export function RatingTile({ widget }: { widget: Widget<RatingFigure> }) {
   }
 
   const delta =
-    previous.average === null
-      ? null
-      : Math.round(Math.round(current.average * 10) - Math.round(previous.average * 10)) / 10;
+    previous.average === null ? null : (Math.round(current.average * 10) - Math.round(previous.average * 10)) / 10;
 
   return (
     <section className={CARD}>

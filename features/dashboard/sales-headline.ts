@@ -43,7 +43,8 @@ export function soFarNote(months: Month[], format: (centavos: number) => string)
   if (previous.sales === 0) return "No Sales last month";
 
   const name = monthName(previous.label);
-  if (current.sales >= previous.sales) return `Already ahead of ${name}'s ${format(previous.sales)}`;
+  if (current.sales === previous.sales) return `Level with ${name}'s ${format(previous.sales)}`;
+  if (current.sales > previous.sales) return `Already ahead of ${name}'s ${format(previous.sales)}`;
 
-  return `${Math.round((current.sales / previous.sales) * 100)}% of ${name}'s ${format(previous.sales)} so far`;
+  return `${Math.floor((current.sales / previous.sales) * 100)}% of ${name}'s ${format(previous.sales)} so far`;
 }
