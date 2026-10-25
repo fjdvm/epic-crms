@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { CustomersByStageCard, CustomersByStageSkeleton, NewCustomersCard, NewCustomersSkeleton } from "@/features/dashboard/customer-cards";
 import { DashboardExportButton } from "@/features/dashboard/export-button";
 import { hasAttentionQueue, type Attention } from "@/features/dashboard/attention";
 import { NeedsAttention, NeedsAttentionFailed, NeedsAttentionSkeleton } from "@/features/dashboard/needs-attention";
@@ -60,6 +61,17 @@ async function MonthlySalesChart({ figures }: FigureProps) {
   if (!widget) return null;
 
   return <SalesChart widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
+}
+
+async function CustomersByStage({ figures }: FigureProps) {
+  const widget = await (await figures).customersByStage;
+  return widget ? <CustomersByStageCard widget={widget} /> : null;
+}
+
+async function NewCustomers({ figures, periodLabel }: FigureProps & { periodLabel: string }) {
+  const widgets = await figures;
+  const [widget, leads] = await Promise.all([widgets.newCustomers, widgets.unverifiedLeads]);
+  return widget && leads ? <NewCustomersCard widget={widget} leads={leads} periodLabel={periodLabel} /> : null;
 }
 
 /** Always live, and on its own boundary so the queue never waits on the analytics. */
@@ -139,6 +151,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <Suspense fallback={<SalesChartSkeleton />}>
               <MonthlySalesChart figures={figures} />
             </Suspense>
+          )}
+          {show.customers && (
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
+              <Suspense fallback={<CustomersByStageSkeleton />}>
+                <CustomersByStage figures={figures} />
+              </Suspense>
+              <Suspense key={preset} fallback={<NewCustomersSkeleton periodLabel={PERIOD_LABELS[preset]} />}>
+                <NewCustomers figures={figures} periodLabel={PERIOD_LABELS[preset]} />
+              </Suspense>
+            </div>
           )}
           {attention && (
             <Suspense fallback={<NeedsAttentionSkeleton />}>
