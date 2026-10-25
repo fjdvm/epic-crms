@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
+import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
 
 afterEach(cleanup);
 
@@ -55,5 +55,126 @@ describe("a Dashboard stat tile", () => {
 
     expect(screen.getByRole("status", { name: "Loading Orders" })).toBeTruthy();
     expect(screen.getByText("Orders")).toBeTruthy();
+  });
+});
+
+describe("the Average order tile", () => {
+  it("compares with the previous period like any money tile", () => {
+    render(
+      <StatTile title="Average order" widget={{ ok: true, current: 150_000, previous: 100_000 }} format={pesos} />,
+    );
+
+    expect(screen.getByText("₱1,500")).toBeTruthy();
+    expect(screen.getByText("↑ 50% vs previous period")).toBeTruthy();
+  });
+});
+
+describe("the Returning Buyers tile", () => {
+  const widget = (share: number | null, buyers: number) => ({ share, buyers });
+
+  it("shows the share and how it moved in points", () => {
+    render(
+      <BuyersTile
+        widget={{
+          ok: true,
+          current: widget(0.5, 4),
+          previous: widget(0.25, 4),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("50%")).toBeTruthy();
+    expect(screen.getByText("of 4 Buyers")).toBeTruthy();
+    expect(screen.getByText("↑ 25 pts vs previous period")).toBeTruthy();
+  });
+
+  it("says No Buyers last period when the previous period had none", () => {
+    render(
+      <BuyersTile
+        widget={{
+          ok: true,
+          current: widget(0.5, 4),
+          previous: widget(null, 0),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("No Buyers last period")).toBeTruthy();
+  });
+
+  it("says No Buyers yet when the period has none", () => {
+    render(
+      <BuyersTile
+        widget={{
+          ok: true,
+          current: widget(null, 0),
+          previous: widget(0.5, 2),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("No Buyers yet")).toBeTruthy();
+    expect(screen.queryByText(/pts/)).toBeNull();
+  });
+
+  it("shows Couldn't load when it failed", () => {
+    render(<BuyersTile widget={{ ok: false }} />);
+
+    expect(screen.getByText("Returning Buyers")).toBeTruthy();
+    expect(screen.getByText("Couldn't load")).toBeTruthy();
+  });
+});
+
+describe("the Average rating tile", () => {
+  it("shows the average with the Feedback count", () => {
+    render(
+      <RatingTile
+        widget={{
+          ok: true,
+          current: { average: 4.25, count: 8 },
+          previous: { average: 4, count: 3 },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("4.3 ★")).toBeTruthy();
+    expect(screen.getByText("From 8 Feedback")).toBeTruthy();
+    expect(screen.getByText("↑ 0.3 vs previous period")).toBeTruthy();
+  });
+
+  it("says No Feedback yet instead of a rating when none was given", () => {
+    render(
+      <RatingTile
+        widget={{
+          ok: true,
+          current: { average: null, count: 0 },
+          previous: { average: 4, count: 3 },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("No Feedback yet")).toBeTruthy();
+    expect(screen.queryByText(/★/)).toBeNull();
+    expect(screen.queryByText(/vs previous/)).toBeNull();
+  });
+
+  it("says No Feedback last period when the previous period had none", () => {
+    render(
+      <RatingTile
+        widget={{
+          ok: true,
+          current: { average: 5, count: 1 },
+          previous: { average: null, count: 0 },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("No Feedback last period")).toBeTruthy();
+  });
+
+  it("shows Couldn't load when it failed", () => {
+    render(<RatingTile widget={{ ok: false }} />);
+
+    expect(screen.getByText("Couldn't load")).toBeTruthy();
   });
 });
