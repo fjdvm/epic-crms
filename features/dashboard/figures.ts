@@ -16,7 +16,7 @@ export interface DashboardFigures {
 }
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
-async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
+export async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
   const [row] = await sql<{ sales: string }[]>`
     select coalesce(sum(
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0)
@@ -29,7 +29,7 @@ async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
   return Number(row.sales);
 }
 
-async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
+export async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
   const [row] = await sql<{ orders: number }[]>`
     select count(*)::int as orders from public.orders
     where status <> 'cancelled' and created_at >= ${span.start} and created_at < ${span.end}`;
@@ -38,7 +38,7 @@ async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
 }
 
 /** Runs on its own so one widget failing leaves the others standing. */
-async function widget(
+export async function loadWidget(
   connect: () => postgres.Sql,
   period: Period,
   figure: (sql: postgres.Sql, span: Span) => Promise<number>,
@@ -53,15 +53,23 @@ async function widget(
   }
 }
 
+/** Which tiles Staff may see: a widget shows only if they hold the Module of the data it summarises. */
+export function visibleWidgets(modules: readonly string[]): { sales: boolean; orders: boolean } {
+  return {
+    sales: modules.includes(ORDERS_MODULE) || modules.includes(PAYMENTS_MODULE),
+    orders: modules.includes(ORDERS_MODULE),
+  };
+}
+
 export async function loadDashboardFigures(
   connect: () => postgres.Sql,
   { period, modules }: { period: Period; modules: readonly string[] },
 ): Promise<DashboardFigures> {
-  const holds = (...wanted: string[]) => wanted.some((module) => modules.includes(module));
+  const visible = visibleWidgets(modules);
 
   const [sales, orders] = await Promise.all([
-    holds(ORDERS_MODULE, PAYMENTS_MODULE) ? widget(connect, period, salesIn) : undefined,
-    holds(ORDERS_MODULE) ? widget(connect, period, ordersIn) : undefined,
+    visible.sales ? loadWidget(connect, period, salesIn) : undefined,
+    visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
   ]);
 
   return {
