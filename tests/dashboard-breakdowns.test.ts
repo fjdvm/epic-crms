@@ -7,7 +7,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 let db: TestDatabase;
 const now = new Date("2026-10-25T07:00:00Z");
 const period = resolvePeriod("today", now);
-let clock = Date.now();
+let clock = Math.floor(Date.now() / 300_000) * 300_000;
 let connect: () => TestDatabase["sql"];
 const figures = (modules = ["Orders"]) => loadDashboardFigures(connect, { period, modules, now });
 
@@ -15,7 +15,7 @@ beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
 afterAll(async () => { vi.restoreAllMocks(); await db.close(); });
 beforeEach(async () => {
   vi.restoreAllMocks();
-  clock += 300_001;
+  clock = (Math.floor(clock / 300_000) + 1) * 300_000;
   vi.spyOn(Date, "now").mockImplementation(() => clock);
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values
@@ -154,6 +154,43 @@ describe("Dashboard breakdowns", () => {
       await db.sql`alter table unavailable_lines rename to order_lines`;
     }
     expect((await figures()).bestSellers).toMatchObject({ ok: true });
+  });
+
+
+  it("keeps Sales and breakdowns together when Payments Staff warm the cache first", async () => {
+    const a = await order();
+    await line(a, "A", 10000);
+    await figures(["Payments"]);
+    clock += 60_000;
+    const b = await order({ subtotal: 20000 });
+    await line(b, "B", 20000);
+    const result = await figures();
+    expect(result.sales).toMatchObject({ current: 10000 });
+    expect(result.bestSellers).toEqual({ ok: true,
+      products: [{ productName: "A", sales: 10000, units: 1, share: 1 }],
+      remainder: { sales: 0, share: 0 },
+    });
+    expect(result.paymentAndReceiving).toMatchObject({ payment: [{ orders: 1, sales: 10000 }] });
+  });
+
+
+  it("nested monthly and period reads cannot extend stale Sales beyond five minutes", async () => {
+    const a = await order({ at: "2026-09-10T00:00:00Z" });
+    await line(a, "A", 10000);
+    await figures(); // Warms September through monthly Sales.
+    clock += 299_000;
+    const b = await order({ at: "2026-09-11T00:00:00Z" });
+    await line(b, "B", 10000);
+    const lastMonth = () => loadDashboardFigures(connect, {
+      period: resolvePeriod("last-month", now), modules: ["Orders"], now,
+    });
+    expect((await lastMonth()).sales).toMatchObject({ current: 10000 });
+    clock += 1001;
+    const fresh = await lastMonth();
+    expect(fresh.sales).toMatchObject({ current: 20000 });
+    expect(fresh.bestSellers).toMatchObject({ remainder: { sales: 0 }, products: [
+      { productName: "A", share: 0.5 }, { productName: "B", share: 0.5 },
+    ] });
   });
 
 });

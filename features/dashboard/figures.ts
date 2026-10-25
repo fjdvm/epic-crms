@@ -5,7 +5,7 @@ import { FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/co
 
 import { loadAttention, type Attention } from "./attention";
 import {
-  bestSellersIn, cachedAnalytics, loadBreakdown, paymentAndReceivingIn,
+  cachedAnalytics, loadBreakdown, loadSalesBreakdown, salesSnapshotIn,
   type BestSellers, type Breakdown, type MonthlyBuyers, type PaymentAndReceiving,
 } from "./breakdowns";
 import { lastSixMonths, type Period, type SalesMonth, type Span } from "./period";
@@ -49,18 +49,7 @@ export interface DashboardFigures {
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
 export async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
-  return cachedAnalytics(sql, `sales:${span.start.toISOString()}:${span.end.toISOString()}`, async () => {
-    const [row] = await sql<{ sales: string }[]>`
-      select coalesce(sum(
-        o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0)
-          - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
-              where r.order_id = o.id and r.status = 'refunded'), 0)
-      ), 0)::bigint as sales
-      from public.orders o
-      where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}`;
-  
-    return Number(row.sales);
-  });
+  return (await salesSnapshotIn(sql, span)).sales;
 }
 
 export async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
@@ -114,6 +103,9 @@ async function monthlySalesAt(sql: postgres.Sql, now: Date): Promise<MonthlySale
   return { months };
 }
 
+const figureIds = new WeakMap<object, number>();
+let nextFigureId = 0;
+
 /** Runs on its own so one widget failing leaves the others standing. */
 export async function loadWidget<T = number>(
   connect: () => postgres.Sql,
@@ -122,7 +114,8 @@ export async function loadWidget<T = number>(
 ): Promise<Widget<T>> {
   try {
     const sql = connect();
-    const key = `tile:${figure.name}:${period.start.toISOString()}:${period.end.toISOString()}`;
+    if (!figureIds.has(figure)) figureIds.set(figure, ++nextFigureId);
+    const key = `tile:${figureIds.get(figure)}:${period.start.toISOString()}:${period.end.toISOString()}:${period.previous.start.toISOString()}:${period.previous.end.toISOString()}`;
     const [current, previous] = await cachedAnalytics(sql, key, () =>
       Promise.all([figure(sql, period), figure(sql, period.previous)]));
 
@@ -153,7 +146,6 @@ export async function loadDashboardFigures(
 ): Promise<DashboardFigures> {
   const visible = visibleWidgets(modules);
 
-  const spanKey = `${period.start.toISOString()}:${period.end.toISOString()}`;
   const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales, attention,
     bestSellers, monthlyBuyers, paymentAndReceiving] = await Promise.all([
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
@@ -163,8 +155,7 @@ export async function loadDashboardFigures(
     visible.returningBuyers ? loadWidget(connect, period, returningBuyersIn) : undefined,
     visible.monthlySales ? loadMonthlySales(connect, now) : undefined,
     loadAttention(connect, { modules, now }),
-    visible.breakdowns ? loadBreakdown(connect, `products:${spanKey}`, async (sql) =>
-      bestSellersIn(sql, period, await salesIn(sql, period))) : undefined,
+    visible.breakdowns ? loadSalesBreakdown(connect, period, "bestSellers") : undefined,
     visible.breakdowns ? loadBreakdown(connect, `buyers:${lastSixMonths(now)[5].label}`, async (sql) => {
       const months = await Promise.all(lastSixMonths(now).map(async (month) => {
         const buyers = await returningBuyersIn(sql, month);
@@ -173,7 +164,7 @@ export async function loadDashboardFigures(
       }));
       return { months: months.some((month) => month.new + month.returning > 0) ? months : [] };
     }) : undefined,
-    visible.breakdowns ? loadBreakdown(connect, `methods:${spanKey}`, (sql) => paymentAndReceivingIn(sql, period)) : undefined,
+    visible.breakdowns ? loadSalesBreakdown(connect, period, "paymentAndReceiving") : undefined,
   ]);
 
   return {

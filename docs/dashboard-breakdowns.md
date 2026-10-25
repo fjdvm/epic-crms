@@ -30,8 +30,12 @@ Sales after Refunded Return amounts, including Delivery fees. No Orders produces
 empty arrays.
 
 Dashboard analytics share a five-minute cache per database connection and period
-(month window for Buyers), across Staff. Module checks happen before cache access.
-The cache coalesces concurrent reads, expires entries, caps retained entries at
+(month window for Buyers), across Staff. Module checks happen before exposing results. Sales primes its
+dependent aggregates together, even for Payments-only Staff, so later Orders
+readers use the same amounts.
+All entries expire at the same five-minute clock boundary, so nested readers
+cannot extend stale data for another five minutes. The cache coalesces concurrent
+reads, expires entries, caps retained entries at
 100 per database connection, and never retains failed reads. It is local to the
 server instance, so a cold instance reads afresh. Needs attention remains live.
 Sales uses the same cached amount as the best-seller denominator, so cached
