@@ -9,7 +9,6 @@ import { PERIOD_LABELS, PERIOD_PRESETS, type PeriodPreset } from "./period";
 
 interface PeriodState {
   preset: PeriodPreset;
-  pending: boolean;
   select: (preset: PeriodPreset) => void;
 }
 
@@ -22,10 +21,10 @@ function usePeriod() {
   return state;
 }
 
-/** A click highlights the chosen period at once; widgets show their skeletons until the new figures arrive. */
+/** Highlight the chosen period immediately; let navigation reuse cached figures without forcing skeletons. */
 export function PeriodNavigation({ preset, children }: { preset: PeriodPreset; children: React.ReactNode }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(preset);
 
   const select = (next: PeriodPreset) => {
@@ -35,7 +34,7 @@ export function PeriodNavigation({ preset, children }: { preset: PeriodPreset; c
     });
   };
 
-  return <PeriodContext.Provider value={{ preset: optimistic, pending, select }}>{children}</PeriodContext.Provider>;
+  return <PeriodContext.Provider value={{ preset: optimistic, select }}>{children}</PeriodContext.Provider>;
 }
 
 export function PeriodPicker() {
@@ -64,9 +63,4 @@ export function PeriodPicker() {
       <DashboardExportButton period={preset} />
     </>
   );
-}
-
-/** Shows `fallback` in place of a period-dependent widget while a new period loads. */
-export function WhilePending({ fallback, children }: { fallback: React.ReactNode; children: React.ReactNode }) {
-  return usePeriod().pending ? fallback : children;
 }
