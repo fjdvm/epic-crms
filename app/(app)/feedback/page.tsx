@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { analysisStatus, type AnalysisStatus } from "@/features/feedback/analysis";
 import { AnalyzeButton } from "@/features/feedback/analyze-button";
@@ -12,16 +14,29 @@ import { readTopProduct } from "@/features/feedback/top-product";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
+import Loading from "./loading";
 
 // Analyze runs as a server action on this page, asking a model about each unlabelled Feedback in turn.
 export const maxDuration = 300;
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
+// Nothing here waits on the Portal or the database, so the skeleton reaches the browser at once. Keyed so a
+// new tab, filter or page shows it at once too, instead of holding the old view until the data lands.
 export default async function FeedbackPage({ searchParams }: { searchParams: SearchParams }) {
+  const raw = await searchParams;
+
+  return (
+    <Suspense key={JSON.stringify(raw)} fallback={<Loading />}>
+      <FeedbackData raw={raw} />
+    </Suspense>
+  );
+}
+
+async function FeedbackData({ raw }: { raw: Awaited<SearchParams> }) {
   await requireModule(FEEDBACK_MODULE);
 
-  const filters = parseFilters(await searchParams);
+  const filters = parseFilters(raw);
 
   const result = await loadFeedback(ticketsDatabase, filters);
 

@@ -1,9 +1,12 @@
+import { Suspense } from "react";
+
 import { CustomerListView } from "@/features/customer-profiles/customer-list";
 import { loadCustomers, SORT_KEYS, STAGES, type SortKey } from "@/features/customer-profiles/customers";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { database } from "@/lib/db";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
+import Loading from "./loading";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -11,14 +14,25 @@ function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? "";
 }
 
+// Nothing here waits on the Portal or the database, so the skeleton reaches the browser at once. Keyed so a
+// new search, sort, stage or page shows it at once too, instead of holding the old list until the data lands.
 export default async function CustomerProfilesPage({
   searchParams,
 }: {
   searchParams: SearchParams;
 }) {
+  const raw = await searchParams;
+
+  return (
+    <Suspense key={JSON.stringify(raw)} fallback={<Loading />}>
+      <CustomerProfilesData raw={raw} />
+    </Suspense>
+  );
+}
+
+async function CustomerProfilesData({ raw }: { raw: Awaited<SearchParams> }) {
   await requireModule(CUSTOMER_PROFILES_MODULE);
 
-  const raw = await searchParams;
   const sort = SORT_KEYS.includes(first(raw.sort) as SortKey)
     ? (first(raw.sort) as SortKey)
     : "customerSince";
