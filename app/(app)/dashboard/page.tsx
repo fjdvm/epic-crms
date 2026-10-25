@@ -2,10 +2,10 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { loadWidget, ordersIn, salesIn, visibleWidgets } from "@/features/dashboard/figures";
-import { PERIOD_LABELS, PERIOD_PRESETS, resolvePeriod, type Period } from "@/features/dashboard/period";
+import { loadDashboardFigures, visibleWidgets, type DashboardFigures } from "@/features/dashboard/figures";
+import { PERIOD_LABELS, PERIOD_PRESETS, resolvePeriod } from "@/features/dashboard/period";
 import { StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
-import { DASHBOARD_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
+import { DASHBOARD_DATA_MODULES, DASHBOARD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
@@ -13,15 +13,17 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 const pesos = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 
-/** Each widget loads on its own, so a slow or failing one never holds back the others. */
-async function SalesTile({ period }: { period: Period }) {
-  const widget = await loadWidget(() => ticketsDatabase(), period, salesIn);
+/** Both tiles use the same cached figures snapshot as the PDF. The shell still renders immediately. */
+async function SalesTile({ figures }: { figures: Promise<DashboardFigures> }) {
+  const { sales: widget } = await figures;
+  if (!widget) return null;
 
   return <StatTile title="Sales" widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
 }
 
-async function OrdersTile({ period }: { period: Period }) {
-  const widget = await loadWidget(() => ticketsDatabase(), period, ordersIn);
+async function OrdersTile({ figures }: { figures: Promise<DashboardFigures> }) {
+  const { orders: widget } = await figures;
+  if (!widget) return null;
 
   return <StatTile title="Orders" widget={widget} format={String} />;
 }
@@ -31,9 +33,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const raw = (await searchParams).period;
   const preset = PERIOD_PRESETS.find((p) => p === (Array.isArray(raw) ? raw[0] : raw)) ?? "7-days";
-  const period = resolvePeriod(preset, new Date());
-  const modules = await heldModules([ORDERS_MODULE, PAYMENTS_MODULE]);
+  const now = new Date();
+  const period = resolvePeriod(preset, now);
+  const modules = await heldModules(DASHBOARD_DATA_MODULES);
   const { sales: showSales, orders: showOrders } = visibleWidgets(modules);
+  const figures = loadDashboardFigures(ticketsDatabase, { period, modules, now });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-7 sm:px-8">
@@ -59,12 +63,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {showSales && (
             <Suspense fallback={<StatTileSkeleton title="Sales" />}>
-              <SalesTile period={period} />
+              <SalesTile figures={figures} />
             </Suspense>
           )}
           {showOrders && (
             <Suspense fallback={<StatTileSkeleton title="Orders" />}>
-              <OrdersTile period={period} />
+              <OrdersTile figures={figures} />
             </Suspense>
           )}
         </div>
