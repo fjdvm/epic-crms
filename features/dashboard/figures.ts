@@ -34,7 +34,7 @@ export interface DashboardFigures {
   averageRating?: Widget<RatingFigure>;
   returningBuyers?: Widget<BuyersFigure>;
   /** The last six months, whatever the chosen period. */
-  monthlySales?: { ok: true; months: (SalesMonth & { sales: number })[] } | { ok: false };
+  monthlySales?: ({ ok: true } & MonthlySales) | { ok: false };
 }
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
@@ -69,12 +69,12 @@ export async function averageOrderIn(sql: postgres.Sql, span: Span): Promise<num
 }
 
 /** Feedback is dated by when it was given, not by its Order. */
-export async function ratingIn(sql: postgres.Sql, span: Span): Promise<RatingFigure> {
-  const [row] = await sql<{ average: string | null; count: number }[]>`
+export async function averageRatingIn(sql: postgres.Sql, span: Span): Promise<RatingFigure> {
+  const [row] = await sql<{ average: number | null; count: number }[]>`
     select avg(rating)::float8 as average, count(*)::int as count from public.order_feedback
     where created_at >= ${span.start} and created_at < ${span.end}`;
 
-  return { average: row.average === null ? null : Number(row.average), count: row.count };
+  return { average: row.average, count: row.count };
 }
 
 /** A Buyer is Returning if they had an Order counted in Sales before the period; each is counted once. */
@@ -142,7 +142,7 @@ export async function loadDashboardFigures(
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
     visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
     visible.averageOrder ? loadWidget(connect, period, averageOrderIn) : undefined,
-    visible.averageRating ? loadWidget(connect, period, ratingIn) : undefined,
+    visible.averageRating ? loadWidget(connect, period, averageRatingIn) : undefined,
     visible.returningBuyers ? loadWidget(connect, period, returningBuyersIn) : undefined,
     visible.monthlySales ? loadMonthlySales(connect, now) : undefined,
   ]);
