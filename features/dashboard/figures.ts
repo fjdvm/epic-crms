@@ -4,6 +4,10 @@ import { PAID_OR_FULFILLED } from "@/features/customer-profiles/rules";
 import { FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 
 import { loadAttention, type Attention } from "./attention";
+import {
+  bestSellersIn, cachedAnalytics, forgetAnalytics, loadBreakdown, paymentAndReceivingIn,
+  type BestSellers, type Breakdown, type MonthlyBuyers, type PaymentAndReceiving,
+} from "./breakdowns";
 import { lastSixMonths, type Period, type SalesMonth, type Span } from "./period";
 
 /** One widget's figure for the period and the one before it, or the fact that it could not be read. */
@@ -38,6 +42,9 @@ export interface DashboardFigures {
   monthlySales?: ({ ok: true } & MonthlySales) | { ok: false };
   /** The Needs attention queues, always read live and never cached. */
   attention?: Attention;
+  bestSellers?: Breakdown<BestSellers>;
+  monthlyBuyers?: Breakdown<MonthlyBuyers>;
+  paymentAndReceiving?: Breakdown<PaymentAndReceiving>;
 }
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
@@ -50,7 +57,6 @@ export async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
     ), 0)::bigint as sales
     from public.orders o
     where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}`;
-
   return Number(row.sales);
 }
 
@@ -67,7 +73,6 @@ export async function averageOrderIn(sql: postgres.Sql, span: Span): Promise<num
   const [row] = await sql<{ counted: number }[]>`
     select count(*)::int as counted from public.orders
     where status = any(${PAID_OR_FULFILLED}) and created_at >= ${span.start} and created_at < ${span.end}`;
-
   return row.counted === 0 ? 0 : Math.round((await salesIn(sql, span)) / row.counted);
 }
 
@@ -132,23 +137,34 @@ export function visibleWidgets(modules: readonly string[]) {
     returningBuyers: modules.includes(ORDERS_MODULE),
     averageRating: modules.includes(FEEDBACK_MODULE),
     monthlySales: sales,
+    breakdowns: modules.includes(ORDERS_MODULE),
   };
 }
 
-export async function loadDashboardFigures(
+async function loadDashboardAnalytics(
   connect: () => postgres.Sql,
   { period, modules, now = new Date() }: { period: Period; modules: readonly string[]; now?: Date },
 ): Promise<DashboardFigures> {
   const visible = visibleWidgets(modules);
 
-  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales, attention] = await Promise.all([
+  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales,
+    bestSellers, monthlyBuyers, paymentAndReceiving] = await Promise.all([
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
     visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
     visible.averageOrder ? loadWidget(connect, period, averageOrderIn) : undefined,
     visible.averageRating ? loadWidget(connect, period, averageRatingIn) : undefined,
     visible.returningBuyers ? loadWidget(connect, period, returningBuyersIn) : undefined,
     visible.monthlySales ? loadMonthlySales(connect, now) : undefined,
-    loadAttention(connect, { modules, now }),
+    visible.breakdowns ? loadBreakdown(connect, async (sql) => bestSellersIn(sql, period, await salesIn(sql, period))) : undefined,
+    visible.breakdowns ? loadBreakdown(connect, async (sql) => {
+      const months = await Promise.all(lastSixMonths(now).map(async (month) => {
+        const buyers = await returningBuyersIn(sql, month);
+        const returning = Math.round((buyers.share ?? 0) * buyers.buyers);
+        return { label: month.label, soFar: month.soFar, new: buyers.buyers - returning, returning, share: buyers.share };
+      }));
+      return { months: months.some((month) => month.new + month.returning > 0) ? months : [] };
+    }) : undefined,
+    visible.breakdowns ? loadBreakdown(connect, (sql) => paymentAndReceivingIn(sql, period)) : undefined,
   ]);
 
   return {
@@ -158,7 +174,9 @@ export async function loadDashboardFigures(
     ...(averageRating && { averageRating }),
     ...(returningBuyers && { returningBuyers }),
     ...(monthlySales && { monthlySales }),
-    attention,
+    ...(bestSellers && { bestSellers }),
+    ...(monthlyBuyers && { monthlyBuyers }),
+    ...(paymentAndReceiving && { paymentAndReceiving }),
   };
 }
 
@@ -168,4 +186,25 @@ export async function loadMonthlySales(connect: () => postgres.Sql, now: Date): 
   } catch {
     return { ok: false };
   }
+}
+
+/** Cache the permitted analytics together; a different Module set gets its own coherent snapshot. */
+export async function loadDashboardFigures(
+  connect: () => postgres.Sql,
+  { period, modules, now = new Date() }: { period: Period; modules: readonly string[]; now?: Date },
+): Promise<DashboardFigures> {
+  const options = { period, modules, now };
+  const analytics = async () => {
+    if (!Object.values(visibleWidgets(modules)).some(Boolean)) return {};
+    let sql: postgres.Sql;
+    try { sql = connect(); } catch { return loadDashboardAnalytics(connect, options); }
+    const key = JSON.stringify([
+      visibleWidgets(modules), period, lastSixMonths(now)[5].label,
+    ]);
+    const result = await cachedAnalytics(sql, key, () => loadDashboardAnalytics(connect, options));
+    if (Object.values(result).some((widget) => widget && "ok" in widget && !widget.ok)) forgetAnalytics(sql, key);
+    return result;
+  };
+  const [figures, attention] = await Promise.all([analytics(), loadAttention(connect, { modules, now })]);
+  return { ...figures, attention };
 }

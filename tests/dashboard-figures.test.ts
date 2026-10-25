@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadDashboardFigures } from "@/features/dashboard/figures";
 import { resolvePeriod } from "@/features/dashboard/period";
@@ -10,8 +10,11 @@ const today = resolvePeriod("today", now);
 const connect = () => db.sql;
 
 beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
-afterAll(async () => { await db.close(); });
+afterAll(async () => { vi.restoreAllMocks(); await db.close(); });
+let cacheClock = Date.now();
 beforeEach(async () => {
+  cacheClock += 300_001;
+  vi.spyOn(Date, "now").mockImplementation(() => cacheClock);
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria Santos', 'maria@example.com'),
     ('c2', 'Jose Reyes', 'jose@example.com')`;
@@ -93,7 +96,8 @@ describe("a failing widget", () => {
   it("does not fail the others", async () => {
     let calls = 0;
     const flaky = () => {
-      if (++calls === 1) throw new Error("offline");
+      // The cache resolves the database first; the next connection is the Sales widget.
+      if (++calls === 2) throw new Error("offline");
       return db.sql;
     };
     await order("paid", "2026-10-25T02:00:00Z");
