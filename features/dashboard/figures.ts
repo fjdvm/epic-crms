@@ -1,18 +1,40 @@
 import type postgres from "postgres";
 
 import { PAID_OR_FULFILLED } from "@/features/customer-profiles/rules";
-import { ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
+import { FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 
-import type { Period, Span } from "./period";
+import { lastSixMonths, type Period, type SalesMonth, type Span } from "./period";
 
 /** One widget's figure for the period and the one before it, or the fact that it could not be read. */
-export type Widget = { ok: true; current: number; previous: number } | { ok: false };
+export type Widget<T = number> = { ok: true; current: T; previous: T } | { ok: false };
+
+export interface RatingFigure {
+  /** Mean stars, or none when no Feedback was given. */
+  average: number | null;
+  count: number;
+}
+
+export interface BuyersFigure {
+  /** Share of Buyers who are Returning, 0 to 1, or none when there are no Buyers. */
+  share: number | null;
+  buyers: number;
+}
+
+export interface MonthlySales {
+  months: (SalesMonth & { sales: number })[];
+}
 
 /** A widget is present only when the Staff member holds the Module of its data. */
 export interface DashboardFigures {
   /** Centavos. */
   sales?: Widget;
   orders?: Widget;
+  /** Centavos. */
+  averageOrder?: Widget;
+  averageRating?: Widget<RatingFigure>;
+  returningBuyers?: Widget<BuyersFigure>;
+  /** The last six months, whatever the chosen period. */
+  monthlySales?: { ok: true; months: (SalesMonth & { sales: number })[] } | { ok: false };
 }
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
@@ -37,12 +59,55 @@ export async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
   return row.orders;
 }
 
+/** Sales divided by the Orders counted in Sales (not all Orders), in whole centavos. */
+export async function averageOrderIn(sql: postgres.Sql, span: Span): Promise<number> {
+  const [row] = await sql<{ counted: number }[]>`
+    select count(*)::int as counted from public.orders
+    where status = any(${PAID_OR_FULFILLED}) and created_at >= ${span.start} and created_at < ${span.end}`;
+
+  return row.counted === 0 ? 0 : Math.round((await salesIn(sql, span)) / row.counted);
+}
+
+/** Feedback is dated by when it was given, not by its Order. */
+export async function ratingIn(sql: postgres.Sql, span: Span): Promise<RatingFigure> {
+  const [row] = await sql<{ average: string | null; count: number }[]>`
+    select avg(rating)::float8 as average, count(*)::int as count from public.order_feedback
+    where created_at >= ${span.start} and created_at < ${span.end}`;
+
+  return { average: row.average === null ? null : Number(row.average), count: row.count };
+}
+
+/** A Buyer is Returning if they had an Order counted in Sales before the period; each is counted once. */
+export async function returningBuyersIn(sql: postgres.Sql, span: Span): Promise<BuyersFigure> {
+  const [row] = await sql<{ buyers: number; returning: number }[]>`
+    select count(*)::int as buyers, (count(*) filter (where b.returning))::int as returning
+    from (
+      select o.customer_id, exists (
+        select 1 from public.orders p
+        where p.customer_id = o.customer_id and p.status = any(${PAID_OR_FULFILLED}) and p.created_at < ${span.start}
+      ) as returning
+      from public.orders o
+      where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}
+      group by o.customer_id
+    ) b`;
+
+  return { share: row.buyers === 0 ? null : row.returning / row.buyers, buyers: row.buyers };
+}
+
+async function monthlySalesAt(sql: postgres.Sql, now: Date): Promise<MonthlySales> {
+  const months = await Promise.all(
+    lastSixMonths(now).map(async (month) => ({ ...month, sales: await salesIn(sql, month) })),
+  );
+
+  return { months };
+}
+
 /** Runs on its own so one widget failing leaves the others standing. */
-export async function loadWidget(
+export async function loadWidget<T = number>(
   connect: () => postgres.Sql,
   period: Period,
-  figure: (sql: postgres.Sql, span: Span) => Promise<number>,
-): Promise<Widget> {
+  figure: (sql: postgres.Sql, span: Span) => Promise<T>,
+): Promise<Widget<T>> {
   try {
     const sql = connect();
     const [current, previous] = await Promise.all([figure(sql, period), figure(sql, period.previous)]);
@@ -54,26 +119,48 @@ export async function loadWidget(
 }
 
 /** Which tiles Staff may see: a widget shows only if they hold the Module of the data it summarises. */
-export function visibleWidgets(modules: readonly string[]): { sales: boolean; orders: boolean } {
+export function visibleWidgets(modules: readonly string[]) {
+  const sales = modules.includes(ORDERS_MODULE) || modules.includes(PAYMENTS_MODULE);
+
   return {
-    sales: modules.includes(ORDERS_MODULE) || modules.includes(PAYMENTS_MODULE),
+    sales,
     orders: modules.includes(ORDERS_MODULE),
+    averageOrder: sales,
+    returningBuyers: modules.includes(ORDERS_MODULE),
+    averageRating: modules.includes(FEEDBACK_MODULE),
+    monthlySales: sales,
   };
 }
 
 export async function loadDashboardFigures(
   connect: () => postgres.Sql,
-  { period, modules }: { period: Period; modules: readonly string[] },
+  { period, modules, now = new Date() }: { period: Period; modules: readonly string[]; now?: Date },
 ): Promise<DashboardFigures> {
   const visible = visibleWidgets(modules);
 
-  const [sales, orders] = await Promise.all([
+  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales] = await Promise.all([
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
     visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
+    visible.averageOrder ? loadWidget(connect, period, averageOrderIn) : undefined,
+    visible.averageRating ? loadWidget(connect, period, ratingIn) : undefined,
+    visible.returningBuyers ? loadWidget(connect, period, returningBuyersIn) : undefined,
+    visible.monthlySales ? loadMonthlySales(connect, now) : undefined,
   ]);
 
   return {
     ...(sales && { sales }),
     ...(orders && { orders }),
+    ...(averageOrder && { averageOrder }),
+    ...(averageRating && { averageRating }),
+    ...(returningBuyers && { returningBuyers }),
+    ...(monthlySales && { monthlySales }),
   };
+}
+
+async function loadMonthlySales(connect: () => postgres.Sql, now: Date): Promise<NonNullable<DashboardFigures["monthlySales"]>> {
+  try {
+    return { ok: true, ...(await monthlySalesAt(connect(), now)) };
+  } catch {
+    return { ok: false };
+  }
 }

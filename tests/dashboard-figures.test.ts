@@ -25,7 +25,7 @@ async function order(status: string, at: string, subtotal = 100000, fee: number 
 }
 
 async function figures(modules: string[], period = today) {
-  return loadDashboardFigures(connect, { period, modules });
+  return loadDashboardFigures(connect, { period, modules, now });
 }
 
 const ALL = ["Orders", "Payments"];
@@ -102,5 +102,111 @@ describe("a failing widget", () => {
 
     expect(result.sales).toEqual({ ok: false });
     expect(result.orders).toEqual({ ok: true, current: 1, previous: 0 });
+  });
+});
+
+describe("Dashboard Average order", () => {
+  it("divides Sales by the Orders counted in Sales, not by all Orders", async () => {
+    await order("paid", "2026-10-25T02:00:00Z", 100000);
+    await order("received", "2026-10-25T03:00:00Z", 50000);
+    await order("placed", "2026-10-25T04:00:00Z", 900000);
+    await order("cancelled", "2026-10-25T05:00:00Z", 900000);
+
+    expect((await figures(ALL)).averageOrder).toEqual({ ok: true, current: 75000, previous: 0 });
+  });
+
+  it("is withheld without the Orders or Payments Module", async () => {
+    expect("averageOrder" in (await figures(["Feedback"]))).toBe(false);
+  });
+});
+
+describe("Dashboard Average rating", () => {
+  async function feedback(orderId: number, rating: number, at: string) {
+    await db.sql`insert into order_feedback (order_id, rating, comment, created_at) values (${orderId}, ${rating}, '', ${new Date(at)})`;
+  }
+
+  it("is the mean stars given in the period, dated by when Feedback was given", async () => {
+    const a = await order("received", "2026-10-01T02:00:00Z");
+    const b = await order("received", "2026-10-01T02:00:00Z");
+    const c = await order("received", "2026-10-01T02:00:00Z");
+    await feedback(a, 5, "2026-10-25T02:00:00Z");
+    await feedback(b, 4, "2026-10-25T03:00:00Z");
+    await feedback(c, 2, "2026-10-24T03:00:00Z");
+
+    expect((await figures([...ALL, "Feedback"])).averageRating).toEqual({
+      ok: true,
+      current: { average: 4.5, count: 2 },
+      previous: { average: 2, count: 1 },
+    });
+  });
+
+  it("reports no value when there is no Feedback in the period", async () => {
+    expect((await figures(["Feedback"])).averageRating).toEqual({
+      ok: true,
+      current: { average: null, count: 0 },
+      previous: { average: null, count: 0 },
+    });
+  });
+
+  it("is withheld without the Feedback Module", async () => {
+    expect("averageRating" in (await figures(ALL))).toBe(false);
+  });
+});
+
+describe("Dashboard Returning Buyers", () => {
+  it("is the share of Buyers who had a counted Order before the period", async () => {
+    await order("received", "2026-10-20T02:00:00Z", 1, null, "c1");
+    await order("paid", "2026-10-25T02:00:00Z", 1, null, "c1");
+    await order("paid", "2026-10-25T03:00:00Z", 1, null, "c2");
+
+    expect((await figures(ALL)).returningBuyers).toMatchObject({ current: { share: 0.5, buyers: 2 } });
+  });
+
+  it("counts a Buyer who orders twice once, by their first Order", async () => {
+    await order("paid", "2026-10-25T02:00:00Z", 1, null, "c2");
+    await order("paid", "2026-10-25T03:00:00Z", 1, null, "c2");
+
+    expect((await figures(ALL)).returningBuyers).toMatchObject({ current: { share: 0, buyers: 1 } });
+  });
+
+  it("ignores Orders that do not count in Sales, and Customers with no Orders", async () => {
+    await order("cancelled", "2026-10-20T02:00:00Z", 1, null, "c1");
+    await order("paid", "2026-10-25T02:00:00Z", 1, null, "c1");
+    await db.sql`insert into customers (id, full_name, email) values ('w1', 'Walk In', 'walk@example.com')`;
+
+    expect((await figures(ALL)).returningBuyers).toMatchObject({ current: { share: 0, buyers: 1 } });
+  });
+
+  it("has no share when there are no Buyers", async () => {
+    expect((await figures(ALL)).returningBuyers).toMatchObject({ current: { share: null, buyers: 0 } });
+  });
+
+  it("is withheld without the Orders Module", async () => {
+    expect("returningBuyers" in (await figures(["Payments"]))).toBe(false);
+  });
+});
+
+describe("Dashboard Sales by month", () => {
+  it("returns the last six months whatever the period, current month flagged as so far", async () => {
+    await order("paid", "2026-10-25T02:00:00Z", 100000);
+    await order("paid", "2026-05-31T16:30:00Z", 20000); // 00:30 on 1 June in Manila
+    await order("paid", "2026-04-30T15:00:00Z", 99999); // before the window
+
+    const months = (await figures(ALL)).monthlySales;
+
+    expect(months).toMatchObject({ ok: true });
+    if (!months?.ok) return;
+    expect(months.months.map((m) => [m.label, m.sales, m.soFar])).toEqual([
+      ["2026-05", 0, false],
+      ["2026-06", 20000, false],
+      ["2026-07", 0, false],
+      ["2026-08", 0, false],
+      ["2026-09", 0, false],
+      ["2026-10", 100000, true],
+    ]);
+  });
+
+  it("is withheld without the Orders or Payments Module", async () => {
+    expect("monthlySales" in (await figures(["Feedback"]))).toBe(false);
   });
 });
