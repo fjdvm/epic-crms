@@ -69,8 +69,8 @@ export async function changeReturnStatus(id: number, update: ReturnStatusUpdate)
     const body = await response.json();
     if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the change." };
     if (body?.id !== id || body.status !== update.status ||
-      (update.status === "approved" && (body.goodsRequired !== update.goodsRequired || body.finalResolution !== update.finalResolution))
-      || (update.status === "refunded" && body.refundProofFileId !== update.refundProofFileId) ||
+      (update.status === "approved" && (body.goodsRequired !== update.goodsRequired || body.finalResolution !== update.finalResolution)) ||
+      (update.status === "refunded" && body.refundProofFileId !== update.refundProofFileId) ||
       (update.status === "declined" && body.declineReason !== update.declineReason) ||
       body.actedBy?.id !== update.staffId || body.actedBy?.name !== update.staffName ||
       typeof body.actedBy?.at !== "string" || !Number.isFinite(Date.parse(body.actedBy.at))) {
