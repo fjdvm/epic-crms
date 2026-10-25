@@ -20,12 +20,13 @@ export const TAB_LABELS: Record<ReturnTab, string> = Object.fromEntries(
   RETURN_TABS.map((t) => [t, orderLabel(t)]),
 ) as Record<ReturnTab, string>;
 
-/** The Figma frame's columns, less Resolution; they share the table width in proportion. */
+/** The Figma frame's columns; they share the table width in proportion. */
 export const COLUMNS: { header: string; className: string }[] = [
   { header: "Return", className: "flex-[1_1_100px]" },
   { header: "Customer", className: "min-w-0 flex-[2_1_150px]" },
   { header: "Order", className: "flex-[1_1_90px]" },
   { header: "Items", className: "min-w-0 flex-[3_1_220px]" },
+  { header: "Resolution", className: "flex-[1_1_110px]" },
   { header: "Status", className: "flex-[1_1_130px]" },
   { header: "Requested", className: "flex-[1_1_110px]" },
 ];
@@ -34,7 +35,7 @@ export const HEAD = "flex items-start overflow-clip";
 export const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
 export const RATE_CAPTION = "Of Orders delivered this month";
-export const STAT_LABELS = ["Open returns", "Return rate", "Refunded this month"] as const;
+export const STAT_LABELS = ["Open returns", "Return rate", "Refunded this month", "Replaced this month"] as const;
 
 export function StatCard({ label, caption, children }: { label: string; caption?: string; children: React.ReactNode }) {
   return (
@@ -52,12 +53,13 @@ function Stats({ stats }: { stats: ReturnStats | null }) {
   const rate = stats && `${Number(stats.returnRate.toFixed(1))}%`;
 
   return (
-    <div className="grid shrink-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-3">
+    <div className="grid shrink-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-4">
       <StatCard label="Open returns">{value(stats && String(stats.openReturns))}</StatCard>
       <StatCard label="Return rate" caption={RATE_CAPTION}>
         {value(rate)}
       </StatCard>
       <StatCard label="Refunded this month">{value(stats && formatPesos(stats.refundedThisMonth))}</StatCard>
+      <StatCard label="Replaced this month">{value(stats && String(stats.replacedThisMonth))}</StatCard>
     </div>
   );
 }
@@ -154,10 +156,11 @@ export function ReturnListView({
                       {row.items.map((i) => `${i.product} ×${i.quantity}`).join(", ")}
                     </span>
                   </div>
-                  <div className={cn(CELL, COLUMNS[4].className)}>
+                  <div className={cn(CELL, COLUMNS[4].className)}>{orderLabel(row.finalResolution ?? row.preferredResolution)}</div>
+                  <div className={cn(CELL, COLUMNS[5].className)}>
                     <Pill className={STATUS_PILLS[row.status]}>{orderLabel(row.status)}</Pill>
                   </div>
-                  <div className={cn(CELL, COLUMNS[5].className)}>{formatDate(row.requestedAt)}</div>
+                  <div className={cn(CELL, COLUMNS[6].className)}>{formatDate(row.requestedAt)}</div>
                 </div>
               ))}
             </div>

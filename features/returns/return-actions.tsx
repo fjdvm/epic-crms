@@ -5,21 +5,32 @@ import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
+import { DeliveryPhotoPicker } from "@/features/orders/delivery-photo-picker";
 
-import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded } from "./actions";
-import type { ReturnStatus } from "./returns";
+import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "./actions";
+import type { ReturnResolution, ReturnStatus } from "./returns";
+
+type Step = "approve" | "decline" | "receive" | "refund" | "replace";
 
 /** The steps a Return in this state offers; mirrors the checks `decide` makes on the server. */
-export function availableSteps(status: ReturnStatus, goodsRequired: boolean | null): ("approve" | "decline" | "receive" | "refund")[] {
+export function availableSteps(
+  status: ReturnStatus,
+  goodsRequired: boolean | null,
+  finalResolution: ReturnResolution | null,
+): Step[] {
   if (status === "requested") return ["approve", "decline"];
-  if (status === "approved") return goodsRequired === true ? ["receive"] : goodsRequired === false ? ["refund"] : [];
-  if (status === "goods received") return ["refund"];
+  const finish: Step[] = finalResolution === "refund" ? ["refund"] : finalResolution === "replacement" ? ["replace"] : [];
+  if (status === "approved") return goodsRequired === true ? ["receive"] : goodsRequired === false ? finish : [];
+  if (status === "goods received") return finish;
 
   return [];
 }
 
-function Approve({ id, number }: { id: number; number: string }) {
+const RESOLUTIONS: [ReturnResolution, string][] = [["refund", "Refund"], ["replacement", "Replacement"]];
+
+function Approve({ id, number, preferred }: { id: number; number: string; preferred: ReturnResolution }) {
   const [goodsRequired, setGoodsRequired] = useState<boolean | null>(null);
+  const [resolution, setResolution] = useState<ReturnResolution>(preferred);
 
   return (
     <OrderActionDialog
@@ -29,9 +40,24 @@ function Approve({ id, number }: { id: number; number: string }) {
       confirm="Approve Return"
       busy="Approving…"
       disabled={goodsRequired === null}
-      run={() => approveReturn(id, goodsRequired as boolean)}
+      run={() => approveReturn(id, goodsRequired as boolean, resolution)}
       successMessage={`${number} approved.`}
     >
+      <fieldset className="space-y-2">
+        <legend className="text-[13px] font-medium text-foreground">Resolution</legend>
+        {RESOLUTIONS.map(([value, label]) => (
+          <label key={value} className="flex items-center gap-2 text-[#1f1a2e]">
+            <input
+              type="radio"
+              name={`resolution-${id}`}
+              checked={resolution === value}
+              onChange={() => setResolution(value)}
+            />
+            {label}
+            {value === preferred && <span className="text-xs text-[#6e6680]">(Customer&apos;s preference)</span>}
+          </label>
+        ))}
+      </fieldset>
       <fieldset className="space-y-2">
         <legend className="text-[13px] font-medium text-foreground">
           Must the goods come back? <span className="text-[#dc2626]">*</span>
@@ -85,24 +111,52 @@ function Decline({ id, number }: { id: number; number: string }) {
   );
 }
 
+function Refund({ id, number }: { id: number; number: string }) {
+  const [proof, setProof] = useState<File | null>(null);
+
+  return (
+    <OrderActionDialog
+      trigger="Mark refunded"
+      title={`Mark ${number} refunded?`}
+      description="Only confirm once the money has been paid back to the Customer outside CREOMS. The Customer can see the proof."
+      confirm="Mark refunded"
+      busy="Saving…"
+      disabled={proof === null}
+      run={() => {
+        const form = new FormData();
+        form.set("proof", proof as File);
+
+        return markReturnRefunded(id, form);
+      }}
+      successMessage={`${number} marked refunded.`}
+    >
+      <DeliveryPhotoPicker photo={proof} onChange={setProof} label="Refund proof" />
+    </OrderActionDialog>
+  );
+}
+
 /** The Return's next steps, each behind a confirm dialog; refusals and uncertain answers surface as an error toast. */
 export function ReturnActions({
   id,
   number,
   status,
   goodsRequired,
+  preferredResolution,
+  finalResolution,
 }: {
   id: number;
   number: string;
   status: ReturnStatus;
   goodsRequired: boolean | null;
+  preferredResolution: ReturnResolution;
+  finalResolution: ReturnResolution | null;
 }) {
-  const steps = availableSteps(status, goodsRequired);
+  const steps = availableSteps(status, goodsRequired, finalResolution);
 
   return (
     <div className="flex items-center gap-2">
       {steps.includes("decline") && <Decline id={id} number={number} />}
-      {steps.includes("approve") && <Approve id={id} number={number} />}
+      {steps.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} />}
       {steps.includes("receive") && (
         <OrderActionDialog
           trigger="Mark goods received"
@@ -114,15 +168,16 @@ export function ReturnActions({
           successMessage={`${number} marked goods received.`}
         />
       )}
-      {steps.includes("refund") && (
+      {steps.includes("refund") && <Refund id={id} number={number} />}
+      {steps.includes("replace") && (
         <OrderActionDialog
-          trigger="Mark refunded"
-          title={`Mark ${number} refunded?`}
-          description="Only confirm once the money has been paid back to the Customer outside CREOMS."
-          confirm="Mark refunded"
+          trigger="Mark replaced"
+          title={`Mark ${number} replaced?`}
+          description="Only confirm once the replacement has been sent to the Customer."
+          confirm="Mark replaced"
           busy="Saving…"
-          run={() => markReturnRefunded(id)}
-          successMessage={`${number} marked refunded.`}
+          run={() => markReturnReplaced(id)}
+          successMessage={`${number} marked replaced.`}
         />
       )}
     </div>

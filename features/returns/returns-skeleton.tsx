@@ -16,7 +16,7 @@ import {
 export function ReturnsSkeleton({ params }: { params: ReturnListParams }) {
   return (
     <div role="status" aria-label="Loading Returns" className="flex min-h-0 flex-1 flex-col gap-5">
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-3">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-4">
         {STAT_LABELS.map((label) => (
           <StatCard key={label} label={label} caption={label === "Return rate" ? RATE_CAPTION : undefined}>
             <Skeleton className="h-8 w-16" />

@@ -14,8 +14,19 @@ function refusalFor(file: File): string | null {
   return null;
 }
 
-/** Picks the one Delivery photo, previews it, and reports a refusal in place. `photo` is only ever an accepted file. */
-export function DeliveryPhotoPicker({ photo, onChange }: { photo: File | null; onChange: (photo: File | null) => void }) {
+/**
+ * Picks the one photo (the Delivery photo, unless `label` says otherwise), previews it, and reports a refusal
+ * in place. `photo` is only ever an accepted file.
+ */
+export function DeliveryPhotoPicker({
+  photo,
+  onChange,
+  label = "Delivery photo",
+}: {
+  photo: File | null;
+  onChange: (photo: File | null) => void;
+  label?: string;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const previewUrl = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
@@ -34,14 +45,14 @@ export function DeliveryPhotoPicker({ photo, onChange }: { photo: File | null; o
   return (
     <div className="space-y-1.5">
       <span className="text-[13px] font-medium text-foreground">
-        Delivery photo <span className="text-[#dc2626]">*</span>
+        {label} <span className="text-[#dc2626]">*</span>
       </span>
       <input
         ref={input}
         type="file"
         accept="image/jpeg,image/png"
         className="hidden"
-        aria-label="Delivery photo"
+        aria-label={label}
         onChange={(e) => {
           pick(e.target.files?.[0]);
           e.target.value = "";

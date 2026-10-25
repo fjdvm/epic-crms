@@ -32,7 +32,7 @@ const counts = (overrides: Partial<Record<ReturnStatus, number>>) =>
 
 const list = (rows: ReturnRow[], overrides: Partial<ReturnList> = {}): ReturnList => ({
   rows,
-  counts: counts({ requested: 3, approved: 2, "goods received": 1, refunded: 4, declined: 1, cancelled: 5 }),
+  counts: counts({ requested: 3, approved: 2, "goods received": 1, refunded: 4, replaced: 7, declined: 1, cancelled: 5 }),
   page: 1,
   pageSize: 25,
   total: rows.length,
@@ -46,6 +46,7 @@ const STATS: ReturnStats = {
   deliveredThisMonth: 500,
   returnRate: 0.6,
   refundedThisMonth: 295_000,
+  replacedThisMonth: 2,
 };
 
 function view(
@@ -62,7 +63,7 @@ function view(
 }
 
 describe("the Returns page", () => {
-  it("shows the three stat cards from the read model and no Replacements stat", () => {
+  it("shows the stat cards from the read model, including Replacements", () => {
     view([row({})]);
 
     const open = screen.getByText("Open returns").parentElement!;
@@ -72,13 +73,14 @@ describe("the Returns page", () => {
     expect(within(rate).getByText("Of Orders delivered this month")).toBeTruthy();
     const refunded = screen.getByText("Refunded this month").parentElement!;
     expect(within(refunded).getByText("₱2,950.00")).toBeTruthy();
-    expect(screen.queryByText(/replacement/i)).toBeNull();
+    const replaced = screen.getByText("Replaced this month").parentElement!;
+    expect(within(replaced).getByText("2")).toBeTruthy();
   });
 
   it("says the stats are unavailable rather than showing zeros", () => {
     view([row({})], { stats: null });
 
-    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
   });
 
   it("has a tab per status with its count, and no All or Cancelled tab", () => {
@@ -90,6 +92,7 @@ describe("the Returns page", () => {
       "Approved 2",
       "Goods received 1",
       "Refunded 4",
+      "Replaced 7",
       "Declined 1",
     ]);
     expect(tabs[0].getAttribute("aria-current")).toBe("page");
@@ -97,12 +100,11 @@ describe("the Returns page", () => {
     expect(tabs[0].getAttribute("href")).toBe("/returns");
   });
 
-  it("has the table columns, without a Resolution column or a New return button", () => {
+  it("has the table columns, including Resolution, and no New return button", () => {
     view([row({})]);
 
     const headers = Array.from(document.querySelectorAll("[data-return-head] > div")).map((c) => c.textContent);
-    expect(headers).toEqual(["Return", "Customer", "Order", "Items", "Status", "Requested"]);
-    expect(screen.queryByText("Resolution")).toBeNull();
+    expect(headers).toEqual(["Return", "Customer", "Order", "Items", "Resolution", "Status", "Requested"]);
     expect(screen.queryByText(/new return/i)).toBeNull();
   });
 
@@ -124,6 +126,18 @@ describe("the Returns page", () => {
     expect(within(r).getByText("Smooth tub ×2, Powder ×1")).toBeTruthy();
     expect(within(r).getByText("Requested")).toBeTruthy();
     expect(within(r).getByText("20 Oct 2026")).toBeTruthy();
+  });
+
+  it("shows the Customer's preferred Resolution until Staff choose a final one", () => {
+    view([
+      row({ id: 1, number: "RMA-1", preferredResolution: "replacement" }),
+      row({ id: 2, number: "RMA-2", preferredResolution: "refund", finalResolution: "replacement", status: "approved" }),
+    ]);
+
+    const [pending, decided] = Array.from(document.querySelectorAll<HTMLElement>("[data-return-row]"));
+    expect(within(pending).getByText("Replacement")).toBeTruthy();
+    expect(within(decided).getByText("Replacement")).toBeTruthy();
+    expect(within(decided).queryByText("Refund")).toBeNull();
   });
 
   it("keeps the read model's order of rows", () => {
