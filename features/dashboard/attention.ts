@@ -3,9 +3,7 @@ import type postgres from "postgres";
 import {
   FEEDBACK_MODULE, FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, TICKETS_MODULE,
 } from "@/lib/portal/config";
-
-/** Tickets Staff have not answered within this long are Overdue. */
-const OVERDUE_AFTER_HOURS = 24;
+import { OVERDUE_AFTER_HOURS } from "@/features/tickets/tickets";
 
 /** One Needs attention queue: how much work waits, and since when the oldest of it has. */
 export type Queue<Extra = object> = ({ ok: true; count: number; oldest: Date | null } & Extra) | { ok: false };

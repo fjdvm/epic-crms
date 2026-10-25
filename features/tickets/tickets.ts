@@ -3,7 +3,7 @@ import type postgres from "postgres";
 export const TICKETS_PAGE_SIZE = 25;
 
 /** A Ticket the Customer has gone this long without a Staff reply to is Overdue. */
-const OVERDUE_AFTER_HOURS = 24;
+export const OVERDUE_AFTER_HOURS = 24;
 
 export type TicketTab = "open" | "waiting" | "resolved";
 
