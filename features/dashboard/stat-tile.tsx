@@ -11,8 +11,8 @@ function Title({ children }: { children: string }) {
 }
 
 /** How a figure moved against the previous period of equal length. */
-function comparison(current: number, previous: number): { text: string; tone: string } {
-  if (previous === 0) return { text: "No Orders last period", tone: "text-[#71717a]" };
+function comparison(current: number, previous: number, absent: string): { text: string; tone: string } {
+  if (previous === 0) return { text: absent, tone: "text-[#71717a]" };
 
   const change = Math.round(((current - previous) / previous) * 100);
 
@@ -104,16 +104,19 @@ export function RatingTile({ widget }: { widget: Widget<RatingFigure> }) {
   );
 }
 
+export function PeriodComparison({ current, previous, absent }: { current: number; previous: number; absent: string }) {
+  const { text, tone } = comparison(current, previous, absent);
+  return <p className={cn("text-xs font-medium", tone)}>{text}</p>;
+}
+
 export function StatTile({ title, widget, format }: { title: string; widget: Widget; format: (n: number) => string }) {
   if (!widget.ok) return <FailedTile title={title} />;
-
-  const { text, tone } = comparison(widget.current, widget.previous);
 
   return (
     <section className={CARD}>
       <Title>{title}</Title>
       <p className="text-[26px] font-bold text-[#18181b]">{format(widget.current)}</p>
-      <p className={cn("text-xs font-medium", tone)}>{text}</p>
+      <PeriodComparison current={widget.current} previous={widget.previous} absent="No Orders last period" />
     </section>
   );
 }
