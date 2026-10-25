@@ -4,6 +4,10 @@ import { PAID_OR_FULFILLED } from "@/features/customer-profiles/rules";
 import { FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 
 import { loadAttention, type Attention } from "./attention";
+import {
+  bestSellersIn, cachedAnalytics, loadBreakdown, paymentAndReceivingIn,
+  type BestSellers, type Breakdown, type MonthlyBuyers, type PaymentAndReceiving,
+} from "./breakdowns";
 import { lastSixMonths, type Period, type SalesMonth, type Span } from "./period";
 
 /** One widget's figure for the period and the one before it, or the fact that it could not be read. */
@@ -38,20 +42,25 @@ export interface DashboardFigures {
   monthlySales?: ({ ok: true } & MonthlySales) | { ok: false };
   /** The Needs attention queues, always read live and never cached. */
   attention?: Attention;
+  bestSellers?: Breakdown<BestSellers>;
+  monthlyBuyers?: Breakdown<MonthlyBuyers>;
+  paymentAndReceiving?: Breakdown<PaymentAndReceiving>;
 }
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
 export async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
-  const [row] = await sql<{ sales: string }[]>`
-    select coalesce(sum(
-      o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0)
-        - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
-            where r.order_id = o.id and r.status = 'refunded'), 0)
-    ), 0)::bigint as sales
-    from public.orders o
-    where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}`;
-
-  return Number(row.sales);
+  return cachedAnalytics(sql, `sales:${span.start.toISOString()}:${span.end.toISOString()}`, async () => {
+    const [row] = await sql<{ sales: string }[]>`
+      select coalesce(sum(
+        o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0)
+          - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
+              where r.order_id = o.id and r.status = 'refunded'), 0)
+      ), 0)::bigint as sales
+      from public.orders o
+      where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}`;
+  
+    return Number(row.sales);
+  });
 }
 
 export async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
@@ -113,7 +122,9 @@ export async function loadWidget<T = number>(
 ): Promise<Widget<T>> {
   try {
     const sql = connect();
-    const [current, previous] = await Promise.all([figure(sql, period), figure(sql, period.previous)]);
+    const key = `tile:${figure.name}:${period.start.toISOString()}:${period.end.toISOString()}`;
+    const [current, previous] = await cachedAnalytics(sql, key, () =>
+      Promise.all([figure(sql, period), figure(sql, period.previous)]));
 
     return { ok: true, current, previous };
   } catch {
@@ -132,6 +143,7 @@ export function visibleWidgets(modules: readonly string[]) {
     returningBuyers: modules.includes(ORDERS_MODULE),
     averageRating: modules.includes(FEEDBACK_MODULE),
     monthlySales: sales,
+    breakdowns: modules.includes(ORDERS_MODULE),
   };
 }
 
@@ -141,7 +153,9 @@ export async function loadDashboardFigures(
 ): Promise<DashboardFigures> {
   const visible = visibleWidgets(modules);
 
-  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales, attention] = await Promise.all([
+  const spanKey = `${period.start.toISOString()}:${period.end.toISOString()}`;
+  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales, attention,
+    bestSellers, monthlyBuyers, paymentAndReceiving] = await Promise.all([
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
     visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
     visible.averageOrder ? loadWidget(connect, period, averageOrderIn) : undefined,
@@ -149,6 +163,17 @@ export async function loadDashboardFigures(
     visible.returningBuyers ? loadWidget(connect, period, returningBuyersIn) : undefined,
     visible.monthlySales ? loadMonthlySales(connect, now) : undefined,
     loadAttention(connect, { modules, now }),
+    visible.breakdowns ? loadBreakdown(connect, `products:${spanKey}`, async (sql) =>
+      bestSellersIn(sql, period, await salesIn(sql, period))) : undefined,
+    visible.breakdowns ? loadBreakdown(connect, `buyers:${lastSixMonths(now)[5].label}`, async (sql) => {
+      const months = await Promise.all(lastSixMonths(now).map(async (month) => {
+        const buyers = await returningBuyersIn(sql, month);
+        const returning = Math.round((buyers.share ?? 0) * buyers.buyers);
+        return { label: month.label, soFar: month.soFar, new: buyers.buyers - returning, returning, share: buyers.share };
+      }));
+      return { months: months.some((month) => month.new + month.returning > 0) ? months : [] };
+    }) : undefined,
+    visible.breakdowns ? loadBreakdown(connect, `methods:${spanKey}`, (sql) => paymentAndReceivingIn(sql, period)) : undefined,
   ]);
 
   return {
@@ -159,12 +184,17 @@ export async function loadDashboardFigures(
     ...(returningBuyers && { returningBuyers }),
     ...(monthlySales && { monthlySales }),
     attention,
+    ...(bestSellers && { bestSellers }),
+    ...(monthlyBuyers && { monthlyBuyers }),
+    ...(paymentAndReceiving && { paymentAndReceiving }),
   };
 }
 
 async function loadMonthlySales(connect: () => postgres.Sql, now: Date): Promise<NonNullable<DashboardFigures["monthlySales"]>> {
   try {
-    return { ok: true, ...(await monthlySalesAt(connect(), now)) };
+    const sql = connect();
+    const months = await cachedAnalytics(sql, `sales-months:${lastSixMonths(now)[5].label}`, () => monthlySalesAt(sql, now));
+    return { ok: true, ...months };
   } catch {
     return { ok: false };
   }
