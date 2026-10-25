@@ -17,6 +17,11 @@ export const FULFILMENT_MODULE = "Fulfilment";
 export const RETURNS_MODULE = "Returns";
 /** The Order detail page opens for Staff with any of these. */
 export const ORDER_DETAIL_MODULES = [ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, RETURNS_MODULE];
+/** Data Modules checked by both the Dashboard page and its PDF export. */
+export const DASHBOARD_DATA_MODULES = [
+  ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, TICKETS_MODULE,
+  RETURNS_MODULE, FEEDBACK_MODULE, CUSTOMER_PROFILES_MODULE,
+];
 
 function required(name: string): string {
   const value = process.env[name];

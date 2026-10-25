@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadDashboardFigures } from "@/features/dashboard/figures";
+import * as attention from "@/features/dashboard/attention";
 import { resolvePeriod } from "@/features/dashboard/period";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -32,6 +33,24 @@ async function figures(modules: string[], period = today) {
 }
 
 const ALL = ["Orders", "Payments"];
+
+it("streams a tile before live attention finishes and reuses its analytics for the PDF", async () => {
+  await order("paid", "2026-10-25T02:00:00Z", 123456);
+  const queue = Promise.withResolvers<attention.Attention>();
+  const live = vi.spyOn(attention, "loadAttention").mockReturnValue(queue.promise);
+  try {
+    const widgets = await loadDashboardFigures(connect, { period: today, modules: ALL, now, stream: true });
+    const sales = await widgets.sales;
+    expect(sales).toEqual({ ok: true, current: 123456, previous: 0 });
+    // The screen's snapshot must also be used by a PDF requested during the cache window.
+    await order("paid", "2026-10-25T03:00:00Z", 50000);
+    queue.resolve({});
+    expect((await figures(ALL)).sales).toEqual(sales);
+  } finally {
+    queue.resolve({});
+    live.mockRestore();
+  }
+});
 
 describe("Dashboard Sales", () => {
   it("sums paid and fulfilled Order totals, delivery fee included", async () => {
