@@ -11,6 +11,7 @@ export const STATUS_PILLS: Record<ReturnStatus, string> = {
   approved: PILL.purple,
   "goods received": PILL.blue,
   refunded: PILL.grey,
+  replaced: PILL.grey,
   declined: PILL.red,
   cancelled: PILL.grey,
 };

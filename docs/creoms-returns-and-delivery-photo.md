@@ -1,298 +1,181 @@
-# Storefront contract: Returns and the Delivery photo (#179)
+# Storefront contract: Returns and the Delivery photo
 
-This extends [Staff Order actions](creoms-order-actions.md) for [#168](https://github.com/fjdvm/epic-crms/issues/168).
-The storefront owns Orders, Returns, the Refund window, and Customer emails and
-Notifications. CREOMS reads through `CREOMS_DATABASE_URL`, using its existing read-only
-role, and asks the storefront to make each Staff change. It never writes those tables
-or moves money. Terms follow [CONTEXT.md](../CONTEXT.md).
+This updates the [#179 contract](https://github.com/fjdvm/epic-crms/blob/main/docs/creoms-returns-and-delivery-photo.md) for [the Customer Returns spec #194](https://github.com/fjdvm/epic-crms/issues/194), superseding its refund-only rules. Terms follow [CONTEXT.md](../CONTEXT.md). Ownership remains with the storefront: the storefront owns Returns, the Refund window, evidence and refund proof File references, all Customer emails and Notifications. CREOMS reads through its SELECT-only database role and asks the storefront to make Staff changes. Staff settle refunds externally and send replacements; neither application initiates a payment here.
 
-The Staff request and response shapes below are implemented in `lib/storefront.ts`,
-`features/returns/actions.ts` and `features/orders/actions.ts`. Customer routes below
-are proposed storefront routes, not deployed CREOMS endpoints. The fake storefront
-implements Customer creation and Staff decisions; it does not prove the production
-Customer authentication, cancellation, Received, emails or Notifications work.
+Ticket #117 provides the schema and reusable `createReturnStore(...).transition` persistence boundary. Ticket #119 implements the authenticated Customer request/cancellation endpoints and their direct-upload evidence flow. Ticket #121 implements the Staff decision endpoint, Return-scoped credentials and refund-proof verification. Customer reads, emails, Notifications and UI below remain the contract for dependent tickets; this document does not mean those flows are deployed. CREOMS ticket #195 extends the read model and Staff actions. The Resolution controls, Replaced tab/stat and video/proof display remain frontend ticket #196.
 
-## Credentials and ownership
+## Credentials and attribution
 
-Set `CREOMS_STOREFRONT_URL` to the storefront origin and securely configure
-`CREOMS_SERVICE_SECRET` to the same signing key on both servers, at least 32 characters
-long. CREOMS mints a fresh HS256 JWT for each request: base64url JSON header
-`{ "alg": "HS256", "typ": "JWT" }`, base64url JSON claims, then the base64url
-HMAC-SHA256 signature of `<header>.<claims>` using that secret.
+CREOMS uses `CREOMS_STOREFRONT_URL` and the shared server-only `CREOMS_SERVICE_SECRET` (at least 32 characters). Sign an HS256 JWT: base64url JSON `{ "alg": "HS256", "typ": "JWT" }`, base64url JSON claims, then base64url HMAC-SHA256 of `<header>.<claims>` using the secret. Send `Authorization: Bearer <JWT>` and `Content-Type: application/json`.
 
-| Claim | Order endpoint | Return endpoint |
+| Claim | Order status endpoint | Return status endpoint |
 | --- | --- | --- |
 | `iss` | `creoms` | `creoms` |
 | `aud` | `brenraphaels-orders` | `brenraphaels-returns` |
 | `scope` | `orders:status` | `returns:status` |
-| `iat` | Request time in Unix seconds | Request time in Unix seconds |
-| `exp` | `iat + 300` (five minutes) | `iat + 300` (five minutes) |
+| `iat` | Current Unix seconds | Current Unix seconds |
+| `exp` | `iat + 300` | `iat + 300` |
 
-Send only `Authorization: Bearer <JWT>` and `Content-Type: application/json`.
-The storefront must verify the signature, HS256 algorithm, issuer, endpoint-specific
-audience and scope, and timestamps before writing. Reject expired or future-issued
-tokens; the existing Orders verifier also rejects lifetimes over 900 seconds.
-Extend that verifier for Returns without allowing an Orders credential to authorize
-Returns or vice versa. The legacy shared-secret header is not accepted. The existing
-storefront credential document is `brenraphaels-ecommerce/docs/creoms-service-credential.md`.
+The storefront verifies signature, algorithm, issuer, audience, scope and timestamps. Reject future-issued/expired tokens and lifetimes over 900 seconds. Orders credentials must not authorize Returns or vice versa. Reject the legacy shared-secret header; coordinate rotation of the shared service secret in both applications. The shared verifier accepts the Returns audience and scope only on the Return endpoint; the Order endpoint keeps its existing scope.
 
-CREOMS checks the Returns Module on every decision and the Fulfilment Module on every
-delivery, including after revocation. Any Staff member with Returns can take the next
-eligible Return step. Staff identity comes from the Portal, never browser input.
-The storefront must enforce transitions independently and atomically; a CREOMS read
-before a request does not protect against concurrent changes.
+CREOMS checks the Returns Module for every decision and the Fulfilment Module for delivery. Every Staff decision supplies `staffId` (Portal username) and `staffName` (Portal display-name snapshot), sourced from its authenticated Staff session. The storefront validates these with the shared Staff attribution fields and supplies the time. Customer identity instead comes from the storefront session. No caller chooses an action time or impersonates another Customer.
 
-Customer endpoints instead use the storefront's own Customer session, ownership checks
-and request protections. Neither the service JWT nor gateway key goes to a browser.
-`X-Test-Customer` in `tests/fake-storefront.ts` is only fake authentication.
+## Stored read contract
 
-## Customer Return request and Refund window
+Apply storefront migration `0020_return_resolution` after `0019_order_returns` (see [the Returns read model](returns-read-model.md)) before dependent deployments. Keep the existing four table names and columns so current CREOMS reads continue working:
 
-Build `POST /api/orders/<orderId>/returns` for a signed-in Customer's own Order:
+| Table | Contract |
+| --- | --- |
+| `order_returns` | Numeric `id`, `order_id`, `status`, fixed `reason`, `note`, integer `amount_in_centavos`, `preferred_resolution`, nullable `final_resolution`, nullable `goods_required`, nullable `decline_reason`, nullable `video_file_id`, nullable `refund_proof_file_id`, `requested_at`, nullable `refunded_at`, nullable `replaced_at` |
+| `order_return_items` | Whole purchased line snapshots: `return_id`, `order_line_id`, `product_name`, `size_label`, `quantity`, `price_in_centavos`; no partial quantities |
+| `order_return_images` | One to three ordered photo File ids: `return_id`, `position` (1–3), `file_id` |
+| `order_return_history` | One row per committed step: `return_id`, `status`, `actor_type` (`customer` or `staff`), `actor_id`, `actor_name`, `occurred_at`, optional `note` (decline reason for Declined) |
+
+Resolution wire/database values are `refund` and `replacement`. Final Resolution is null until approval, then immutable. Approval defaults it to the preference and goods-required to false. One nullable video field means at most one video. Save File ids, never signed URLs. The visible Return number is `RMA-` followed by its numeric id, e.g. `RMA-15`. Staff usernames are opaque attribution, without a local Staff foreign key.
+
+Request creation must atomically save at least one whole-line snapshot, one to three confirmed evidence photo ids and the initial Customer history row. The position constraint limits photos to three; the minimum photo/item counts and matching whole purchased lines are enforced by the creation boundary in its own ticket. All later decisions use the transition boundary, which locks the Return, checks ownership/status, and writes status, decision fields and one history step in a transaction. Direct SQL writes bypass these lifecycle rules and are unavailable to CREOMS.
+
+## Customer request and cancellation
+
+Authenticated `POST /api/orders/<id>/returns` accepts JSON input:
 
 ```json
 {
-  "lineIds": [41, 42],
+  "orderLineIds": [31, 32],
   "reason": "damaged",
-  "note": "Two jars arrived cracked.",
-  "imageFileIds": ["<confirmed defect File id>"]
+  "note": "The seal is broken.",
+  "preferredResolution": "replacement",
+  "photoUploadTokens": ["signed-photo-upload-token"],
+  "videoUploadToken": "optional-signed-video-upload-token"
 }
 ```
 
-`lineIds` contains one or more distinct positive integer Order line ids belonging to
-that Order. Each selects the entire purchased quantity; partial quantities are refused.
-`reason` is exactly `damaged`, `defective`, `wrong item` or `other`. `note` is free text
-(a string, which may be empty). Require one to three defect images: nonempty JPG or PNG,
-at most 5,242,880 bytes each, checked from real bytes rather than filename or browser
-MIME. Upload and confirm Private, Permanent Files through the api-gateway as described
-below, then submit their ids. The storefront must validate those Files and their
-association with the Customer's upload; arbitrary File ids are not proof of ownership.
+Reasons are `damaged`, `defective`, `wrong item`, `other`. The note is optional, normalized and limited to 2,000 characters. Fields use the shared validators; unknown fields (including quantities, prices and bare File ids), duplicate lines/photos, unrelated lines and files not uploaded for this Customer/Order are refused. Whole quantities are copied from the purchased line snapshots.
 
-The storefront checks all of these at the time of the transactional write:
+First call authenticated `POST /api/orders/<id>/returns/uploads` for each file with `{ "role": "photo", "contentType": "image/png", "size": 1234 }` (or role `video` and `video/mp4`/`video/quicktime`). The response is `201 { "id": "<File id>", "uploadUrl": "<presigned URL>", "uploadToken": "<signed token>" }`. PUT bytes directly to `uploadUrl` with the declared Content-Type and no gateway credentials. Pass the tokens when submitting the Return. This avoids sending up to 40 MB through a storefront Function. Tokens are signed using the storefront Caller key, scoped to Customer, Order, File id and photo/video purpose, and expire after one hour. A Caller-key rotation invalidates outstanding upload tokens; upload again.
 
-- The Order belongs to the Customer and is `delivered` or `received`.
-- Payment is confirmed: GCash must have reached `paid` before fulfilment; Cash on
-  Delivery and Pickup qualify once `delivered`. No extra cash-collection action is added.
-- `delivered_at` is present and `delivered_at <= now < delivered_at + 24 hours`, using
-  storefront time. The exact 24-hour boundary is refused with a clear Refund window
-  closed reason. Missing or future Delivery time does not qualify. This is elapsed
-  time, not the end of a calendar day.
-- Selected items do not already belong to a Requested, Approved, Goods received or
-  Refunded Return. Declined or Cancelled items can be requested again only while the
-  original Refund window is open. Serialize competing requests so an item cannot be
-  reserved or refunded twice.
+Browser uploads target Private, Temporary staging Files. The request boundary confirms each staging upload, verifies Active/Private/Temporary metadata, downloads its bounded content through a server-only signed view address, and checks actual JPG/PNG/MP4/MOV signatures and size. It then seals the verified bytes in a separate Private, Permanent File, confirms its metadata and persists only that new File id. The sealed File’s PUT URL stays server-side; reusing a browser staging URL cannot change accepted evidence. Unknown/unconfirmed evidence, metadata/content mismatches and uploads for another Customer, Order or purpose are refused. Confirmed Permanent files are kept after failed or uncertain requests rather than risking deletion of accepted evidence. Staging Files expire through file-storage cleanup. No browser API allows File replacement or deletion.
 
-Calculate the amount on the server from the purchased line snapshots, capped at what
-the Customer paid for the selected items. Include the Delivery fee only when every
-Order item is selected; a partial selection excludes it. Never accept an amount or
-prices supplied by the Customer. All amounts are integer centavos.
+Rollout dependency: file-storage must admit `video/mp4` and `video/quicktime` in its upload allowlist and preserve video bytes without image processing. Verify the deployed file-storage allowlist before enabling video uploads. The storefront supports these types and exercises them with fake storage; the file-storage deployment must support them before enabling video in the Customer form. No live storage upload is part of this ticket.
 
-Commit the Requested Return, immutable item snapshots, ordered defect File ids, and
-the initial Customer history step together. Return `201 { "id": 15 }`; the visible
-Return number is `RMA-` followed by that number. Refuse invalid input with `400`, a
-missing/inaccessible Order with `404`, and a closed window or conflicting Return with
-`409`, using JSON `{ "error": "<Customer-safe reason>" }`. An unauthenticated request
-returns `401` and changes nothing.
+The boundary rechecks eligibility inside the transactional write, serializing against other requests and the Customer received action:
 
-The Refund window limits creation alone. An in-time Return remains valid however long
-Staff take; approval, goods receipt and refund have no 24-hour deadline. Staff cannot
-override the window. Received neither starts nor stops nor extends it; a Customer who
-never sets Received can still request a Return. Existing deliveries use their original
-`delivered_at` without resetting it at launch.
+- The Order belongs to the Customer and is `delivered`; `received` is ineligible.
+- Payment is confirmed: GCash reached `paid` before fulfilment; Cash on Delivery and Pickup qualify once delivered.
+- `delivered_at` is present and `delivered_at <= now < delivered_at + 24 hours`. Missing/future times and the exact cutoff are refused. Use elapsed storefront time, never a client clock.
+- Items in Requested, Approved or Goods received Returns are reserved. Refunded or Replaced items cannot be returned again. Declined and Customer-cancelled Returns release their items while the original window remains open.
 
-## Return statuses and who moves them
+Calculate the amount from purchased line snapshots, capped at the amount actually paid for selected items. If a historical paid subtotal is lower than the sum of its line snapshots, allocate that subtotal proportionally across lines in stable id order using integer centavos; splitting selections into disjoint Returns cannot multiply the cap. Include the Delivery fee only when all Order items are selected. Ignore Customer amounts/prices. The Refund window limits creation only: Staff cannot override it and later steps never expire. Return `201 { "id": 15, "number": "RMA-15", "status": "requested" }` after commit.
 
-Database/wire statuses use the exact lowercase values below, including the space in
-`goods received`. Display Requested, Approved, Goods received, Refunded, Declined and
-Cancelled to people.
+`POST /api/returns/<id>/cancel` accepts an empty body (or `{}`) for the owning Customer. Only Requested can become Cancelled, even after the window closes. Commit cancellation/history together and return `{ "id": 15, "status": "cancelled" }`. A race with approval has one winner.
+
+## Status moves
+
+Use exact lowercase wire/database values, including the space in `goods received`.
 
 | From | To | Actor and condition |
 | --- | --- | --- |
-| No Return | `requested` | Customer, through the request above, inside the Refund window |
-| `requested` | `cancelled` | The same Customer, through the storefront |
-| `requested` | `approved` | Returns Staff via CREOMS; explicit `goodsRequired` boolean |
-| `requested` | `declined` | Returns Staff via CREOMS; nonempty `declineReason` |
-| `approved` | `goods received` | Returns Staff via CREOMS, only if `goodsRequired: true` |
-| `approved` | `refunded` | Returns Staff via CREOMS, only if `goodsRequired: false` |
-| `goods received` | `refunded` | Returns Staff via CREOMS after paying the refund externally |
+| No Return | `requested` | Owning Customer; eligible request and evidence |
+| `requested` | `cancelled` | Owning Customer only |
+| `requested` | `approved` | Staff; final Resolution defaults to preference; goods-required defaults to false |
+| `requested` | `declined` | Staff; nonblank decline reason |
+| `approved` | `goods received` | Staff; goods-required is true |
+| `approved` | `refunded` | Staff; goods-required is false, final Resolution is refund, proof required |
+| `approved` | `replaced` | Staff; goods-required is false, final Resolution is replacement |
+| `goods received` | `refunded` | Staff; final Resolution is refund, proof required |
+| `goods received` | `replaced` | Staff; final Resolution is replacement |
 
-These are all the moves. Refunded, Declined and Cancelled are final. Approved cannot
-be declined or cancelled; goods-required approval cannot skip Goods received. No Return
-changes its Order's status. Staff cannot create a Return. Each move records actor type,
-actor id, name snapshot and storefront time. Requested and Cancelled use the Customer's
-identity; Staff steps use Portal username and name. Refunded records `refunded_at` in
-the same transaction, and only then reduces Total spent by the refunded amount.
+All other moves, including repeats and resolution mismatches, are refused without mutation/history. Refunded, Replaced, Declined and Cancelled have no outgoing move. Staff cannot create or cancel a Return. Approved cannot be declined. Every step records actor type, id, name and storefront time. Refunded saves `refunded_at` and proof together; Replaced saves `replaced_at`. A Return never changes its Order's status. Only Refunded reduces Total spent; Replaced creates no new Order and does not reduce Total spent. Store credit is out of scope.
 
-Build `POST /api/returns/<id>/cancel` with an empty body for the owning Customer.
-Atomically require Requested, write Cancelled and its Customer history step, and return
-`{ "id": 15, "status": "cancelled" }`. It remains cancellable after the Refund window
-closes if still Requested. Use the same session, ownership and JSON error conventions;
-a cancellation racing approval is a `409` and must not overwrite approval.
+## Staff decision API
 
-## Staff decision endpoint CREOMS calls
-
-Build `POST /api/internal/returns/<id>/status` with the Return-scoped credential above.
-Each body includes `staffId` (Portal username) and `staffName` (Portal name snapshot).
-These are the four complete decision shapes:
+Use `POST /api/internal/returns/<id>/status` with the Returns credential. Supported bodies:
 
 ```json
-{ "status": "approved", "goodsRequired": false, "staffId": "ana", "staffName": "Ana Reyes" }
-{ "status": "declined", "declineReason": "The images show no defect.", "staffId": "ana", "staffName": "Ana Reyes" }
+{ "status": "approved", "finalResolution": "replacement", "goodsRequired": false, "staffId": "ana", "staffName": "Ana Reyes" }
+{ "status": "declined", "declineReason": "The evidence shows no defect.", "staffId": "ana", "staffName": "Ana Reyes" }
 { "status": "goods received", "staffId": "ben", "staffName": "Ben Cruz" }
-{ "status": "refunded", "staffId": "ben", "staffName": "Ben Cruz" }
+{ "status": "refunded", "refundProofFileId": "proof-file-id", "staffId": "ben", "staffName": "Ben Cruz" }
+{ "status": "replaced", "staffId": "ben", "staffName": "Ben Cruz" }
 ```
 
-Approval requires a boolean even when false. Decline requires a trimmed nonempty
-reason, retained for the Customer to see. Require nonblank Staff identity and let the
-storefront supply the time. Commit the conditional status change, decision fields and
-one Staff history step together; Refunded includes `refunded_at`. Return a 2xx JSON
-confirmation only after commit:
+Approval may omit `finalResolution` and `goodsRequired` for the defaults above. Other decision fields must match their shape; decline reason is trimmed, required and at most 2,000 characters. Refunded requires a confirmed Private, Permanent JPG/PNG screenshot, verified by the endpoint's file-storage boundary before calling the persistence boundary. A nonempty File id alone is not verification. Before submitting a refund, CREOMS uploads/confirms the proof with a File Link `{ "system": "CRMS", "entityType": "return", "entityId": "15", "role": "refund-proof" }` for the numeric Return id (without `RMA-`). The endpoint looks up this Link through the storefront Caller, requires matching active/private/permanent metadata with no expiry and a size up to 5,242,880 bytes, and reads the signed original without Caller credentials to check its actual size and decode a valid JPG/PNG screenshot (at most 40 million pixels). Unrelated Files cannot serve as proof. Storage failures fail closed before the decision. This Link is a Return proof Link, never a Ticket Message Link. Staff mark Replaced only after sending the replacement.
+
+Return a 2xx JSON confirmation only after commit:
 
 ```json
 {
   "id": 15,
   "status": "approved",
+  "finalResolution": "replacement",
   "goodsRequired": false,
-  "actedBy": { "id": "ana", "name": "Ana Reyes", "at": "2026-10-23T08:00:00.000Z" }
+  "actedBy": { "id": "ana", "name": "Ana Reyes", "at": "2026-10-24T08:00:00.000Z" }
 }
 ```
 
-Every success requires the same numeric `id`, requested `status` and matching
-`actedBy.id`/`actedBy.name`, plus a parseable ISO timestamp `actedBy.at`. Approval must
-echo the exact `goodsRequired`; decline must echo the exact trimmed `declineReason`.
-Other decisions need no extra confirmation fields. Non-2xx responses use
-`{ "error": "<Staff-safe refusal reason>" }`. Use `401` for invalid credentials,
-`400` for invalid fields, `404` for a missing Return, and `409` with an “already changed”
-reason for ineligible or concurrently moved Returns, including Customer cancellation.
-CREOMS preserves the returned error string.
+CREOMS checks matching `id`, `status`, Staff id/name and a parseable ISO `actedBy.at`. Approval echoes effective `finalResolution` and `goodsRequired`; decline echoes the trimmed reason; refund echoes `refundProofFileId`. All failures use `{ "error": "<safe reason>" }`: `401` invalid/missing credentials or Customer session, `400` invalid fields/files, `404` missing/inaccessible Order/Return, `409` closed window or conflicting/illegal move. Storage/database failures return `503` with a safe refresh-before-retry reason because a database acknowledgement failure can be uncertain. Refusals write nothing and send nothing.
 
-CREOMS sends no-cache requests, refuses redirects, times out after ten seconds and
-makes one attempt. Malformed/mismatched confirmations, timeouts and connection failures
-are uncertain, never success. A response can be lost after commit: Staff must refresh
-before trying again. Successful confirmed decisions refresh Returns, the related Order
-detail and Customer Profiles. See [Staff Return decisions](return-decisions.md).
+CREOMS uses no-cache requests, refuses redirects, times out after ten seconds and makes one attempt. A timeout, malformed/mismatched confirmation or connection failure is uncertain: refresh before retrying, since the commit may have succeeded. Confirmed decisions refresh Returns, Order detail and Customer Profiles. The persistence boundary is internal and supplies Date objects; the HTTP adapter serializes dates to ISO and maps validated actor identity into it.
 
-## Customer Received action
+## Customer received action and Delivery photo
 
-Build `POST /api/orders/<id>/received` with an empty body and the storefront's Customer
-session. Only the owning Customer may conditionally change `delivered` to `received`.
-Return `{ "id": 81, "status": "received" }` after commit; use `401`/`404` as above
-and `409` for any other current status. Staff and service credentials cannot set it.
-Preserve `delivered_at` and the Delivery photo. There is no Refund window deadline for
-Received and no reverse move. It is solely the Customer's “I have it” signal. It does
-not change Return eligibility, existing Returns, Total spent or the existing two-day
-Feedback request timer. Total spent continues counting the Order in `received`.
+Build `POST /api/orders/<id>/received`, empty body, owning Customer session only. Atomically require `delivered` and no in-progress Return (Requested, Approved, Goods received), then return `{ "id": 81, "status": "received" }`. Staff/service credentials cannot do it. Serialize against Return creation. There is no deadline and no reverse move. Preserve `delivered_at`, Delivery photo, existing Returns, Total spent and the two-day Feedback request timer.
 
-## Delivery photo and file-storage through the api-gateway
+Received **closes the Refund window early**, so no later Return request is accepted. Hide the button while a Return is in progress and require a dialog stating that marking received ends the right to a Return or refund. This replaces #179's rule that received leaves eligibility unchanged.
 
-`deliverOrder(id, form)` checks Fulfilment and requires exactly one `photo` File for
-every fulfilment method, including Pickup. It rejects empty files, non-JPG/PNG content
-and sizes over 5,242,880 bytes before uploading or asking for delivery. Exactly that
-size is allowed. `gatewayFileStorage` in `lib/gateway.ts` reuses the Ticket Message
-upload boundary. With `base = CREOMS_GATEWAY_URL` (trailing slash removed):
+CREOMS already uploads a Delivery photo through the gateway before calling the Orders-scoped status endpoint with `{ "status": "delivered", "deliveryPhotoFileId": "<File id>" }`. The storefront must verify the confirmed Private, Permanent image, require dispatched, and atomically save `orders.delivery_photo_file_id`, delivered status and `delivered_at`. Echo `id`, `status`, integer-or-null `deliveryFeeInCentavos` and the same File id. Preserve old Delivery times; earlier Orders with no photo show “No photo”.
 
-1. CREOMS sends `POST <base>/files` with `Authorization: Bearer <CREOMS_GATEWAY_CALLER_KEY>`
-   and JSON `{ "filename": "delivery.png", "contentType": "image/png", "size": 1234,
-   "visibility": "private", "retentionType": "permanent" }`. Use actual byte type and
-   length. The gateway maps its `crms` Caller to the CRMS Client System and forwards
-   to file-storage. The response contains `{ "id": "<File id>", "uploadUrl": "<signed URL>" }`.
-2. PUT the bytes to that exact `uploadUrl` with the real `Content-Type`, without
-   gateway or storefront credentials. This is the signed storage destination.
-3. Send `POST <base>/files/<id>/confirm` with the gateway Caller credential. Only a
-   successfully confirmed File id can be used for delivery. Storage failure leaves
-   the Order alone.
-4. CREOMS sends `POST <CREOMS_STOREFRONT_URL>/api/internal/orders/<id>/status` with
-   the Orders-scoped JWT, and body `{ "status": "delivered", "deliveryPhotoFileId": "<File id>" }`.
+## File-storage flow and Customer access
 
-The storefront must verify a confirmed Private, Permanent image File and atomically
-require a dispatched Order with no existing Delivery photo, then store its id in
-nullable `orders.delivery_photo_file_id` together with `status = 'delivered'` and
-`delivered_at`. Return the existing Order confirmation plus the same File id:
+Use the api-gateway with a server-only Caller key registered for the application's Client System. CREOMS uses `CREOMS_GATEWAY_URL` and `CREOMS_GATEWAY_CALLER_KEY`; the storefront uses its own registered Caller, never the CREOMS key in the browser.
 
-```json
-{
-  "id": 81,
-  "status": "delivered",
-  "deliveryFeeInCentavos": 15000,
-  "deliveryPhotoFileId": "<File id>"
-}
-```
+1. `POST <gateway>/files`, Bearer Caller credential: `{ "filename": "defect.png", "contentType": "image/png", "size": 1234, "visibility": "private", "retentionType": "permanent" }`. Receive `{ "id": "<File id>", "uploadUrl": "<presigned URL>" }`.
+2. PUT actual bytes to that upload URL with their actual Content-Type and no service credentials.
+3. `POST <gateway>/files/<id>/confirm` with the Caller credential. Only confirmed files may be persisted as evidence/proof/Delivery photo.
+4. Resolve for viewing via `GET <gateway>/files/<id>` with the Caller credential; expose only its temporary `{ "url": "<signed URL>" }` after Customer ownership or Staff Module access checks.
 
-`deliveryFeeInCentavos` must be an integer or null, including for Pickup. A missing or
-different photo id is uncertain. The same refusal and one-attempt rules as the Return
-endpoint apply. CREOMS retains the uploaded Permanent File even after refusal or
-uncertainty, since a lost response may follow an accepted delivery. The storefront
-sends its existing delivery email and keeps its existing Feedback request timer;
-CREOMS sends neither.
+Evidence requires 1–3 JPG/PNG photos at most 5,242,880 bytes each and optionally one MP4/MOV video at most 26,214,400 bytes. Verify actual bytes/type, not a browser-supplied MIME or extension. The file-storage upload limit is 25 MB; use presigned uploads for video. Delivery photos and refund proof are JPG/PNG screenshots up to 5 MB. Validate confirmed metadata, ownership/purpose and content before accepting references. Request creation and the Staff endpoint own these checks in their respective tickets.
 
-Keep the File id with the Order, never a saved signed URL. For display, the backend
-calls `GET <base>/files/<id>` using its gateway Caller key and obtains `{ "url": "<short-lived signed URL>" }`.
-The storefront uses its own registered Caller key, checks the Order belongs to the
-Customer before resolving the File, and exposes only the temporary view URL to that
-Customer. CREOMS checks Staff Module access before resolving it. The file-storage
-service accepts known Client Systems; a File id or Link is not Customer authorization.
-Do not expose an unrestricted File-id resolver or either service key to browsers.
+Save only ids; never persist signed URLs. No unrestricted File-id resolver. Customers can see only evidence, refund proof and Delivery photos belonging to their own Orders/Returns; CREOMS checks Staff access. Files need no Ticket Message Link. Keep Permanent files after uncertain responses; never expose replacement/deletion of committed evidence, proof or Delivery photos, including overwriting bytes under an existing id.
 
-The storefront uses the same register/PUT/confirm flow with its own gateway Caller for
-Customer defect images. A Delivery photo needs no Ticket Message Link: CREOMS saves
-the File id through the Order status request and does not call `linkToMessage` for it.
-Neither application may expose replacement/removal for a Delivery photo, including
-replacing bytes under the same id. Permanent retention alone does not prevent those
-operations; enforce immutability in application routes. Earlier delivered Orders with
-no File id show “No photo”; do not require a retroactive photo or reset Delivery time.
+## Customer emails and Notifications
 
-## Four Customer emails and Notifications
+The storefront sends one Customer email and one in-app Notification for each committed step below, linking to the Return in My orders and including its RMA number and Order number. CREOMS sends none of these Customer messages.
 
-The storefront must send one Customer email and create one in-app Notification for
-each committed transition below, addressed only to the Return's Customer and linking
-to their Return/Order detail. Include the Return number and Order number in each.
-
-| Committed status | What the Customer must be told |
+| Step | Customer message |
 | --- | --- |
-| `approved` | The Return was approved, and explicitly whether the goods must come back |
-| `declined` | The Return was declined, with the stored decline reason |
-| `goods received` | The returned goods were received; the refund has not yet been recorded |
-| `refunded` | The refund was paid, including the recorded amount |
+| Requested | Request received, RMA number and preferred Resolution |
+| Approved | Final Resolution, any difference from preference, whether goods must come back |
+| Declined | Stored decline reason |
+| Goods received | Goods received; final Resolution still pending |
+| Refunded | Recorded refund amount and access to proof |
+| Replaced | Replacement sent; Return completed |
 
-Tie notification work durably to the committed history step and deduplicate deliveries
-so retries or a repeated decision cannot send duplicates. Failed transport must not
-roll back or duplicate an accepted decision. CREOMS does not send these four emails
-or create these Customer Notifications. This contract adds none for Requested,
-Cancelled or Received. The separate Staff Return notification alerts Returns Staff
-only when a Return is Requested; it is not one of these Customer Notifications.
+Cancellation and received send nothing. Tie delivery durably to history steps and deduplicate so transport failure/retries cannot roll back a decision or duplicate accepted changes. CREOMS's separate Staff Requested notification is independent.
 
-## Storefront work and migration checklist
+## Rollout and responsibility
 
-- Build the Customer Return form, authenticated creation/cancellation routes, Return
-  history/detail with defect images, the Refund window message, Received action and
-  Customer Delivery photo display. The Customer route names above are proposed;
-  the two internal Staff endpoint paths and payloads must match CREOMS exactly.
-- Deploy the Return decision endpoint, the distinct Return credential scope, atomic
-  transitions/history/refund timestamp, and the four Customer emails and Notifications.
-- Extend the Order status endpoint for the Delivery photo and add nullable
-  `orders.delivery_photo_file_id` in a storefront-owned migration if absent. Add
-  `received` wherever storefront status validation/storage needs it. Preserve existing
-  Delivery times and leave legacy photo ids null; no backfill is needed.
-- Match the four Return tables and exact column/status values in
-  [the Returns read contract](returns-read-model.md#storefront-prerequisite-and-schema).
-  That document and [the decision rollout record](return-decisions.md#migration-and-rollout)
-  record storefront migration `0019_order_returns` and the SELECT-only grants as
-  already applied on 2026-10-23. Verify the target database's migration history before
-  running schema changes; do not recreate those tables from the test fixture.
-- On a fresh environment, apply the storefront schema first, then run the rerunnable
-  [Return read permissions migration](db/creoms-returns-readonly.sql) as database owner
-  with SQL error-stop enabled. CREOMS retains SELECT-only access and its existing
-  environment variables. Deploy storefront support before enabling dependent flows.
+The storefront ships schema/migrations first, then Customer request/cancel and received boundaries, Staff endpoint and Return-scoped credential, file verification/authorized reads, Delivery photo support, emails/Notifications and Customer views. CREOMS extends its read model, approval Resolution choice, refund proof upload, video/proof views, Replaced action/tab, Resolution column and Replacements stat. Keep Total spent unchanged for Replaced.
 
-This documentation ticket introduces no schema change or migration to run. A migrated
-database does not deploy the storefront endpoints. Storefront tests must cover Customer
-ownership, payment eligibility, cutoff boundaries, cancellation/approval races, duplicate
-item requests, Received preserving Delivery time, immutable photos and notification
-deduplication; the CREOMS fake is not a substitute for that coverage.
+Existing grants on the four Return tables cover new columns. On a fresh environment apply storefront migrations first, then CREOMS's rerunnable `docs/db/creoms-returns-readonly.sql` as owner, retaining SELECT without writes. Do not recreate tables from a CREOMS test fixture. Migration 0020 keeps legacy refund Returns readable; legacy completed refunds may have no proof and must not be fabricated or reopened.
 
-Verify the implemented CREOMS half without live credentials:
+Test dependent server flows against the throwaway database with file/email fakes: eligibility/payment/cutoff, whole lines and refund cap, finished item exclusion, retry after decline/cancel, received exclusivity, status races, default/override Resolution, goods-back paths, evidence/proof validity and notification effects. Ticket #117 tests persistence/migrations, legal/illegal moves and atomic attribution; it does not substitute for those endpoint tests.
 
-```sh
-npx vitest run tests/returns.test.ts tests/return-actions.test.ts tests/fulfilment.test.ts tests/gateway-image-store.test.ts --exclude '.claude/**' --maxWorkers=2
-npm run typecheck
-```
+
+## Staff endpoint verification (#121)
+
+`npx vitest run __tests__/internal-return-status-route.test.ts __tests__/creoms-credential.test.ts --maxWorkers=2` exercises the real HTTP handler with signed credentials, migrated throwaway PGlite and a fake file gateway. It covers the full Staff transition matrix, approval defaults/overrides, attribution, proof verification, credential isolation, strict input rejection, races and rollback/uncertain responses. No additional schema migration is needed; this endpoint uses migration 0020 from #117. Customer messaging remains a dependent ticket.
+
+## CREOMS verification and rollout (#195)
+
+The CREOMS server signatures, upload form key and refusal semantics are documented in
+[Staff Return decisions](return-decisions.md). New File ids come from server-side upload,
+not browser-supplied ids; only the storefront confirms the final status.
+
+On 2026-10-25 the configured database's Drizzle journal matched the SHA-256 of storefront
+`0020_return_resolution.sql`. All five new columns, Resolution/status constraints and
+legacy final-Resolution backfill were already present. Catalog checks confirmed SELECT
+on the new columns and no Return table writes for `creoms_readonly`. No migration or
+backfill was run for #195. The local `CREOMS_DATABASE_URL` currently authenticates as
+`neondb_owner`; deployments must continue using the documented `creoms_readonly` role.
+No credentials were changed by this ticket.
