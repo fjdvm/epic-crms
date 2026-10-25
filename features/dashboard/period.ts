@@ -63,3 +63,25 @@ export function resolvePeriod(preset: PeriodPreset, now: Date): Period {
   return { start, end, previous: { start: new Date(start.getTime() - length), end: start } };
 }
 
+
+export interface SalesMonth extends Span {
+  /** Philippine calendar month as `YYYY-MM`. */
+  label: string;
+  /** The current month, which has not finished. */
+  soFar: boolean;
+}
+
+/** The six Philippine calendar months ending with the one `now` falls in, oldest first. */
+export function lastSixMonths(now: Date): SalesMonth[] {
+  const manila = new Date(now.getTime() + OFFSET_MS);
+  const year = manila.getUTCFullYear();
+  const month = manila.getUTCMonth();
+
+  return [5, 4, 3, 2, 1, 0].map((back) => {
+    const start = manilaMidnight(year, month - back, 1);
+    const end = manilaMidnight(year, month - back + 1, 1);
+    const label = new Date(start.getTime() + OFFSET_MS).toISOString().slice(0, 7);
+
+    return { start, end, label, soFar: back === 0 };
+  });
+}
