@@ -74,44 +74,6 @@ export async function paymentAndReceivingIn(sql: postgres.Sql, span: Span): Prom
   return { payment: group("payment_method"), receiving: group("fulfillment_method") };
 }
 
-interface SalesSnapshot {
-  sales: number;
-  bestSellers: Breakdown<BestSellers>;
-  paymentAndReceiving: Breakdown<PaymentAndReceiving>;
-}
-
-/** Prime dependent aggregates together even when the caller may only see the Sales tile. */
-export async function salesSnapshotIn(sql: postgres.Sql, span: Span): Promise<SalesSnapshot> {
-  const key = `sales-snapshot:${span.start.toISOString()}:${span.end.toISOString()}`;
-  const snapshot = await cachedAnalytics(sql, key, async () => {
-    const [row] = await sql<{ sales: string }[]>`
-      select coalesce(sum(
-        o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0)
-          - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
-              where r.order_id = o.id and r.status = 'refunded'), 0)
-      ), 0)::bigint as sales
-      from public.orders o
-      where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}`;
-    const sales = Number(row.sales);
-    const [bestSellers, paymentAndReceiving] = await Promise.all([
-      readBreakdown(() => bestSellersIn(sql, span, sales)),
-      readBreakdown(() => paymentAndReceivingIn(sql, span)),
-    ]);
-    return { sales, bestSellers, paymentAndReceiving };
-  });
-  // Preserve independent failures, but let a failed aggregate recover on the next request.
-  if (!snapshot.bestSellers.ok || !snapshot.paymentAndReceiving.ok) caches.get(sql)?.delete(key);
-  return snapshot;
-}
-
-async function readBreakdown<T extends object>(read: () => Promise<T>): Promise<Breakdown<T>> {
-  try {
-    return { ok: true, ...await read() };
-  } catch {
-    return { ok: false };
-  }
-}
-
 /** Per database, bounded to the active five-minute window; never caches Staff Modules or live queues. */
 const caches = new WeakMap<postgres.Sql, Map<string, { expires: number; value: Promise<unknown> }>>();
 
@@ -124,7 +86,7 @@ export async function cachedAnalytics<T>(sql: postgres.Sql, key: string, read: (
   if (!entry) {
     // Limit memory even if callers supply arbitrary periods during the cache window.
     if (cache.size >= 100) cache.delete(cache.keys().next().value!);
-    entry = { expires: (Math.floor(now / 300_000) + 1) * 300_000, value: read() };
+    entry = { expires: now + 300_000, value: read() };
     cache.set(key, entry);
     const pending = entry;
     void entry.value.catch(() => { if (cache.get(key) === pending) cache.delete(key); });
@@ -133,23 +95,16 @@ export async function cachedAnalytics<T>(sql: postgres.Sql, key: string, read: (
 }
 
 export async function loadBreakdown<T extends object>(
-  connect: () => postgres.Sql, key: string, read: (sql: postgres.Sql) => Promise<T>,
+  connect: () => postgres.Sql, read: (sql: postgres.Sql) => Promise<T>,
 ): Promise<Breakdown<T>> {
   try {
-    const sql = connect();
-    return { ok: true, ...await cachedAnalytics(sql, key, () => read(sql)) };
+    return { ok: true, ...await read(connect()) };
   } catch {
     return { ok: false };
   }
 }
 
-/** Snapshot failures are reported on each widget rather than failing the Dashboard. */
-export async function loadSalesBreakdown<K extends "bestSellers" | "paymentAndReceiving">(
-  connect: () => postgres.Sql, span: Span, key: K,
-): Promise<SalesSnapshot[K]> {
-  try {
-    return (await salesSnapshotIn(connect(), span))[key];
-  } catch {
-    return { ok: false };
-  }
+/** Failed analytics are retried together to preserve their shared Sales denominator. */
+export function forgetAnalytics(sql: postgres.Sql, key: string): void {
+  caches.get(sql)?.delete(key);
 }

@@ -5,7 +5,7 @@ import { FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/co
 
 import { loadAttention, type Attention } from "./attention";
 import {
-  cachedAnalytics, loadBreakdown, loadSalesBreakdown, salesSnapshotIn,
+  bestSellersIn, cachedAnalytics, forgetAnalytics, loadBreakdown, paymentAndReceivingIn,
   type BestSellers, type Breakdown, type MonthlyBuyers, type PaymentAndReceiving,
 } from "./breakdowns";
 import { lastSixMonths, type Period, type SalesMonth, type Span } from "./period";
@@ -49,7 +49,15 @@ export interface DashboardFigures {
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
 export async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
-  return (await salesSnapshotIn(sql, span)).sales;
+  const [row] = await sql<{ sales: string }[]>`
+    select coalesce(sum(
+      o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0)
+        - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
+            where r.order_id = o.id and r.status = 'refunded'), 0)
+    ), 0)::bigint as sales
+    from public.orders o
+    where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}`;
+  return Number(row.sales);
 }
 
 export async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
@@ -65,7 +73,6 @@ export async function averageOrderIn(sql: postgres.Sql, span: Span): Promise<num
   const [row] = await sql<{ counted: number }[]>`
     select count(*)::int as counted from public.orders
     where status = any(${PAID_OR_FULFILLED}) and created_at >= ${span.start} and created_at < ${span.end}`;
-
   return row.counted === 0 ? 0 : Math.round((await salesIn(sql, span)) / row.counted);
 }
 
@@ -103,9 +110,6 @@ async function monthlySalesAt(sql: postgres.Sql, now: Date): Promise<MonthlySale
   return { months };
 }
 
-const figureIds = new WeakMap<object, number>();
-let nextFigureId = 0;
-
 /** Runs on its own so one widget failing leaves the others standing. */
 export async function loadWidget<T = number>(
   connect: () => postgres.Sql,
@@ -114,10 +118,7 @@ export async function loadWidget<T = number>(
 ): Promise<Widget<T>> {
   try {
     const sql = connect();
-    if (!figureIds.has(figure)) figureIds.set(figure, ++nextFigureId);
-    const key = `tile:${figureIds.get(figure)}:${period.start.toISOString()}:${period.end.toISOString()}:${period.previous.start.toISOString()}:${period.previous.end.toISOString()}`;
-    const [current, previous] = await cachedAnalytics(sql, key, () =>
-      Promise.all([figure(sql, period), figure(sql, period.previous)]));
+    const [current, previous] = await Promise.all([figure(sql, period), figure(sql, period.previous)]);
 
     return { ok: true, current, previous };
   } catch {
@@ -140,13 +141,13 @@ export function visibleWidgets(modules: readonly string[]) {
   };
 }
 
-export async function loadDashboardFigures(
+async function loadDashboardAnalytics(
   connect: () => postgres.Sql,
   { period, modules, now = new Date() }: { period: Period; modules: readonly string[]; now?: Date },
 ): Promise<DashboardFigures> {
   const visible = visibleWidgets(modules);
 
-  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales, attention,
+  const [sales, orders, averageOrder, averageRating, returningBuyers, monthlySales,
     bestSellers, monthlyBuyers, paymentAndReceiving] = await Promise.all([
     visible.sales ? loadWidget(connect, period, salesIn) : undefined,
     visible.orders ? loadWidget(connect, period, ordersIn) : undefined,
@@ -154,9 +155,8 @@ export async function loadDashboardFigures(
     visible.averageRating ? loadWidget(connect, period, averageRatingIn) : undefined,
     visible.returningBuyers ? loadWidget(connect, period, returningBuyersIn) : undefined,
     visible.monthlySales ? loadMonthlySales(connect, now) : undefined,
-    loadAttention(connect, { modules, now }),
-    visible.breakdowns ? loadSalesBreakdown(connect, period, "bestSellers") : undefined,
-    visible.breakdowns ? loadBreakdown(connect, `buyers:${lastSixMonths(now)[5].label}`, async (sql) => {
+    visible.breakdowns ? loadBreakdown(connect, async (sql) => bestSellersIn(sql, period, await salesIn(sql, period))) : undefined,
+    visible.breakdowns ? loadBreakdown(connect, async (sql) => {
       const months = await Promise.all(lastSixMonths(now).map(async (month) => {
         const buyers = await returningBuyersIn(sql, month);
         const returning = Math.round((buyers.share ?? 0) * buyers.buyers);
@@ -164,7 +164,7 @@ export async function loadDashboardFigures(
       }));
       return { months: months.some((month) => month.new + month.returning > 0) ? months : [] };
     }) : undefined,
-    visible.breakdowns ? loadSalesBreakdown(connect, period, "paymentAndReceiving") : undefined,
+    visible.breakdowns ? loadBreakdown(connect, (sql) => paymentAndReceivingIn(sql, period)) : undefined,
   ]);
 
   return {
@@ -174,7 +174,6 @@ export async function loadDashboardFigures(
     ...(averageRating && { averageRating }),
     ...(returningBuyers && { returningBuyers }),
     ...(monthlySales && { monthlySales }),
-    attention,
     ...(bestSellers && { bestSellers }),
     ...(monthlyBuyers && { monthlyBuyers }),
     ...(paymentAndReceiving && { paymentAndReceiving }),
@@ -183,10 +182,29 @@ export async function loadDashboardFigures(
 
 async function loadMonthlySales(connect: () => postgres.Sql, now: Date): Promise<NonNullable<DashboardFigures["monthlySales"]>> {
   try {
-    const sql = connect();
-    const months = await cachedAnalytics(sql, `sales-months:${lastSixMonths(now)[5].label}`, () => monthlySalesAt(sql, now));
-    return { ok: true, ...months };
+    return { ok: true, ...(await monthlySalesAt(connect(), now)) };
   } catch {
     return { ok: false };
   }
+}
+
+/** Cache the permitted analytics together; a different Module set gets its own coherent snapshot. */
+export async function loadDashboardFigures(
+  connect: () => postgres.Sql,
+  { period, modules, now = new Date() }: { period: Period; modules: readonly string[]; now?: Date },
+): Promise<DashboardFigures> {
+  const options = { period, modules, now };
+  const analytics = async () => {
+    if (!Object.values(visibleWidgets(modules)).some(Boolean)) return {};
+    let sql: postgres.Sql;
+    try { sql = connect(); } catch { return loadDashboardAnalytics(connect, options); }
+    const key = JSON.stringify([
+      visibleWidgets(modules), period, lastSixMonths(now)[5].label,
+    ]);
+    const result = await cachedAnalytics(sql, key, () => loadDashboardAnalytics(connect, options));
+    if (Object.values(result).some((widget) => widget && "ok" in widget && !widget.ok)) forgetAnalytics(sql, key);
+    return result;
+  };
+  const [figures, attention] = await Promise.all([analytics(), loadAttention(connect, { modules, now })]);
+  return { ...figures, attention };
 }

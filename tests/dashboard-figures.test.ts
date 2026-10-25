@@ -96,7 +96,8 @@ describe("a failing widget", () => {
   it("does not fail the others", async () => {
     let calls = 0;
     const flaky = () => {
-      if (++calls === 1) throw new Error("offline");
+      // The cache resolves the database first; the next connection is the Sales widget.
+      if (++calls === 2) throw new Error("offline");
       return db.sql;
     };
     await order("paid", "2026-10-25T02:00:00Z");

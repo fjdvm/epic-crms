@@ -29,15 +29,15 @@ Payment and receiving breakdowns group the Order's stored `payment_method` and
 Sales after Refunded Return amounts, including Delivery fees. No Orders produces
 empty arrays.
 
-Dashboard analytics share a five-minute cache per database connection and period
-(month window for Buyers), across Staff. Module checks happen before exposing results. Sales primes its
-dependent aggregates together, even for Payments-only Staff, so later Orders
-readers use the same amounts.
-All entries expire at the same five-minute clock boundary, so nested readers
-cannot extend stale data for another five minutes. The cache coalesces concurrent
-reads, expires entries, caps retained entries at
-100 per database connection, and never retains failed reads. It is local to the
-server instance, so a cold instance reads afresh. Needs attention remains live.
-Sales uses the same cached amount as the best-seller denominator, so cached
-shares still reconcile when the storefront changes. Tiles and monthly Sales
-also cache their analytics; this backend ticket adds no Dashboard cards.
+Dashboard analytics are cached together for five minutes per database connection,
+period, six-month window and visible widget set. Different Module combinations
+get separate results, so a Payments-only read never supplies an older denominator
+to newly loaded Orders breakdowns. There are no nested caches: Sales, product
+shares and Average order age together. A failed widget leaves the other results
+available, and the analytics are retried together on the next call.
+
+The cache coalesces concurrent reads, expires entries and caps retained entries at
+100 per database connection. It is local to the server instance, so a cold
+instance reads afresh. Needs attention remains live and outside this cache.
+The existing tile loaders retain their independent loading behavior; this
+backend ticket adds no Dashboard cards.

@@ -15,7 +15,7 @@ beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
 afterAll(async () => { vi.restoreAllMocks(); await db.close(); });
 beforeEach(async () => {
   vi.restoreAllMocks();
-  clock = (Math.floor(clock / 300_000) + 1) * 300_000;
+  clock += 600_000;
   vi.spyOn(Date, "now").mockImplementation(() => clock);
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values
@@ -165,12 +165,13 @@ describe("Dashboard breakdowns", () => {
     const b = await order({ subtotal: 20000 });
     await line(b, "B", 20000);
     const result = await figures();
-    expect(result.sales).toMatchObject({ current: 10000 });
+    expect(result.sales).toMatchObject({ current: 30000 });
     expect(result.bestSellers).toEqual({ ok: true,
-      products: [{ productName: "A", sales: 10000, units: 1, share: 1 }],
+      products: [{ productName: "B", sales: 20000, units: 1, share: 2 / 3 },
+        { productName: "A", sales: 10000, units: 1, share: 1 / 3 }],
       remainder: { sales: 0, share: 0 },
     });
-    expect(result.paymentAndReceiving).toMatchObject({ payment: [{ orders: 1, sales: 10000 }] });
+    expect(result.paymentAndReceiving).toMatchObject({ payment: [{ orders: 2, sales: 30000 }] });
   });
 
 
@@ -184,13 +185,46 @@ describe("Dashboard breakdowns", () => {
     const lastMonth = () => loadDashboardFigures(connect, {
       period: resolvePeriod("last-month", now), modules: ["Orders"], now,
     });
-    expect((await lastMonth()).sales).toMatchObject({ current: 10000 });
+    expect((await lastMonth()).sales).toMatchObject({ current: 20000 });
     clock += 1001;
     const fresh = await lastMonth();
     expect(fresh.sales).toMatchObject({ current: 20000 });
     expect(fresh.bestSellers).toMatchObject({ remainder: { sales: 0 }, products: [
       { productName: "A", share: 0.5 }, { productName: "B", share: 0.5 },
     ] });
+  });
+
+
+  it("recovered products and Sales use the same generation after storefront changes", async () => {
+    const a = await order();
+    await line(a, "A", 10000);
+    await db.sql`alter table order_lines rename to unavailable_lines`;
+    try {
+      expect((await figures()).bestSellers).toEqual({ ok: false });
+    } finally {
+      await db.sql`alter table unavailable_lines rename to order_lines`;
+    }
+    clock += 60_000;
+    const b = await order({ subtotal: 20000 });
+    await line(b, "B", 20000);
+    const result = await figures();
+    expect(result.sales).toMatchObject({ current: 30000 });
+    expect(result.bestSellers).toMatchObject({ remainder: { sales: 0 }, products: [
+      { productName: "B", sales: 20000 }, { productName: "A", sales: 10000 },
+    ] });
+  });
+
+  it("Average order uses the count from the same snapshot as Sales", async () => {
+    const a = await order({ at: "2026-09-10T00:00:00Z" });
+    await line(a, "A", 10000);
+    await figures();
+    clock += 60_000;
+    await order({ at: "2026-09-11T00:00:00Z" });
+    const result = await loadDashboardFigures(connect, {
+      period: resolvePeriod("last-month", now), modules: ["Orders"], now,
+    });
+    expect(result.sales).toMatchObject({ current: 20000 });
+    expect(result.averageOrder).toMatchObject({ current: 10000 });
   });
 
 });
