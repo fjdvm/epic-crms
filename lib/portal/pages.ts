@@ -1,5 +1,6 @@
 import {
   CUSTOMER_PROFILES_MODULE,
+  DASHBOARD_MODULE,
   FEEDBACK_MODULE,
   FULFILMENT_MODULE,
   MARKETING_MODULE,
@@ -11,6 +12,7 @@ import {
 
 /** Every CREOMS page belongs to exactly one Module, in the order `/` tries them. */
 export const pages = [
+  { href: "/dashboard", module: DASHBOARD_MODULE },
   { href: "/customer-profiles", module: CUSTOMER_PROFILES_MODULE },
   { href: "/orders", module: ORDERS_MODULE },
   { href: "/payments", module: PAYMENTS_MODULE },

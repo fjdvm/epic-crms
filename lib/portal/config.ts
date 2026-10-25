@@ -6,6 +6,7 @@ export const SIGNING_IN_PATH = "/signing-in";
 export const LOGOUT_PATH = "/api/portal/logout";
 export const NO_ACCESS_PATH = "/no-access";
 export const UNAVAILABLE_PATH = "/unavailable";
+export const DASHBOARD_MODULE = "Dashboard";
 export const CUSTOMER_PROFILES_MODULE = "Customer Profiles";
 export const TICKETS_MODULE = "Tickets";
 export const FEEDBACK_MODULE = "Feedback";

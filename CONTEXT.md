@@ -13,7 +13,7 @@ The central sign-in site that Staff sign in through and are sent into CREOMS fro
 _Avoid_: Auth app, login site
 
 **Module**:
-A feature area of CREOMS that the Portal grants or revokes per Staff member, such as Customer Profiles. Each CREOMS page belongs to exactly one Module. The Customer Profiles Module is the permission to open the Customer Profiles pages; it is not the Customer Profile itself. The Tickets Module covers both the Tickets and the Conversations pages, since they show the same Tickets. The Feedback Module covers the Feedback page and is separate from the Tickets Module. The Marketing Module covers composing and sending Announcements; the Portal used to call it Campaigns. Orders work is split across three Modules: Orders (view Orders, quote the Delivery fee and confirm, cancel), Payments (check Payment proof and mark an Order paid) and Fulfilment (`preparing`, `dispatched`, `delivered`). The Returns Module covers Returns reads and decisions. The Orders, Payments, Fulfilment and Returns pages each belong to their own Module, but the Order detail page opens for Staff with any of the four; it is the one exception to "one page, one Module". Staff see only the actions their Modules allow. The Dashboard Module is outside this work.
+A feature area of CREOMS that the Portal grants or revokes per Staff member, such as Customer Profiles. Each CREOMS page belongs to exactly one Module. The Customer Profiles Module is the permission to open the Customer Profiles pages; it is not the Customer Profile itself. The Tickets Module covers both the Tickets and the Conversations pages, since they show the same Tickets. The Feedback Module covers the Feedback page and is separate from the Tickets Module. The Marketing Module covers composing and sending Announcements; the Portal used to call it Campaigns. Orders work is split across three Modules: Orders (view Orders, quote the Delivery fee and confirm, cancel), Payments (check Payment proof and mark an Order paid) and Fulfilment (`preparing`, `dispatched`, `delivered`). The Returns Module covers Returns reads and decisions. The Orders, Payments, Fulfilment and Returns pages each belong to their own Module, but the Order detail page opens for Staff with any of the four; it is the one exception to "one page, one Module". Staff see only the actions their Modules allow. The Dashboard Module covers the Dashboard page, which opens for Staff who hold it; each widget on it shows only if Staff also hold the Module of the data it summarises. The Dashboard is where `/` lands for Staff who hold it.
 _Avoid_: Permission, feature, role
 
 **Customer**:
@@ -38,6 +38,18 @@ The date a Customer first signed up. It is the sign-up date, not the date they v
 **Total spent**:
 The sum of a Customer's Order totals (subtotal plus delivery fee) for Orders that have been paid for or fulfilled: `paid`, `preparing`, `dispatched`, `delivered` and `received`, minus Refunded Return amounts. Returns still in progress, Replaced Returns, Declined Returns and Customer-cancelled Returns do not reduce it. Cancelled and merely placed or confirmed Orders do not count.
 _Avoid_: Revenue, lifetime value
+
+**Sales**:
+The Dashboard's money figure for a period: the sum of Order totals for Orders placed in that period that count toward Total spent, minus Refunded Return amounts. Uses the same rule as Total spent, but across all Customers and bucketed by the date the Order was placed, in Philippine Time.
+_Avoid_: Revenue
+
+**Buyer**:
+A Customer with at least one Order counted in Sales in a period. A Buyer is Returning if they had an Order counted in Sales before the period began, and New if their first such Order falls inside it. A Buyer who orders twice in the period is counted once, as New or Returning by their first. Walk-in Customers have no Orders, so they are never Buyers.
+_Avoid_: Shopper, repeat customer (Stage already uses Repeat)
+
+**Dashboard**:
+The page of business figures Staff see at a glance: Sales, Orders, Average order, Returning Buyers and Average rating for a chosen period, each compared with the previous period of equal length; the last six months of Sales; a Needs attention list of work waiting on Staff; and breakdowns of products, Buyers, payment and how Orders are received, and Customers. Figures are in Philippine Time. Customers by Stage and At risk Customers are always as of today and ignore the chosen period. Walk-in Customers appear nowhere on it. Staff can export what they are looking at as a PDF; it holds only what the Dashboard shows that Staff member.
+_Avoid_: Analytics, report page, overview
 
 **Order**:
 A Customer's request to buy, placed on the storefront. CREOMS never creates an Order: it shows the storefront's Orders and lets Staff move them forward. The storefront owns the Order and its rules; CREOMS asks it to make each change so the rules and the Customer's emails stay in one place.
