@@ -1,4 +1,4 @@
-# Staff Return decisions (#171)
+# Staff Return decisions (#171, #195)
 
 The complete [storefront contract](creoms-returns-and-delivery-photo.md) also covers
 Customer requests and cancellation, Received, Delivery photos and Customer Notifications.
@@ -7,14 +7,15 @@ Customer requests and cancellation, Received, Delivery photos and Customer Notif
 
 | Action | Eligible Return | Decision sent |
 | --- | --- | --- |
-| `approveReturn(id, goodsRequired)` | Requested | `approved`, explicit boolean `goodsRequired` |
+| `approveReturn(id, goodsRequired = false, finalResolution?)` | Requested | `approved`, boolean `goodsRequired`, explicit `finalResolution` defaulted from the preference |
 | `declineReturn(id, reason)` | Requested | `declined`, trimmed nonempty `declineReason` |
 | `markReturnGoodsReceived(id)` | Approved with `goodsRequired: true` | `goods received` |
-| `markReturnRefunded(id)` | Goods received, or Approved with `goodsRequired: false` | `refunded` |
+| `markReturnRefunded(id, form)` | Final Resolution refund; Goods received, or Approved with `goodsRequired: false` | `refunded`, uploaded `refundProofFileId` |
+| `markReturnReplaced(id)` | Final Resolution replacement; Goods received, or Approved with `goodsRequired: false` | `replaced` |
 
 Every action checks the Returns Module through the Portal before validating input or opening the read-only database. Orders, Payments and Fulfilment grants do not authorize Return decisions. Access is rechecked on every call, including revocations. Any Returns Staff member may perform the next eligible step, regardless of who approved it. Staff identity is always taken from the Portal; neither identity nor timestamps are accepted from the browser. A previously requested Return does not expire with the Customer's Refund window.
 
-CREOMS reads the current Return to reject stale/ineligible steps with an “already changed” reason, then asks the storefront to make the decision. The storefront must independently enforce the same rules atomically, including a race with Customer cancellation or another Staff decision. Once Approved, a Return cannot be declined. Refunded, Declined and Cancelled are final. A Return never changes its Order's status.
+CREOMS reads the current Return to reject stale/ineligible steps with an “already changed” reason, then asks the storefront to make the decision. The storefront must independently enforce the same rules atomically, including a race with Customer cancellation or another Staff decision. Once Approved, a Return cannot be declined. Refunded, Replaced, Declined and Cancelled are final. A Return never changes its Order's status.
 
 ## Proposed storefront endpoint
 
@@ -27,18 +28,19 @@ Authorization is `Bearer <HS256 JWT>`, signed with the same service secret as Or
 Every body includes `staffId` (Portal username) and `staffName` (Portal name snapshot), plus only the decision fields in the table above. For example:
 
 ```json
-{ "status": "approved", "goodsRequired": false, "staffId": "ana", "staffName": "Ana Reyes" }
+{ "status": "approved", "finalResolution": "refund", "goodsRequired": false, "staffId": "ana", "staffName": "Ana Reyes" }
 ```
 
 The storefront must commit the new status, any goods/decline decision and one Staff history entry (`actor_type: "staff"`, username, name and storefront time) in one transaction. Refunded also records `refunded_at` in that transaction. The storefront owns Customer emails and Notifications; CREOMS neither sends them nor moves money. Refunded means Staff have already paid the money outside CREOMS.
 
-A successful response is JSON with `id`, the requested `status`, and `actedBy: { id, name, at }`, where `at` is an ISO timestamp recorded by the storefront. Approval must also echo `goodsRequired`; decline must echo `declineReason`:
+A successful response is JSON with `id`, the requested `status`, and `actedBy: { id, name, at }`, where `at` is an ISO timestamp recorded by the storefront. Approval must echo the exact `goodsRequired` and `finalResolution`; decline must echo `declineReason`, and refund must echo the uploaded `refundProofFileId`:
 
 ```json
 {
   "id": 15,
   "status": "approved",
   "goodsRequired": false,
+  "finalResolution": "refund",
   "actedBy": { "id": "ana", "name": "Ana Reyes", "at": "2026-10-23T08:00:00.000Z" }
 }
 ```
@@ -62,3 +64,36 @@ npx vitest run tests/return-actions.test.ts tests/returns-access.test.ts --maxWo
 ```
 
 Final verification: the Returns action/access tests pass (14 tests), and typechecking and targeted lint pass. The full suite (`npm test -- --exclude '.claude/**' --maxWorkers=2 --testTimeout=20000 --silent`) reports 808 passed, 27 skipped and two pre-existing failures: the Customer Profile skeleton in `tests/loading-card.test.tsx` requires an App Router context, and `tests/session-end.test.tsx` expects outdated logout copy. Both failures were reproduced in an isolated checkout of prerequisite commit `0f2f52b`. Nested `.claude` worktrees are excluded to avoid running duplicate suites from other branches.
+
+## Resolution and refund proof (#195)
+
+Approval sends the final Resolution explicitly, using the stored Customer preference
+when omitted. It rejects values other than `refund` and `replacement`. Existing
+`approveReturn(id, goodsRequired)` callers remain valid; omitting goodsRequired defaults
+to false. The storefront rechecks the status and Resolution under its row lock.
+
+`markReturnRefunded(id, form)` requires exactly one File under FormData key `proof`.
+Empty content, non-JPG/PNG signatures, multiple Files, string ids and sizes over
+5,242,880 bytes are refused before upload. The real content type is used despite browser
+MIME/extension claims. Through `gatewayFileStorage`, CREOMS registers a Private, Permanent
+File, PUTs the bytes without credentials, confirms it, then creates the exact Link
+`{ system: "CRMS", entityType: "return", entityId: String(id), role: "refund-proof" }`.
+Only then does CREOMS send its id to the storefront, which verifies metadata, purpose,
+size and a fully decodable screenshot before committing the refund. Upload or Link failure
+never sends a decision. Confirmed Files are retained after refusal or uncertainty.
+
+Replacement requires no proof and never reduces Total spent. Both completion actions
+require the matching final Resolution and wait for Goods received when goods are required.
+The read boundary supplies preferred/final Resolution on list rows, and `videoFileId`,
+`refundProofFileId` and `replacedAt` on detail. File ids require authorized server-side URL
+resolution; the frontend controls/media display remain #196. Until #196 supplies proof,
+the old refund button safely refuses completion with a choose-proof message.
+
+The existing storefront migration 0020 and read grants were verified as already applied;
+no new CREOMS schema, environment variable or live migration is required. See the
+[contract rollout record](creoms-returns-and-delivery-photo.md#creoms-verification-and-rollout-195).
+
+Validation covers the approval default/override, legal and illegal moves for both
+Resolutions, Replaced finality, proof validation and upload/Link failures, the real gateway
+protocol, missing/mismatched confirmations, Permanent proof retention after refusal/lost
+acknowledgement, Portal access revocation, read fields and unchanged Total spent.

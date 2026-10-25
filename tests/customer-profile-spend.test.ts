@@ -51,7 +51,7 @@ describe('Customer Profile Total spent', () => {
     expect(board.ok && board.board.delivered.map(row => row.id)).toEqual([cod, gcash]);
     expect(board.ok && board.board.ready).toEqual([]);
   });
-  it.each(['requested', 'approved', 'goods received', 'declined', 'cancelled'])('%s Returns leave Total spent unchanged', async status => {
+  it.each(['requested', 'approved', 'goods received', 'replaced', 'declined', 'cancelled'])('%s Returns leave Total spent unchanged', async status => {
     const id = await order('received');
     await db.sql`insert into order_returns (order_id, status, reason, amount_in_centavos) values (${id}, ${status}, 'damaged', 115000)`;
     expect(await profile()).toMatchObject({ totalSpent: 115000, averageOrder: 115000, orders: 1, stage: 'first-order' });

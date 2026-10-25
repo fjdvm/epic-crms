@@ -36,7 +36,7 @@ _Avoid_: Contact, account, user
 The date a Customer first signed up. It is the sign-up date, not the date they verified their email.
 
 **Total spent**:
-The sum of a Customer's Order totals (subtotal plus delivery fee) for Orders that have been paid for or fulfilled: `paid`, `preparing`, `dispatched`, `delivered` and `received`, minus Refunded Return amounts. Returns still in progress, Declined Returns and Customer-cancelled Returns do not reduce it. Cancelled and merely placed or confirmed Orders do not count.
+The sum of a Customer's Order totals (subtotal plus delivery fee) for Orders that have been paid for or fulfilled: `paid`, `preparing`, `dispatched`, `delivered` and `received`, minus Refunded Return amounts. Returns still in progress, Replaced Returns, Declined Returns and Customer-cancelled Returns do not reduce it. Cancelled and merely placed or confirmed Orders do not count.
 _Avoid_: Revenue, lifetime value
 
 **Order**:
@@ -147,7 +147,11 @@ _Avoid_: Chat thread, inbox message, Messenger or Instagram chat
 
 
 **Return**:
-A Customer's request to refund one or more whole Order line items. The storefront owns it; CREOMS reads it and asks the storefront to make Staff decisions. It has a Return number (`RMA-` followed by its number) and is Requested, Approved, Goods received, Refunded, Declined or cancelled by the Customer while Requested. Refunded and Declined are final. A Return never changes its Order's status.
+A Customer's request to have one or more whole Order line items refunded or replaced. The storefront owns it; CREOMS reads it and asks the storefront to make Staff decisions. It has a Return number (`RMA-` followed by its number) and is Requested, Approved, Goods received, Refunded, Replaced, Declined or cancelled by the Customer while Requested. Refunded, Replaced and Declined are final. A Return never changes its Order's status.
+
+**Resolution**:
+What a Return ends in: a refund or a replacement. The Customer states a preference; Staff record the final Resolution on approval, and may differ from the preference. A replacement ends at Replaced once sent, creates no new Order and leaves Total spent unchanged.
+_Avoid_: Outcome, remedy
 
 **Refund window**:
-The 24 hours starting at the storefront's `delivered_at`, during which the Customer may request a Return. It limits the request, not Staff handling: an in-time Return remains valid. A Customer marking the Order `received` does not restart the window.
+The 24 hours starting at the storefront's `delivered_at`, during which the Customer may request a Return. It limits the request, not Staff handling: an in-time Return remains valid. A Customer marking the Order `received` ends the window and gives up the right to a Return.

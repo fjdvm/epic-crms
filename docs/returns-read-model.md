@@ -16,12 +16,12 @@ The storefront owns Return tables and all migrations on those tables. Its main b
 
 | Table | Fields consumed |
 | --- | --- |
-| `public.order_returns` | `id`, `order_id`, `status`, `reason`, `note`, `amount_in_centavos`, nullable `goods_required`, `decline_reason`, `refunded_at`, and `requested_at` |
+| `public.order_returns` | `id`, `order_id`, `status`, `reason`, `note`, `amount_in_centavos`, `preferred_resolution`, nullable `final_resolution`, `video_file_id`, `refund_proof_file_id`, `replaced_at`, `goods_required`, `decline_reason`, `refunded_at`, and `requested_at` |
 | `public.order_return_items` | `return_id`, `order_line_id`, `product_name`, `size_label`, `quantity`, `price_in_centavos` (immutable whole-line snapshots) |
 | `public.order_return_images` | `return_id`, `position` (1–3), private permanent `file_id` |
 | `public.order_return_history` | `id`, `return_id`, `status`, `actor_type` (`customer`/`staff`), `actor_id`, `actor_name`, `occurred_at`, optional `note` |
 
-Stored statuses are `requested`, `approved`, `goods received`, `refunded`, `declined`, `cancelled`; reasons are `damaged`, `defective`, `wrong item`, `other`. `refunded_at` and the Refunded history entry must be committed with the final status by the storefront. Return items and history have stable keys for deterministic ordering. All amounts are integer centavos.
+Stored statuses are `requested`, `approved`, `goods received`, `refunded`, `replaced`, `declined`, `cancelled`; reasons are `damaged`, `defective`, `wrong item`, `other`. `refunded_at` and the Refunded history entry must be committed with the final status by the storefront. Return items and history have stable keys for deterministic ordering. All amounts are integer centavos.
 
 Order context uses existing `orders.delivered_at`. The optional `delivery_photo_file_id` is read through a nullable JSON projection, so an older Order schema without that column still reads as no photo. Private image File IDs are data, not public URLs; Return views must resolve them server-side through the existing file-storage gateway after the Returns guard. This ticket does not relax file permissions or introduce a public image endpoint.
 
@@ -35,10 +35,24 @@ The permission migration was initially verified in a throwaway database. During 
 
 ## Fake and validation
 
-The shared fake storefront now accepts `POST /api/orders/<id>/returns`. Its `X-Test-Customer` header is fake-only session authentication, not a proposed production authentication scheme. It records item/image snapshots and the Customer's Requested history step transactionally. Requests must belong to the Customer, select whole Order lines and include a reason, note and one to three File IDs. The fake checks `delivered`/`received` and the interval `[delivered_at, delivered_at + 24 hours)`. Existing in-time Returns do not expire, and Customer receipt does not restart the clock. Full-item selection includes the Delivery fee; partial selection does not. A duplicate active/refunded item cannot be requested again.
+The shared fake storefront now accepts `POST /api/orders/<id>/returns`. Its `X-Test-Customer` header is fake-only session authentication, not a proposed production authentication scheme. It records item/image snapshots and the Customer's Requested history step transactionally. Requests must belong to the Customer, select whole Order lines and include a reason, note and one to three File IDs. The fake checks `delivered` (Received closes the window) and the interval `[delivered_at, delivered_at + 24 hours)`. Existing in-time Returns do not expire, and Customer receipt does not restart the clock. Full-item selection includes the Delivery fee; partial selection does not. A duplicate active/refunded item cannot be requested again.
 
 The fake extends the #140 test seam; production Customer endpoint authentication, request uploads, Returns transitions and notifications remain storefront/#179 and later ticket work. Run:
 
 ```sh
 npx vitest run tests/returns.test.ts tests/returns-access.test.ts tests/returns-migration.test.ts tests/order-views.test.tsx --maxWorkers=2
 ```
+
+## Resolution extension (#195)
+
+Storefront migration `0020_return_resolution` adds preferred/final Resolution,
+video/proof File ids, replacement time and the Replaced status. Lists and embedded rows
+expose `preferredResolution` and nullable `finalResolution`; detail also exposes
+`videoFileId`, `refundProofFileId` and `replacedAt`. Legacy preferred Resolution defaults
+to refund; existing Approved, Goods received and Refunded rows have final Resolution
+refund. Legacy proof remains null. Replaced is final, is filterable/countable and does
+not count as open work or as refunded money. New tab/stat/display work remains #196.
+
+The migration's exact hash, deployed constraints, backfill and SELECT-only role grants
+were verified on 2026-10-25; no additional migration was required. See the
+[contract rollout record](creoms-returns-and-delivery-photo.md#creoms-verification-and-rollout-195).

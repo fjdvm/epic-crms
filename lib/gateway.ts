@@ -93,7 +93,7 @@ async function storage<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 /** Images are Private and Permanent Files, Linked to the Message they belong to. */
-export const gatewayFileStorage: FileStorage = {
+export const gatewayFileStorage: FileStorage & { linkRefundProof(fileId: string, returnId: number): Promise<void> } = {
   async upload({ filename, contentType, bytes }) {
     const pending = await storage<{ id: string; uploadUrl: string }>("", {
       method: "POST",
@@ -117,6 +117,13 @@ export const gatewayFileStorage: FileStorage = {
     await storage(`/${pending.id}/confirm`, { method: "POST" });
 
     return pending.id;
+  },
+
+  async linkRefundProof(fileId, returnId) {
+    await storage(`/${fileId}/links`, {
+      method: "POST",
+      body: JSON.stringify({ system: "CRMS", entityType: "return", entityId: String(returnId), role: "refund-proof" }),
+    });
   },
 
   async linkToMessage(fileId, messageId) {
