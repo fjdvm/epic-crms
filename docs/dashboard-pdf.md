@@ -2,7 +2,7 @@
 
 `GET /api/dashboard/pdf?period=today` downloads the Dashboard as a PDF. It accepts the same presets as the page: `today`, `7-days`, `this-month`, `last-month`, `90-days`. Missing or unknown values fall back to `7-days`.
 
-The route requires the Dashboard Module before reading any data. It checks the data Modules through the Portal and passes only the held Modules to `loadDashboardFigures`, also used by the page. The renderer consumes that result without querying data or recalculating business figures. Analytics share the existing five-minute cache; Needs attention remains live. PDF responses are `private, no-store`.
+The route requires the Dashboard Module before reading any data. It checks the data Modules through the Portal and passes only the held Modules to `loadDashboardFigures`, also used by the page. The renderer consumes that result without querying data or recalculating business figures. Analytics share the existing five-minute cache; Needs attention remains live. The page uses the loader's `stream: true` option to await each widget separately; the PDF awaits the complete set. PDF responses are `private, no-store`.
 
 The document includes the existing `public/images/bren-raphaels-logo.svg`, Philippine dates and generation time, permitted widgets as text and bars, and explicit notes for failed widgets. An embedded DejaVu Sans font keeps peso signs readable without depending on installed server fonts. Its license is beside the font. This ticket adds the backend download route; the page's Export control belongs to the Dashboard frontend work. No CSV route is provided.
 
