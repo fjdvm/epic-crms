@@ -1,5 +1,5 @@
-import { PageLoading } from "@/components/loading/page-loading";
+import { CampaignFormSkeleton } from "@/features/marketing/campaign-form-skeleton";
 
 export default function Loading() {
-  return <PageLoading />;
+  return <CampaignFormSkeleton heading="New campaign" />;
 }

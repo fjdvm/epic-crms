@@ -14,6 +14,7 @@ import { readTopProduct } from "@/features/feedback/top-product";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
+import { searchParamsKey } from "@/lib/search-params-key";
 import Loading from "./loading";
 
 // Analyze runs as a server action on this page, asking a model about each unlabelled Feedback in turn.
@@ -27,7 +28,7 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
   const raw = await searchParams;
 
   return (
-    <Suspense key={JSON.stringify(raw)} fallback={<Loading />}>
+    <Suspense key={searchParamsKey(raw)} fallback={<Loading />}>
       <FeedbackData raw={raw} />
     </Suspense>
   );

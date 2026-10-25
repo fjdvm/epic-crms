@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { database } from "@/lib/db";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
+import { searchParamsKey } from "@/lib/search-params-key";
 import Loading from "./loading";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -24,7 +25,7 @@ export default async function CustomerProfilesPage({
   const raw = await searchParams;
 
   return (
-    <Suspense key={JSON.stringify(raw)} fallback={<Loading />}>
+    <Suspense key={searchParamsKey(raw)} fallback={<Loading />}>
       <CustomerProfilesData raw={raw} />
     </Suspense>
   );

@@ -7,6 +7,7 @@ import { loadTickets, TICKET_TABS } from "@/features/tickets/tickets";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
+import { searchParamsKey } from "@/lib/search-params-key";
 import Loading from "./loading";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -21,7 +22,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Sear
   const raw = await searchParams;
 
   return (
-    <Suspense key={JSON.stringify(raw)} fallback={<Loading />}>
+    <Suspense key={searchParamsKey(raw)} fallback={<Loading />}>
       <TicketsData raw={raw} />
     </Suspense>
   );
