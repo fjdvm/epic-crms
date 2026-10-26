@@ -12,6 +12,7 @@ export const POLL_INTERVAL_MS = 5_000;
 export const HIGHLIGHT_MS = 10_000;
 const PING_INTERVAL_MS = 30_000;
 const MAX_RECONNECT_MS = 30_000;
+const STABLE_MS = 10_000;
 
 const FeedContext = createContext<NotificationFeed | null>(null);
 const NewCustomerContext = createContext<ReadonlySet<string>>(new Set());
@@ -89,9 +90,11 @@ export function LiveUpdatesProvider({
   const feed = useMemo(() => {
     if (!received || readHere.size === 0) return received;
 
+    // The server's unread count covers rows beyond the listed ones, so only subtract what was read here.
+    const newlyRead = received.notifications.filter((n) => !n.read && readHere.has(n.id)).length;
     const notifications = received.notifications.map((n) => (readHere.has(n.id) ? { ...n, read: true } : n));
 
-    return { notifications, unread: notifications.filter((n) => !n.read).length };
+    return { notifications, unread: Math.max(0, received.unread - newlyRead) };
   }, [received, readHere]);
 
   const actions = useMemo<FeedActions>(() => {
@@ -162,7 +165,10 @@ export function LiveUpdatesProvider({
     const refresh = async () => {
       clearTimeout(timer);
       timer = undefined;
-      if (stopped || !visible()) return;
+      if (stopped || !visible()) {
+        queued = false;
+        return;
+      }
       if (running) {
         queued = true;
         return;
@@ -227,10 +233,13 @@ export function LiveUpdatesProvider({
         return scheduleReconnect();
       }
 
+      let openedAt = Infinity;
       socket = ws;
       ws.onopen = () => {
-        attempts = 0;
-        pinger = setInterval(() => ws.send("ping"), PING_INTERVAL_MS);
+        openedAt = Date.now();
+        pinger = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send("ping");
+        }, PING_INTERVAL_MS);
         // Anything nudged before the connection was up.
         void refresh();
       };
@@ -239,6 +248,8 @@ export function LiveUpdatesProvider({
       };
       ws.onclose = () => {
         clearInterval(pinger);
+        // Only a connection that held counts as healthy, so one that closes at once keeps backing off.
+        if (Date.now() - openedAt >= STABLE_MS) attempts = 0;
         if (socket !== ws) return;
         socket = undefined;
         scheduleReconnect();

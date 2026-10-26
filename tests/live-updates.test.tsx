@@ -66,6 +66,8 @@ class FakeSocket {
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   sent: string[] = [];
+  readyState = 1;
+  static OPEN = 1;
   constructor(readonly url: string) {
     FakeSocket.all.push(this);
   }
@@ -207,6 +209,23 @@ describe("the live connection", () => {
     expect(screen.getByText("unread:2 new:u-2")).toBeTruthy();
   });
 
+  it("toasts a new Order alert on a nudge and keeps the 5-second backstop poll running", async () => {
+    const poll = vi.fn().mockResolvedValue(feedOf(ada));
+    const socket = await connected(poll);
+    poll.mockClear();
+    const order: Notification = { ...note("5", "Di Reyes"), kind: "order-placed", orderId: 1042 };
+    poll.mockResolvedValue(feedOf(order, ada));
+
+    act(() => socket.nudge());
+    await elapse(0);
+    expect(toast.info).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("unread:2 new:")).toBeTruthy();
+
+    poll.mockClear();
+    await elapse(5_000);
+    expect(poll).toHaveBeenCalledTimes(1);
+  });
+
   it("shows nothing new when the nudge finds nothing this Staff member may see", async () => {
     const poll = vi.fn().mockResolvedValue(feedOf(ada));
     const socket = await connected(poll);
@@ -303,6 +322,35 @@ describe("reading from the bell", () => {
     // A poll that predates the read does not bring the highlight back.
     await elapse(5_000);
     expect(screen.getByText("unread:0 new:")).toBeTruthy();
+  });
+
+  it("clears the whole bell at once on mark all", async () => {
+    const markAllRead = vi.fn(() => new Promise<void>(() => {}));
+    function ReadAll() {
+      return <button onClick={useFeedActions().markAllRead}>clear</button>;
+    }
+    render(
+      <LiveUpdatesProvider initialFeed={feedOf(ben, ada)} poll={vi.fn()} enabled={false} markAllRead={markAllRead}>
+        <Probe />
+        <ReadAll />
+      </LiveUpdatesProvider>,
+    );
+
+    await act(async () => screen.getByText("clear").click());
+    expect(markAllRead).toHaveBeenCalled();
+    expect(screen.getByText("unread:0 new:")).toBeTruthy();
+  });
+
+  it("only subtracts the rows read here from the server's unread count", async () => {
+    render(
+      <LiveUpdatesProvider initialFeed={{ unread: 5, notifications: [ben, ada] }} poll={vi.fn()} enabled={false}>
+        <Probe />
+        <Reader id="1" />
+      </LiveUpdatesProvider>,
+    );
+
+    await act(async () => screen.getByText("read").click());
+    expect(screen.getByText("unread:4 new:")).toBeTruthy();
   });
 
   it("leaves the row read when marking it fails", async () => {
