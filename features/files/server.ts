@@ -28,4 +28,8 @@ export async function ticketUpload(reference: string, staffId: string, ticketId:
 export const ticketFileStorage = {
   ...gatewayFileStorage,
   viewUrl: async (fileId: string) => (await viewStoredFile("Tickets", fileId)).url,
+  viewFile: async (fileId: string) => {
+    const { url, filename, contentType } = await viewStoredFile("Tickets", fileId);
+    return { url, filename, contentType };
+  },
 };

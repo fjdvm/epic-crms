@@ -263,6 +263,46 @@ describe("images on Messages", () => {
     expect(screen.queryByRole("img")).toBeNull();
   });
 
+  const withFile = (attachmentType: string, attachmentName: string) =>
+    ticket({
+      messages: [
+        {
+          id: 3, sender: "customer", senderName: "Maria", body: "", hasAttachment: true,
+          attachmentUrl: "https://files.test/f2?signature=x", attachmentType, attachmentName,
+          createdAt: new Date("2026-10-20T02:21:00Z"),
+        },
+      ],
+    });
+
+  it("plays a video from its short-lived address", () => {
+    const { container } = render(<TicketDetailView ticket={withFile("video/mp4", "leak.mp4")} viewerId="bernice" />);
+
+    const video = container.querySelector("video")!;
+    expect(video.getAttribute("src")).toBe("https://files.test/f2?signature=x");
+    expect(video.hasAttribute("controls")).toBe(true);
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("links a PDF by its file name", () => {
+    render(<TicketDetailView ticket={withFile("application/pdf", "receipt.pdf")} viewerId="bernice" />);
+
+    const link = screen.getByRole("link", { name: /receipt\.pdf/ });
+    expect(link.getAttribute("href")).toBe("https://files.test/f2?signature=x");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("shows a video and a PDF in the chat bubbles too", () => {
+    const messages = [
+      { ...withFile("video/quicktime", "leak.mov").messages[0], id: 3 },
+      { ...withFile("application/pdf", "receipt.pdf").messages[0], id: 4, sender: "staff" as const, senderName: "Bernice" },
+    ];
+    const { container } = render(<TicketDetailView ticket={ticket({ messages })} viewerId="bernice" />);
+
+    expect(container.querySelector("video")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /receipt\.pdf/ })).toBeTruthy();
+  });
+
   it("shows only the opening image, not a chat, until both sides have spoken", () => {
     render(<TicketDetailView ticket={withImage("https://files.test/f1?signature=x")} viewerId="bernice" />);
 

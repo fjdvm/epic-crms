@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { getTicket, loadTicket } from "@/features/tickets/ticket";
 
+import type { FileStorage } from "@/features/tickets/attachments";
 import { FakeFileStorage } from "./fake-file-storage";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -185,6 +186,25 @@ describe("images on Messages", () => {
     expect(result.ok && result.ticket?.messages[0]).toMatchObject({
       hasAttachment: true,
       attachmentUrl: `https://files.test/${fileId}?signature=short-lived`,
+    });
+  });
+
+  it("tells the view what kind of file it is, from file-storage's own record", async () => {
+    const id = await ticket();
+    const fileId = await storage.upload({ filename: "pouch.jpg", contentType: "image/jpeg", bytes: new Uint8Array([1]) });
+    await message(id, "customer", "Here it is", 2, fileId);
+    const withType: FileStorage = {
+      upload: (file) => storage.upload(file),
+      linkToMessage: (f, m) => storage.linkToMessage(f, m),
+      remove: (f) => storage.remove(f),
+      viewUrl: (f) => storage.viewUrl(f),
+      viewFile: async (f: string) => ({ url: await storage.viewUrl(f), filename: "clip.mp4", contentType: "video/mp4" }),
+    };
+
+    const result = await loadTicket(() => db.sql, id, withType);
+
+    expect(result.ok && result.ticket?.messages[0]).toMatchObject({
+      attachmentUrl: `https://files.test/${fileId}?signature=short-lived`, attachmentType: "video/mp4", attachmentName: "clip.mp4",
     });
   });
 
