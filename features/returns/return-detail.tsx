@@ -195,7 +195,9 @@ export function ReturnDetailView({
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Delivery photo</h2>
             {deliveryPhotoUrl === undefined ? (
-              <p className="text-sm text-[#6e6680]">No photo</p>
+              <p className="text-sm text-[#6e6680]">
+                {detail.deliveryPhotoRemovedAt ? "The Delivery photo was removed." : "No photo"}
+              </p>
             ) : (
               <Photo url={deliveryPhotoUrl} alt={`Delivery photo for Order #${detail.orderId}`} />
             )}

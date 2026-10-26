@@ -46,6 +46,7 @@ const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
   paymentMethod: "gcash",
   deliveredAt: new Date("2026-10-19T00:00:00Z"),
   deliveryPhotoFileId: "photo-1",
+  deliveryPhotoRemovedAt: null,
   refundWindowEndsAt: null,
   images: [{ fileId: "img-1", position: 0 }],
   history: [
@@ -66,6 +67,19 @@ const picture = (name = "proof.png", type = "image/png") => new File([new Uint8A
 const buttons = () => screen.queryAllByRole("button").map((b) => b.textContent);
 
 describe("the Return detail", () => {
+  it("says the Delivery photo was removed, and No photo when the Order never had one", () => {
+    const { unmount } = render(
+      <ReturnDetailView detail={detail({ deliveryPhotoFileId: null, deliveryPhotoRemovedAt: new Date("2026-10-30T00:00:00Z") })} imageUrls={[]} />,
+    );
+    expect(screen.getByText("The Delivery photo was removed.")).toBeTruthy();
+    expect(screen.queryByText("No photo")).toBeNull();
+    unmount();
+
+    render(<ReturnDetailView detail={detail({ deliveryPhotoFileId: null })} imageUrls={[]} />);
+    expect(screen.getByText("No photo")).toBeTruthy();
+    expect(screen.queryByText("The Delivery photo was removed.")).toBeNull();
+  });
+
   it("shows the reason, note, items, amount, images, payment method and Delivery photo", () => {
     view(detail());
 

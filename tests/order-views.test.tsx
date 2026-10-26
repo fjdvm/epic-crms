@@ -140,6 +140,7 @@ describe("the Orders list", () => {
 
 const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
+  deliveryPhotoRemovedAt: null,
   paidBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),

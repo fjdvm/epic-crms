@@ -344,10 +344,20 @@ describe("Fulfilment Order actions", () => {
       await legacy.sql`alter table orders drop column delivery_photo_file_id`;
       await legacy.sql`insert into customers (id, full_name, email) values ('legacy', 'Maria', 'legacy@example.com')`;
       const [row] = await legacy.sql`insert into orders (customer_id, status) values ('legacy', 'delivered') returning id`;
-      expect(await loadOrder(() => legacy.sql, row.id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: null } });
+      expect(await loadOrder(() => legacy.sql, row.id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: null, deliveryPhotoRemovedAt: null } });
     } finally {
       await legacy.close();
     }
+  });
+
+  it("reads a removed Delivery photo as removed, not as No photo", async () => {
+    const id = await order("delivery", "delivered");
+    await db.sql`update orders set delivery_photo_file_id = null, delivery_photo_removed_at = '2026-10-30T00:00:00Z' where id = ${id}`;
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({
+      ok: true, order: { deliveryPhotoFileId: null, deliveryPhotoRemovedAt: new Date("2026-10-30T00:00:00Z") },
+    });
+    const never = await order("delivery", "delivered");
+    expect(await loadOrder(() => db.sql, never)).toMatchObject({ ok: true, order: { deliveryPhotoRemovedAt: null } });
   });
 
   it("denies Orders and Payments Staff, and rechecks a revoked Fulfilment grant", async () => {
