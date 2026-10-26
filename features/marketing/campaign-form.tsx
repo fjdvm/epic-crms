@@ -180,7 +180,16 @@ export function CampaignForm({
           continue;
         }
 
-        const uploaded = await uploadFile("Marketing", await prepareImage(file));
+        if (file.size === 0) {
+          toast.error(`${file.name}: ${IMAGE_REFUSALS["empty-image"]}`);
+          continue;
+        }
+        const prepared = await prepareImage(file);
+        if (!prepared) {
+          toast.error(`${file.name}: ${IMAGE_REFUSALS["not-an-image"]}`);
+          continue;
+        }
+        const uploaded = await uploadFile("Marketing", prepared);
         if (!uploaded.ok) {
           toast.error(`${file.name}: ${uploaded.reason}`);
           continue;

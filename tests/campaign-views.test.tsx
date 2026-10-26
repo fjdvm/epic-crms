@@ -3,18 +3,22 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 
+import { prepareImage } from "@/features/marketing/prepare-image";
+import { uploadFile } from "@/features/files/client";
 import type { AnnouncementRow } from "@/features/marketing/announcements";
 import { AnnouncementDetail } from "@/features/marketing/announcement-detail";
 import { CampaignForm, type CampaignFormActions } from "@/features/marketing/campaign-form";
 import { CampaignList, SubscribersCard } from "@/features/marketing/campaign-list";
 
 const push = vi.fn();
+vi.mock("@/features/marketing/prepare-image", () => ({ prepareImage: vi.fn(async (file: File) => file) }));
 vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn(async (_module: string, file: File) => ({ ok: true, reference: file.name })) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -367,6 +371,18 @@ describe("images on the campaign form", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("not an image")));
     expect(screen.getByRole("button", { name: "Remove image 1" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Remove image 2" })).toBeNull();
+  });
+
+  it("refuses an image the browser cannot prepare instead of uploading the original", async () => {
+    const actual = await vi.importActual<typeof import("@/features/marketing/prepare-image")>("@/features/marketing/prepare-image");
+    vi.mocked(prepareImage).mockImplementationOnce(actual.prepareImage);
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => { throw new Error("Invalid image"); }));
+    const actions = fakeActions();
+    render(<CampaignForm actions={actions} />);
+    pick([png("broken.png")]);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("not an image")));
+    expect(uploadFile).not.toHaveBeenCalled();
+    expect(actions.addImage).not.toHaveBeenCalled();
   });
 
   it("refuses an image over 25 MB before sending it anywhere", async () => {

@@ -6,26 +6,16 @@ import { revalidatePath } from "next/cache";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
-import { sealUpload } from "@/features/files/reference";
 import { FakeFileStorage, PNG } from "./fake-file-storage";
 const storage = new FakeFileStorage();
 vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({
   storageUrl: (url: string) => url,
-  directFileStorage: { view: vi.fn(async (id: string) => {
-    if (storage.failUpload) throw new Error("storage unavailable");
-    const file = storage.files.get(id);
-    if (!file) throw new Error("missing file");
-    return { ...file, id, url: await storage.viewUrl(id) };
-  }) },
+  directFileStorage: { view: vi.fn((id: string) => storage.view(id)) },
 }));
 function proof(bytes: Uint8Array = PNG, staffId = "ana") {
-  const id = `file-${storage.files.size + 1}`;
-  storage.files.set(id, { filename: "refund.png", contentType: "image/png", size: bytes.length,
-    visibility: "private", retentionType: "temporary", status: "active" });
   const form = new FormData();
-  form.set("proof", sealUpload({ filename: "refund.png", contentType: "image/png", size: bytes.length, fileId: id,
-    module: "Returns", staffId, context: { ticketId: null }, phase: "ready", expires: Date.now() + 60_000 }));
+  form.set("proof", storage.readyEvidence("Returns", bytes, staffId));
   return form;
 }
 

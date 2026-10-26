@@ -35,7 +35,7 @@ export async function confirmFileUpload(module: UploadModule, reference: string)
     const policy = filePolicy(module);
     const matches = confirmed.id === upload.fileId && confirmed.status === "active" && confirmed.contentType === upload.contentType &&
       confirmed.size === upload.size && confirmed.visibility === policy.visibility && confirmed.retentionType === policy.retentionType;
-    const reason = matches ? await validateStoredFile((await directFileStorage.view(upload.fileId)).url, upload) : "The uploaded file does not match its declared size or type.";
+    const reason = matches ? await validateStoredFile((await directFileStorage.view(upload.fileId)).url, upload, module) : "The uploaded file does not match its declared size or type.";
     if (reason) {
       try { await directFileStorage.remove(upload.fileId); }
       catch { return { ok: false, reason: `${reason} It could not be removed; try confirmation again.`, cleanupFailed: true }; }

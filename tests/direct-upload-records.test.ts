@@ -128,3 +128,9 @@ it("reports unavailable storage and refuses insecure Announcement image addresse
   vi.spyOn(storage, "viewUrl").mockResolvedValue("http://files.test/image.jpg");
   expect(await addImageAction(form)).toEqual({ ok: false, reason: "storage-unavailable" });
 });
+it("refuses a corrupt Announcement image even when its signature claims a supported image", async () => {
+  const bytes = (await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer()).subarray(0, 32);
+  expect(await uploadFile("Marketing", new File([new Uint8Array(bytes)], "broken.png", { type: "image/png" })))
+    .toMatchObject({ ok: false, reason: expect.stringContaining("not an image") });
+  expect(storage.files.size).toBe(0);
+});
