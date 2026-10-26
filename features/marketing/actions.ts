@@ -2,13 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
+import { recordUpload } from "@/features/files/server";
 import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
-import { gatewayAuditLog, gatewayImageStore, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
+import { gatewayAuditLog, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 
-import { addImage } from "./add-image";
 import {
   cancelSchedule,
   deleteDraft,
@@ -37,7 +37,6 @@ export type Unavailable = { ok: false; reason: "unavailable" };
 const ports = (): Ports => ({
   audit: gatewayAuditLog,
   mail: gatewayMarketingMail,
-  images: gatewayImageStore,
   subscribers: storefrontSubscribers(database()),
   mailer: gatewayMarketingMailer,
   now: () => new Date(),
@@ -102,18 +101,14 @@ export async function sendTestCopyAction(id: string): Promise<TestCopyResult | U
   return act((actor, email) => sendTestCopy(crmsDatabase(), actor, email, id, ports()));
 }
 
-/** Shrinks and stores one image; it joins an Announcement only when the Draft is saved with its address. */
+/** A Public, Permanent upload joins an Announcement only when the Draft is saved with its address. */
 export async function addImageAction(form: FormData): Promise<AddImageResult | Unavailable> {
   const staff = await requireModule(MARKETING_MODULE);
-  const file = form.get("image");
-
-  if (!(file instanceof File)) return { ok: false, reason: "not-an-image" };
-
+  if (!(form instanceof FormData) || form.getAll("image").length !== 1) return { ok: false, reason: "not-an-image" };
   try {
-    return await addImage({ id: staff.username, name: staff.name }, { filename: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, ports());
-  } catch (error) {
-    console.error("Announcement image could not be added", error);
-
-    return { ok: false, reason: "unavailable" };
+    const upload = await recordUpload(MARKETING_MODULE, form.get("image"), staff.username);
+    return upload ? { ok: true, url: upload.url } : { ok: false, reason: "not-an-image" };
+  } catch {
+    return { ok: false, reason: "storage-unavailable" };
   }
 }

@@ -1,11 +1,10 @@
 import { IMAGE_WIDTH } from "./image-limits";
 
 /**
- * Shrinks a photo in the browser before it is sent, because a 25 MB original is over what a server
- * action's request may carry. If the browser cannot read the file, it is sent as it is and the server
- * says whether it is an image at all.
+ * Prepares the email-friendly JPEG before the browser uploads it directly to storage. If the browser
+ * cannot decode it, no original bytes are uploaded.
  */
-export async function prepareImage(file: File): Promise<File> {
+export async function prepareImage(file: File): Promise<File | null> {
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
     const scale = Math.min(1, IMAGE_WIDTH / bitmap.width);
@@ -14,7 +13,7 @@ export async function prepareImage(file: File): Promise<File> {
     canvas.height = Math.round(bitmap.height * scale);
 
     const context = canvas.getContext("2d");
-    if (!context) return file;
+    if (!context) { bitmap.close(); return null; }
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
@@ -22,8 +21,8 @@ export async function prepareImage(file: File): Promise<File> {
 
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
 
-    return blob ? new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" }) : file;
+    return blob ? new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" }) : null;
   } catch {
-    return file;
+    return null;
   }
 }

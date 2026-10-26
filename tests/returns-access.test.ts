@@ -13,9 +13,13 @@ const storage = new FakeFileStorage();
 vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
 function proof() {
   const form = new FormData();
-  form.set("proof", new File([PNG], "refund.png"));
+  form.set("proof", storage.readyEvidence("Returns", PNG, "ana"));
   return form;
 }
+vi.mock("@/features/files/storage", () => ({
+  storageUrl: (url: string) => url,
+  directFileStorage: { view: vi.fn((id: string) => storage.view(id)) },
+}));
 const session = vi.hoisted(() => ({ handle: "" }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: session.handle }) }),
@@ -74,7 +78,7 @@ describe('Returns server access', () => {
     expect(await approveReturn(1, true)).toMatchObject({ ok: true });
     expect(await markReturnGoodsReceived(1)).toMatchObject({ ok: true });
     portal.revoke('ana', 'Returns');
-    await expect(markReturnRefunded(1, proof())).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
+    await expect(markReturnRefunded(1)).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
     await expect(reconcileRefundProof(1)).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
     expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(2);
@@ -94,7 +98,7 @@ describe('Returns server access', () => {
     const denied = async () => {
       for (const read of [getReturns, getReturnStats, () => getReturnDetail(1),
         () => approveReturn(1, false), () => declineReturn(1, "Wrong Order"),
-        () => markReturnGoodsReceived(1), () => markReturnReplaced(1), () => reconcileRefundProof(1), () => markReturnRefunded(1, proof())]) {
+        () => markReturnGoodsReceived(1), () => markReturnReplaced(1), () => reconcileRefundProof(1), () => markReturnRefunded(1)]) {
         await expect(read()).rejects.toMatchObject({ digest: expect.stringContaining('/no-access') });
       }
     };

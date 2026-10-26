@@ -101,6 +101,7 @@ export async function replyToTicket(
     if (!checked.ok) return checked;
 
     try {
+      if (!attachment.storage.upload) throw new Error("Use a confirmed direct upload");
       fileId = await attachment.storage.upload({
         filename: attachment.image.filename,
         contentType: checked.contentType,

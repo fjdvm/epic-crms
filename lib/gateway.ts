@@ -2,7 +2,6 @@ import { createHmac } from "node:crypto";
 
 import type { WriteAuditEvent } from "@/features/feedback/analysis";
 import type { AuditLog, MarketingMail, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
-import type { ImageStore } from "@/features/marketing/image-limits";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
@@ -93,35 +92,10 @@ async function storage<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 /** Private images default to Permanent; delivery and refund evidence starts Temporary. */
-export const gatewayFileStorage: FileStorage & {
+export const gatewayFileStorage: Omit<FileStorage, "upload"> & {
   linkRefundProof(fileId: string, returnId: number): Promise<void>;
   promote(fileId: string): Promise<void>;
 } = {
-  async upload({ filename, contentType, bytes, retentionType = "permanent" }) {
-    const pending = await storage<{ id: string; uploadUrl: string }>("", {
-      method: "POST",
-      body: JSON.stringify({
-        filename,
-        contentType,
-        size: bytes.length,
-        visibility: "private",
-        retentionType,
-      }),
-    });
-
-    // The signed address is file-storage's own, so it takes no gateway key.
-    const put = await fetch(pending.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": contentType },
-      body: bytes as BodyInit,
-    });
-    if (!put.ok) throw new Error(`The image upload was refused: ${put.status}`);
-
-    await storage(`/${pending.id}/confirm`, { method: "POST" });
-
-    return pending.id;
-  },
-
   async promote(fileId) {
     const file = await storage<{ id: string; retentionType: string; expiresAt: string | null }>(`/${encodeURIComponent(fileId)}`, {
       method: "PATCH",
@@ -157,37 +131,6 @@ export const gatewayFileStorage: FileStorage & {
 
   async remove(fileId) {
     await storage(`/${fileId}`, { method: "DELETE" });
-  },
-};
-
-/**
- * Announcement images are Public and Permanent Files, so a recipient's mail app can fetch them long
- * after the email is sent. A Draft's images are not Linked: file-storage's Links name records, and
- * an Announcement not yet saved has none.
- */
-export const gatewayImageStore: ImageStore = {
-  async store({ contentType, bytes }) {
-    const pending = await storage<{ id: string; uploadUrl: string }>("", {
-      method: "POST",
-      body: JSON.stringify({
-        filename: `announcement-${Date.now()}.jpg`,
-        contentType,
-        size: bytes.length,
-        visibility: "public",
-        retentionType: "permanent",
-      }),
-    });
-
-    // The signed address is file-storage's own, so it takes no gateway key.
-    const put = await fetch(pending.uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: bytes as BodyInit });
-    if (!put.ok) throw new Error(`The image upload was refused: ${put.status}`);
-
-    await storage(`/${pending.id}/confirm`, { method: "POST" });
-
-    const { url } = await storage<{ url: string }>(`/${pending.id}`);
-    if (!url.startsWith("https://")) throw new Error("file-storage gave an image address that is not HTTPS");
-
-    return url;
   },
 };
 

@@ -130,7 +130,7 @@ export async function openTicket(
     const checked = checkImage(input.image);
     if (!checked.ok) return checked;
 
-    if (!deps.storage) throw new Error("An image needs file-storage");
+    if (!deps.storage?.upload) throw new Error("An image needs file-storage");
 
     try {
       fileId = await deps.storage.upload({

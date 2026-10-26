@@ -6,12 +6,16 @@ import { revalidatePath } from "next/cache";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
-import { FakeFileStorage, PNG, PDF } from "./fake-file-storage";
+import { FakeFileStorage, PNG } from "./fake-file-storage";
 const storage = new FakeFileStorage();
 vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
-function proof(bytes: Uint8Array = PNG) {
+vi.mock("@/features/files/storage", () => ({
+  storageUrl: (url: string) => url,
+  directFileStorage: { view: vi.fn((id: string) => storage.view(id)) },
+}));
+function proof(bytes: Uint8Array = PNG, staffId = "ana") {
   const form = new FormData();
-  form.set("proof", new File([bytes as BlobPart], "refund.png", { type: "image/png" }));
+  form.set("proof", storage.readyEvidence("Returns", bytes, staffId));
   return form;
 }
 
@@ -126,7 +130,7 @@ describe("Staff Return decisions", () => {
         expect(await markReturnGoodsReceived(id)).toMatchObject({ ok: true });
       }
       expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false });
-      expect(storage.files.size).toBe(0);
+      expect([...storage.files.values()].every(file => file.retentionType === "temporary" && !file.returnId)).toBe(true);
       expect(await markReturnReplaced(id)).toMatchObject({ ok: true, return: { id, status: "replaced" } });
       expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: {
         status: "replaced", finalResolution: "replacement", replacedAt: now,
@@ -146,93 +150,26 @@ describe("Staff Return decisions", () => {
     expect(storefront.requests).toBe(0);
   });
 
-  it("requires exactly one nonempty JPG/PNG proof up to 5 MB before storing anything", async () => {
+  it("refuses raw bytes, bare File ids and duplicate proof references", async () => {
     const id = await requested();
     await approveReturn(id);
-    const duplicates = proof();
-    duplicates.append("proof", new File([PNG], "second.png"));
-    const arbitraryId = new FormData();
-    arbitraryId.set("proof", "file-from-another-return");
-    for (const form of [undefined, new FormData(), arbitraryId, duplicates,
-      proof(new Uint8Array()), proof(PDF), proof(new Uint8Array(5 * 1024 * 1024 + 1))]) {
+    const raw = new FormData(); raw.set("proof", new File([PNG], "refund.png"));
+    const bare = new FormData(); bare.set("proof", "file-from-another-return");
+    const duplicate = proof(); duplicate.append("proof", "another-reference");
+    for (const form of [undefined, new FormData(), raw, bare, duplicate]) {
       expect(await markReturnRefunded(id, form)).toMatchObject({ ok: false, reason: expect.any(String) });
     }
-    expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(1);
-    expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved", refundProofFileId: null } });
   });
 
-  it("uploads proof with its real type, links it to the Return and sends only its confirmed File id", async () => {
+  it("links confirmed proof to the Return and ignores browser-supplied actor and File ids", async () => {
     const id = await requested();
     await approveReturn(id);
-    const form = new FormData();
-    form.set("proof", new File([PNG], "wrong-extension.pdf", { type: "application/pdf" }));
-    form.set("staffId", "forged");
-    form.set("refundProofFileId", "forged");
+    const form = proof();
+    form.set("staffId", "forged"); form.set("refundProofFileId", "forged");
     expect(await markReturnRefunded(id, form)).toMatchObject({ ok: true });
-    expect(storage.files.get("file-1")).toMatchObject({ contentType: "image/png", visibility: "private",
-      retentionType: "permanent", status: "active", returnId: id });
-    expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: {
-      refundProofFileId: "file-1", history: [{ actor: { id: "ana" } }, { actor: { id: "ana" } }],
-    } });
-  });
-
-  it("uploads and links Temporary proof, then promotes it after the storefront confirms the refund", async () => {
-    const { gatewayFileStorage } = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
-    vi.spyOn(storage, "upload").mockImplementation(gatewayFileStorage.upload);
-    vi.spyOn(storage, "linkRefundProof").mockImplementation(gatewayFileStorage.linkRefundProof);
-    vi.spyOn(storage, "promote").mockImplementation(gatewayFileStorage.promote);
-    vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
-    vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "fake-gateway-key");
-    const id = await requested();
-    await approveReturn(id);
-    const steps: string[] = [];
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init);
-      if (request.url.startsWith(FAKE_STOREFRONT_URL)) {
-        expect(steps).toEqual(["register", "upload", "confirm", "link"]);
-        expect(await request.clone().json()).toMatchObject({ refundProofFileId: "proof-file" });
-        const response = await storefront.handle(request);
-        steps.push("refund");
-        return response;
-      }
-      if (request.url === "https://bucket.test/proof") {
-        expect(request.headers.has("authorization")).toBe(false);
-        expect(request.headers.get("content-type")).toBe("image/png");
-        expect(new Uint8Array(await request.arrayBuffer())).toEqual(PNG);
-        steps.push("upload");
-        return new Response(null, { status: 200 });
-      }
-      expect(request.headers.get("authorization")).toBe("Bearer fake-gateway-key");
-      if (request.url === "https://gateway.test/files") {
-        expect(await request.json()).toEqual({ filename: "refund.png", contentType: "image/png", size: PNG.length,
-          visibility: "private", retentionType: "temporary" });
-        steps.push("register");
-        return Response.json({ id: "proof-file", uploadUrl: "https://bucket.test/proof" });
-      }
-      if (request.url.endsWith("/proof-file/confirm")) {
-        steps.push("confirm");
-        storage.files.set("proof-file", { filename: "refund.png", contentType: "image/png", size: PNG.length,
-          visibility: "private", retentionType: "temporary", status: "active" });
-        return Response.json({});
-      }
-      if (request.url.endsWith("/proof-file/links")) {
-        expect(await request.json()).toEqual({ system: "CRMS", entityType: "return", entityId: String(id), role: "refund-proof" });
-        storage.files.get("proof-file")!.returnId = id;
-        steps.push("link");
-        return Response.json({});
-      }
-      if (request.url.endsWith("/proof-file") && request.method === "PATCH") {
-        expect(steps).toEqual(["register", "upload", "confirm", "link", "refund"]);
-        expect(await request.json()).toEqual({ retentionType: "permanent" });
-        storage.files.get("proof-file")!.retentionType = "permanent";
-        steps.push("promote");
-        return Response.json({ id: "proof-file", retentionType: "permanent", expiresAt: null });
-      }
-      throw new Error("Unexpected gateway call");
-    });
-    expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: true });
-    expect(steps).toEqual(["register", "upload", "confirm", "link", "refund", "promote"]);
+    expect(storage.files.get("file-1")).toMatchObject({ returnId: id, retentionType: "permanent" });
+    expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { refundProofFileId: "file-1" } });
   });
 
   it("stops before the storefront if proof upload or linking fails", async () => {
@@ -417,7 +354,7 @@ describe("Staff Return decisions", () => {
     vi.mocked(requireModule).mockResolvedValue({ ...ana, username: "ben", name: "Ben Cruz" });
     expect(await markReturnGoodsReceived(id)).toMatchObject({ ok: true, return: { status: "goods received" } });
     vi.mocked(requireModule).mockResolvedValue({ ...ana, username: "carla", name: "Carla Diaz" });
-    expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: true, return: { status: "refunded" } });
+    expect(await markReturnRefunded(id, proof(PNG, "carla"))).toMatchObject({ ok: true, return: { status: "refunded" } });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: {
       status: "refunded", refundedAt: now, orderStatus: "delivered", amount: 10000,
       history: [

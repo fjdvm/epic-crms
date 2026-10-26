@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { uploadFile } from "@/features/files/client";
 
 import {
   addImageAction,
@@ -179,7 +180,23 @@ export function CampaignForm({
           continue;
         }
 
-        const result = await actions.addImage(await toFormData(file));
+        if (file.size === 0) {
+          toast.error(`${file.name}: ${IMAGE_REFUSALS["empty-image"]}`);
+          continue;
+        }
+        const prepared = await prepareImage(file);
+        if (!prepared) {
+          toast.error(`${file.name}: ${IMAGE_REFUSALS["not-an-image"]}`);
+          continue;
+        }
+        const uploaded = await uploadFile("Marketing", prepared);
+        if (!uploaded.ok) {
+          toast.error(`${file.name}: ${uploaded.reason}`);
+          continue;
+        }
+        const form = new FormData();
+        form.set("image", uploaded.reference);
+        const result = await actions.addImage(form);
         if (result.ok) setImages((current) => [...current, result.url]);
         else toast.error(`${file.name}: ${MESSAGES[result.reason]}`);
       }
@@ -527,11 +544,4 @@ export function CampaignForm({
       </AlertDialog>
     </form>
   );
-}
-
-async function toFormData(file: File): Promise<FormData> {
-  const form = new FormData();
-  form.set("image", await prepareImage(file));
-
-  return form;
 }

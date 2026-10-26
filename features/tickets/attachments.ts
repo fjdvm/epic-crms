@@ -40,7 +40,7 @@ export function checkImage(image: ImageUpload): { ok: true; contentType: ImageCo
  */
 export interface FileStorage {
   /** Stores the bytes as an Active Private File and returns its id. */
-  upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array; retentionType?: "permanent" | "temporary" }): Promise<string>;
+  upload?(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array; retentionType?: "permanent" | "temporary" }): Promise<string>;
   /** Labels the File as belonging to a Message. */
   linkToMessage(fileId: string, messageId: number): Promise<void>;
   /** A short-lived signed address to show the File from. */

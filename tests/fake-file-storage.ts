@@ -1,3 +1,4 @@
+import { sealUpload } from "@/features/files/reference";
 import type { FileStorage, ImageContentType } from "@/features/tickets/attachments";
 
 /** An in-memory file-storage: Private Files, short-lived addresses, and whatever failures a test asks for. */
@@ -58,12 +59,36 @@ export class FakeFileStorage implements FileStorage {
     }
     if (url.pathname.endsWith("/links")) {
       const body = await request.json();
-      file.link = Number(body.entityId);
+      if (this.failLink) return new Response(null, { status: 503 });
+      if (body.entityType === "return") file.returnId = Number(body.entityId);
+      else file.link = Number(body.entityId);
       return new Response(null, { status: 204 });
+    }
+    if (request.method === "PATCH") {
+      if (this.failPromote) return new Response(null, { status: 503 });
+      file.retentionType = "permanent";
+      return Response.json({ ...file, id, expiresAt: null });
     }
     if (file.status !== "active") return new Response(null, { status: 404 });
     return Response.json({ ...file, id, bytes: undefined, url: await this.viewUrl(id) });
   };
+
+  /** A previously confirmed browser upload for action tests that focus on the subsequent record change. */
+  readyEvidence(module: "Fulfilment" | "Returns", bytes: Uint8Array = PNG, staffId = "ana") {
+    const id = `file-${this.next++}`;
+    const filename = module === "Fulfilment" ? "delivery.png" : "refund.png";
+    this.files.set(id, { filename, contentType: "image/png", size: bytes.length,
+      visibility: "private", retentionType: "temporary", status: "active" });
+    return sealUpload({ filename, contentType: "image/png", size: bytes.length, fileId: id,
+      module, staffId, context: { ticketId: null }, phase: "ready", expires: Date.now() + 60_000 });
+  }
+
+  async view(id: string) {
+    if (this.failUpload) throw new Error("storage unavailable");
+    const file = this.files.get(id);
+    if (!file) throw new Error("missing file");
+    return { ...file, id, url: await this.viewUrl(id) };
+  }
 
   async upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array; retentionType?: "permanent" | "temporary" }) {
     if (this.failUpload) throw new Error("file-storage is down");

@@ -1,10 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import sharp from "sharp";
-
-import { addImage } from "@/features/marketing/add-image";
-import { MAX_IMAGE_BYTES, type ImageStore } from "@/features/marketing/image-limits";
 import {
   cancelSchedule,
   deleteDraft,
@@ -74,20 +70,6 @@ class FakeMail implements MarketingMail {
   }
 }
 
-/** In-memory file storage: every stored image gets a public address, and tests can make it fail. */
-class FakeImageStore implements ImageStore {
-  stored = new Map<string, { contentType: string; bytes: Uint8Array }>();
-  down = false;
-
-  async store(image: { contentType: "image/jpeg"; bytes: Uint8Array }) {
-    if (this.down) throw new Error("file-storage is down");
-    const url = `https://cdn.test/images/${this.stored.size + 1}.jpg`;
-    this.stored.set(url, image);
-
-    return url;
-  }
-}
-
 class FakeSubscribers implements SubscriberSource {
   subscribers: Subscriber[] = [];
   down = false;
@@ -121,16 +103,14 @@ const now = new Date("2026-10-20T04:00:00Z");
 
 let audit: FakeAudit;
 let mail: FakeMail;
-let images: FakeImageStore;
 let subscribers: FakeSubscribers;
 let mailer: FakeMailer;
 let clock = now;
-const ports = () => ({ audit, mail, images, subscribers, mailer, now: () => clock });
+const ports = () => ({ audit, mail, subscribers, mailer, now: () => clock });
 
 beforeEach(async () => {
   audit = new FakeAudit();
   mail = new FakeMail();
-  images = new FakeImageStore();
   subscribers = new FakeSubscribers();
   mailer = new FakeMailer();
   clock = now;
@@ -511,73 +491,6 @@ describe("the Subscriber count", () => {
 
   it("is zero for an empty store", async () => {
     expect(await subscriberCount(db.sql)).toEqual({ subscribers: 0, customers: 0 });
-  });
-});
-
-/** A photo-like image of about the given raw size: noise, so it does not compress away on its own. */
-const photo = (width: number, height: number, format: "png" | "jpeg" | "webp" = "png") =>
-  sharp({ create: { width, height, channels: 3, background: "#808080", noise: { type: "gaussian", mean: 128, sigma: 60 } } })
-    [format](format === "png" ? { compressionLevel: 0 } : {})
-    .toBuffer();
-
-describe("adding an image", () => {
-  it("accepts a 25 MB image and stores it much smaller, at an email-friendly width", async () => {
-    const big = await photo(3300, 2400);
-    expect(big.length).toBeGreaterThan(20 * 1024 * 1024);
-    expect(big.length).toBeLessThanOrEqual(MAX_IMAGE_BYTES);
-
-    const result = await addImage(ada, { filename: "halaya.png", bytes: big }, ports());
-
-    expect(result.ok).toBe(true);
-    const [kept] = [...images.stored.values()];
-    expect(images.stored.size).toBe(1);
-    expect(kept.bytes.length).toBeLessThan(big.length / 10);
-    const meta = await sharp(kept.bytes).metadata();
-    expect(meta.format).toBe("jpeg");
-    expect(meta.width).toBe(1200);
-    expect(meta.height).toBe(873);
-  });
-
-  it("hands back the public address Staff keep on the Announcement", async () => {
-    const result = await addImage(ada, { filename: "a.jpg", bytes: await photo(400, 300, "jpeg") }, ports());
-
-    expect(result).toEqual({ ok: true, url: "https://cdn.test/images/1.jpg" });
-  });
-
-  it("never enlarges a small image", async () => {
-    await addImage(ada, { filename: "small.webp", bytes: await photo(400, 300, "webp") }, ports());
-
-    expect((await sharp([...images.stored.values()][0].bytes).metadata()).width).toBe(400);
-  });
-
-  it("refuses a file that is not an image, and stores nothing", async () => {
-    const pdf = new TextEncoder().encode("%PDF-1.7 not an image");
-
-    expect(await addImage(ada, { filename: "menu.pdf", bytes: pdf }, ports())).toEqual({ ok: false, reason: "not-an-image" });
-    expect(images.stored.size).toBe(0);
-  });
-
-  it("refuses an image over 25 MB, and stores nothing", async () => {
-    const tooBig = new Uint8Array(MAX_IMAGE_BYTES + 1);
-
-    expect(await addImage(ada, { filename: "huge.png", bytes: tooBig }, ports())).toEqual({ ok: false, reason: "image-too-large" });
-    expect(images.stored.size).toBe(0);
-  });
-
-  it("refuses an empty file", async () => {
-    expect(await addImage(ada, { filename: "empty.png", bytes: new Uint8Array() }, ports())).toEqual({
-      ok: false,
-      reason: "empty-image",
-    });
-  });
-
-  it("says file storage is unavailable rather than losing the image silently", async () => {
-    images.down = true;
-
-    expect(await addImage(ada, { filename: "a.jpg", bytes: await photo(400, 300, "jpeg") }, ports())).toEqual({
-      ok: false,
-      reason: "storage-unavailable",
-    });
   });
 });
 
