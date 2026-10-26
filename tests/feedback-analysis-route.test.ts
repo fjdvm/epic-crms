@@ -5,7 +5,7 @@ const runAnalysis = vi.fn();
 vi.mock("@/features/feedback/analysis", () => ({ runAnalysis }));
 vi.mock("@/features/feedback/sentiment-clients", () => ({ configuredClients: () => ({ groq: null, gemini: null }) }));
 vi.mock("@/lib/feedback-db", () => ({ feedbackWriterDatabase: () => ({}) }));
-vi.mock("@/lib/gateway", () => ({ writeAuditEvent: vi.fn() }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn() }));
 
 const { GET } = await import("@/app/api/cron/feedback-analysis/route");
 

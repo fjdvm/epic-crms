@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { recordUpload } from "@/features/files/server";
 import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
-import { gatewayAuditLog, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
+import { gatewayAuditTrail, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 
@@ -35,7 +35,7 @@ import { parsePhilippineTime } from "./philippine-time";
 export type Unavailable = { ok: false; reason: "unavailable" };
 
 const ports = (): Ports => ({
-  audit: gatewayAuditLog,
+  audit: gatewayAuditTrail,
   mail: gatewayMarketingMail,
   subscribers: storefrontSubscribers(database()),
   mailer: gatewayMarketingMailer,
@@ -49,7 +49,7 @@ async function act<R extends { ok: boolean }>(
   const staff = await requireModule(MARKETING_MODULE);
 
   try {
-    const result = await run({ id: staff.username, name: staff.name }, staff.email);
+    const result = await run({ id: staff.id, name: staff.name }, staff.email);
     if (result.ok) revalidatePath("/email-campaigns");
 
     return result;

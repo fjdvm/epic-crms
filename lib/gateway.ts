@@ -1,7 +1,7 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
-import type { WriteAuditEvent } from "@/features/feedback/analysis";
-import type { AuditLog, MarketingMail, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
+import { recordAudit, type AuditTrail } from "@/lib/audit-trail";
+import type { MarketingMail, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
@@ -22,21 +22,21 @@ export const sendAppEmail: SendAppEmail = async (email) => {
   if (!response.ok) throw new Error(`The gateway refused the email: ${response.status}`);
 };
 
-/** Posts one Audit Event through the api-gateway to audit-logs, as the "crms" Caller. Callers decide whether a failure matters. */
-async function postAuditEvent(event: object): Promise<void> {
+/** Delivers every CREOMS Audit Event through the gateway, with a bounded, best-effort write. */
+export const gatewayAuditTrail: AuditTrail = (event) => recordAudit(async () => {
   const { base, key } = gateway();
-
+  const { operationId, ...fields } = event;
+  const idempotencyKey = createHash("sha256")
+    .update(JSON.stringify([event.action, event.target.type, event.target.id, operationId]))
+    .digest("hex");
   const response = await fetch(`${base}/audit/events`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify(event),
+    body: JSON.stringify({ ...fields, source: "CRMS", idempotency_key: idempotencyKey }),
     signal: AbortSignal.timeout(5_000),
   });
-
   if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
-}
-
-export const writeAuditEvent: WriteAuditEvent = postAuditEvent;
+}, event);
 
 /** Where the Customer reviews a Ticket in the storefront. */
 export function storefrontTicketUrl(id: number): string {
@@ -132,22 +132,6 @@ export const gatewayFileStorage: Omit<FileStorage, "upload"> & {
   async remove(fileId) {
     await storage(`/${fileId}`, { method: "DELETE" });
   },
-};
-
-/** Announcement actions as Audit Events: CRMS, Marketing Module, acted by a Staff member. */
-export const gatewayAuditLog: AuditLog = {
-  record: (event) =>
-    postAuditEvent({
-      source: "CRMS",
-      module: "Marketing",
-      action: event.action,
-      outcome: "success",
-      actor: { type: "staff", id: event.actor.id, display_name: event.actor.name },
-      target: { type: "announcement", id: event.announcement.id, display_name: event.announcement.title },
-      description: event.description,
-      ...(event.subscribers === undefined ? {} : { metadata: { subscribers: event.subscribers } }),
-      occurred_at: event.occurredAt.toISOString(),
-    }),
 };
 
 /**

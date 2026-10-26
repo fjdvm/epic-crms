@@ -258,7 +258,6 @@ describe("runAnalysis", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      source: "CRMS",
       module: "Feedback",
       action: "feedback.analysis_run",
       outcome: "success",
@@ -280,7 +279,7 @@ describe("runAnalysis", () => {
       now: NOW,
     });
 
-    expect(events[0].actor).toEqual({ type: "staff", id: "s1", display_name: "Ana Staff" });
+    expect(events[0].actor).toEqual({ type: "user", id: "s1", display_name: "Ana Staff" });
   });
 
   it("still finishes and reports the run when writing the audit event fails", async () => {
@@ -299,6 +298,7 @@ describe("runAnalysis", () => {
     });
 
     expect(result).toMatchObject({ status: "done", analyzed: 1 });
+    expect(console.error).toHaveBeenCalledWith("CREOMS Audit Event could not be recorded", expect.any(Error));
   });
 });
 
@@ -377,7 +377,7 @@ describe("the Analyze locks", () => {
     expect(await press(NOW, events)).toMatchObject({ status: "done", analyzed: 1, failed: 0 });
     expect(await stored(labelled)).toMatchObject({ sentiment: "positive", sentiment_model: "earlier-model" });
     expect((await stored(fresh)).sentiment).toBe("neutral");
-    expect(events[0].actor).toEqual({ type: "staff", id: "s1", display_name: "Ana Staff" });
+    expect(events[0].actor).toEqual({ type: "user", id: "s1", display_name: "Ana Staff" });
   });
 
   it("reports missing keys before anything else, even during a run", async () => {

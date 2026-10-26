@@ -20,7 +20,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const ada = { name: "Ada Okafor", username: "ada.okafor", email: "ada@brenraphaels.test", role: "Customer Support" };
+const ada = { name: "Ada Okafor", id: "ada", username: "ada.okafor", email: "ada@brenraphaels.test", role: "Customer Support" };
 
 function renderSidebar(permittedPages: string[]) {
   return render(

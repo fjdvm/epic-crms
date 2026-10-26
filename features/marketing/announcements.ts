@@ -1,3 +1,5 @@
+import { recordAudit, type AuditTrail } from "@/lib/audit-trail";
+
 import type postgres from "postgres";
 
 import { defaultLayout, isImageLayout, layoutsFor, type ImageLayout } from "./image-layouts";
@@ -8,7 +10,7 @@ export const TITLE_LIMIT = 60;
 
 export type AnnouncementState = "draft" | "scheduled" | "sent" | "failed";
 
-/** The Staff member acting; their Portal username and display name. */
+/** The Staff member acting; their Portal User id and display name. */
 export interface Actor {
   id: string;
   name: string;
@@ -44,7 +46,7 @@ export interface AnnouncementRow {
 }
 
 /** What the audit-logs service is told about a Staff action; the gateway adapter fills in the rest. */
-export interface AuditEvent {
+interface AnnouncementAuditEvent {
   action: "record.created" | "record.updated" | "record.deleted" | "record.viewed";
   actor: Actor;
   announcement: { id: string; title: string };
@@ -52,11 +54,7 @@ export interface AuditEvent {
   /** How many Subscribers a send was for. Set only on sends. */
   subscribers?: number;
   occurredAt: Date;
-}
-
-/** The audit-logs boundary, reached through the api-gateway (see lib/gateway.ts). Tests replace it with a fake. */
-export interface AuditLog {
-  record(event: AuditEvent): Promise<void>;
+  outcome?: "success" | "failure";
 }
 
 /** A Customer who is a Subscriber: verified, with Marketing opt-in yes. */
@@ -105,7 +103,7 @@ export interface MarketingMail {
 }
 
 export interface Ports {
-  audit: AuditLog;
+  audit: AuditTrail;
   mail: MarketingMail;
   subscribers: SubscriberSource;
   mailer: MarketingMailer;
@@ -197,12 +195,19 @@ function check(
  * The audit trail is a record of what happened, not a gate on it: a change that is already saved is
  * not undone because audit-logs could not be reached.
  */
-async function audited({ audit }: Pick<Ports, "audit">, event: AuditEvent) {
-  try {
-    await audit.record(event);
-  } catch (error) {
-    console.error("Announcement action could not be audited", error);
-  }
+async function audited({ audit }: Pick<Ports, "audit">, event: AnnouncementAuditEvent) {
+  await recordAudit(audit, {
+    module: "Marketing",
+    action: event.action,
+    outcome: event.outcome ?? "success",
+    actor: { type: "user", id: event.actor.id, display_name: event.actor.name },
+    target: { type: "announcement", id: event.announcement.id, display_name: event.announcement.title },
+    description: event.description,
+    occurred_at: event.occurredAt.toISOString(),
+    ...(event.subscribers === undefined ? {} : { metadata: { subscribers: event.subscribers } }),
+    // Includes the occurrence so separate edits/sends remain distinct; replaying the event is stable.
+    operationId: JSON.stringify([event.action, event.announcement.id, event.actor.id, event.occurredAt.toISOString(), event.description]),
+  });
 }
 
 /** Saves a Draft. Every Staff member with the Marketing Module shares every Announcement. */
@@ -408,6 +413,7 @@ async function deliver(
       actor,
       announcement: { id, title: current.title },
       description: `${actor.name}'s scheduled send of "${current.title}" found no Subscribers, so nothing was sent and it is Failed.`,
+      outcome: "failure",
       subscribers: 0,
       occurredAt: ports.now(),
     });
@@ -466,6 +472,7 @@ async function deliver(
       : complete
         ? `${actor.name} sent "${current.title}" to ${plural(audience.length)}.`
         : `${actor.name} tried to send "${current.title}" to ${plural(audience.length)}; ${reached} ${reached === 1 ? "was" : "were"} reached and it is Failed.`,
+    outcome: complete ? "success" : "failure",
     subscribers: audience.length,
     occurredAt: ports.now(),
   });

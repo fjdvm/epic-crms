@@ -56,7 +56,7 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function signIn(modules: string[]) {
-  portal.addStaff('ana', { username: 'ana', name: 'Ana Reyes', email: 'ana@example.com', role: 'Staff' }, modules);
+  portal.addStaff('ana', { id: 'ana', username: 'ana', name: 'Ana Reyes', email: 'ana@example.com', role: 'Staff' }, modules);
   portal.signIn('ana');
   const verifier = 'proof-for-returns';
   const authorize = new URL('/api/integrations/authorize', FAKE_PORTAL_URL);

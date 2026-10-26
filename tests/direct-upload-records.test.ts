@@ -33,7 +33,7 @@ beforeEach(async () => {
   vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "caller-key");
   vi.stubEnv("CREOMS_SERVICE_SECRET", FAKE_SERVICE_SECRET);
   vi.stubEnv("CREOMS_STOREFRONT_URL", FAKE_STOREFRONT_URL);
-  vi.mocked(requireModule).mockResolvedValue({ username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
+  vi.mocked(requireModule).mockResolvedValue({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
   photo = new File([new Uint8Array(await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer())], "photo.png", { type: "image/png" });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
@@ -81,7 +81,7 @@ it("refuses another Module's reference and another Staff member's reference", as
   const marketing = await attachment("Marketing", "photo");
   expect(await deliverOrder(1, marketing)).toMatchObject({ ok: false });
   const delivery = await attachment("Fulfilment", "photo");
-  vi.mocked(requireModule).mockResolvedValue({ username: "bob", name: "Bob", email: "bob@example.com", role: "Staff" });
+  vi.mocked(requireModule).mockResolvedValue({ id: "bob", username: "bob", name: "Bob", email: "bob@example.com", role: "Staff" });
   expect(await deliverOrder(1, delivery)).toMatchObject({ ok: false });
   expect(storefront.requests).toBe(0);
 });
