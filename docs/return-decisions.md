@@ -75,12 +75,17 @@ to false. The storefront rechecks the status and Resolution under its row lock.
 `markReturnRefunded(id, form)` requires exactly one File under FormData key `proof`.
 Empty content, non-JPG/PNG signatures, multiple Files, string ids and sizes over
 5,242,880 bytes are refused before upload. The real content type is used despite browser
-MIME/extension claims. Through `gatewayFileStorage`, CREOMS registers a Private, Permanent
+MIME/extension claims. Through `gatewayFileStorage`, CREOMS registers a Private, Temporary
 File, PUTs the bytes without credentials, confirms it, then creates the exact Link
 `{ system: "CRMS", entityType: "return", entityId: String(id), role: "refund-proof" }`.
 Only then does CREOMS send its id to the storefront, which verifies metadata, purpose,
 size and a fully decodable screenshot before committing the refund. Upload or Link failure
-never sends a decision. Confirmed Files are retained after refusal or uncertainty.
+never sends a decision. After a matching refund confirmation CREOMS promotes the File
+with `PATCH /files/<id>` and checks Permanent retention with no expiry. Refusal or
+uncertainty leaves Temporary proof for file-storage's seven-day cleanup; Staff must read
+the Return before considering another action. Promotion failure explicitly says the
+Return was refunded and warns against repeating the refund. The storefront must accept
+Temporary proof first; see [recovery and rollout notes](temporary-evidence.md).
 
 Replacement requires no proof and never reduces Total spent. Both completion actions
 require the matching final Resolution and wait for Goods received when goods are required.
@@ -95,5 +100,5 @@ no new CREOMS schema, environment variable or live migration is required. See th
 
 Validation covers the approval default/override, legal and illegal moves for both
 Resolutions, Replaced finality, proof validation and upload/Link failures, the real gateway
-protocol, missing/mismatched confirmations, Permanent proof retention after refusal/lost
+protocol, missing/mismatched confirmations, Temporary proof retention after refusal/lost
 acknowledgement, Portal access revocation, read fields and unchanged Total spent.

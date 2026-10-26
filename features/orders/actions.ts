@@ -164,13 +164,21 @@ export async function deliverOrder(id: number, form?: FormData): Promise<OrderCh
     if (!checked.ok) return { ok: false, reason: IMAGE_REFUSALS[checked.reason] };
     let deliveryPhotoFileId: string;
     try {
-      deliveryPhotoFileId = await gatewayFileStorage.upload({ ...image, contentType: checked.contentType });
+      deliveryPhotoFileId = await gatewayFileStorage.upload({ ...image, contentType: checked.contentType, retentionType: "temporary" });
       if (!deliveryPhotoFileId) throw new Error("Missing File id");
     } catch {
       return { ok: false, reason: "Delivery photo could not be stored. The Order was not marked delivered." };
     }
-    // Keep the Permanent File even if the storefront response is uncertain: it may be attached.
-    return changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId });
+    // Refused or uncertain writes leave Temporary evidence for file-storage's seven-day cleanup.
+    const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId });
+    if (result.ok) {
+      try {
+        await gatewayFileStorage.promote(deliveryPhotoFileId);
+      } catch {
+        return { ok: false, reason: "The Order was marked delivered, but its Delivery photo could not be made Permanent. Refresh the Order; do not repeat delivery." };
+      }
+    }
+    return result;
   }, FULFILMENT_MODULE);
 }
 
@@ -178,4 +186,21 @@ export async function deliverOrder(id: number, form?: FormData): Promise<OrderCh
 export async function getFulfilmentBoard(): Promise<FulfilmentBoardResult> {
   await requireModule(FULFILMENT_MODULE);
   return loadFulfilmentBoard(database);
+}
+
+/** Settle uncertain delivery evidence from the recorded Order, never by replaying delivery. */
+export async function reconcileDeliveryPhoto(id: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+  await requireModule(FULFILMENT_MODULE);
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
+  try {
+    const [order] = await database()<{ status: string; file_id: string | null }[]>`
+      select status, to_jsonb(o)->>'delivery_photo_file_id' as file_id from public.orders o where id = ${id}`;
+    if (!order || !["delivered", "received"].includes(order.status) || !order.file_id) {
+      return { ok: false, reason: "The Order has no confirmed Delivery photo. Refresh the Order before trying again." };
+    }
+    await gatewayFileStorage.promote(order.file_id);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "The Delivery photo could not be made Permanent. Refresh the Order; do not repeat delivery." };
+  }
 }

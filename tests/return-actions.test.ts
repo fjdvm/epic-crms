@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, getReturnDetail } from "@/features/returns/actions";
+import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, getReturnDetail, reconcileRefundProof } from "@/features/returns/actions";
 import { requireModule } from "@/lib/portal/staff";
 import { database } from "@/lib/db";
 import { revalidatePath } from "next/cache";
@@ -43,6 +43,66 @@ async function requested() {
 }
 
 describe("Staff Return decisions", () => {
+  it("reconciles only the proof recorded on a Refunded Return", async () => {
+    const id = await requested();
+    expect((await reconcileRefundProof(id)).ok).toBe(false);
+    expect((await reconcileRefundProof(999)).ok).toBe(false);
+    expect(await reconcileRefundProof(0)).toEqual({ ok: false, reason: "Invalid Return number." });
+    await approveReturn(id);
+    storefront.refusal = "Refund refused.";
+    await markReturnRefunded(id, proof());
+    expect((await reconcileRefundProof(id)).ok).toBe(false);
+    storefront.refusal = null;
+    storage.failPromote = true;
+    expect((await markReturnRefunded(id, proof())).ok).toBe(false);
+    expect((await reconcileRefundProof(id)).ok).toBe(false);
+    expect(storage.files.get("file-2")?.retentionType).toBe("temporary");
+    storage.failPromote = false;
+    expect(await reconcileRefundProof(id)).toEqual({ ok: true });
+    expect(await reconcileRefundProof(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")?.retentionType).toBe("temporary");
+    expect(storage.files.get("file-2")?.retentionType).toBe("permanent");
+    expect(storefront.requests).toBe(3);
+  });
+
+  it("leaves Temporary evidence after malformed responses and transport failures without retrying", async () => {
+    const id = await requested();
+    await approveReturn(id);
+    vi.mocked(revalidatePath).mockClear();
+    const replies = [() => new Response("invalid JSON"), () => new Response(null, { status: 204 }),
+      () => new Response(null, { status: 503 }), () => { throw new Error("Connection lost"); }];
+    for (const reply of replies) {
+      const send = vi.fn(async () => reply());
+      vi.stubGlobal("fetch", send);
+      expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
+      expect(send).toHaveBeenCalledTimes(1);
+    }
+    expect([...storage.files.values()].map(file => file.retentionType)).toEqual(["temporary", "temporary", "temporary", "temporary"]);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat a confirmed refund when making its proof Permanent fails", async () => {
+    const id = await requested();
+    await approveReturn(id);
+    storage.failPromote = true;
+    expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("The Return was marked refunded") });
+    expect(storefront.requests).toBe(2);
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary", returnId: id });
+    expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded", refundProofFileId: "file-1" } });
+  });
+
+  it("keeps refused refund proof Temporary and says the Return was not changed", async () => {
+    const id = await requested();
+    await approveReturn(id);
+    vi.mocked(revalidatePath).mockClear();
+    storefront.refusal = "The Return already changed.";
+    expect(await markReturnRefunded(id, proof())).toEqual({ ok: false, reason: storefront.refusal });
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary", returnId: id });
+    expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved", refundProofFileId: null } });
+    expect(storefront.requests).toBe(2);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
   it("defaults approval to the Customer's preferred Resolution and allows an override", async () => {
     const id = await requested();
     await db.sql`update order_returns set preferred_resolution = 'replacement' where id = ${id}`;
@@ -117,10 +177,11 @@ describe("Staff Return decisions", () => {
     } });
   });
 
-  it("confirms and links a Private, Permanent proof through the real gateway adapter before refunding", async () => {
+  it("uploads and links Temporary proof, then promotes it after the storefront confirms the refund", async () => {
     const { gatewayFileStorage } = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
     vi.spyOn(storage, "upload").mockImplementation(gatewayFileStorage.upload);
     vi.spyOn(storage, "linkRefundProof").mockImplementation(gatewayFileStorage.linkRefundProof);
+    vi.spyOn(storage, "promote").mockImplementation(gatewayFileStorage.promote);
     vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
     vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "fake-gateway-key");
     const id = await requested();
@@ -131,7 +192,9 @@ describe("Staff Return decisions", () => {
       if (request.url.startsWith(FAKE_STOREFRONT_URL)) {
         expect(steps).toEqual(["register", "upload", "confirm", "link"]);
         expect(await request.clone().json()).toMatchObject({ refundProofFileId: "proof-file" });
-        return storefront.handle(request);
+        const response = await storefront.handle(request);
+        steps.push("refund");
+        return response;
       }
       if (request.url === "https://bucket.test/proof") {
         expect(request.headers.has("authorization")).toBe(false);
@@ -143,14 +206,14 @@ describe("Staff Return decisions", () => {
       expect(request.headers.get("authorization")).toBe("Bearer fake-gateway-key");
       if (request.url === "https://gateway.test/files") {
         expect(await request.json()).toEqual({ filename: "refund.png", contentType: "image/png", size: PNG.length,
-          visibility: "private", retentionType: "permanent" });
+          visibility: "private", retentionType: "temporary" });
         steps.push("register");
         return Response.json({ id: "proof-file", uploadUrl: "https://bucket.test/proof" });
       }
       if (request.url.endsWith("/proof-file/confirm")) {
         steps.push("confirm");
         storage.files.set("proof-file", { filename: "refund.png", contentType: "image/png", size: PNG.length,
-          visibility: "private", retentionType: "permanent", status: "active" });
+          visibility: "private", retentionType: "temporary", status: "active" });
         return Response.json({});
       }
       if (request.url.endsWith("/proof-file/links")) {
@@ -159,9 +222,17 @@ describe("Staff Return decisions", () => {
         steps.push("link");
         return Response.json({});
       }
+      if (request.url.endsWith("/proof-file") && request.method === "PATCH") {
+        expect(steps).toEqual(["register", "upload", "confirm", "link", "refund"]);
+        expect(await request.json()).toEqual({ retentionType: "permanent" });
+        storage.files.get("proof-file")!.retentionType = "permanent";
+        steps.push("promote");
+        return Response.json({ id: "proof-file", retentionType: "permanent", expiresAt: null });
+      }
       throw new Error("Unexpected gateway call");
     });
     expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: true });
+    expect(steps).toEqual(["register", "upload", "confirm", "link", "refund", "promote"]);
   });
 
   it("stops before the storefront if proof upload or linking fails", async () => {
@@ -178,7 +249,7 @@ describe("Staff Return decisions", () => {
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved" } });
   });
 
-  it("retains Permanent proof and does not retry or invalidate after a lost refund acknowledgement", async () => {
+  it("retains Temporary proof and does not retry or invalidate after a lost refund acknowledgement", async () => {
     const id = await requested();
     await approveReturn(id);
     vi.mocked(revalidatePath).mockClear();
@@ -189,9 +260,12 @@ describe("Staff Return decisions", () => {
     });
     expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
     expect(storefront.requests).toBe(2);
-    expect(storage.files.get("file-1")).toMatchObject({ returnId: id });
+    expect(storage.files.get("file-1")).toMatchObject({ returnId: id, retentionType: "temporary" });
     expect(revalidatePath).not.toHaveBeenCalled();
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded", refundProofFileId: "file-1" } });
+    expect(await reconcileRefundProof(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "permanent" });
+    expect(storefront.requests).toBe(2);
   });
 
   it("rejects mismatched refund proof confirmations and preserves refused proof", async () => {
@@ -208,7 +282,7 @@ describe("Staff Return decisions", () => {
     storefront.refusal = "The Return already changed.";
     vi.stubGlobal("fetch", storefrontFetch(storefront));
     expect(await markReturnRefunded(id, proof())).toEqual({ ok: false, reason: storefront.refusal });
-    expect(storage.files.size).toBe(3);
+    expect([...storage.files.values()].map(file => file.retentionType)).toEqual(["temporary", "temporary", "temporary"]);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 

@@ -6,6 +6,7 @@ export class FakeFileStorage implements FileStorage {
   failUpload = false;
   failLink = false;
   failRemove = false;
+  failPromote = false;
   private next = 1;
 
   reset() {
@@ -13,6 +14,7 @@ export class FakeFileStorage implements FileStorage {
     this.failUpload = false;
     this.failLink = false;
     this.failRemove = false;
+    this.failPromote = false;
     this.calls.length = 0;
     this.next = 1;
   }
@@ -63,13 +65,18 @@ export class FakeFileStorage implements FileStorage {
     return Response.json({ ...file, id, bytes: undefined, url: await this.viewUrl(id) });
   };
 
-  async upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array }) {
+  async upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array; retentionType?: "permanent" | "temporary" }) {
     if (this.failUpload) throw new Error("file-storage is down");
 
     const id = `file-${this.next++}`;
-    this.files.set(id, { filename: file.filename, contentType: file.contentType, size: file.bytes.length, visibility: "private", retentionType: "permanent", status: "active" });
+    this.files.set(id, { filename: file.filename, contentType: file.contentType, size: file.bytes.length, visibility: "private", retentionType: file.retentionType ?? "permanent", status: "active" });
 
     return id;
+  }
+
+  async promote(fileId: string) {
+    if (this.failPromote) throw new Error("file-storage is down");
+    this.files.get(fileId)!.retentionType = "permanent";
   }
 
   async linkRefundProof(fileId: string, returnId: number) {

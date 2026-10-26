@@ -92,9 +92,12 @@ async function storage<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (response.status === 204 ? undefined : await response.json()) as T;
 }
 
-/** Images are Private and Permanent Files, Linked to the Message they belong to. */
-export const gatewayFileStorage: FileStorage & { linkRefundProof(fileId: string, returnId: number): Promise<void> } = {
-  async upload({ filename, contentType, bytes }) {
+/** Private images default to Permanent; delivery and refund evidence starts Temporary. */
+export const gatewayFileStorage: FileStorage & {
+  linkRefundProof(fileId: string, returnId: number): Promise<void>;
+  promote(fileId: string): Promise<void>;
+} = {
+  async upload({ filename, contentType, bytes, retentionType = "permanent" }) {
     const pending = await storage<{ id: string; uploadUrl: string }>("", {
       method: "POST",
       body: JSON.stringify({
@@ -102,7 +105,7 @@ export const gatewayFileStorage: FileStorage & { linkRefundProof(fileId: string,
         contentType,
         size: bytes.length,
         visibility: "private",
-        retentionType: "permanent",
+        retentionType,
       }),
     });
 
@@ -117,6 +120,16 @@ export const gatewayFileStorage: FileStorage & { linkRefundProof(fileId: string,
     await storage(`/${pending.id}/confirm`, { method: "POST" });
 
     return pending.id;
+  },
+
+  async promote(fileId) {
+    const file = await storage<{ id: string; retentionType: string; expiresAt: string | null }>(`/${encodeURIComponent(fileId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ retentionType: "permanent" }),
+    });
+    if (file?.id !== fileId || file.retentionType !== "permanent" || file.expiresAt !== null) {
+      throw new Error("file-storage did not confirm Permanent retention");
+    }
   },
 
   async linkRefundProof(fileId, returnId) {
