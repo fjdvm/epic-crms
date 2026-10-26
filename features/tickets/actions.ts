@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { ticketUpload } from "@/features/files/server";
 
 import { revalidatePath } from "next/cache";
@@ -36,11 +38,12 @@ export type ReplyOutcome = ReplyResult | { ok: false; reason: "unavailable" };
 async function act<R extends TicketActionResult | ReplyResult>(
   id: number,
   run: (actor: Actor, audit: TicketAudit) => Promise<R>,
+  operationId: string = randomUUID(),
 ): Promise<R | { ok: false; reason: "unavailable" }> {
   const staff = await requireModule(TICKETS_MODULE);
 
   try {
-    const result = await run({ id: staff.username, name: staff.name }, { trail: gatewayAuditTrail, staff });
+    const result = await run({ id: staff.username, name: staff.name }, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath(`/tickets/${id}`);
 
     return result;
@@ -51,12 +54,12 @@ async function act<R extends TicketActionResult | ReplyResult>(
   }
 }
 
-export async function claim(id: number) {
-  return act(id, (actor, audit) => claimTicket(ticketsWriterDatabase(), id, actor, audit));
+export async function claim(id: number, operationId?: string) {
+  return act(id, (actor, audit) => claimTicket(ticketsWriterDatabase(), id, actor, audit), operationId);
 }
 
-export async function release(id: number) {
-  return act(id, (actor, audit) => releaseTicket(ticketsWriterDatabase(), id, actor, audit));
+export async function release(id: number, operationId?: string) {
+  return act(id, (actor, audit) => releaseTicket(ticketsWriterDatabase(), id, actor, audit), operationId);
 }
 
 /** The reply form: a `body` and, optionally, one `image` file. */
@@ -78,9 +81,10 @@ export async function reply(id: number, form: FormData) {
   });
 }
 
-export async function resolve(id: number) {
+export async function resolve(id: number, operationId?: string) {
   return act(id, (_actor, audit) =>
     markResolved(ticketsWriterDatabase(), ticketsDatabase(), id, storefrontTicketUrl, sendAppEmail, audit),
+    operationId,
   );
 }
 
@@ -168,6 +172,6 @@ export async function findCustomerOrders(customerId: string): Promise<OrderChoic
 }
 
 /** Backend endpoint for Priority changes; the Tickets Module is checked by act. */
-export async function changePriority(id: number, priority: string) {
-  return act(id, (_actor, audit) => changeTicketPriority(ticketsWriterDatabase(), id, priority, audit));
+export async function changePriority(id: number, priority: string, operationId?: string) {
+  return act(id, (_actor, audit) => changeTicketPriority(ticketsWriterDatabase(), id, priority, audit), operationId);
 }

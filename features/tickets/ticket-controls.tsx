@@ -67,7 +67,7 @@ export function ClaimButton({ ticketId }: { ticketId: number }) {
       type="button"
       className={OUTLINE}
       disabled={pending}
-      onClick={() => run(true, () => claim(ticketId), { refusal: refusalMessage })}
+      onClick={() => run(true, () => claim(ticketId, crypto.randomUUID()), { refusal: refusalMessage })}
     >
       Claim
     </button>
@@ -119,7 +119,7 @@ export function TicketActions({
           disabled={pending}
           onClick={() =>
             run(
-              () => resolve(ticketId),
+              () => resolve(ticketId, crypto.randomUUID()),
               (r) => {
                 if (!r.ok) return;
                 if ("emailed" in r && r.emailed === false)

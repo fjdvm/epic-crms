@@ -49,3 +49,14 @@ it("audits Priority changes, skips unchanged retries and refuses invalid or comp
   expect(await changePriority(1, "low")).toMatchObject({ ok: false });
   expect(audit).toHaveBeenCalledTimes(1);
 });
+it("retains submission identity when an old mutation is replayed after another change", async () => {
+  const { changePriority } = await import("@/features/tickets/actions");
+  await claim(1, "first-claim"); await release(1, "release"); await claim(1, "first-claim");
+  expect(audit.mock.calls[0][0].operationId).toBe(audit.mock.calls[2][0].operationId);
+  audit.mockClear();
+  await changePriority(1, "urgent", "priority-urgent");
+  await changePriority(1, "low", "priority-low");
+  await changePriority(1, "urgent", "priority-urgent");
+  expect(audit.mock.calls[0][0].operationId).toBe(audit.mock.calls[2][0].operationId);
+  expect(new Set(audit.mock.calls.map(([e]) => e.operationId)).size).toBe(2);
+});

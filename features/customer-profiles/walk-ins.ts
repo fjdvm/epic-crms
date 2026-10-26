@@ -7,16 +7,17 @@ import { validateWalkIn, type WalkInAddress, type WalkInData, type WalkInField, 
 
 export interface CustomerAudit {
   trail: AuditTrail;
+  operationId: string;
   staff: { id: string; name: string };
 }
 
-async function auditWalkIn(audit: CustomerAudit | undefined, id: string, name: string, revision: string, editing = false) {
+async function auditWalkIn(audit: CustomerAudit | undefined, id: string, name: string, editing = false) {
   if (!audit) return;
   await recordAudit(audit.trail, {
     module: CUSTOMER_PROFILES_MODULE, action: editing ? "walk_in_customer.updated" : "walk_in_customer.created",
     actor: staffAuditActor(audit.staff), target: { type: "walk_in_customer", id, display_name: name },
     description: `${audit.staff.name} ${editing ? "edited" : "added"} Walk-in Customer ${name}.`,
-    outcome: "success", occurred_at: new Date().toISOString(), operationId: `walk-in:${id}:${revision}`,
+    outcome: "success", occurred_at: new Date().toISOString(), operationId: JSON.stringify([audit.staff.id, audit.operationId]),
   });
 }
 
@@ -111,25 +112,31 @@ export async function addWalkIn(
   const s = schemaIdent(writer, schema);
   const w = validation.value;
 
+  const [identity] = await writer<{ id: string }[]>`
+    select md5(${audit ? JSON.stringify([audit.staff.id, audit.operationId]) : crypto.randomUUID()})::uuid::text as id`;
+  const [replayed] = await writer`select id from ${s}.walk_in_customers where id = ${identity.id}::uuid`;
+  if (replayed) return { ok: true, id: WALK_IN_ID_PREFIX + identity.id };
+
   const existing = await findExisting(reader, writer, s, w.email, w.mobile);
   if (existing) return { ok: false, duplicate: existing };
 
   try {
-    const [row] = await writer<{ id: string; revision: string }[]>`
+    const [row] = await writer<{ id: string }[]>`
       insert into ${s}.walk_in_customers (
-        first_name, last_name, mobile, email, birthday, preferred_contact, source, tags,
+        id, first_name, last_name, mobile, email, birthday, preferred_contact, source, tags,
         email_consent, sms_consent, notes,
         address_street, address_province, address_city, address_barangay, address_zip, address_landmark
       ) values (
-        ${w.firstName}, ${w.lastName}, ${w.mobile}, ${w.email}, ${w.birthday}, ${w.preferredContact},
+        ${identity.id}::uuid, ${w.firstName}, ${w.lastName}, ${w.mobile}, ${w.email}, ${w.birthday}, ${w.preferredContact},
         ${w.source}, ${w.tags}::text[], ${w.emailConsent}, ${w.smsConsent}, ${w.notes},
         ${w.address?.street ?? null}, ${w.address?.province ?? null}, ${w.address?.city ?? null},
         ${w.address?.barangay ?? null}, ${w.address?.zip ?? null}, ${w.address?.landmark ?? null}
       )
-      returning id::text, xmin::text as revision`;
+      on conflict (id) do nothing
+      returning id::text`;
 
-    const id = WALK_IN_ID_PREFIX + row.id;
-    await auditWalkIn(audit, id, `${w.firstName} ${w.lastName}`, row.revision);
+    const id = WALK_IN_ID_PREFIX + identity.id;
+    if (row) await auditWalkIn(audit, id, `${w.firstName} ${w.lastName}`);
     return { ok: true, id };
   } catch (error) {
     // A concurrent save of the same person: the unique indexes refused it, so name who won.
@@ -251,8 +258,8 @@ export async function editWalkIn(reader: postgres.Sql, writer: postgres.Sql, id:
     const [row] = await writer`
       update ${s}.walk_in_customers set ${writer(data)}
       where id = ${uuid}::uuid and (to_jsonb(walk_in_customers) - 'id' - 'created_at') is distinct from ${writer.json(data)}::jsonb
-      returning xmin::text as revision`;
-    if (row) await auditWalkIn(audit, id, `${w.firstName} ${w.lastName}`, row.revision, true);
+      returning id`;
+    if (row) await auditWalkIn(audit, id, `${w.firstName} ${w.lastName}`, true);
     else if (!await getWalkIn(writer, id, schema)) return { ok: false, notFound: true };
     return { ok: true, id };
   } catch (error) {

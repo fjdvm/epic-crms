@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
 import { crmsDatabase } from "@/lib/crms-db";
@@ -16,11 +18,11 @@ import { addWalkIn, editWalkIn, type EditWalkInResult, type AddWalkInResult } fr
 export type AddWalkInActionResult = AddWalkInResult | { ok: false; unavailable: true };
 
 // Server actions are public endpoints, so this proves the Staff member holds the Module.
-export async function addWalkInCustomer(input: WalkInInput): Promise<AddWalkInActionResult> {
+export async function addWalkInCustomer(input: WalkInInput, operationId: string = randomUUID()): Promise<AddWalkInActionResult> {
   const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
 
   try {
-    const result = await addWalkIn(database(), crmsDatabase(), input, undefined, { trail: gatewayAuditTrail, staff });
+    const result = await addWalkIn(database(), crmsDatabase(), input, undefined, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath("/customer-profiles");
 
     return result;
@@ -32,10 +34,10 @@ export async function addWalkInCustomer(input: WalkInInput): Promise<AddWalkInAc
 }
 
 /** Backend endpoint for editing the entered details of a Walk-in Customer. */
-export async function editWalkInCustomer(id: string, input: WalkInInput): Promise<EditWalkInResult | { ok: false; unavailable: true }> {
+export async function editWalkInCustomer(id: string, input: WalkInInput, operationId: string = randomUUID()): Promise<EditWalkInResult | { ok: false; unavailable: true }> {
   const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
   try {
-    const result = await editWalkIn(database(), crmsDatabase(), id, input, undefined, { trail: gatewayAuditTrail, staff });
+    const result = await editWalkIn(database(), crmsDatabase(), id, input, undefined, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) {
       revalidatePath("/customer-profiles");
       revalidatePath(`/customer-profiles/${id}`);

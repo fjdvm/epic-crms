@@ -90,3 +90,17 @@ it("records verified Customer openings, but not Leads or missing profiles", asyn
   expect(audit).toHaveBeenCalledTimes(1);
   expect(audit.mock.calls[0][0].target).toEqual({ type: "customer_profile", id: "verified", display_name: "Maria Santos" });
 });
+it("keeps edit submission identity across interleaved replays and the creation Target after contact changes", async () => {
+  const { editWalkInCustomer } = await import("@/features/customer-profiles/actions");
+  const saved = await addWalkInCustomer(ada, "create-ada");
+  if (!saved.ok) throw new Error("save failed");
+  audit.mockClear();
+  await editWalkInCustomer(saved.id, { ...ada, notes: "A" }, "edit-a");
+  await editWalkInCustomer(saved.id, { ...ada, notes: "B" }, "edit-b");
+  await editWalkInCustomer(saved.id, { ...ada, notes: "A" }, "edit-a");
+  expect(audit.mock.calls[0][0].operationId).toBe(audit.mock.calls[2][0].operationId);
+  await editWalkInCustomer(saved.id, { ...ada, mobile: "09191234567" }, "new-contact");
+  audit.mockClear();
+  expect(await addWalkInCustomer(ada, "create-ada")).toEqual(saved);
+  expect(audit).not.toHaveBeenCalled();
+});

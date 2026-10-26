@@ -7,16 +7,17 @@ import { checkImage, type FileStorage, type ImageRefusal, type ImageUpload } fro
 
 export interface TicketAudit {
   trail: AuditTrail;
+  operationId: string;
   staff: { id: string; name: string };
 }
 
-async function auditChange(audit: TicketAudit | undefined, id: number, revision: string, action: string, change: string) {
+async function auditChange(audit: TicketAudit | undefined, id: number, action: string, change: string) {
   if (!audit) return;
   await recordAudit(audit.trail, {
     module: TICKETS_MODULE, action, outcome: "success", actor: staffAuditActor(audit.staff),
     target: { type: "ticket", id: String(id), display_name: `TKT-${id}` },
     description: `${audit.staff.name} ${change} TKT-${id}.`,
-    occurred_at: new Date().toISOString(), operationId: `ticket:${id}:${revision}`,
+    occurred_at: new Date().toISOString(), operationId: JSON.stringify([audit.staff.id, audit.operationId]),
   });
 }
 
@@ -68,10 +69,10 @@ export async function claimTicket(sql: postgres.Sql, id: number, actor: Actor, a
   const rows = await sql`
     update tickets set claimed_by_id = ${actor.id}, claimed_by_name = ${actor.name}
     where id = ${id} and claimed_by_id is null and status <> 'completed'
-    returning id, xmin::text as revision`;
+    returning id`;
 
   if (rows.length) {
-    await auditChange(audit, id, rows[0].revision, "ticket.claimed", "claimed Ticket");
+    await auditChange(audit, id, "ticket.claimed", "claimed Ticket");
     return { ok: true };
   }
 
@@ -94,10 +95,10 @@ export async function releaseTicket(
   const rows = await sql`
     update tickets set claimed_by_id = null, claimed_by_name = null
     where id = ${id} and claimed_by_id = ${actor.id} and status <> 'completed'
-    returning id, xmin::text as revision`;
+    returning id`;
 
   if (rows.length) {
-    await auditChange(audit, id, rows[0].revision, "ticket.released", "released Ticket");
+    await auditChange(audit, id, "ticket.released", "released Ticket");
     return { ok: true };
   }
 
@@ -223,10 +224,10 @@ export async function markResolved(
   sendEmail: SendAppEmail,
   audit?: TicketAudit,
 ): Promise<TicketActionResult & { emailed?: boolean }> {
-  const [t] = await writer<{ subject: string; customer_id: string; revision: string }[]>`
+  const [t] = await writer<{ subject: string; customer_id: string }[]>`
     update tickets set status = 'resolved', resolved_at = now()
     where id = ${id} and status = 'open'
-    returning subject, customer_id, xmin::text as revision`;
+    returning subject, customer_id`;
 
   if (!t) {
     const [existing] = await writer<{ status: string }[]>`select status from tickets where id = ${id}`;
@@ -239,7 +240,7 @@ export async function markResolved(
     };
   }
 
-  await auditChange(audit, id, t.revision, "ticket.status_changed", "marked Resolved Ticket");
+  await auditChange(audit, id, "ticket.status_changed", "marked Resolved Ticket");
 
   try {
     const [customer] = await reader<{ email: string; first_name: string; full_name: string }[]>`
@@ -266,11 +267,11 @@ export async function changeTicketPriority(sql: postgres.Sql, id: number, priori
   const [row] = await sql`
     update tickets set priority = ${priority}
     where id = ${id} and status <> 'completed' and priority <> ${priority}
-    returning xmin::text as revision`;
+    returning id`;
   if (!row) {
     const [ticket] = await sql`select status from tickets where id = ${id}`;
     return { ok: false, reason: !ticket ? "not-found" : ticket.status === "completed" ? "completed" : "unchanged" };
   }
-  await auditChange(audit, id, row.revision, "ticket.priority_changed", `changed Priority to ${priority} on Ticket`);
+  await auditChange(audit, id, "ticket.priority_changed", `changed Priority to ${priority} on Ticket`);
   return { ok: true };
 }

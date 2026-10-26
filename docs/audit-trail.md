@@ -89,12 +89,14 @@ duplicate lookup, and preserves its id and creation time. Unchanged submissions,
 refused writes and missing Targets emit no event. The new Priority and Walk-in
 editing endpoints are backend actions; this ticket adds no editing controls.
 
-Mutation events use the Target and the confirmed row's Postgres `xmin` revision
-as their operation identity. Conditional updates suppress unchanged retries;
-unique contact indexes prevent repeated creation. Later claim/release cycles or
-edits get new transaction revisions and therefore distinct Audit Events. Each
-public action performs its write in its own database transaction. There is no
-outbox or replay after an uncertain database result.
+Mutation events retain a submission token in serialized Server Action arguments,
+matching Announcements. Event identities include the Actor and token; the gateway
+also hashes the action and Target. Interleaved replays therefore keep the same
+key even when another action changed the row in between. Conditional updates
+suppress unchanged retries. Walk-in creation derives its UUID from the Actor and
+submission token and inserts at most once, preserving its Target even if contact
+details were subsequently edited. Each later submission gets a fresh token.
+There is no outbox or replay after an uncertain database result.
 
 Customer Profile access is recorded as `customer_profile.viewed` when its client
 marker mounts, after the profile has become visible. Prefetching a page emits no

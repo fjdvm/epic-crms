@@ -330,7 +330,7 @@ describe("Claim and Release show at once", () => {
     await vi.waitFor(() =>
       expect((screen.getByRole("button", { name: "Release" }) as HTMLButtonElement).disabled).toBe(false),
     );
-    expect(claim).toHaveBeenCalledWith(208);
+    expect(claim).toHaveBeenCalledWith(208, expect.any(String));
     expect(screen.getByText(/Claimed by Carlo/)).toBeTruthy();
     expect(toast.error).not.toHaveBeenCalled();
   });
