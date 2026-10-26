@@ -20,7 +20,9 @@ alerts whose audience was already resolved.
 ## Contract
 
 - `POST <Portal>/api/integrations/recipients`, authenticated with the existing
-  System Basic credentials, returns `{ staff: [{ id, modules: ["Orders"] }] }`.
+  System Basic credentials, returns `{ staff: [{ id, username, modules: ["Orders"] }] }`.
+  `id` addresses the inbox; `username` matches the Ticket Claimer stored by CREOMS.
+  Deploy the directory username addition before CREOMS #252.
   It accepts no System id or audience from the request body. It is never cached.
 - CREOMS calls gateway `/notifications/notifications` with `sendingApp: "CREOMS"`,
   `targetApp: "Portal"`, and one saved Portal User id. The Portal displays the

@@ -7,7 +7,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 let db: TestDatabase;
 const viewer = { customerProfiles: false, ticketsStaffId: null, feedback: false, orders: true, payments: false, returns: false };
-let staff = [{ id: "ada", modules: ["Orders"] }, { id: "ben", modules: ["Orders"] }, { id: "cy", modules: ["Payments"] }];
+let staff: { id: string; username?: string; modules: string[] }[] = [{ id: "ada", modules: ["Orders"] }, { id: "ben", modules: ["Orders"] }, { id: "cy", modules: ["Payments"] }];
 const inbox = new Map<string, { id: string; userId: string; read: boolean; link: string; text: string }>();
 let offline = false;
 const portal: PortalCopies = {
@@ -140,8 +140,8 @@ const alertCases = [
   ["new-customer", "Customer Profiles", null, "Jane Doe became a Customer", "/customer-profiles/c1"],
   ["ticket-new", "Tickets", null, "Jane Doe raised TKT-7", "/tickets/7"],
   ["ticket-message", "Tickets", null, "Jane Doe sent a message on TKT-7", "/tickets/7"],
-  ["ticket-message", "Tickets", "ada", "Jane Doe sent a message on TKT-7", "/tickets/7"],
-  ["ticket-not-fixed", "Tickets", "ada", "Jane Doe says TKT-7 is not fixed", "/tickets/7"],
+  ["ticket-message", "Tickets", "ada.staff", "Jane Doe sent a message on TKT-7", "/tickets/7"],
+  ["ticket-not-fixed", "Tickets", "ada.staff", "Jane Doe says TKT-7 is not fixed", "/tickets/7"],
   ["feedback-low", "Feedback", null, "Jane Doe rated Order #1 2 stars", "/feedback#feedback-1"],
   ["return-requested", "Returns", null, "Jane Doe requested Return RMA-8", "/returns#return-8"],
   ["order-placed", "Orders", null, "Jane Doe placed Order #1", "/orders/1"],
@@ -151,7 +151,7 @@ const alertCases = [
 
 it.each(alertCases)("copies %s with recipient %s to exactly its feed audience and links reads both ways", async (kind, module, recipient, text, path) => {
   await db.sql`truncate crms.notifications restart identity cascade`;
-  staff = [{ id: "ada", modules: [module] }, { id: "ben", modules: [module] },
+  staff = [{ id: "ada", username: "ada.staff", modules: [module] }, { id: "ben", username: "ben.staff", modules: [module] },
     { id: "cy", modules: ["Dashboard", "Fulfilment"] }];
   await db.sql`insert into crms.notifications
     (kind, customer_id, customer_name, ticket_id, order_id, rating, return_id, recipient_id)
@@ -159,7 +159,7 @@ it.each(alertCases)("copies %s with recipient %s to exactly its feed audience an
   await Promise.all([sync(), sync()]);
   expect([...inbox.values()].map(row => row.userId).sort()).toEqual(recipient ? ["ada"] : ["ada", "ben"]);
   expect([...inbox.values()][0]).toMatchObject({ text, link: `https://creoms.test${path}` });
-  const feedViewer = { customerProfiles: true, ticketsStaffId: "ada", feedback: true, orders: true, payments: true, returns: true };
+  const feedViewer = { customerProfiles: true, ticketsStaffId: "ada.staff", feedback: true, orders: true, payments: true, returns: true };
   const ada = [...inbox.values()].find(row => row.userId === "ada")!;
   await portal.markRead("ada", ada.id);
   await sync();
