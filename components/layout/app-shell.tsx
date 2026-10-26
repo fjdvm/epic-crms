@@ -8,7 +8,12 @@ import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { StaffProvider } from "./staff-context";
 import type { Staff } from "@/lib/portal/client";
-import { pollNotifications } from "@/features/notifications/actions";
+import {
+  markAllNotificationsRead,
+  markNotificationRead,
+  pollNotifications,
+  staffNotificationsLiveUrl,
+} from "@/features/notifications/actions";
 import { LiveUpdatesProvider } from "@/features/notifications/live-updates";
 import type { NotificationFeed } from "@/features/notifications/notifications";
 
@@ -41,11 +46,14 @@ export function AppShell({
   staff,
   permittedPages,
   notifications = null,
+  hasBell = false,
   children,
 }: {
   staff: Staff;
   permittedPages: string[];
   notifications?: NotificationFeed | null;
+  /** Whether any alert can reach this Staff member; without one the bell neither polls nor listens. */
+  hasBell?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -53,7 +61,10 @@ export function AppShell({
       <LiveUpdatesProvider
         initialFeed={notifications}
         poll={pollNotifications}
-        enabled={permittedPages.includes("/customer-profiles")}
+        enabled={hasBell}
+        liveUrl={staffNotificationsLiveUrl}
+        markRead={markNotificationRead}
+        markAllRead={markAllNotificationsRead}
       >
         <SidebarProvider defaultOpen={true}>
           <div className="flex min-h-screen w-full bg-background text-foreground relative">

@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HeaderNotifications } from "@/components/layout/header-notifications";
 
-const { markAll, markOne } = vi.hoisted(() => ({ markAll: vi.fn(), markOne: vi.fn() }));
-vi.mock("@/features/notifications/actions", () => ({
-  markAllNotificationsRead: markAll,
-  markNotificationRead: markOne,
-}));
+const markAll = vi.fn();
+const markOne = vi.fn();
+
+function Bell({ feed }: { feed: React.ComponentProps<typeof HeaderNotifications>["feed"] }) {
+  return <HeaderNotifications feed={feed} onMarkRead={markOne} onMarkAllRead={markAll} />;
+}
 
 afterEach(() => {
   cleanup();
@@ -26,15 +28,15 @@ const feed = {
 
 describe("the header bell", () => {
   it("shows the unread count and no count when everything is read", () => {
-    const { rerender } = render(<HeaderNotifications feed={feed} />);
+    const { rerender } = render(<Bell feed={feed} />);
     expect(screen.getByLabelText("1 unread")).toBeTruthy();
 
-    rerender(<HeaderNotifications feed={{ ...feed, unread: 0 }} />);
+    rerender(<Bell feed={{ ...feed, unread: 0 }} />);
     expect(screen.queryByLabelText(/unread/)).toBeNull();
   });
 
   it("lists each Customer with how long ago and a link to their profile", async () => {
-    render(<HeaderNotifications feed={feed} />);
+    render(<Bell feed={feed} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
     const link = await screen.findByRole("link", { name: /Ben Cruz became a Customer/ });
@@ -43,22 +45,30 @@ describe("the header bell", () => {
   });
 
   it("marks one as read when its link is opened", async () => {
-    render(<HeaderNotifications feed={feed} />);
+    render(<Bell feed={feed} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
     await userEvent.click(await screen.findByRole("link", { name: /Ben Cruz/ }));
     expect(markOne).toHaveBeenCalledWith("2");
   });
 
+  it("does not mark a row that is already read", async () => {
+    render(<Bell feed={feed} />);
+    await userEvent.click(screen.getByTitle("Notifications"));
+
+    await userEvent.click(await screen.findByRole("link", { name: /Ada Lim/ }));
+    expect(markOne).not.toHaveBeenCalled();
+  });
+
   it("marks all as read on request", async () => {
-    render(<HeaderNotifications feed={feed} />);
+    render(<Bell feed={feed} />);
     await userEvent.click(screen.getByTitle("Notifications"));
     await userEvent.click(await screen.findByRole("button", { name: /Mark all read/ }));
     expect(markAll).toHaveBeenCalled();
   });
 
   it("says so when notifications cannot be read", async () => {
-    render(<HeaderNotifications feed={null} />);
+    render(<Bell feed={null} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
     expect(await screen.findByText("Notifications are temporarily unavailable.")).toBeTruthy();
@@ -79,7 +89,7 @@ describe("the header bell", () => {
         read: false,
       })),
     };
-    render(<HeaderNotifications feed={ticketFeed} />);
+    render(<Bell feed={ticketFeed} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
     for (const text of [/Ada Lim raised TKT-208/, /Ada Lim sent a message on TKT-208/, /Ada Lim says TKT-208 is not fixed/]) {
@@ -95,7 +105,7 @@ describe("the header bell", () => {
         { id: "20", kind: "feedback-low" as const, ticketId: null, orderId: 1040, rating: 3, returnId: null, customerId: "u-ben", customerName: "Ben Cruz", createdAt: new Date(), read: false },
       ],
     };
-    render(<HeaderNotifications feed={lowFeed} />);
+    render(<Bell feed={lowFeed} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
     const one = await screen.findByRole("link", { name: /Ada Lim rated Order #1042 1 star/ });
@@ -111,7 +121,7 @@ describe("the header bell", () => {
         { id: "30", kind: "return-requested" as const, ticketId: null, orderId: 1042, rating: null, returnId: 7, customerId: "u-ada", customerName: "Ada Lim", createdAt: new Date(), read: false },
       ],
     };
-    render(<HeaderNotifications feed={returnFeed} />);
+    render(<Bell feed={returnFeed} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
     const link = await screen.findByRole("link", { name: /Ada Lim requested Return RMA-7/ });
@@ -119,7 +129,7 @@ describe("the header bell", () => {
   });
 
   it("shows nothing for Staff without the Returns Module, whose feed carries no Return alert", async () => {
-    render(<HeaderNotifications feed={{ unread: 0, notifications: [] }} />);
+    render(<Bell feed={{ unread: 0, notifications: [] }} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
     expect(await screen.findByText("No notifications yet.")).toBeTruthy();
