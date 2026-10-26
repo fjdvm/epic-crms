@@ -199,6 +199,8 @@ export function Composer({
   };
 
   const sending = useRef(false);
+  /** A file already uploaded for a reply that was then refused, so a retry does not store it again. */
+  const uploaded = useRef<{ file: File; reference: string } | null>(null);
 
   const send = () => {
     setConfirming(false);
@@ -213,17 +215,29 @@ export function Composer({
 
     run(
       async () => {
-        const form = new FormData();
-        form.set("body", sentText);
+        try {
+          const form = new FormData();
+          form.set("body", sentText);
 
-        if (sentFile) {
-          // Straight to file-storage; only the signed reference reaches the server action.
-          const uploaded = await uploadFile("Tickets", sentFile, { ticketId });
-          if (!uploaded.ok) return { ok: false as const, reason: "upload-refused" as const, message: uploaded.reason };
-          form.set("attachment", uploaded.reference);
+          if (sentFile) {
+            if (uploaded.current?.file !== sentFile) {
+              // Straight to file-storage; only the signed reference reaches the server action.
+              const result = await uploadFile("Tickets", sentFile, { ticketId });
+              if (!result.ok) return { ok: false as const, reason: "upload-refused" as const, message: result.reason };
+              uploaded.current = { file: sentFile, reference: result.reference };
+            }
+            form.set("attachment", uploaded.current.reference);
+          }
+
+          const sent = await reply(ticketId, form);
+          if (sent.ok) uploaded.current = null;
+
+          return sent;
+        } catch (error) {
+          console.error("Reply could not be sent", error);
+
+          return { ok: false as const, reason: "unavailable" as const };
         }
-
-        return reply(ticketId, form);
       },
       (r) => {
         sending.current = false;

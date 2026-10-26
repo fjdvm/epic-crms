@@ -115,7 +115,7 @@ describe("the Ticket page as designed", () => {
     render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     expect(screen.getByText("Maria · 20 Oct 2026, 10:21 AM")).toBeTruthy();
-    expect(screen.getByText("Photo attached")).toBeTruthy();
+    expect(screen.getByText("Attachment")).toBeTruthy();
   });
 
   it("has no Resolve with card, since replacement, refund and return actions are out of v1", () => {
@@ -259,7 +259,7 @@ describe("images on Messages", () => {
   it("still says a photo is attached when the image cannot be shown here", () => {
     render(<TicketDetailView ticket={withImage(null)} viewerId="bernice" />);
 
-    expect(screen.getByText("Photo attached")).toBeTruthy();
+    expect(screen.getByText("Attachment")).toBeTruthy();
     expect(screen.queryByRole("img")).toBeNull();
   });
 

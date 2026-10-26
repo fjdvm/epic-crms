@@ -13,7 +13,7 @@ const REASONS: Record<Refusal["reason"], string> = {
   "empty-message": "Write a reply or attach a file first.",
   ...IMAGE_REFUSALS,
   "invalid-attachment": "That attachment is invalid or expired. Attach the file again.",
-  "storage-unavailable": "CREOMS could not store that image. Try again in a moment.",
+  "storage-unavailable": "CREOMS could not store that file. Try again in a moment.",
   unavailable: "CREOMS could not save that. Try again in a moment.",
 };
 

@@ -273,6 +273,38 @@ describe("live Conversation", () => {
     expect(screen.getByAltText("Selected image: box.jpg")).toBeTruthy();
   });
 
+  it("puts the reply back and allows another try when sending throws", async () => {
+    vi.mocked(reply).mockReset();
+    vi.mocked(reply).mockRejectedValueOnce(new Error("network")).mockResolvedValue({ ok: true, messageId: 12 });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    renderConversation(fakeRelay().connect);
+
+    await userEvent.type(screen.getByLabelText("Write a reply"), "Flaky");
+    await send();
+    await waitFor(() => expect((screen.getByLabelText("Write a reply") as HTMLTextAreaElement).value).toBe("Flaky"));
+    expect(toast.error).toHaveBeenCalled();
+
+    await send();
+    await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not store the file again when a refused reply is retried", async () => {
+    vi.mocked(uploadFile).mockReset();
+    vi.mocked(uploadFile).mockResolvedValue({ ok: true, reference: "ready-ref", filename: "a.pdf", contentType: "application/pdf", size: 1 });
+    vi.mocked(reply).mockReset();
+    vi.mocked(reply).mockResolvedValueOnce({ ok: false, reason: "unavailable" }).mockResolvedValue({ ok: true, messageId: 13 });
+    renderConversation(fakeRelay().connect);
+
+    await userEvent.upload(screen.getByLabelText("Attach a file"), new File(["x"], "a.pdf", { type: "application/pdf" }), { applyAccept: false });
+    await send();
+    await waitFor(() => expect(screen.getByText("a.pdf")).toBeTruthy());
+    await send();
+
+    await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
+    expect(uploadFile).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(reply).mock.calls[1][1].get("attachment")).toBe("ready-ref");
+  });
+
   it.each([
     ["notes.txt", "text/plain", ["x"], "Choose a JPG, PNG, GIF, WebP, PDF, MP4 or MOV file."],
     ["empty.pdf", "application/pdf", [], "That file is empty. Choose a file with something in it."],

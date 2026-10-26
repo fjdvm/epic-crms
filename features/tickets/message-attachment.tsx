@@ -12,7 +12,7 @@ export function MessageAttachment({ message, imageClassName }: { message: Ticket
 
   if (!url) {
     return message.hasAttachment ? (
-      <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
+      <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Attachment</p>
     ) : null;
   }
 
