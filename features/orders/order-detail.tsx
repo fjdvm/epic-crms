@@ -76,6 +76,8 @@ function DeliveryPhoto({ order, url }: { order: OrderDetail; url: string | null 
         <img src={url} alt={`Delivery photo for Order #${order.id}`} className="max-h-64 rounded-md border border-[#e6e1ee]" />
       ) : order.deliveryPhotoFileId ? (
         <p className="text-sm text-[#6e6680]">The Delivery photo could not be loaded. Reload to try again.</p>
+      ) : order.deliveryPhotoRemovedAt ? (
+        <p className="text-sm text-[#6e6680]">The Delivery photo was removed.</p>
       ) : (
         <p className="text-sm text-[#6e6680]">No photo</p>
       )}

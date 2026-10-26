@@ -291,6 +291,7 @@ describe("moving an Order on the board", () => {
 
 const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
+  deliveryPhotoRemovedAt: null,
   paidBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),
@@ -392,6 +393,17 @@ describe("the Delivery photo on an Order's detail", () => {
 
     expect(screen.getByRole("heading", { name: "Delivery photo" })).toBeTruthy();
     expect(screen.getByText("No photo")).toBeTruthy();
+  });
+
+  it("says the photo was removed, not No photo, once the retention job has removed it", () => {
+    render(
+      <OrderDetailView
+        order={detail({ status: "received", deliveryPhotoFileId: null, deliveryPhotoRemovedAt: new Date("2026-10-30T00:00:00Z") })}
+      />,
+    );
+
+    expect(screen.getByText("The Delivery photo was removed.")).toBeTruthy();
+    expect(screen.queryByText("No photo")).toBeNull();
   });
 
   it("says the photo cannot be shown, not No photo, when it exists but cannot be reached", () => {

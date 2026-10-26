@@ -50,6 +50,20 @@ describe("Returns read model", () => {
       await db.sql`alter table orders add column delivery_photo_file_id text`;
     }
   });
+  it("reads a removed Delivery photo as removed, even before the column is deployed", async () => {
+    const id = await request('requested', '2026-10-20T01:00:00Z');
+    expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { deliveryPhotoRemovedAt: null } });
+    await db.sql`update orders set delivery_photo_file_id = null, delivery_photo_removed_at = '2026-10-30T00:00:00Z' where id = 1`;
+    expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({
+      ok: true, detail: { deliveryPhotoFileId: null, deliveryPhotoRemovedAt: new Date('2026-10-30T00:00:00Z') },
+    });
+    await db.sql`alter table orders drop column delivery_photo_removed_at`;
+    try {
+      expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { deliveryPhotoRemovedAt: null } });
+    } finally {
+      await db.sql`alter table orders add column delivery_photo_removed_at timestamptz`;
+    }
+  });
   it("distinguishes empty, missing and unavailable data", async () => {
     expect(await loadReturns(() => db.sql)).toMatchObject({ ok: true, list: { rows: [], total: 0 } });
     expect(await loadReturnStats(() => db.sql)).toMatchObject({ ok: true, stats: { returnRate: 0, refundedThisMonth: 0 } });

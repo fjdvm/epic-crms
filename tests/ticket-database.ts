@@ -35,6 +35,7 @@ const SCHEMA = `
     payment_proof_submitted_at timestamptz,
     delivered_at timestamptz,
     delivery_photo_file_id text,
+    delivery_photo_removed_at timestamptz,
     paid_by_id text,
     paid_by_name text,
     paid_at timestamptz,
