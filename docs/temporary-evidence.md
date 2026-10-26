@@ -30,14 +30,11 @@ same reconciliation actions apply; the confirmed storefront write stays committe
 
 ## Rollout dependency
 
-#227 is closed and unblocks delivery. However, storefront
-`lib/returns/refund-proof.ts` still requires Permanent retention and a null expiry (verified
-against its GitHub default branch on 2026-10-26). Before deploying this CREOMS change,
-update and deploy that validator to accept unexpired Temporary proof while preserving
-its Active, Private, image, size, exact Return Link and real-byte checks. The CREOMS fake
-storefront models this required contract. Without that update refunds will be refused,
-leaving Temporary proof; they will not be reported as successful. No database migration
-or new environment variables are needed.
+#227 unblocks delivery. The storefront companion fix for #232 accepts unexpired
+Temporary refund proof as well as existing Permanent proof, preserving its Active,
+Private, image, size, exact Return Link and real-byte checks. Deploy that fix before
+this CREOMS change. The CREOMS fake storefront models the same contract. Neither
+change requires a database migration or new environment variables.
 
 This lifecycle supersedes the Permanent-before-write flow in the older
 `creoms-returns-and-delivery-photo.md` integration contract for delivery/refund proof only.
