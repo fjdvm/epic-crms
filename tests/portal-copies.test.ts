@@ -7,7 +7,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 let db: TestDatabase;
 const viewer = { customerProfiles: false, ticketsStaffId: null, feedback: false, orders: true, payments: false, returns: false };
-let staff = [{ id: "ada", modules: ["Orders"] }, { id: "ben", modules: ["Orders"] }, { id: "cy", modules: ["Payments"] }];
+let staff: { id: string; username?: string; modules: string[] }[] = [{ id: "ada", modules: ["Orders"] }, { id: "ben", modules: ["Orders"] }, { id: "cy", modules: ["Payments"] }];
 const inbox = new Map<string, { id: string; userId: string; read: boolean; link: string; text: string }>();
 let offline = false;
 const portal: PortalCopies = {
@@ -89,7 +89,7 @@ it("retries an uncertain response without duplicates and does not prevent anothe
   expect(inbox.size).toBe(2);
 });
 
-it("uses Payments eligibility for proof copies and never sends other event kinds in this slice", async () => {
+it("uses Payments eligibility for proof copies", async () => {
   await db.sql`insert into crms.notifications (kind, customer_id, customer_name, order_id)
     values ('order-payment-proof', 'c1', 'Jane Doe', 1), ('new-customer', 'c1', 'Jane Doe', null)`;
   await sync();
@@ -133,5 +133,46 @@ it("recovers an already-delivered copy after revocation when its send response w
   await sync();
   expect(inbox.size).toBe(2);
   expect((await listNotifications(db.sql, "crms", 20, viewer)).unread).toBe(0);
+  expect([...inbox.values()].every(row => row.read)).toBe(true);
+});
+
+const alertCases = [
+  ["new-customer", "Customer Profiles", null, "Jane Doe became a Customer", "/customer-profiles/c1"],
+  ["ticket-new", "Tickets", null, "Jane Doe raised TKT-7", "/tickets/7"],
+  ["ticket-message", "Tickets", null, "Jane Doe sent a message on TKT-7", "/tickets/7"],
+  ["ticket-message", "Tickets", "ada.staff", "Jane Doe sent a message on TKT-7", "/tickets/7"],
+  ["ticket-not-fixed", "Tickets", "ada.staff", "Jane Doe says TKT-7 is not fixed", "/tickets/7"],
+  ["feedback-low", "Feedback", null, "Jane Doe rated Order #1 2 stars", "/feedback#feedback-1"],
+  ["return-requested", "Returns", null, "Jane Doe requested Return RMA-8", "/returns#return-8"],
+  ["order-placed", "Orders", null, "Jane Doe placed Order #1", "/orders/1"],
+  ["order-delivery-fee", "Orders", null, "Jane Doe placed Order #1, which needs a Delivery fee", "/orders/1"],
+  ["order-payment-proof", "Payments", null, "Jane Doe submitted Payment proof for Order #1", "/orders/1"],
+] as const;
+
+it.each(alertCases)("copies %s with recipient %s to exactly its feed audience and links reads both ways", async (kind, module, recipient, text, path) => {
+  await db.sql`truncate crms.notifications restart identity cascade`;
+  staff = [{ id: "ada", username: "ada.staff", modules: [module] }, { id: "ben", username: "ben.staff", modules: [module] },
+    { id: "cy", modules: ["Dashboard", "Fulfilment"] }];
+  await db.sql`insert into crms.notifications
+    (kind, customer_id, customer_name, ticket_id, order_id, rating, return_id, recipient_id)
+    values (${kind}, 'c1', 'Jane Doe', 7, 1, 2, 8, ${recipient})`;
+  await Promise.all([sync(), sync()]);
+  expect([...inbox.values()].map(row => row.userId).sort()).toEqual(recipient ? ["ada"] : ["ada", "ben"]);
+  expect([...inbox.values()][0]).toMatchObject({ text, link: `https://creoms.test${path}` });
+  const feedViewer = { customerProfiles: true, ticketsStaffId: "ada.staff", feedback: true, orders: true, payments: true, returns: true };
+  const ada = [...inbox.values()].find(row => row.userId === "ada")!;
+  await portal.markRead("ada", ada.id);
+  await sync();
+  expect((await listNotifications(db.sql, "crms", 20, feedViewer)).unread).toBe(0);
+  expect([...inbox.values()].every(row => row.read)).toBe(true);
+
+  await db.sql`truncate crms.notifications restart identity cascade`;
+  inbox.clear();
+  await db.sql`insert into crms.notifications
+    (kind, customer_id, customer_name, ticket_id, order_id, rating, return_id, recipient_id)
+    values (${kind}, 'c1', 'Jane Doe', 7, 1, 2, 8, ${recipient})`;
+  await sync();
+  await markAllRead(db.sql, "crms", feedViewer);
+  await sync();
   expect([...inbox.values()].every(row => row.read)).toBe(true);
 });

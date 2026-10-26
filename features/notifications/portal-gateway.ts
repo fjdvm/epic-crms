@@ -31,7 +31,10 @@ export function portalGateway(): PortalCopies {
         cache: "no-store", redirect: "error", signal: AbortSignal.any([deadline, AbortSignal.timeout(3_000)]),
       });
       if (!response.ok) throw new Error(`Portal recipients refused: ${response.status}`);
-      const body: { staff: { id: string; modules: string[] }[] } = await response.json();
+      const body: { staff: { id: string; username?: string; modules: string[] }[] } = await response.json();
+      if (body.staff.some(person => person.modules.includes("Tickets") && !person.username)) {
+        throw new Error("Portal recipients must include Ticket Staff usernames");
+      }
       return body.staff;
     },
     async send(copy) {

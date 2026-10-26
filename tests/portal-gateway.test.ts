@@ -52,3 +52,12 @@ it("caps all copy HTTP work under one deadline rather than resetting it per requ
     expect(pages).toBe(1);
   } finally { timeout.mockRestore(); vi.useRealTimers(); }
 });
+
+it("retries an old directory response instead of snapshotting Ticket audiences without usernames", async () => {
+  vi.stubEnv("PORTAL_URL", "https://portal.test");
+  vi.stubEnv("PORTAL_SYSTEM_SECRET", "secret");
+  vi.stubGlobal("fetch", async () => Response.json({ staff: [{ id: "portal-id", modules: ["Tickets"] }] }));
+  await expect(portalGateway().recipients()).rejects.toThrow("Ticket Staff usernames");
+  vi.stubGlobal("fetch", async () => Response.json({ staff: [{ id: "portal-id", username: "ada.staff", modules: ["Tickets"] }] }));
+  expect(await portalGateway().recipients()).toEqual([{ id: "portal-id", username: "ada.staff", modules: ["Tickets"] }]);
+});
