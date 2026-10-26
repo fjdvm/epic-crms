@@ -18,6 +18,7 @@ const portal: PortalCopies = {
     if (!inbox.has(key)) inbox.set(key, { id: key, userId: copy.userId, read: false, link: copy.link, text: copy.text });
     return inbox.get(key)!;
   },
+  async find(userId, key) { return inbox.get(`${key}:${userId}`) ?? null; },
   async status(userId, id) { return [...inbox.values()].find(row => row.userId === userId && row.id === id)!; },
   async markRead(userId, id) { (await this.status(userId, id)).read = true; },
 };
@@ -63,16 +64,16 @@ it("links a Portal read back to the shared CREOMS feed and the other Staff copy"
   expect([...inbox.values()].every(row => row.read)).toBe(true);
 });
 
-it("retries a missed copy even after revocation and preserves the existing inbox", async () => {
+it("never creates a missed copy after its Staff member loses the Module", async () => {
   offline = true;
   await sync();
   expect((await listNotifications(db.sql, "crms", 20, viewer)).unread).toBe(1);
   staff = [];
   offline = false;
   await sync(); await sync();
-  expect(inbox.size).toBe(2);
+  expect(inbox.size).toBe(0);
   await markAllRead(db.sql, "crms", viewer); await sync();
-  expect(inbox.size).toBe(2);
+  expect(inbox.size).toBe(0);
   expect([...inbox.values()].every(row => row.read)).toBe(true);
 });
 
@@ -112,5 +113,25 @@ it("retries a failed linked read without making the CREOMS row unread again", as
   expect((await listNotifications(db.sql, "crms", 20, viewer)).unread).toBe(0);
   expect([...inbox.values()].some(row => !row.read)).toBe(true);
   await sync();
+  expect([...inbox.values()].every(row => row.read)).toBe(true);
+});
+
+it("keeps delivered copies and their shared read link after every Module is revoked", async () => {
+  await sync();
+  staff = [];
+  await portal.markRead("ada", [...inbox.values()].find(row => row.userId === "ada")!.id);
+  await sync();
+  expect(inbox.size).toBe(2);
+  expect((await listNotifications(db.sql, "crms", 20, viewer)).unread).toBe(0);
+  expect([...inbox.values()].every(row => row.read)).toBe(true);
+});
+
+it("recovers an already-delivered copy after revocation when its send response was lost", async () => {
+  await syncPortalCopies(db.sql, { ...portal, send: async copy => { await portal.send(copy); throw new Error("response lost"); } }, "https://creoms.test");
+  staff = [];
+  await portal.markRead("ada", [...inbox.values()].find(row => row.userId === "ada")!.id);
+  await sync();
+  expect(inbox.size).toBe(2);
+  expect((await listNotifications(db.sql, "crms", 20, viewer)).unread).toBe(0);
   expect([...inbox.values()].every(row => row.read)).toBe(true);
 });

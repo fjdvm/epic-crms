@@ -9,8 +9,9 @@ password, and revoked grants. Portal User ids, not usernames or Neon Auth ids,
 are the inbox recipients.
 
 The first successful directory lookup snapshots each alert's audience in one
-CREOMS transaction. Delivery retries use that saved audience even after a grant
-is revoked. No Portal notification is deleted on revocation. Opening the linked
+CREOMS transaction. Delivery retries recheck current Modules before creating an unsent copy.
+If a send response was lost, CREOMS recovers the already-sent copy by its key,
+including after revocation. No Portal notification is deleted on revocation. Opening the linked
 Order still requires current CREOMS Module access. A new grant does not replay
 alerts whose audience was already resolved.
 
@@ -26,28 +27,29 @@ alerts whose audience was already resolved.
   under `CREOMS_APP_URL`.
 - Idempotency is scoped by sending app, target app, User and key in notifications.
   An uncertain response is retried using the same key. If no new row is returned,
-  CREOMS finds the original by type/sender across all inbox pages.
+  CREOMS finds the original by its indexed retry key via `/notifications/lookup`.
 
 ## Read state and failures
 
 The existing shared CREOMS read state is preserved: a read by any eligible Staff
 member clears that alert and all its Portal copies. CREOMS read actions reconcile
 copies immediately; Portal reads reconcile on the next poll, signal or scheduler
-sync. No webhook or additional browser session is needed. Inbox pages are shared
-within a sync, and remote read state is monotonic. Mark-all-read uses the same
+sync. No webhook or additional browser session is needed. Exact lookups by id or sender/key avoid paging through inbox history. All HTTP
+work shares one four-second abort deadline, and remote read state is monotonic. Mark-all-read uses the same
 path. Failed sends and failed read updates remain pending for the next sync.
 
 Each recipient failure is isolated. A directory failure leaves unresolved alerts
 for retry and still reconciles existing copies. Copy work is bounded in batches
 of ten with a four-second scheduling budget per delivery/read phase; HTTP calls
 have three-second timeouts. Each phase selects at most 100 pending copies, with
-oldest attempts first for fairness. A single inbox may require several pages.
-Copies never roll back an alert, hide the CREOMS feed or prevent other event
+oldest attempts first for fairness. Lookups do not depend on inbox size. The HTTP deadline covers the whole
+copy sync, so slow requests cannot hold the feed indefinitely. Copies never roll back an alert, hide the CREOMS feed or prevent other event
 syncs. Signal nudges go out before copy work, after the alert commits.
 
 ## Rollout
 
-1. Deploy the Portal directory/badge dependency first.
+1. Deploy the Portal directory/badge and notifications `/notifications/lookup`
+   dependencies first.
 2. Ensure notifications #245 is deployed and its
    `0004_notification_idempotency.sql` migration is applied.
 3. Run `docs/db/crms-portal-copies.sql` as `creoms_writer` before deploying CREOMS.

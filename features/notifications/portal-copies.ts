@@ -5,11 +5,12 @@ import { DEFAULT_SCHEMA, schemaIdent, visibleTo, type Notification, type Viewer 
 export interface PortalCopies {
   recipients(): Promise<{ id: string; modules: string[] }[]>;
   send(copy: { key: string; userId: string; text: string; link: string }): Promise<{ id: string; read: boolean }>;
+  find(userId: string, key: string): Promise<{ id: string; read: boolean } | null>;
   status(userId: string, id: string): Promise<{ id: string; read: boolean }>;
   markRead(userId: string, id: string): Promise<void>;
 }
 
-/** Snapshot eligibility once; retries and linked reads keep working after a Module is revoked.
+/** Snapshot the audience once; recheck access before sending, and retain every delivered copy.
  * The remote idempotency key closes the gap between remote delivery and our local commit.
  */
 export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopies, appUrl: string, schema = DEFAULT_SCHEMA): Promise<void> {
@@ -17,17 +18,19 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
   const unresolved = await writer<{ id: string }[]>`
     select n.id::text from ${s}.notifications n where kind in ('order-placed', 'order-delivery-fee', 'order-payment-proof')
     and not exists (select 1 from ${s}.portal_copy_audiences a where a.notification_id = n.id)`;
+  const [pending] = await writer<{ exists: boolean }[]>`select exists(select 1 from ${s}.portal_copies where remote_id is null) as exists`;
+  let staff: Awaited<ReturnType<PortalCopies["recipients"]>> | null = null;
   try {
-    if (unresolved.length) {
-      const staff = await portal.recipients();
+    if (unresolved.length || pending.exists) staff = await portal.recipients();
+    if (unresolved.length && staff) {
+      const audience = staff;
       await writer.begin(async tx => {
         for (const { id } of unresolved) {
           const claimed = await tx`insert into ${s}.portal_copy_audiences (notification_id) values (${id}::bigint)
             on conflict do nothing returning notification_id`;
           if (!claimed.length) continue;
-          for (const person of staff) {
-            const viewer: Viewer = { customerProfiles: false, ticketsStaffId: null, feedback: false, returns: false,
-              orders: person.modules.includes("Orders"), payments: person.modules.includes("Payments") };
+          for (const person of audience) {
+            const viewer = orderViewer(person.modules);
             await tx`insert into ${s}.portal_copies (notification_id, user_id)
               select id, ${person.id} from ${s}.notifications where id = ${id}::bigint and ${visibleTo(tx, viewer)}
               on conflict do nothing`;
@@ -49,11 +52,27 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
     try {
       await writer`update ${s}.portal_copies set last_attempt_at = now()
         where notification_id = ${copy.id}::bigint and user_id = ${copy.userId}`;
-      const description = describeNotification(copy);
-      const remote = copy.remoteId ? await portal.status(copy.userId, copy.remoteId) : await portal.send({
-        key: `creoms.order.${copy.id}`, userId: copy.userId, text: description.text,
-        link: new URL(description.href, appUrl).href,
-      });
+      if (copy.remoteId && copy.read) {
+        await markCopyRead(copy.id, copy.userId, copy.remoteId);
+        return;
+      }
+      let remote;
+      if (copy.remoteId) remote = await portal.status(copy.userId, copy.remoteId);
+      else {
+        const key = `creoms.order.${copy.id}`;
+        const person = staff?.find(person => person.id === copy.userId);
+        const allowed = person ? await writer`select 1 from ${s}.notifications where id = ${copy.id}::bigint
+          and ${visibleTo(writer, orderViewer(person.modules))}` : [];
+        if (allowed.length) {
+          const description = describeNotification(copy);
+          remote = await portal.send({ key, userId: copy.userId, text: description.text,
+            link: new URL(description.href, appUrl).href });
+        } else {
+          // Recover an uncertain prior send without creating anything for revoked Staff.
+          remote = await portal.find(copy.userId, key);
+          if (!remote) return;
+        }
+      }
       await writer`update ${s}.portal_copies set remote_id = ${remote.id}
         where notification_id = ${copy.id}::bigint and user_id = ${copy.userId}`;
       if (remote.read) await writer`update ${s}.notifications set read_at = coalesce(read_at, now()) where id = ${copy.id}::bigint`;
@@ -67,11 +86,19 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
     order by c.last_attempt_at nulls first, n.id limit 100`;
   await inBatches(read, async copy => {
     try {
-      await portal.markRead(copy.userId, copy.remoteId);
-      await writer`update ${s}.portal_copies set read_synced = true
-        where notification_id = ${copy.id}::bigint and user_id = ${copy.userId}`;
+      await markCopyRead(copy.id, copy.userId, copy.remoteId);
     } catch (error) { console.error("Portal copy read could not be synced", error); }
   });
+  async function markCopyRead(id: string, userId: string, remoteId: string) {
+    await portal.markRead(userId, remoteId);
+    await writer`update ${s}.portal_copies set read_synced = true
+      where notification_id = ${id}::bigint and user_id = ${userId}`;
+  }
+}
+
+function orderViewer(modules: string[]): Viewer {
+  return { customerProfiles: false, ticketsStaffId: null, feedback: false, returns: false,
+    orders: modules.includes("Orders"), payments: modules.includes("Payments") };
 }
 
 /** Bound outage delays; unattempted work remains durable for the next poll or scheduler sync. */
