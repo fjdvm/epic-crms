@@ -279,7 +279,12 @@ describe("runAnalysis", () => {
       now: NOW,
     });
 
-    expect(events[0].actor).toEqual({ type: "user", id: "s1", display_name: "Ana Staff" });
+    expect(events[0]).toMatchObject({
+      action: "feedback.analysis_run", module: "Feedback", outcome: "success",
+      actor: { type: "user", id: "s1", display_name: "Ana Staff" },
+      target: { type: "feedback-analysis-run", id: expect.any(String), display_name: expect.stringMatching(/^Feedback analysis run /) },
+      description: "Ana Staff ran Feedback analysis: labelled 1 Feedback.",
+    });
   });
 
   it("still finishes and reports the run when writing the audit event fails", async () => {

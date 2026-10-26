@@ -22,3 +22,8 @@ export async function recordAudit(audit: AuditTrail, event: AuditEvent): Promise
     console.error("CREOMS Audit Event could not be recorded", error);
   }
 }
+
+/** Captures the Staff identity in the shape used by Portal My Logs. */
+export function staffAuditActor(staff: { id: string; name: string }): AuditEvent["actor"] {
+  return { type: "user", id: staff.id, display_name: staff.name };
+}

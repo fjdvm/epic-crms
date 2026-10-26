@@ -159,6 +159,15 @@ describe("saving a Draft", () => {
     expect((await saveDraft(db.sql, ada, { ...draft, title: "x".repeat(TITLE_LIMIT) }, ports())).ok).toBe(true);
   });
 
+  it("reuses the Draft and records one creation when the same save request is retried", async () => {
+    const command = { ...ports(), operationId: "save-request-1" };
+    const first = await saveDraft(db.sql, ada, draft, command);
+    clock = new Date(now.getTime() + 1000);
+    expect(await saveDraft(db.sql, ada, draft, command)).toEqual(first);
+    expect(await listAnnouncements(db.sql)).toHaveLength(1);
+    expect(audit.events).toHaveLength(1);
+  });
+
   it("is audited with the acting Staff member", async () => {
     const result = await saveDraft(db.sql, ada, draft, ports());
     if (!result.ok) throw new Error("not saved");
@@ -201,6 +210,24 @@ describe("editing a Draft", () => {
 
     expect((await editDraft(db.sql, ada, id, { title: "New", description: "Changed." }, ports())).ok).toBe(true);
     expect(await getAnnouncement(db.sql, id)).toMatchObject({ title: "New", description: "Changed." });
+  });
+
+  it("retains the audit identity when an edit request is retried later", async () => {
+    const id = await saved();
+    const command = { ...ports(), operationId: "edit-request-1" };
+    const input = { title: "New", description: "Changed." };
+    await editDraft(db.sql, ada, id, input, command);
+    clock = new Date(now.getTime() + 1000);
+    await editDraft(db.sql, ada, id, input, command);
+    expect(audit.events).toHaveLength(2);
+    expect(audit.events[1].operationId).toBe(audit.events[0].operationId);
+  });
+
+  it("distinguishes separate edits in the same millisecond", async () => {
+    const id = await saved();
+    await editDraft(db.sql, ada, id, { title: "New", description: "First." }, { ...ports(), operationId: "edit-request-1" });
+    await editDraft(db.sql, ada, id, { title: "New", description: "Second." }, { ...ports(), operationId: "edit-request-2" });
+    expect(audit.events[1].operationId).not.toBe(audit.events[0].operationId);
   });
 
   it("lets a colleague edit it and records them as the last editor", async () => {

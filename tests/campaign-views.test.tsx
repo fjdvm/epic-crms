@@ -134,7 +134,7 @@ describe("the campaign form", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }));
+    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }, expect.any(String)));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 
@@ -156,7 +156,7 @@ describe("the campaign form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(actions.edit).toHaveBeenCalledWith("d1", { title: "New", description: "Words.", images: [] }));
+    await waitFor(() => expect(actions.edit).toHaveBeenCalledWith("d1", { title: "New", description: "Words.", images: [] }, expect.any(String)));
     expect(actions.save).not.toHaveBeenCalled();
   });
 
@@ -170,7 +170,7 @@ describe("the campaign form", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(actions.remove).toHaveBeenCalledWith("d1"));
+    await waitFor(() => expect(actions.remove).toHaveBeenCalledWith("d1", expect.any(String)));
   });
 
   it("asks before sending a test copy, and sends the saved Draft on confirming", async () => {
@@ -183,7 +183,7 @@ describe("the campaign form", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
 
-    await waitFor(() => expect(actions.sendTest).toHaveBeenCalledWith("d1"));
+    await waitFor(() => expect(actions.sendTest).toHaveBeenCalledWith("d1", expect.any(String)));
     expect(actions.save).not.toHaveBeenCalled();
     expect(actions.edit).not.toHaveBeenCalled();
   });
@@ -237,7 +237,7 @@ describe("the campaign form", () => {
       fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
       await waitFor(() =>
-        expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Old", description: "Words.", images: photos(2), imageLayout: "two-rows" }),
+        expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Old", description: "Words.", images: photos(2), imageLayout: "two-rows" }, expect.any(String)),
       );
     });
 
@@ -341,7 +341,7 @@ describe("images on the campaign form", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: ["https://cdn.test/a.png"] }),
+      expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: ["https://cdn.test/a.png"] }, expect.any(String)),
     );
   });
 
@@ -424,8 +424,8 @@ describe("sending now from the form", () => {
 
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Send now" }));
 
-    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("new"));
-    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] });
+    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("new", expect.any(String)));
+    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }, expect.any(String));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 
@@ -436,8 +436,8 @@ describe("sending now from the form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send now" }));
     fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Send now" }));
 
-    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("d1"));
-    expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Halaya", description: "Restocked.", images: [] });
+    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("d1", expect.any(String)));
+    expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Halaya", description: "Restocked.", images: [] }, expect.any(String));
   });
 
   it("blocks sending when there are no Subscribers", async () => {
@@ -494,7 +494,7 @@ describe("an Announcement that is no longer a Draft", () => {
 
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Retry" }));
 
-    await waitFor(() => expect(retry).toHaveBeenCalledWith("a1"));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("a1", expect.any(String)));
   });
 });
 
@@ -519,8 +519,8 @@ describe("scheduling from the form", () => {
     expect(actions.schedule).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Schedule" }));
 
-    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("new", "2099-10-25T09:30"));
-    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] });
+    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("new", "2099-10-25T09:30", expect.any(String)));
+    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }, expect.any(String));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 
@@ -560,8 +560,8 @@ describe("scheduling from the form", () => {
     fireEvent.change(input, { target: { value: "2099-11-01T18:00" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Reschedule" }));
 
-    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("d1", "2099-11-01T18:00"));
-    expect(actions.edit).toHaveBeenCalledWith("d1", expect.objectContaining({ title: "Halaya" }));
+    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("d1", "2099-11-01T18:00", expect.any(String)));
+    expect(actions.edit).toHaveBeenCalledWith("d1", expect.objectContaining({ title: "Halaya" }), expect.any(String));
   });
 
   it("cancels the schedule back to a Draft, only after asking", async () => {
@@ -574,7 +574,7 @@ describe("scheduling from the form", () => {
 
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel schedule" }));
 
-    await waitFor(() => expect(actions.unschedule).toHaveBeenCalledWith("d1"));
+    await waitFor(() => expect(actions.unschedule).toHaveBeenCalledWith("d1", expect.any(String)));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 

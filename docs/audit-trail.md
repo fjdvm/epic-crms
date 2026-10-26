@@ -6,9 +6,13 @@ best-effort policy, including protection against a throwing injected port.
 The gateway adapter also applies it when called directly.
 
 Producers supply an operation identity. Feedback uses its persisted run id;
-Announcements include the action, Target, Actor, occurrence time and Description,
-so replaying an event keeps its identity while separate edits and sends remain
-distinct. The gateway hashes the action, Target and operation identity into the
+Announcement forms generate a token for each submitted action and pass it as a
+serialized Server Action argument. A transport replay retains that token; a new
+action gets a new one even within the same millisecond. Draft creation derives
+its UUID from the Staff id and request token and inserts only once, so replaying
+a save also retains its Target. Scheduled sends generate
+a token when they record their result; their persisted state prevents resending a
+completed action. The gateway hashes the action, Target and operation identity into the
 `idempotency_key` accepted by audit-logs. It adds Source `CRMS`, authenticates as
 the `crms` Caller and bounds the request to five seconds. There is no retry queue.
 

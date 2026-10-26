@@ -1,4 +1,4 @@
-import { recordAudit, type AuditTrail } from "@/lib/audit-trail";
+import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 export type { AuditEvent } from "@/lib/audit-trail";
 
 import type postgres from "postgres";
@@ -209,7 +209,7 @@ export async function runAnalysis({
     outcome: failed === 0 ? "success" : "failure",
     actor:
       actor.kind === "staff"
-        ? { type: "user", id: actor.id, display_name: actor.name }
+        ? staffAuditActor(actor)
         : { type: "process", id: "feedback-analysis", display_name: "Scheduled Feedback analysis" },
     target: { type: "feedback-analysis-run", id: String(runId), display_name: `Feedback analysis run ${runId}` },
     description: `${actor.kind === "staff" ? actor.name : "Scheduled Feedback analysis"} ran Feedback analysis: labelled ${analyzed} Feedback${failed > 0 ? ` and could not analyze ${failed}` : ""}.`,

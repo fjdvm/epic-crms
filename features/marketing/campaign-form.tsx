@@ -225,18 +225,18 @@ export function CampaignForm({
         : CONFIRMATION[shown];
 
   const run = (kind: Exclude<Submit, "send" | "schedule">) => {
-    if (kind === "test") return actions.sendTest(draft!.id);
-    if (kind === "unschedule") return actions.unschedule(draft!.id);
-    if (kind === "delete") return actions.remove(draft!.id);
+    if (kind === "test") return actions.sendTest(draft!.id, crypto.randomUUID());
+    if (kind === "unschedule") return actions.unschedule(draft!.id, crypto.randomUUID());
+    if (kind === "delete") return actions.remove(draft!.id, crypto.randomUUID());
 
-    return draft ? actions.edit(draft.id, input) : actions.save(input);
+    return draft ? actions.edit(draft.id, input, crypto.randomUUID()) : actions.save(input, crypto.randomUUID());
   };
 
   /** Scheduling saves the form as it stands first, like sending, so what goes out is what the preview shows. */
   const saveFirst = async () =>
     draft
-      ? { ...(await actions.edit(draft.id, input)), id: draft.id }
-      : await actions.save(input).then((r) => (r.ok ? { ok: true as const, id: r.announcement.id } : r));
+      ? { ...(await actions.edit(draft.id, input, crypto.randomUUID())), id: draft.id }
+      : await actions.save(input, crypto.randomUUID()).then((r) => (r.ok ? { ok: true as const, id: r.announcement.id } : r));
 
   const confirm = () => {
     if (busy.current || !confirming) return;
@@ -273,7 +273,7 @@ export function CampaignForm({
     }
 
     const id = saved.id;
-    const result = await actions.send(id);
+    const result = await actions.send(id, crypto.randomUUID());
 
     setConfirming(null);
     if (!result.ok) {
@@ -297,7 +297,7 @@ export function CampaignForm({
       return void toast.error(MESSAGES[saved.reason]);
     }
 
-    const result = await actions.schedule(saved.id, when);
+    const result = await actions.schedule(saved.id, when, crypto.randomUUID());
 
     setConfirming(null);
     if (!result.ok) {

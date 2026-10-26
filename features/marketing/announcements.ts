@@ -1,4 +1,4 @@
-import { recordAudit, type AuditTrail } from "@/lib/audit-trail";
+import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 
 import type postgres from "postgres";
 
@@ -103,6 +103,8 @@ export interface MarketingMail {
 }
 
 export interface Ports {
+  /** Carried with a Staff request so transport retries reuse its audit identity. */
+  operationId?: string;
   audit: AuditTrail;
   mail: MarketingMail;
   subscribers: SubscriberSource;
@@ -111,7 +113,7 @@ export interface Ports {
 }
 
 /** What sending to Subscribers needs; the scheduled job has no use for the rest. */
-export type SendPorts = Pick<Ports, "audit" | "subscribers" | "mailer" | "now">;
+export type SendPorts = Pick<Ports, "audit" | "subscribers" | "mailer" | "now" | "operationId">;
 
 /** The most recipients the notifications service accepts in one batch. */
 export const SEND_BATCH_SIZE = 100;
@@ -195,18 +197,18 @@ function check(
  * The audit trail is a record of what happened, not a gate on it: a change that is already saved is
  * not undone because audit-logs could not be reached.
  */
-async function audited({ audit }: Pick<Ports, "audit">, event: AnnouncementAuditEvent) {
+async function audited({ audit, operationId }: Pick<Ports, "audit" | "operationId">, event: AnnouncementAuditEvent) {
   await recordAudit(audit, {
     module: "Marketing",
     action: event.action,
     outcome: event.outcome ?? "success",
-    actor: { type: "user", id: event.actor.id, display_name: event.actor.name },
+    actor: staffAuditActor(event.actor),
     target: { type: "announcement", id: event.announcement.id, display_name: event.announcement.title },
     description: event.description,
     occurred_at: event.occurredAt.toISOString(),
     ...(event.subscribers === undefined ? {} : { metadata: { subscribers: event.subscribers } }),
-    // Includes the occurrence so separate edits/sends remain distinct; replaying the event is stable.
-    operationId: JSON.stringify([event.action, event.announcement.id, event.actor.id, event.occurredAt.toISOString(), event.description]),
+    // A transport replay keeps its token; separate accepted actions always get distinct tokens.
+    operationId: JSON.stringify([event.actor.id, operationId ?? crypto.randomUUID()]),
   });
 }
 
@@ -218,12 +220,19 @@ export async function saveDraft(sql: postgres.Sql, actor: Actor, input: Announce
 
   const at = ports.now();
 
+  // Scope the submitted token to this Staff member. Concurrent/replayed saves reserve the same Draft.
+  const operationId = ports.operationId ?? crypto.randomUUID();
   const [{ id }] = await sql<{ id: string }[]>`
-    insert into crms.announcements (title, description, images, image_layout, created_by_id, created_by_name, updated_by_id, updated_by_name, created_at, updated_at)
-    values (${checked.title}, ${checked.description}, ${checked.images}, ${input.imageLayout ?? null}, ${actor.id}, ${actor.name}, ${actor.id}, ${actor.name}, ${at}, ${at})
+    select md5(${JSON.stringify([actor.id, operationId])})::uuid as id`;
+  const [created] = await sql<{ id: string }[]>`
+    insert into crms.announcements (id, title, description, images, image_layout, created_by_id, created_by_name, updated_by_id, updated_by_name, created_at, updated_at)
+    values (${id}, ${checked.title}, ${checked.description}, ${checked.images}, ${input.imageLayout ?? null}, ${actor.id}, ${actor.name}, ${actor.id}, ${actor.name}, ${at}, ${at})
+    on conflict (id) do nothing
     returning id`;
 
-  await audited(ports, {
+  if (!created) return { ok: true, announcement: { id } };
+
+  await audited({ ...ports, operationId }, {
     action: "record.created",
     actor,
     announcement: { id, title: checked.title },
