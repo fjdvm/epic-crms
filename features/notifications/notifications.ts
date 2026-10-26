@@ -44,7 +44,7 @@ export interface Viewer {
 const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null, feedback: false, orders: false, payments: false, returns: false };
 
 /** The rows of `crms.notifications` this viewer may see and mark read. */
-function visibleTo(sql: postgres.Sql, viewer: Viewer) {
+export function visibleTo(sql: postgres.Sql | postgres.TransactionSql, viewer: Viewer) {
   return sql`(
     (kind = 'new-customer' and ${viewer.customerProfiles})
     or (kind = 'feedback-low' and ${viewer.feedback})

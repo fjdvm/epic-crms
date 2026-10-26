@@ -1,6 +1,6 @@
 "use server";
 
-import { syncNotifications } from "./sync";
+import { syncNotifications, syncNotificationCopies } from "./sync";
 import { staffLiveUrl } from "./staff-live";
 
 import { revalidatePath } from "next/cache";
@@ -23,6 +23,7 @@ export async function markNotificationRead(id: string) {
   if (!viewer) return;
 
   await markRead(crmsDatabase(), id, DEFAULT_SCHEMA, viewer);
+  await syncNotificationCopies();
   revalidatePath("/", "layout");
 }
 
@@ -31,6 +32,7 @@ export async function markAllNotificationsRead() {
   if (!viewer) return;
 
   await markAllRead(crmsDatabase(), DEFAULT_SCHEMA, viewer);
+  await syncNotificationCopies();
   revalidatePath("/", "layout");
 }
 
