@@ -16,8 +16,7 @@ export interface PortalCopies {
 export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopies, appUrl: string, schema = DEFAULT_SCHEMA): Promise<void> {
   const s = schemaIdent(writer, schema);
   const unresolved = await writer<{ id: string }[]>`
-    select n.id::text from ${s}.notifications n where kind in ('order-placed', 'order-delivery-fee', 'order-payment-proof')
-    and not exists (select 1 from ${s}.portal_copy_audiences a where a.notification_id = n.id)`;
+    select n.id::text from ${s}.notifications n where not exists (select 1 from ${s}.portal_copy_audiences a where a.notification_id = n.id)`;
   const [pending] = await writer<{ exists: boolean }[]>`select exists(select 1 from ${s}.portal_copies where remote_id is null) as exists`;
   let staff: Awaited<ReturnType<PortalCopies["recipients"]>> | null = null;
   try {
@@ -30,7 +29,7 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
             on conflict do nothing returning notification_id`;
           if (!claimed.length) continue;
           for (const person of audience) {
-            const viewer = orderViewer(person.modules);
+            const viewer = staffViewer(person);
             await tx`insert into ${s}.portal_copies (notification_id, user_id)
               select id, ${person.id} from ${s}.notifications where id = ${id}::bigint and ${visibleTo(tx, viewer)}
               on conflict do nothing`;
@@ -62,7 +61,7 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
         const key = `creoms.order.${copy.id}`;
         const person = staff?.find(person => person.id === copy.userId);
         const allowed = person ? await writer`select 1 from ${s}.notifications where id = ${copy.id}::bigint
-          and ${visibleTo(writer, orderViewer(person.modules))}` : [];
+          and ${visibleTo(writer, staffViewer(person))}` : [];
         if (allowed.length) {
           const description = describeNotification(copy);
           remote = await portal.send({ key, userId: copy.userId, text: description.text,
@@ -96,8 +95,10 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
   }
 }
 
-function orderViewer(modules: string[]): Viewer {
-  return { customerProfiles: false, ticketsStaffId: null, feedback: false, returns: false,
+function staffViewer({ id, modules }: { id: string; modules: string[] }): Viewer {
+  return { customerProfiles: modules.includes("Customer Profiles"),
+    ticketsStaffId: modules.includes("Tickets") ? id : null,
+    feedback: modules.includes("Feedback"), returns: modules.includes("Returns"),
     orders: modules.includes("Orders"), payments: modules.includes("Payments") };
 }
 
