@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOrder, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee,
-  startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard,
+  startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
@@ -187,6 +187,82 @@ describe("Order actions", () => {
 });
 
 describe("Fulfilment Order actions", () => {
+  it("reconciles only the photo recorded on a delivered or received Order", async () => {
+    const id = await order("delivery", "dispatched");
+    storefront.refusal = "Delivery refused.";
+    await deliverOrder(id, deliveryPhoto());
+    expect((await reconcileDeliveryPhoto(id)).ok).toBe(false);
+    expect((await reconcileDeliveryPhoto(999)).ok).toBe(false);
+    expect(await reconcileDeliveryPhoto(0)).toEqual({ ok: false, reason: "Invalid Order number." });
+    storefront.refusal = null;
+    await deliverOrder(id, deliveryPhoto());
+    // Simulate a failed promotion of the committed File; refused file-1 is still unrelated.
+    storage.files.get("file-2")!.retentionType = "temporary";
+    storage.failPromote = true;
+    expect((await reconcileDeliveryPhoto(id)).ok).toBe(false);
+    expect(storage.files.get("file-2")?.retentionType).toBe("temporary");
+    storage.failPromote = false;
+    await db.sql`update orders set status = 'received' where id = ${id}`;
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")?.retentionType).toBe("temporary");
+    expect(storage.files.get("file-2")?.retentionType).toBe("permanent");
+    expect(storefront.requests).toBe(2);
+  });
+
+  it("leaves Temporary evidence after malformed responses and transport failures without retrying", async () => {
+    const id = await order("delivery", "dispatched");
+    vi.mocked(revalidatePath).mockClear();
+    const replies = [() => new Response("invalid JSON"), () => new Response(null, { status: 204 }),
+      () => new Response(null, { status: 503 }), () => { throw new Error("Connection lost"); }];
+    for (const reply of replies) {
+      const send = vi.fn(async () => reply());
+      vi.stubGlobal("fetch", send);
+      expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
+      expect(send).toHaveBeenCalledTimes(1);
+    }
+    expect([...storage.files.values()].map(file => file.retentionType)).toEqual(["temporary", "temporary", "temporary", "temporary"]);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat a confirmed delivery when making its photo Permanent fails", async () => {
+    const id = await order("delivery", "dispatched");
+    storage.failPromote = true;
+    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("The Order was marked delivered") });
+    expect(storefront.requests).toBe(1);
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary" });
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "delivered", deliveryPhotoFileId: "file-1" } });
+  });
+
+  it("does not claim the photo is Permanent when the gateway fails to confirm promotion", async () => {
+    const { gatewayFileStorage } = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
+    vi.spyOn(storage, "promote").mockImplementation(gatewayFileStorage.promote);
+    vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
+    vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "fake-gateway-key");
+    const send = storefrontFetch(storefront);
+    for (const reply of [{}, { id: "another-file", retentionType: "permanent", expiresAt: null },
+      { id: "file-1", retentionType: "temporary", expiresAt: "2026-11-02T00:00:00Z" }]) {
+      storage.reset();
+      const id = await order("delivery", "dispatched");
+      vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        return request.url.startsWith(FAKE_STOREFRONT_URL) ? send(request) : Promise.resolve(Response.json(reply));
+      });
+      expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("The Order was marked delivered") });
+    }
+    expect(storefront.requests).toBe(3);
+  });
+
+  it("keeps a refused Delivery photo Temporary and says the Order was not changed", async () => {
+    const id = await order("delivery", "dispatched");
+    storefront.refusal = "The Order is no longer dispatched.";
+    expect(await deliverOrder(id, deliveryPhoto())).toEqual({ ok: false, reason: storefront.refusal });
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary" });
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "dispatched", deliveryPhotoFileId: null } });
+    expect(storefront.requests).toBe(1);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
   it("requires a Delivery photo before contacting the storefront, including Pickup", async () => {
     for (const method of ["delivery", "pickup"]) {
       expect(await deliverOrder(await order(method, "dispatched"))).toEqual({
@@ -235,19 +311,24 @@ describe("Fulfilment Order actions", () => {
     }
   });
 
-  it("stores the Delivery photo Private and Permanent through the gateway", async () => {
+  it("uploads a Temporary Delivery photo and promotes only after the storefront confirms it", async () => {
     const { gatewayFileStorage } = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
     vi.spyOn(storage, "upload").mockImplementation(gatewayFileStorage.upload);
+    vi.spyOn(storage, "promote").mockImplementation(gatewayFileStorage.promote);
     vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
     vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "fake-gateway-key");
     const registrations: unknown[] = [];
     const uploads: Uint8Array[] = [];
     let confirmed = false;
+    let delivered = false;
+    let promoted = false;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       if (request.url.startsWith(FAKE_STOREFRONT_URL)) {
         expect(confirmed).toBe(true);
-        return storefront.handle(request);
+        const response = await storefront.handle(request);
+        delivered = response.ok;
+        return response;
       }
       if (request.url === "https://bucket.test/photo" && request.method === "PUT") {
         expect(request.headers.has("authorization")).toBe(false);
@@ -263,15 +344,22 @@ describe("Fulfilment Order actions", () => {
         confirmed = true;
         return Response.json({});
       }
+      if (request.url === "https://gateway.test/files/delivery-file" && request.method === "PATCH") {
+        expect(delivered).toBe(true);
+        expect(await request.json()).toEqual({ retentionType: "permanent" });
+        promoted = true;
+        return Response.json({ id: "delivery-file", retentionType: "permanent", expiresAt: null });
+      }
       throw new Error("Unexpected file request");
     });
     const id = await order("delivery", "dispatched");
     expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: true });
     expect(registrations).toEqual([{
       filename: "delivery.png", contentType: "image/png", size: PNG.length,
-      visibility: "private", retentionType: "permanent",
+      visibility: "private", retentionType: "temporary",
     }]);
     expect(uploads).toEqual([PNG]);
+    expect(promoted).toBe(true);
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: "delivery-file" } });
   });
 
@@ -301,16 +389,23 @@ describe("Fulfilment Order actions", () => {
     });
     expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
     expect(storefront.requests).toBe(1);
-    expect(storage.files.has("file-1")).toBe(true);
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary" });
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "delivered", deliveryPhotoFileId: "file-1" } });
     expect(revalidatePath).not.toHaveBeenCalled();
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "permanent" });
+    expect(storefront.requests).toBe(1);
   });
 
   it("requires the storefront to confirm the photo id as well as the status", async () => {
     const id = await order("delivery", "dispatched");
-    vi.stubGlobal("fetch", async () => Response.json({ id, status: "delivered", deliveryFeeInCentavos: null }));
-    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
-    expect(storage.files.has("file-1")).toBe(true);
+    for (const deliveryPhotoFileId of [undefined, "another-photo"]) {
+      const send = vi.fn(async () => Response.json({ id, status: "delivered", deliveryFeeInCentavos: null, deliveryPhotoFileId }));
+      vi.stubGlobal("fetch", send);
+      expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
+      expect(send).toHaveBeenCalledTimes(1);
+    }
+    expect([...storage.files.values()].map(file => file.retentionType)).toEqual(["temporary", "temporary"]);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
@@ -340,7 +435,7 @@ describe("Fulfilment Order actions", () => {
   it("denies Orders and Payments Staff, and rechecks a revoked Fulfilment grant", async () => {
     const id = await order("delivery", "confirmed");
     const portal = await signInWithModules(["Orders", "Payments"]);
-    for (const action of [() => startPreparing(id), () => dispatchOrder(id), () => deliverOrder(id), getFulfilmentBoard]) {
+    for (const action of [() => startPreparing(id), () => dispatchOrder(id), () => deliverOrder(id), () => reconcileDeliveryPhoto(id), getFulfilmentBoard]) {
       await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     }
     expect(storefront.requests).toBe(0);
@@ -349,6 +444,7 @@ describe("Fulfilment Order actions", () => {
     portal.revoke("ben", "Fulfilment");
     await expect(dispatchOrder(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     await expect(deliverOrder(id, deliveryPhoto())).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    await expect(reconcileDeliveryPhoto(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(1);
   });
@@ -401,6 +497,7 @@ describe("Fulfilment Order actions", () => {
     const result = await loadFulfilmentBoard(() => db.sql);
     expect(result.ok && result.board.delivered).toEqual([expect.objectContaining({ id, deliveredAt: expect.any(Date) })]);
     expect(requireModule).toHaveBeenCalledWith("Fulfilment");
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "permanent" });
   });
   it("dispatches an Order being prepared through the storefront", async () => {
     const id = await order("delivery", "preparing");

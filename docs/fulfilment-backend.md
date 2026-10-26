@@ -49,7 +49,7 @@ MIME claim are ignored for validation. Exactly 5 MB is accepted. Pickup uses the
 Every call checks the Fulfilment Module before reading the Order or storing a photo.
 
 The existing Ticket Message file-storage boundary uploads the photo through the gateway:
-register with `visibility: "private"`, `retentionType: "permanent"`, PUT the bytes to the
+register with `visibility: "private"`, `retentionType: "temporary"`, PUT the bytes to the
 signed URL without credentials, then confirm the File. Only then does CREOMS POST
 `{ status: "delivered", deliveryPhotoFileId: "<File id>" }` to the storefront's existing
 Order status endpoint with its service credential. Storage failure leaves the Order alone.
@@ -57,8 +57,14 @@ The storefront must atomically store that id with the status and Delivery time, 
 only for a dispatched Order without an existing photo, and return the same
 `deliveryPhotoFileId` alongside `id`, `status` and `deliveryFeeInCentavos`. A response
 missing or changing the photo id is uncertain, never success. No automatic retry occurs.
-CREOMS exposes no operation to replace or remove the photo. Uploaded evidence is retained
-even on refusal or uncertainty, because a lost response may follow an accepted write.
+After a matching confirmation, CREOMS promotes the File with authenticated
+`PATCH /files/<id>`, `{ "retentionType": "permanent" }`, checking the returned id,
+Permanent retention and cleared expiry. CREOMS exposes no operation to replace or remove
+the photo. A refusal or uncertain response leaves Temporary evidence for file-storage's
+seven-day cleanup. Staff must refresh and read the Order's status and photo id, never
+repeat an uncertain delivery automatically. A failed promotion explicitly says the Order
+was delivered and asks Staff to refresh without repeating delivery. See the
+[recovery and rollout notes](temporary-evidence.md).
 
 `loadOrder` exposes `deliveryPhotoFileId: string | null`; null means "No photo". It reads
 the storefront's nullable `delivery_photo_file_id` through the Order's JSON representation,

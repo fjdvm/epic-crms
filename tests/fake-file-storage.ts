@@ -2,25 +2,32 @@ import type { FileStorage, ImageContentType } from "@/features/tickets/attachmen
 
 /** An in-memory file-storage: Private Files, short-lived addresses, and whatever failures a test asks for. */
 export class FakeFileStorage implements FileStorage {
-  files = new Map<string, { filename: string; contentType: string; size: number; link?: number; returnId?: number; visibility: "private"; retentionType: "permanent"; status: "active" }>();
+  files = new Map<string, { filename: string; contentType: string; size: number; link?: number; returnId?: number; visibility: "private"; retentionType: "permanent" | "temporary"; status: "active" }>();
   failUpload = false;
   failLink = false;
+  failPromote = false;
   private next = 1;
 
   reset() {
     this.files.clear();
     this.failUpload = false;
     this.failLink = false;
+    this.failPromote = false;
     this.next = 1;
   }
 
-  async upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array }) {
+  async upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array; retentionType?: "permanent" | "temporary" }) {
     if (this.failUpload) throw new Error("file-storage is down");
 
     const id = `file-${this.next++}`;
-    this.files.set(id, { filename: file.filename, contentType: file.contentType, size: file.bytes.length, visibility: "private", retentionType: "permanent", status: "active" });
+    this.files.set(id, { filename: file.filename, contentType: file.contentType, size: file.bytes.length, visibility: "private", retentionType: file.retentionType ?? "permanent", status: "active" });
 
     return id;
+  }
+
+  async promote(fileId: string) {
+    if (this.failPromote) throw new Error("file-storage is down");
+    this.files.get(fileId)!.retentionType = "permanent";
   }
 
   async linkRefundProof(fileId: string, returnId: number) {
