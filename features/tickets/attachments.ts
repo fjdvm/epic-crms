@@ -45,5 +45,7 @@ export interface FileStorage {
   linkToMessage(fileId: string, messageId: number): Promise<void>;
   /** A short-lived signed address to show the File from. */
   viewUrl(fileId: string): Promise<string>;
+  /** Like viewUrl, with what kind of file it is, so a PDF or video is not shown as an image. */
+  viewFile?(fileId: string): Promise<{ url: string; filename: string; contentType: string }>;
   remove(fileId: string): Promise<void>;
 }

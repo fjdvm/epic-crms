@@ -11,12 +11,15 @@ export interface TicketMessage {
   /** The Customer's first name, or the Claimer's name for Staff ("Staff" while Unclaimed). */
   senderName: string;
   body: string;
-  /** The Message carries an image. */
+  /** The Message carries an image, PDF or video. */
   hasAttachment: boolean;
   /** The file-storage id of the image, when it was stored there; old storefront images have none. */
   fileId?: string | null;
   /** A short-lived address to show the image from; null when there is none to show. */
   attachmentUrl?: string | null;
+  /** The attachment's content type and file name, when file-storage could say; they decide how it is shown. */
+  attachmentType?: string | null;
+  attachmentName?: string | null;
   createdAt: Date;
 }
 
@@ -165,14 +168,19 @@ export async function loadTicket(
   }
 }
 
-/** A Message whose address cannot be fetched still shows; only its image is missing. */
+/** A Message whose address cannot be fetched still shows; only its attachment is missing. */
 async function addImageAddresses(ticket: TicketDetail, storage: FileStorage) {
   await Promise.all(
     ticket.messages.map(async (m) => {
       if (!m.fileId) return;
 
       try {
-        m.attachmentUrl = await storage.viewUrl(m.fileId);
+        if (storage.viewFile) {
+          const file = await storage.viewFile(m.fileId);
+          m.attachmentUrl = file.url;
+          m.attachmentType = file.contentType;
+          m.attachmentName = file.filename;
+        } else m.attachmentUrl = await storage.viewUrl(m.fileId);
       } catch (error) {
         console.error(`The image on Ticket TKT-${ticket.id} Message ${m.id} could not be reached`, error);
       }

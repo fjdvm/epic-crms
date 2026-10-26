@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { PILL, Pill, PRIORITY_LABELS } from "./pill";
 import { Bubbles } from "./conversation";
+import { MessageAttachment } from "./message-attachment";
 import { ByClaimer, ClaimerName, ClaimProvider } from "./claim";
 import { TicketActions } from "./ticket-controls";
 import type { TicketDetail, TicketMessage } from "./ticket";
@@ -183,19 +184,7 @@ function Attachments({ messages }: { messages: TicketMessage[] }) {
           {m.body && (
             <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">{m.body}</p>
           )}
-          {m.attachmentUrl ? (
-            <a href={m.attachmentUrl} target="_blank" rel="noreferrer" className="block">
-              {/* A short-lived signed address from file-storage, so next/image's optimizer cannot cache it. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={m.attachmentUrl}
-                alt={`Image attached by ${m.senderName}`}
-                className="max-h-96 max-w-full rounded-lg object-contain"
-              />
-            </a>
-          ) : (
-            m.hasAttachment && <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
-          )}
+          <MessageAttachment message={m} imageClassName="max-h-96 max-w-full rounded-lg object-contain" />
         </div>
       ))}
     </>

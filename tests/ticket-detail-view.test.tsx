@@ -115,7 +115,7 @@ describe("the Ticket page as designed", () => {
     render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
     expect(screen.getByText("Maria · 20 Oct 2026, 10:21 AM")).toBeTruthy();
-    expect(screen.getByText("Photo attached")).toBeTruthy();
+    expect(screen.getByText("Attachment")).toBeTruthy();
   });
 
   it("has no Resolve with card, since replacement, refund and return actions are out of v1", () => {
@@ -259,8 +259,48 @@ describe("images on Messages", () => {
   it("still says a photo is attached when the image cannot be shown here", () => {
     render(<TicketDetailView ticket={withImage(null)} viewerId="bernice" />);
 
-    expect(screen.getByText("Photo attached")).toBeTruthy();
+    expect(screen.getByText("Attachment")).toBeTruthy();
     expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  const withFile = (attachmentType: string, attachmentName: string) =>
+    ticket({
+      messages: [
+        {
+          id: 3, sender: "customer", senderName: "Maria", body: "", hasAttachment: true,
+          attachmentUrl: "https://files.test/f2?signature=x", attachmentType, attachmentName,
+          createdAt: new Date("2026-10-20T02:21:00Z"),
+        },
+      ],
+    });
+
+  it("plays a video from its short-lived address", () => {
+    const { container } = render(<TicketDetailView ticket={withFile("video/mp4", "leak.mp4")} viewerId="bernice" />);
+
+    const video = container.querySelector("video")!;
+    expect(video.getAttribute("src")).toBe("https://files.test/f2?signature=x");
+    expect(video.hasAttribute("controls")).toBe(true);
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("links a PDF by its file name", () => {
+    render(<TicketDetailView ticket={withFile("application/pdf", "receipt.pdf")} viewerId="bernice" />);
+
+    const link = screen.getByRole("link", { name: /receipt\.pdf/ });
+    expect(link.getAttribute("href")).toBe("https://files.test/f2?signature=x");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("shows a video and a PDF in the chat bubbles too", () => {
+    const messages = [
+      { ...withFile("video/quicktime", "leak.mov").messages[0], id: 3 },
+      { ...withFile("application/pdf", "receipt.pdf").messages[0], id: 4, sender: "staff" as const, senderName: "Bernice" },
+    ];
+    const { container } = render(<TicketDetailView ticket={ticket({ messages })} viewerId="bernice" />);
+
+    expect(container.querySelector("video")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /receipt\.pdf/ })).toBeTruthy();
   });
 
   it("shows only the opening image, not a chat, until both sides have spoken", () => {
