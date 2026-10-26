@@ -37,6 +37,7 @@ export async function requireModule(module: string): Promise<Staff> {
   const result = await proceed(await access.check(module));
 
   if (result.decision === "denied") {
+    await access.recordDenial(module);
     redirect(NO_ACCESS_PATH);
   }
 
@@ -49,6 +50,7 @@ export async function requireAnyModule(modules: readonly string[]): Promise<Staf
   const result = await proceed(await access.checkAny(modules));
 
   if (result.decision === "denied") {
+    await Promise.all(modules.map(module => access.recordDenial(module)));
     redirect(NO_ACCESS_PATH);
   }
 

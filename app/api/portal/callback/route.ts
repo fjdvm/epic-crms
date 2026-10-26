@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { auditSignIn } from "@/lib/portal/access-audit";
 import { exchangeCode } from "@/lib/portal/client";
 import { HANDOFF_COOKIE, CALLBACK_PATH, SESSION_COOKIE } from "@/lib/portal/config";
 import { safeReturnTo } from "@/lib/portal/return-to";
@@ -47,6 +48,8 @@ export async function GET(request: NextRequest) {
   if (!exchanged.ok) {
     return failed(request, exchanged.reason === "rejected" ? "failed" : exchanged.reason);
   }
+
+  await auditSignIn(exchanged.sessionHandle, exchanged.expiresAt);
 
   const response = NextResponse.redirect(new URL(handoff.returnTo, request.url));
   response.cookies.delete({ name: HANDOFF_COOKIE, path: CALLBACK_PATH });
