@@ -35,7 +35,7 @@ CREATE TABLE crms.sync_state (
 -- Bell notifications. kind says what happened: a New Customer (at most one per Customer) or a
 -- Ticket event, Order event, Return request or low-rating Feedback. recipient_id is the Claimer's Portal id; NULL means every
 -- Staff member who may see that kind (Customer Profiles for new-customer, Tickets for the Ticket
--- kinds, Feedback for feedback-low, Orders for order-delivery-fee, Payments for order-payment-proof, Returns for return-requested).
+-- kinds, Feedback for feedback-low, Orders for order-delivery-fee and order-placed, Payments for order-payment-proof, Returns for return-requested).
 -- read_at is shared.
 CREATE TABLE crms.notifications (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -111,7 +111,7 @@ CREATE TABLE crms.feedback_sync_state (
   baselined_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Stable keys for Delivery fee and Payment proof events; the first sync baselines existing events.
+-- Stable placement and Payment proof keys; the first sync baselines existing events.
 CREATE TABLE crms.seen_order_events (
   event_key text PRIMARY KEY,
   seen_at   timestamptz NOT NULL DEFAULT now()
