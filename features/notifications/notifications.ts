@@ -7,7 +7,7 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "feedback-low" | "order-delivery-fee" | "order-payment-proof" | "return-requested";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-payment-proof" | "return-requested";
 
 export interface Notification {
   id: string;
@@ -48,7 +48,7 @@ function visibleTo(sql: postgres.Sql, viewer: Viewer) {
   return sql`(
     (kind = 'new-customer' and ${viewer.customerProfiles})
     or (kind = 'feedback-low' and ${viewer.feedback})
-    or (kind = 'order-delivery-fee' and ${viewer.orders})
+    or (kind in ('order-delivery-fee', 'order-placed') and ${viewer.orders})
     or (kind = 'order-payment-proof' and ${viewer.payments})
     or (kind = 'return-requested' and ${viewer.returns})
     or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed') and ${viewer.ticketsStaffId !== null}

@@ -80,7 +80,7 @@ An alert shown to Staff when a Ticket needs them: a new Ticket (to every Staff m
 _Avoid_: Ticket alert, support alert
 
 **Order notification**:
-An alert shown to Staff when an Order is waiting on them: a new Delivery Order needing a Delivery fee (to every Staff member with the Orders Module), or a GCash Order whose Payment proof was just submitted (to every Staff member with the Payments Module). Nothing alerts Fulfilment Staff.
+An alert shown to every Staff member with the Orders Module when any new Order is placed, including Pickup and Cash on Delivery. A Delivery Order waiting for a quote says a Delivery fee is needed. A GCash Order whose Payment proof was just submitted separately alerts every Staff member with the Payments Module. Nothing alerts Fulfilment Staff.
 _Avoid_: New order alert, payment alert
 
 **Feedback notification**:
