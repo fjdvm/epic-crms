@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TicketDetailView } from "@/features/tickets/ticket-detail";
 import { loadTicket } from "@/features/tickets/ticket";
-import { gatewayFileStorage } from "@/lib/gateway";
+import { ticketFileStorage } from "@/features/files/server";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { canOpenOrders, requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -14,7 +14,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
 
-  const result = await loadTicket(ticketsDatabase, Number(id), gatewayFileStorage);
+  const result = await loadTicket(ticketsDatabase, Number(id), ticketFileStorage);
 
   if (!result.ok) {
     return (

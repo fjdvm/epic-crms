@@ -12,6 +12,7 @@ const REASONS: Record<Refusal["reason"], string> = {
   "already-resolved": "This Ticket is already resolved.",
   "empty-message": "Write a reply or attach an image first.",
   ...IMAGE_REFUSALS,
+  "invalid-attachment": "That attachment is invalid or expired. Attach the file again.",
   "storage-unavailable": "CREOMS could not store that image. Try again in a moment.",
   unavailable: "CREOMS could not save that. Try again in a moment.",
 };

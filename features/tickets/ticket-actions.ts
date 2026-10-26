@@ -18,6 +18,7 @@ export type TicketActionFailure =
   | "completed"
   | "already-resolved"
   | "empty-message"
+  | "invalid-attachment"
   | ImageRefusal
   /** file-storage could not take the image; nothing was saved. */
   | "storage-unavailable";
@@ -79,24 +80,23 @@ export async function releaseTicket(
 }
 
 /**
- * A Staff Message: text, one JPG or PNG image, or both. Only the Claimer can reply: an Unclaimed
- * Ticket must be Claimed first, and a Ticket someone else Claimed cannot be replied to. An image is
- * stored first and removed again if the Message is not saved, so file-storage never keeps an image
- * no Message shows.
+ * Only the Claimer can reply. Direct File ids are trusted inputs verified by the server action;
+ * legacy images are uploaded here. Only images created in this call are discarded on a failed save,
+ * since a confirmed direct upload may already belong to an earlier Message.
  */
 export async function replyToTicket(
   sql: postgres.Sql,
   id: number,
   actor: Actor,
   body: string,
-  attachment?: { image: ImageUpload; storage: FileStorage },
+  attachment?: ({ image: ImageUpload } | { fileId: string }) & { storage: FileStorage },
 ): Promise<ReplyResult> {
   const text = body.trim();
   if (!text && !attachment) return { ok: false, reason: "empty-message" };
 
-  let fileId: string | null = null;
+  let fileId: string | null = attachment && "fileId" in attachment ? attachment.fileId : null;
 
-  if (attachment) {
+  if (attachment && "image" in attachment) {
     const checked = checkImage(attachment.image);
     if (!checked.ok) return checked;
 
@@ -118,13 +118,13 @@ export async function replyToTicket(
   try {
     result = await saveReply(sql, id, actor, text, fileId);
   } catch (error) {
-    await discard(attachment?.storage, fileId);
+    if (attachment && "image" in attachment) await discard(attachment.storage, fileId);
 
     throw error;
   }
 
   if (!result.ok) {
-    await discard(attachment?.storage, fileId);
+    if (attachment && "image" in attachment) await discard(attachment.storage, fileId);
   } else if (attachment && fileId !== null) {
     try {
       await attachment.storage.linkToMessage(fileId, result.messageId);

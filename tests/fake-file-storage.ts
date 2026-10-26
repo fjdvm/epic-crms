@@ -2,9 +2,10 @@ import type { FileStorage, ImageContentType } from "@/features/tickets/attachmen
 
 /** An in-memory file-storage: Private Files, short-lived addresses, and whatever failures a test asks for. */
 export class FakeFileStorage implements FileStorage {
-  files = new Map<string, { filename: string; contentType: string; size: number; link?: number; returnId?: number; visibility: "private"; retentionType: "permanent" | "temporary"; status: "active" }>();
+  files = new Map<string, { filename: string; contentType: string; size: number; link?: number; returnId?: number; visibility: "private" | "public"; retentionType: "permanent" | "temporary"; status: "active" | "pending"; bytes?: Uint8Array }>();
   failUpload = false;
   failLink = false;
+  failRemove = false;
   failPromote = false;
   private next = 1;
 
@@ -12,9 +13,57 @@ export class FakeFileStorage implements FileStorage {
     this.files.clear();
     this.failUpload = false;
     this.failLink = false;
+    this.failRemove = false;
     this.failPromote = false;
+    this.calls.length = 0;
     this.next = 1;
   }
+
+  /** HTTP boundary shared by direct-upload server action tests; no real gateway or bucket. */
+  calls: { url: string; method: string; authorization: string | null }[] = [];
+
+  handle = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    this.calls.push({ url: request.url, method: request.method, authorization: request.headers.get("authorization") });
+    if (url.origin === "https://gateway.test" && url.pathname === "/files" && request.method === "POST") {
+      if (this.failUpload) return new Response(null, { status: 503 });
+      const body = await request.json();
+      const id = `direct-${this.next++}`;
+      this.files.set(id, { ...body, status: "pending" });
+      return Response.json({ ...body, id, status: "pending", uploadUrl: `https://files.test/uploads/${id}` });
+    }
+    const id = url.pathname.split("/").filter(Boolean).at(url.pathname.endsWith("/confirm") || url.pathname.endsWith("/links") ? -2 : -1)!;
+    const file = this.files.get(id);
+    if (!file) return new Response(null, { status: 404 });
+    if (url.origin === "https://files.test" && request.method === "PUT") {
+      file.bytes = new Uint8Array(await request.arrayBuffer());
+      return new Response(null, { status: 200 });
+    }
+    if (url.origin === "https://files.test" && request.method === "GET") {
+      return new Response(file.bytes as BodyInit, { headers: { "Content-Type": file.contentType } });
+    }
+    if (url.origin !== "https://gateway.test") throw new Error("Unexpected storage destination");
+    if (request.method === "DELETE") {
+      if (this.failRemove) return new Response(null, { status: 503 });
+      this.files.delete(id);
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname.endsWith("/confirm")) {
+      if (!file.bytes || file.bytes.length !== file.size) {
+        this.files.delete(id);
+        return Response.json({ error: "Uploaded file does not match the declared size; it was removed." }, { status: 422 });
+      }
+      file.status = "active";
+      return Response.json({ ...file, id, bytes: undefined });
+    }
+    if (url.pathname.endsWith("/links")) {
+      const body = await request.json();
+      file.link = Number(body.entityId);
+      return new Response(null, { status: 204 });
+    }
+    if (file.status !== "active") return new Response(null, { status: 404 });
+    return Response.json({ ...file, id, bytes: undefined, url: await this.viewUrl(id) });
+  };
 
   async upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array; retentionType?: "permanent" | "temporary" }) {
     if (this.failUpload) throw new Error("file-storage is down");
