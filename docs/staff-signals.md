@@ -24,9 +24,22 @@ non-Staff identity or Staff member with no CREOMS access receives no ticket.
 A gateway fault returns null so polling can continue. The socket address is
 `/notifications/live?ticket=...`, using the existing notifications inbox socket
 and gateway ticket validation. Each browser fetches the CREOMS feed after a
-nudge, where current Portal Modules determine visibility. Connecting the bell is
-#247; sending the first storefront Order signal is #246. Neither UI nor sender
-integration is included in this backend ticket.
+nudge, where current Portal Modules determine visibility. The bell connects in #247
+(below); sending the first storefront Order signal is #246.
+
+## The bell (#247)
+
+`LiveUpdatesProvider` opens the Staff channel socket for any Staff member who has a
+bell (`viewerFor` is non-null), whatever their Modules. Any frame except `pong`
+makes it fetch the feed at once, which toasts only alerts the member's Modules
+allow, so a nudge for work that is not theirs changes nothing. A nudge arriving
+mid-fetch queues one more fetch. The socket sends `ping` every 30 seconds and
+reconnects with backoff (1s to 30s), refetching on each open. The 5-second poll
+is unchanged, so a dropped socket or a refused ticket costs only latency.
+
+Opening a row marks it read in the provider first (kept over any feed fetched
+before the server caught up), then calls the server action, so a slow or failed
+navigation never leaves the row highlighted.
 
 ## Coalescing and failures
 

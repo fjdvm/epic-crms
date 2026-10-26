@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from "@testing-library/react";
+import type React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   LiveUpdatesProvider,
+  useFeedActions,
   useLiveFeed,
   useNewCustomerIds,
 } from "@/features/notifications/live-updates";
@@ -35,9 +37,13 @@ function Probe() {
   );
 }
 
-function mount(poll: () => Promise<NotificationFeed | null>, enabled = true) {
+function mount(
+  poll: () => Promise<NotificationFeed | null>,
+  enabled = true,
+  extra: Partial<React.ComponentProps<typeof LiveUpdatesProvider>> = {},
+) {
   return render(
-    <LiveUpdatesProvider initialFeed={feedOf(ada)} poll={poll} enabled={enabled}>
+    <LiveUpdatesProvider initialFeed={feedOf(ada)} poll={poll} enabled={enabled} {...extra}>
       <Probe />
     </LiveUpdatesProvider>,
   );
@@ -54,13 +60,43 @@ async function elapse(ms: number) {
   });
 }
 
+class FakeSocket {
+  static all: FakeSocket[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  sent: string[] = [];
+  readyState = 1;
+  static OPEN = 1;
+  constructor(readonly url: string) {
+    FakeSocket.all.push(this);
+  }
+  send(data: string) {
+    this.sent.push(data);
+  }
+  close() {
+    this.onclose?.();
+  }
+  open() {
+    this.onopen?.();
+  }
+  nudge() {
+    this.onmessage?.({ data: JSON.stringify({ type: "notification.created" }) });
+  }
+}
+
+const liveUrl = () => Promise.resolve("wss://gateway/notifications/live?ticket=t");
+
 beforeEach(() => {
+  FakeSocket.all = [];
+  vi.stubGlobal("WebSocket", FakeSocket);
   vi.useFakeTimers();
   setVisibility("visible");
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -146,6 +182,189 @@ describe("live updates", () => {
     expect(poll).toHaveBeenCalledTimes(2);
     expect(screen.getByText("unread:1 new:")).toBeTruthy();
     expect(toast.info).not.toHaveBeenCalled();
+  });
+});
+
+describe("the live connection", () => {
+  async function connected(poll: () => Promise<NotificationFeed | null>) {
+    mount(poll, true, { liveUrl });
+    await elapse(0);
+    const socket = FakeSocket.all[0];
+    act(() => socket.open());
+    await elapse(0);
+    return socket;
+  }
+
+  it("fetches the feed and toasts the moment a nudge arrives", async () => {
+    const poll = vi.fn().mockResolvedValue(feedOf(ada));
+    const socket = await connected(poll);
+    poll.mockClear();
+    poll.mockResolvedValue(feedOf(ben, ada));
+
+    act(() => socket.nudge());
+    await elapse(0);
+
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(toast.info).toHaveBeenCalledWith("Ben Cruz became a Customer");
+    expect(screen.getByText("unread:2 new:u-2")).toBeTruthy();
+  });
+
+  it("toasts a new Order alert on a nudge and keeps the 5-second backstop poll running", async () => {
+    const poll = vi.fn().mockResolvedValue(feedOf(ada));
+    const socket = await connected(poll);
+    poll.mockClear();
+    const order: Notification = { ...note("5", "Di Reyes"), kind: "order-placed", orderId: 1042 };
+    poll.mockResolvedValue(feedOf(order, ada));
+
+    act(() => socket.nudge());
+    await elapse(0);
+    expect(toast.info).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("unread:2 new:")).toBeTruthy();
+
+    poll.mockClear();
+    await elapse(5_000);
+    expect(poll).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows nothing new when the nudge finds nothing this Staff member may see", async () => {
+    const poll = vi.fn().mockResolvedValue(feedOf(ada));
+    const socket = await connected(poll);
+
+    act(() => socket.nudge());
+    await elapse(0);
+
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(screen.getByText("unread:1 new:")).toBeTruthy();
+  });
+
+  it("does not open a connection for Staff without a bell", async () => {
+    mount(vi.fn().mockResolvedValue(feedOf(ada)), false, { liveUrl });
+    await elapse(0);
+
+    expect(FakeSocket.all).toHaveLength(0);
+  });
+
+  it("fetches again when a nudge lands during a fetch, so the event is not missed", async () => {
+    let release: (feed: NotificationFeed) => void = () => {};
+    const poll = vi.fn().mockResolvedValueOnce(feedOf(ada));
+    const socket = await connected(poll);
+    poll.mockClear();
+    poll.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+    poll.mockResolvedValue(feedOf(ben, ada));
+
+    act(() => socket.nudge());
+    act(() => socket.nudge());
+    await elapse(0);
+    expect(poll).toHaveBeenCalledTimes(1);
+
+    release(feedOf(ada));
+    await elapse(0);
+    expect(poll).toHaveBeenCalledTimes(2);
+    expect(toast.info).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps updating through the poll when the connection drops, and reconnects", async () => {
+    const poll = vi.fn().mockResolvedValue(feedOf(ada));
+    const socket = await connected(poll);
+    poll.mockClear();
+
+    act(() => socket.close());
+    poll.mockResolvedValue(feedOf(ben, ada));
+    await elapse(5_000);
+
+    expect(toast.info).toHaveBeenCalledWith("Ben Cruz became a Customer");
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
+  it("keeps polling when no connection can be issued", async () => {
+    const poll = vi.fn().mockResolvedValue(feedOf(ada));
+    mount(poll, true, { liveUrl: () => Promise.resolve(null) });
+
+    await elapse(5_000);
+
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(FakeSocket.all).toHaveLength(0);
+  });
+
+  it("closes the connection when the bell goes away", async () => {
+    const socket = await connected(vi.fn().mockResolvedValue(feedOf(ada)));
+    const close = vi.spyOn(socket, "close");
+
+    cleanup();
+
+    expect(close).toHaveBeenCalled();
+    await elapse(60_000);
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+});
+
+describe("reading from the bell", () => {
+  function Reader({ id }: { id: string }) {
+    const actions = useFeedActions();
+    return <button onClick={() => actions.markRead(id)}>read</button>;
+  }
+
+  it("un-highlights the row at once and keeps it read when the server is slow", async () => {
+    const markRead = vi.fn(() => new Promise<void>(() => {}));
+    const poll = vi.fn().mockResolvedValue(feedOf(ada));
+    render(
+      <LiveUpdatesProvider initialFeed={feedOf(ada)} poll={poll} enabled markRead={markRead}>
+        <Probe />
+        <Reader id="1" />
+      </LiveUpdatesProvider>,
+    );
+
+    await act(async () => screen.getByText("read").click());
+    expect(markRead).toHaveBeenCalledWith("1");
+    expect(screen.getByText("unread:0 new:")).toBeTruthy();
+
+    // A poll that predates the read does not bring the highlight back.
+    await elapse(5_000);
+    expect(screen.getByText("unread:0 new:")).toBeTruthy();
+  });
+
+  it("clears the whole bell at once on mark all", async () => {
+    const markAllRead = vi.fn(() => new Promise<void>(() => {}));
+    function ReadAll() {
+      return <button onClick={useFeedActions().markAllRead}>clear</button>;
+    }
+    render(
+      <LiveUpdatesProvider initialFeed={feedOf(ben, ada)} poll={vi.fn()} enabled={false} markAllRead={markAllRead}>
+        <Probe />
+        <ReadAll />
+      </LiveUpdatesProvider>,
+    );
+
+    await act(async () => screen.getByText("clear").click());
+    expect(markAllRead).toHaveBeenCalled();
+    expect(screen.getByText("unread:0 new:")).toBeTruthy();
+  });
+
+  it("only subtracts the rows read here from the server's unread count", async () => {
+    render(
+      <LiveUpdatesProvider initialFeed={{ unread: 5, notifications: [ben, ada] }} poll={vi.fn()} enabled={false}>
+        <Probe />
+        <Reader id="1" />
+      </LiveUpdatesProvider>,
+    );
+
+    await act(async () => screen.getByText("read").click());
+    expect(screen.getByText("unread:4 new:")).toBeTruthy();
+  });
+
+  it("leaves the row read when marking it fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const markRead = vi.fn().mockRejectedValue(new Error("offline"));
+    render(
+      <LiveUpdatesProvider initialFeed={feedOf(ada)} poll={vi.fn()} enabled={false} markRead={markRead}>
+        <Probe />
+        <Reader id="1" />
+      </LiveUpdatesProvider>,
+    );
+
+    await act(async () => screen.getByText("read").click());
+    expect(screen.getByText("unread:0 new:")).toBeTruthy();
   });
 });
 
