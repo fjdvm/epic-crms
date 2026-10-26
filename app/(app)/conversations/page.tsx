@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { loadConversations } from "@/features/tickets/conversations";
 import { ConversationsView } from "@/features/tickets/conversations-view";
-import { gatewayFileStorage } from "@/lib/gateway";
+import { ticketFileStorage } from "@/features/files/server";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -31,7 +31,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
   const asked = Array.isArray(ticket) ? ticket[0] : ticket;
   const selectedId = asked && /^\d{1,9}$/.test(asked) ? Number(asked) : undefined;
 
-  const result = await loadConversations(ticketsDatabase, staff.username, selectedId, gatewayFileStorage);
+  const result = await loadConversations(ticketsDatabase, staff.username, selectedId, ticketFileStorage);
 
   if (!result.ok) {
     return (

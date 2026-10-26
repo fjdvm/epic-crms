@@ -59,12 +59,15 @@ export interface NewTicketInput {
   /** Becomes the first Message, written for the Customer to read. */
   description: string;
   image?: ImageUpload;
+  /** Only a server-verified direct upload; never a browser File id. */
+  fileId?: string;
 }
 
 export type OpenTicketFailure =
   | "empty-subject"
   | "invalid-priority"
   | "empty-message"
+  | "invalid-attachment"
   /** Not a verified Customer: unknown, a Lead, or a Walk-in Customer. */
   | "unknown-customer"
   /** The Linked order is not one of that Customer's Orders. */
@@ -103,7 +106,8 @@ export async function openTicket(
 
   if (!subject) return { ok: false, reason: "empty-subject" };
   if (!(TICKET_PRIORITIES as string[]).includes(input.priority)) return { ok: false, reason: "invalid-priority" };
-  if (!description && !input.image) return { ok: false, reason: "empty-message" };
+  if (input.image && input.fileId) return { ok: false, reason: "invalid-attachment" };
+  if (!description && !input.image && !input.fileId) return { ok: false, reason: "empty-message" };
 
   const [customer] = await reader<{ email: string; first_name: string; full_name: string }[]>`
     select c.email, c.first_name, c.full_name
@@ -120,7 +124,7 @@ export async function openTicket(
     if (!order) return { ok: false, reason: "order-not-theirs" };
   }
 
-  let fileId: string | null = null;
+  let fileId: string | null = input.fileId ?? null;
 
   if (input.image) {
     const checked = checkImage(input.image);
@@ -156,7 +160,7 @@ export async function openTicket(
       return { id: ticket.id, messageId: message.id };
     });
   } catch (error) {
-    await discard(deps.storage, fileId);
+    if (input.image) await discard(deps.storage, fileId);
 
     throw error;
   }

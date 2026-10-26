@@ -1,5 +1,7 @@
 "use server";
 
+import { ticketUpload } from "@/features/files/server";
+
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 
@@ -61,20 +63,16 @@ export async function reply(id: number, form: FormData) {
   // An empty file input still posts a nameless, empty File; that is "no image", not an empty image.
   const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
 
-  return act(id, async (actor) =>
-    replyToTicket(
-      ticketsWriterDatabase(),
-      id,
-      actor,
-      body,
-      picked
-        ? {
-            image: { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) },
-            storage: gatewayFileStorage,
-          }
-        : undefined,
-    ),
-  );
+  return act(id, async (actor) => {
+    const reference = form.get("attachment");
+    const upload = typeof reference === "string" ? await ticketUpload(reference, actor.id, id) : null;
+    if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" as const };
+    return replyToTicket(ticketsWriterDatabase(), id, actor, body,
+      upload ? { fileId: upload.fileId, storage: gatewayFileStorage } : picked ? {
+        image: { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) },
+        storage: gatewayFileStorage,
+      } : undefined);
+  });
 }
 
 export async function resolve(id: number) {
@@ -110,11 +108,15 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
   const orderId = String(form.get("orderId") ?? "");
 
   try {
+    const reference = form.get("attachment");
+    const upload = typeof reference === "string" ? await ticketUpload(reference, staff.username, null) : null;
+    if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" };
     const result = await openTicket(
       ticketsWriterDatabase(),
       ticketsDatabase(),
       { id: staff.username, name: staff.name },
       {
+        fileId: upload?.fileId,
         subject: String(form.get("subject") ?? ""),
         customerId: String(form.get("customerId") ?? ""),
         orderId: /^\d+$/.test(orderId) ? Number(orderId) : null,
