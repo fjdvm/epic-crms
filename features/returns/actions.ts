@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { changeReturnStatus, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
-import { gatewayFileStorage } from "@/lib/gateway";
+import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
+import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
 import type { ReturnResolution } from "./returns";
 import { database } from "@/lib/db";
@@ -76,6 +77,15 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData): Pr
           ? { ...actor, status: "refunded", refundProofFileId: decision.refundProofFileId }
           : { ...actor, status: decision.status };
     result = await changeReturnStatus(id, update);
+    if (result.ok) {
+      const action = `return.${update.status.replaceAll(" ", "_")}`;
+      await recordAudit(gatewayAuditTrail, {
+        action, module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+        target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+        description: `${staff.name} marked Return RMA-${id} (Order #${orderId}) ${update.status}.`,
+        occurred_at: new Date().toISOString(), operationId: `return:${id}:${action}`,
+      });
+    }
     if (result.ok && update.status === "refunded") {
       try {
         await gatewayFileStorage.promote(update.refundProofFileId);
