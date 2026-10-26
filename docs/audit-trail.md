@@ -34,3 +34,24 @@ scheduled send's Actor as well.
 On 2026-10-27 the configured CREOMS writer database contained zero Announcements
 with `state = 'scheduled'`. There were therefore no pending schedule usernames
 to convert. No schema changes are needed; earlier Audit Events are not backfilled.
+
+## Orders and Payments (#258)
+
+The public Order Server Actions record confirmed changes through the same
+`AuditTrail`: `order.delivery_fee_quoted`, `order.confirmed`,
+`order.cancelled` and `order.marked_paid`. Quoting a Delivery fee also confirms
+the Order, but records only the fee-quoted event. Cancellation uses the Module
+that authorized it (Orders or Payments); marking paid uses Payments.
+Descriptions name the Staff member and Order, and quotes include the fee.
+The Actor is the Portal User id, while existing storefront payment attribution
+continues to use the Portal username.
+
+These transitions each happen at most once per Order. Their operation identity
+is the Order number and action, so it remains stable across retries and Staff.
+The storefront's conditional transition accepts only one concurrent caller;
+stale retries and refused or uncertain responses record no success event.
+Audit failures are logged without changing the confirmed action result or its
+page invalidation. No outbox or replay of uncertain storefront writes is added.
+
+No schema migration or historical backfill is required. Tests drive the public
+Server Actions with a fake AuditTrail and the existing fake storefront.
