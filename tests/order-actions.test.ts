@@ -14,8 +14,9 @@ import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFet
 
 import { FakeFileStorage, PNG } from "./fake-file-storage";
 
+const audit = vi.hoisted(() => vi.fn(async () => {}));
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({
   storageUrl: (url: string) => url,
   directFileStorage: { view: vi.fn((id: string) => storage.view(id)) },
@@ -594,4 +595,66 @@ describe("Payments Module access", () => {
     }
     expect(storefront.requests).toBe(1);
   });
+});
+
+
+describe("Order and Payment Audit Events", () => {
+  const cases = [
+    { action: "order.delivery_fee_quoted", module: "Orders", method: "delivery", status: "placed", run: (id: number) => quoteDeliveryFee(id, 15000), description: "Ana quoted a Delivery fee of ₱150.00 and confirmed Order #" },
+    { action: "order.confirmed", module: "Orders", method: "pickup", status: "placed", run: confirmPickup, description: "Ana confirmed Order #" },
+    { action: "order.cancelled", module: "Orders", method: "delivery", status: "confirmed", run: cancelOrder, description: "Ana cancelled Order #" },
+    { action: "order.cancelled", module: "Payments", method: "delivery", status: "awaiting payment", run: cancelPaymentOrder, description: "Ana cancelled Order #" },
+    { action: "order.marked_paid", module: "Payments", method: "delivery", status: "awaiting payment", run: markPaid, description: "Ana marked Order #" },
+  ];
+  async function ready(test: typeof cases[number]) {
+    const id = await order(test.method, test.status, "gcash");
+    await db.sql`update orders set payment_proof_submitted_at = now() where id = ${id}`;
+    vi.mocked(requireModule).mockResolvedValue({ id: "portal-user-123", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
+    return id;
+  }
+  it.each(cases)("records exactly one $action event in $module, including after a retry", async test => {
+    const id = await ready(test);
+    expect((await test.run(id)).ok).toBe(true);
+    expect(audit).toHaveBeenCalledExactlyOnceWith({
+      action: test.action, module: test.module, outcome: "success",
+      actor: { type: "user", id: "portal-user-123", display_name: "Ana" },
+      target: { type: "order", id: String(id), display_name: `Order #${id}` },
+      description: `${test.description}${id}${test.action === "order.marked_paid" ? " paid" : ""}.`,
+      occurred_at: expect.any(String), operationId: `order:${id}:${test.action}`,
+    });
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+  it.each(cases)("keeps the $action change when the audit trail fails", async test => {
+    const id = await ready(test);
+    const error = new Error("audit offline");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    audit.mockRejectedValueOnce(error);
+    expect((await test.run(id)).ok).toBe(true);
+    expect(logged).toHaveBeenCalledWith("CREOMS Audit Event could not be recorded", error);
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(revalidatePath).toHaveBeenCalledWith(`/orders/${id}`);
+    const result = await loadOrder(() => db.sql, id);
+    expect(result).toMatchObject({ ok: true, order: { status: test.action === "order.marked_paid" ? "paid" : test.action === "order.cancelled" ? "cancelled" : "confirmed" } });
+  });
+  it.each(cases)("does not report a successful $action event after storefront refusal", async test => {
+    const id = await ready(test);
+    storefront.refusal = "Order already changed.";
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("records only the winner of concurrent confirmations", async () => {
+    const id = await ready(cases[0]);
+    const results = await Promise.all([quoteDeliveryFee(id, 15000), quoteDeliveryFee(id, 20000)]);
+    expect(results.filter(result => result.ok)).toHaveLength(1);
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+  it("does not audit Fulfilment actions or Payment queue reads", async () => {
+    await loadPaymentQueue();
+    const id = await order("delivery", "confirmed");
+    expect((await startPreparing(id)).ok).toBe(true);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
 });

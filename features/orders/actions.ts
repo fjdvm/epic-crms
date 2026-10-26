@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { database } from "@/lib/db";
-import { gatewayFileStorage } from "@/lib/gateway";
+import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
+import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
 import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 import type { Staff } from "@/lib/portal/client";
@@ -28,6 +29,7 @@ async function act(
   id: number,
   run: (order: CurrentOrder, staff: Staff) => Promise<OrderChangeResult>,
   requiredModule: string = ORDERS_MODULE,
+  audit?: { action: "order.delivery_fee_quoted" | "order.confirmed" | "order.cancelled" | "order.marked_paid"; description: (staff: Staff) => string },
 ): Promise<OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
   const staff = await requireModule(requiredModule);
@@ -45,6 +47,16 @@ async function act(
 
   // Order writes are never optimistic, and a refusal must not look like a changed Order.
   if (result.ok) {
+    if (audit) {
+      await recordAudit(gatewayAuditTrail, {
+        action: audit.action, module: requiredModule, outcome: "success",
+        actor: staffAuditActor(staff),
+        target: { type: "order", id: String(id), display_name: `Order #${id}` },
+        description: audit.description(staff), occurred_at: new Date().toISOString(),
+        // These transitions happen at most once per Order; no request token is needed.
+        operationId: `order:${id}:${audit.action}`,
+      });
+    }
     revalidatePath(`/orders/${id}`);
     revalidatePath("/orders");
     revalidatePath("/payments");
@@ -65,6 +77,9 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     }
     if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
     return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos });
+  }, ORDERS_MODULE, {
+    action: "order.delivery_fee_quoted",
+    description: staff => `${staff.name} quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)} and confirmed Order #${id}.`,
   });
 }
 
@@ -75,6 +90,8 @@ export async function confirmPickup(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "A Delivery Order needs a Delivery fee." };
     }
     return changeOrderStatus(id, { status: "confirmed" });
+  }, ORDERS_MODULE, {
+    action: "order.confirmed", description: staff => `${staff.name} confirmed Order #${id}.`,
   });
 }
 
@@ -85,7 +102,9 @@ async function cancel(id: number, module: string): Promise<OrderChangeResult> {
       return { ok: false, reason: ALREADY_CHANGED };
     }
     return changeOrderStatus(id, { status: "cancelled" });
-  }, module);
+  }, module, {
+    action: "order.cancelled", description: staff => `${staff.name} cancelled Order #${id}.`,
+  });
 }
 
 export async function cancelOrder(id: number): Promise<OrderChangeResult> {
@@ -125,7 +144,9 @@ export async function markPaid(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "Only a GCash Order with submitted Payment proof can be marked paid." };
     }
     return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
-  }, PAYMENTS_MODULE);
+  }, PAYMENTS_MODULE, {
+    action: "order.marked_paid", description: staff => `${staff.name} marked Order #${id} paid.`,
+  });
 }
 
 /** Preparation uses the same readiness rule as the board; the storefront still owns the write. */
