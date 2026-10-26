@@ -1,3 +1,6 @@
+import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
+export type { AuditEvent } from "@/lib/audit-trail";
+
 import type postgres from "postgres";
 
 import { recomputeTopProduct, topProductStale, type TopProductClient, type TopProductOutcome } from "./top-product";
@@ -18,21 +21,6 @@ export type ModelClient = SentimentClient & TopProductClient;
 
 /** Who started a run: the schedule, or a Staff member pressing Analyze. */
 export type AnalysisActor = { kind: "schedule" } | { kind: "staff"; id: string; name: string };
-
-/** An Audit Event as audit-logs accepts it; only the fields CREOMS writes. */
-export interface AuditEvent {
-  source: "CRMS";
-  module: "Feedback";
-  action: "feedback.analysis_run";
-  outcome: "success" | "failure";
-  actor: { type: string; id: string; display_name: string };
-  target: { type: string; id: string; display_name: string };
-  description: string;
-  occurred_at: string;
-  metadata: { analyzed: number; failed: number; model: string | null };
-}
-
-export type WriteAuditEvent = (event: AuditEvent) => Promise<void>;
 
 export type AnalysisResult =
   | { status: "no-keys" }
@@ -91,7 +79,7 @@ export interface AnalysisOptions {
   /** Null when its key is not set. */
   gemini: ModelClient | null;
   actor: AnalysisActor;
-  audit: WriteAuditEvent;
+  audit: AuditTrail;
   /** Refuse to start within 5 minutes of the last run's end: true for Analyze, not for the schedule's own slot. */
   cooldown?: boolean;
   now?: Date;
@@ -215,25 +203,20 @@ export async function runAnalysis({
 
   const model = used.length > 0 ? used.join(", ") : null;
 
-  try {
-    await audit({
-      source: "CRMS",
-      module: "Feedback",
-      action: "feedback.analysis_run",
-      outcome: failed === 0 ? "success" : "failure",
-      actor:
-        actor.kind === "staff"
-          ? { type: "staff", id: actor.id, display_name: actor.name }
-          : { type: "process", id: "feedback-analysis", display_name: "Scheduled Feedback analysis" },
-      target: { type: "feedback-analysis-run", id: String(runId), display_name: `Feedback analysis run ${runId}` },
-      description: `Feedback analysis labelled ${analyzed} Feedback${failed > 0 ? ` and could not analyze ${failed}` : ""}.`,
-      occurred_at: now.toISOString(),
-      metadata: { analyzed, failed, model },
-    });
-  } catch (error) {
-    // A failure to write the audit event never fails the run.
-    console.error("The Feedback analysis audit event could not be written", error);
-  }
+  await recordAudit(audit, {
+    module: "Feedback",
+    action: "feedback.analysis_run",
+    outcome: failed === 0 ? "success" : "failure",
+    actor:
+      actor.kind === "staff"
+        ? staffAuditActor(actor)
+        : { type: "process", id: "feedback-analysis", display_name: "Scheduled Feedback analysis" },
+    target: { type: "feedback-analysis-run", id: String(runId), display_name: `Feedback analysis run ${runId}` },
+    description: `${actor.kind === "staff" ? actor.name : "Scheduled Feedback analysis"} ran Feedback analysis: labelled ${analyzed} Feedback${failed > 0 ? ` and could not analyze ${failed}` : ""}.`,
+    occurred_at: now.toISOString(),
+    metadata: { analyzed, failed, model },
+    operationId: `feedback.analysis_run:${runId}`,
+  });
 
   return { status: "done", analyzed, failed, model, topProduct };
 }

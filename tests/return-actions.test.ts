@@ -25,7 +25,7 @@ vi.mock("@/lib/db", () => ({ database: vi.fn(() => db.sql) }));
 let db: TestDatabase;
 let storefront: FakeStorefront;
 const now = new Date("2026-10-23T08:00:00Z");
-const ana = { username: "ana", name: "Ana Reyes", email: "ana@example.com", role: "Staff" };
+const ana = { id: "ana", username: "ana", name: "Ana Reyes", email: "ana@example.com", role: "Staff" };
 beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -291,7 +291,7 @@ describe("Staff Return decisions", () => {
 
   it("confirms only one of two competing Staff decisions and preserves the winner's history", async () => {
     const id = await requested();
-    vi.mocked(requireModule).mockResolvedValueOnce(ana).mockResolvedValueOnce({ ...ana, username: "ben", name: "Ben Cruz" });
+    vi.mocked(requireModule).mockResolvedValueOnce(ana).mockResolvedValueOnce({ ...ana, id: "ben", username: "ben", name: "Ben Cruz" });
     const results = await Promise.all([approveReturn(id, true), declineReturn(id, "Wrong Order")]);
     expect(results.filter(r => r.ok)).toHaveLength(1);
     expect(results.find(r => !r.ok)).toMatchObject({ reason: expect.stringContaining("already changed") });
@@ -351,9 +351,9 @@ describe("Staff Return decisions", () => {
     const id = await requested();
     await approveReturn(id, true);
     expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
-    vi.mocked(requireModule).mockResolvedValue({ ...ana, username: "ben", name: "Ben Cruz" });
+    vi.mocked(requireModule).mockResolvedValue({ ...ana, id: "ben", username: "ben", name: "Ben Cruz" });
     expect(await markReturnGoodsReceived(id)).toMatchObject({ ok: true, return: { status: "goods received" } });
-    vi.mocked(requireModule).mockResolvedValue({ ...ana, username: "carla", name: "Carla Diaz" });
+    vi.mocked(requireModule).mockResolvedValue({ ...ana, id: "carla", username: "carla", name: "Carla Diaz" });
     expect(await markReturnRefunded(id, proof(PNG, "carla"))).toMatchObject({ ok: true, return: { status: "refunded" } });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: {
       status: "refunded", refundedAt: now, orderStatus: "delivered", amount: 10000,

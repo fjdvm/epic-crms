@@ -172,7 +172,7 @@ describe("Announcement image direct upload", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     expect(actions.save).not.toHaveBeenCalled();
     fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: ["https://cdn.test/door.png"] }));
+    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: ["https://cdn.test/door.png"] }, expect.any(String)));
   });
 
   it.each(["request", "PUT", "confirmation"] as const)("keeps earlier images when %s fails and allows a retry", async (stage) => {

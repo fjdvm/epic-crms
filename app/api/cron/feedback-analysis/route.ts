@@ -4,7 +4,7 @@ import { runAnalysis } from "@/features/feedback/analysis";
 import { configuredClients } from "@/features/feedback/sentiment-clients";
 import { cronAuthorised } from "@/lib/cron-auth";
 import { feedbackWriterDatabase } from "@/lib/feedback-db";
-import { writeAuditEvent } from "@/lib/gateway";
+import { gatewayAuditTrail } from "@/lib/gateway";
 
 export const dynamic = "force-dynamic";
 // A run asks a model about each unlabelled Feedback, one after another.
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       sql: feedbackWriterDatabase(),
       ...configuredClients(),
       actor: { kind: "schedule" },
-      audit: writeAuditEvent,
+      audit: gatewayAuditTrail,
     });
 
     return NextResponse.json(result);

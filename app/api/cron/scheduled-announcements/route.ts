@@ -4,7 +4,7 @@ import { sendDue, storefrontSubscribers } from "@/features/marketing/announcemen
 import { crmsDatabase } from "@/lib/crms-db";
 import { cronAuthorised } from "@/lib/cron-auth";
 import { database } from "@/lib/db";
-import { gatewayAuditLog, gatewayMarketingMailer } from "@/lib/gateway";
+import { gatewayAuditTrail, gatewayMarketingMailer } from "@/lib/gateway";
 
 export const dynamic = "force-dynamic";
 // A send emails every Subscriber, ten at a time.
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await sendDue(crmsDatabase(), {
-      audit: gatewayAuditLog,
+      audit: gatewayAuditTrail,
       subscribers: storefrontSubscribers(database()),
       mailer: gatewayMarketingMailer,
       now: () => new Date(),

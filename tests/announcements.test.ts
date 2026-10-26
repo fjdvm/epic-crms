@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   cancelSchedule,
@@ -17,8 +17,7 @@ import {
   sendTestCopy,
   subscriberCount,
   TITLE_LIMIT,
-  type AuditEvent,
-  type AuditLog,
+
   type MarketingContent,
   type MarketingMailer,
   type MarketingMail,
@@ -26,6 +25,8 @@ import {
   type Subscriber,
   type SubscriberSource,
 } from "@/features/marketing/announcements";
+
+import type { AuditEvent } from "@/lib/audit-trail";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -50,7 +51,7 @@ afterAll(async () => {
   await db.close();
 });
 
-class FakeAudit implements AuditLog {
+class FakeAudit {
   events: AuditEvent[] = [];
   down = false;
 
@@ -106,7 +107,7 @@ let mail: FakeMail;
 let subscribers: FakeSubscribers;
 let mailer: FakeMailer;
 let clock = now;
-const ports = () => ({ audit, mail, subscribers, mailer, now: () => clock });
+const ports = () => ({ audit: audit.record.bind(audit), mail, subscribers, mailer, now: () => clock });
 
 beforeEach(async () => {
   audit = new FakeAudit();
@@ -158,26 +159,40 @@ describe("saving a Draft", () => {
     expect((await saveDraft(db.sql, ada, { ...draft, title: "x".repeat(TITLE_LIMIT) }, ports())).ok).toBe(true);
   });
 
+  it("reuses the Draft and records one creation when the same save request is retried", async () => {
+    const command = { ...ports(), operationId: "save-request-1" };
+    const first = await saveDraft(db.sql, ada, draft, command);
+    clock = new Date(now.getTime() + 1000);
+    expect(await saveDraft(db.sql, ada, draft, command)).toEqual(first);
+    expect(await listAnnouncements(db.sql)).toHaveLength(1);
+    expect(audit.events).toHaveLength(1);
+  });
+
   it("is audited with the acting Staff member", async () => {
     const result = await saveDraft(db.sql, ada, draft, ports());
     if (!result.ok) throw new Error("not saved");
 
-    expect(audit.events).toEqual([
+    expect(audit.events).toMatchObject([
       {
+        module: "Marketing",
+        outcome: "success",
         action: "record.created",
-        actor: ada,
-        announcement: { id: result.announcement.id, title: "Undas ube treats" },
+        actor: { type: "user", id: ada.id, display_name: ada.name },
+        target: { type: "announcement", id: result.announcement.id, display_name: "Undas ube treats" },
         description: 'Ada Okafor saved the Draft "Undas ube treats".',
-        occurredAt: now,
+        occurred_at: now.toISOString(),
       },
     ]);
   });
 
   it("still saves when the audit log is down", async () => {
     audit.down = true;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
     expect((await saveDraft(db.sql, ada, draft, ports())).ok).toBe(true);
     expect(await listAnnouncements(db.sql)).toHaveLength(1);
+    expect(logged).toHaveBeenCalledWith("CREOMS Audit Event could not be recorded", expect.any(Error));
+    logged.mockRestore();
   });
 });
 
@@ -197,6 +212,24 @@ describe("editing a Draft", () => {
     expect(await getAnnouncement(db.sql, id)).toMatchObject({ title: "New", description: "Changed." });
   });
 
+  it("retains the audit identity when an edit request is retried later", async () => {
+    const id = await saved();
+    const command = { ...ports(), operationId: "edit-request-1" };
+    const input = { title: "New", description: "Changed." };
+    await editDraft(db.sql, ada, id, input, command);
+    clock = new Date(now.getTime() + 1000);
+    await editDraft(db.sql, ada, id, input, command);
+    expect(audit.events).toHaveLength(2);
+    expect(audit.events[1].operationId).toBe(audit.events[0].operationId);
+  });
+
+  it("distinguishes separate edits in the same millisecond", async () => {
+    const id = await saved();
+    await editDraft(db.sql, ada, id, { title: "New", description: "First." }, { ...ports(), operationId: "edit-request-1" });
+    await editDraft(db.sql, ada, id, { title: "New", description: "Second." }, { ...ports(), operationId: "edit-request-2" });
+    expect(audit.events[1].operationId).not.toBe(audit.events[0].operationId);
+  });
+
   it("lets a colleague edit it and records them as the last editor", async () => {
     const id = await saved();
 
@@ -206,7 +239,7 @@ describe("editing a Draft", () => {
       createdByName: "Ada Okafor",
       updatedByName: "Ben Cruz",
     });
-    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: ben });
+    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: { type: "user", id: ben.id, display_name: ben.name } });
   });
 
   it("refuses an invalid edit and leaves the Draft as it was", async () => {
@@ -339,13 +372,15 @@ describe("deleting a Draft", () => {
 
     expect(await deleteDraft(db.sql, ben, id, ports())).toEqual({ ok: true });
     expect(await getAnnouncement(db.sql, id)).toBeNull();
-    expect(audit.events).toEqual([
+    expect(audit.events).toMatchObject([
       {
+        module: "Marketing",
+        outcome: "success",
         action: "record.deleted",
-        actor: ben,
-        announcement: { id, title: "Undas ube treats" },
+        actor: { type: "user", id: ben.id, display_name: ben.name },
+        target: { type: "announcement", id, display_name: "Undas ube treats" },
         description: 'Ben Cruz deleted the Draft "Undas ube treats".',
-        occurredAt: now,
+        occurred_at: now.toISOString(),
       },
     ]);
   });
@@ -421,13 +456,15 @@ describe("sending a test copy", () => {
 
     await sendTestCopy(db.sql, ben, "ben@store.test", id, ports());
 
-    expect(audit.events).toEqual([
+    expect(audit.events).toMatchObject([
       {
+        module: "Marketing",
+        outcome: "success",
         action: "record.viewed",
-        actor: ben,
-        announcement: { id, title: "Undas ube treats" },
+        actor: { type: "user", id: ben.id, display_name: ben.name },
+        target: { type: "announcement", id, display_name: "Undas ube treats" },
         description: 'Ben Cruz sent themselves a test copy of "Undas ube treats".',
-        occurredAt: now,
+        occurred_at: now.toISOString(),
       },
     ]);
   });
@@ -597,14 +634,16 @@ describe("sending now", () => {
 
     await sendNow(db.sql, ben, id, ports());
 
-    expect(audit.events).toEqual([
+    expect(audit.events).toMatchObject([
       {
+        module: "Marketing",
+        outcome: "success",
         action: "record.updated",
-        actor: ben,
-        announcement: { id, title: "Undas ube treats" },
+        actor: { type: "user", id: ben.id, display_name: ben.name },
+        target: { type: "announcement", id, display_name: "Undas ube treats" },
         description: 'Ben Cruz sent "Undas ube treats" to 2 Subscribers.',
-        subscribers: 2,
-        occurredAt: now,
+        metadata: { subscribers: 2 },
+        occurred_at: now.toISOString(),
       },
     ]);
   });
@@ -624,6 +663,7 @@ describe("sending now", () => {
     expect(await sendNow(db.sql, ada, id, ports())).toEqual({ ok: true, state: "failed", subscribers: 3 });
 
     expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "failed", sentTo: 2, sentAt: null });
+    expect(audit.events[0].outcome).toBe("failure");
     expect(audit.events[0].description).toBe('Ada Okafor tried to send "Undas ube treats" to 3 Subscribers; 2 were reached and it is Failed.');
   });
 
@@ -716,7 +756,7 @@ describe("retrying a Failed send", () => {
 
     expect(mailer.emailed).toEqual(["c2@x.test"]);
     expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "sent", sentTo: 3 });
-    expect(audit.events[0]).toMatchObject({ actor: ben, subscribers: 3 });
+    expect(audit.events[0]).toMatchObject({ actor: { type: "user", id: ben.id, display_name: ben.name }, metadata: { subscribers: 3 } });
   });
 
   it("stays Failed while someone still cannot be reached", async () => {
@@ -783,7 +823,7 @@ describe("scheduling", () => {
     await schedule(db.sql, ada, id, PHT("2026-10-25T09:30"), ports());
 
     expect(audit.events).toHaveLength(1);
-    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: ada, announcement: { id, title: "Undas ube treats" } });
+    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: { type: "user", id: ada.id, display_name: ada.name }, target: { type: "announcement", id, display_name: "Undas ube treats" } });
     expect(audit.events[0].description).toBe('Ada Okafor scheduled "Undas ube treats" for 25 Oct 2026, 9:30 am Philippine Time.');
   });
 
@@ -872,7 +912,7 @@ describe("cancelling a schedule", () => {
     expect(await cancelSchedule(db.sql, ben, id, ports())).toEqual({ ok: true });
 
     expect(await getAnnouncement(db.sql, id)).toMatchObject({ state: "draft", scheduledFor: null, updatedByName: "Ben Cruz" });
-    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: ben });
+    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: { type: "user", id: ben.id, display_name: ben.name } });
     expect(audit.events[0].description).toBe('Ben Cruz cancelled the schedule of "Undas ube treats"; it is a Draft again.');
   });
 
@@ -1010,7 +1050,7 @@ describe("the scheduled send", () => {
     await sendDue(db.sql, ports());
 
     expect(audit.events).toHaveLength(1);
-    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: ada, subscribers: 2, occurredAt: clock });
+    expect(audit.events[0]).toMatchObject({ action: "record.updated", actor: { type: "user", id: ada.id, display_name: ada.name }, metadata: { subscribers: 2 }, occurred_at: clock.toISOString() });
     expect(audit.events[0].description).toBe('Ada Okafor\'s scheduled send of "Undas ube treats" went to 2 Subscribers.');
     expect(await getAnnouncement(db.sql, (await listAnnouncements(db.sql))[0].id)).toMatchObject({ updatedByName: "Ada Okafor" });
   });
@@ -1075,7 +1115,7 @@ describe("the scheduled send", () => {
     expect(await sendDue(db.sql, ports())).toMatchObject({ sent: 2 });
 
     expect(mailer.batches.map((b) => b.mail.title)).toEqual(["First", "Second"]);
-    expect(audit.events.map((e) => e.actor)).toEqual([ada, ben]);
+    expect(audit.events.map((e) => e.actor.id)).toEqual([ada.id, ben.id]);
   });
 
   it("picks up a due send that died part way, skipping who was already reached", async () => {

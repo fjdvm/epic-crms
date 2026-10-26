@@ -37,7 +37,7 @@ export function RetrySend({
     busy.current = true;
     startTransition(async () => {
       try {
-        const result = await retry(announcement.id);
+        const result = await retry(announcement.id, crypto.randomUUID());
 
         setConfirming(false);
         if (!result.ok) {

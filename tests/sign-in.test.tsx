@@ -21,7 +21,7 @@ import {
 const APP = "http://localhost:3000";
 const ada = {
   name: "Ada Okafor",
-  username: "ada.okafor",
+  id: "ada", username: "ada.okafor",
   email: "ada@brenraphaels.test",
   role: "Customer Support",
 };

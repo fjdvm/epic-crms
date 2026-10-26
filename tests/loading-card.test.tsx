@@ -97,7 +97,7 @@ describe("the return to the Portal loading card", () => {
   function openLogOut() {
     render(
       <StaffProvider
-        staff={{ name: "Ada Okafor", username: "ada.okafor", email: "ada@brenraphaels.test", role: "Customer Support" }}
+        staff={{ name: "Ada Okafor", id: "ada", username: "ada.okafor", email: "ada@brenraphaels.test", role: "Customer Support" }}
       >
         <SidebarProfileFooter />
       </StaffProvider>,

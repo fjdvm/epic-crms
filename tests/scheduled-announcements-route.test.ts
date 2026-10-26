@@ -5,7 +5,7 @@ const sendDue = vi.fn();
 vi.mock("@/features/marketing/announcements", () => ({ sendDue, storefrontSubscribers: () => ({}) }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => ({}) }));
 vi.mock("@/lib/db", () => ({ database: () => ({}) }));
-vi.mock("@/lib/gateway", () => ({ gatewayAuditLog: {}, gatewayMarketingMailer: {} }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: {}, gatewayMarketingMailer: {} }));
 
 const { GET } = await import("@/app/api/cron/scheduled-announcements/route");
 

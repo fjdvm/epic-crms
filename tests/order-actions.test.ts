@@ -44,7 +44,7 @@ beforeEach(async () => {
   vi.stubGlobal("fetch", storefrontFetch(storefront));
   vi.stubEnv("CREOMS_STOREFRONT_URL", FAKE_STOREFRONT_URL);
   vi.stubEnv("CREOMS_SERVICE_SECRET", FAKE_SERVICE_SECRET);
-  vi.mocked(requireModule).mockResolvedValue({ username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
+  vi.mocked(requireModule).mockResolvedValue({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 async function order(method = "delivery", status = "placed", payment = "cash-on-delivery") {
@@ -54,7 +54,7 @@ async function order(method = "delivery", status = "placed", payment = "cash-on-
 }
 async function signInWithModules(modules: string[]) {
   const portal = new FakePortal();
-  portal.addStaff("ben", { username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" }, modules);
+  portal.addStaff("ben", { id: "ben", username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" }, modules);
   portal.signIn("ben");
   const verifier = "test-proof";
   const authorize = new URL("/api/integrations/authorize", FAKE_PORTAL_URL);
@@ -145,7 +145,7 @@ describe("Order actions", () => {
   it("refuses a second Staff confirmation as already changed", async () => {
     const id = await order();
     expect((await quoteDeliveryFee(id, 15000)).ok).toBe(true);
-    vi.mocked(requireModule).mockResolvedValue({ username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
+    vi.mocked(requireModule).mockResolvedValue({ id: "ben", username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
     expect(await quoteDeliveryFee(id, 20000)).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
     expect(storefront.requests).toBe(1);
   });
@@ -528,8 +528,8 @@ describe("Payments refusals", () => {
   it("settles simultaneous payment checks without overwriting the first Staff attribution", async () => {
     const id = await proof();
     vi.mocked(requireModule)
-      .mockResolvedValueOnce({ username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" })
-      .mockResolvedValueOnce({ username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
+      .mockResolvedValueOnce({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" })
+      .mockResolvedValueOnce({ id: "ben", username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
     const results = await Promise.all([markPaid(id), markPaid(id)]);
     expect(results.filter(r => r.ok)).toHaveLength(1);
     expect(results.find(r => !r.ok)).toMatchObject({ ok: false, reason: expect.stringMatching(/already changed/) });
