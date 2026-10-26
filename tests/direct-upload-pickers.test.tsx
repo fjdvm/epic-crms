@@ -144,12 +144,12 @@ for (const picker of evidence) {
 
 function campaign() {
   const actions: CampaignFormActions = {
-    save: vi.fn(async () => ({ ok: true, announcement: { id: "draft" } })),
-    edit: vi.fn(async () => ({ ok: true })), remove: vi.fn(async () => ({ ok: true })),
-    sendTest: vi.fn(async () => ({ ok: true })),
-    addImage: vi.fn(async () => ({ ok: true, url: "https://cdn.test/door.png" })),
-    send: vi.fn(async () => ({ ok: true, state: "sent", subscribers: 1 })),
-    schedule: vi.fn(async () => ({ ok: true })), unschedule: vi.fn(async () => ({ ok: true })),
+    save: vi.fn(async () => ({ ok: true as const, announcement: { id: "draft" } })),
+    edit: vi.fn(async () => ({ ok: true as const })), remove: vi.fn(async () => ({ ok: true as const })),
+    sendTest: vi.fn(async () => ({ ok: true as const })),
+    addImage: vi.fn(async () => ({ ok: true as const, url: "https://cdn.test/door.png" })),
+    send: vi.fn(async () => ({ ok: true as const, state: "sent" as const, subscribers: 1 })),
+    schedule: vi.fn(async () => ({ ok: true as const })), unschedule: vi.fn(async () => ({ ok: true as const })),
   };
   render(<CampaignForm actions={actions} />);
   fireEvent.change(screen.getByLabelText(/Title/), { target: { value: "Halaya" } });
