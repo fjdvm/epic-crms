@@ -1,7 +1,6 @@
 import type postgres from "postgres";
 
 import { defaultLayout, isImageLayout, layoutsFor, type ImageLayout } from "./image-layouts";
-import type { ImageStore } from "./image-limits";
 import { formatPhilippineTime } from "./philippine-time";
 
 /** An email's subject is cut off in inboxes past about this many characters. */
@@ -18,7 +17,7 @@ export interface Actor {
 export interface AnnouncementInput {
   title: string;
   description: string;
-  /** Public HTTPS addresses from addImage, in order. Omitted for a text-only Announcement. */
+  /** Public HTTPS addresses from confirmed shared uploads, in order. Omitted for a text-only Announcement. */
   images?: string[];
   /** How the images are arranged. Left out, an edit keeps the current choice; null goes back to the default. */
   imageLayout?: ImageLayout | null;
@@ -108,7 +107,6 @@ export interface MarketingMail {
 export interface Ports {
   audit: AuditLog;
   mail: MarketingMail;
-  images: ImageStore;
   subscribers: SubscriberSource;
   mailer: MarketingMailer;
   now: () => Date;

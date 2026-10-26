@@ -6,15 +6,6 @@ export const IMAGE_WIDTH = 1200;
 
 export const MAX_IMAGE_MB = MAX_IMAGE_BYTES / (1024 * 1024);
 
-/**
- * The file-storage boundary, reached through the api-gateway (see lib/gateway.ts). Tests replace it
- * with a fake. Every image is a Public, Permanent File so old emails keep displaying.
- */
-export interface ImageStore {
-  /** Stores the bytes and returns the public HTTPS address to show them from. */
-  store(image: { contentType: "image/jpeg"; bytes: Uint8Array }): Promise<string>;
-}
-
 export type ImageRefusal = "empty-image" | "image-too-large" | "not-an-image";
 
 export const IMAGE_REFUSALS: Record<ImageRefusal | "storage-unavailable", string> = {

@@ -58,8 +58,15 @@ export class FakeFileStorage implements FileStorage {
     }
     if (url.pathname.endsWith("/links")) {
       const body = await request.json();
-      file.link = Number(body.entityId);
+      if (this.failLink) return new Response(null, { status: 503 });
+      if (body.entityType === "return") file.returnId = Number(body.entityId);
+      else file.link = Number(body.entityId);
       return new Response(null, { status: 204 });
+    }
+    if (request.method === "PATCH") {
+      if (this.failPromote) return new Response(null, { status: 503 });
+      file.retentionType = "permanent";
+      return Response.json({ ...file, id, expiresAt: null });
     }
     if (file.status !== "active") return new Response(null, { status: 404 });
     return Response.json({ ...file, id, bytes: undefined, url: await this.viewUrl(id) });

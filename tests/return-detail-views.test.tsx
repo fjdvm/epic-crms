@@ -10,6 +10,7 @@ const { refresh, toast } = vi.hoisted(() => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn(async () => ({ ok: true, reference: "confirmed-image" })) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/returns/actions", () => ({
   approveReturn: vi.fn(),
@@ -305,7 +306,7 @@ describe("goods received and refunded", () => {
     await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledTimes(1));
     const [id, form] = vi.mocked(markReturnRefunded).mock.calls[0];
     expect(id).toBe(15);
-    expect((form as FormData).get("proof")).toMatchObject({ name: "proof.png" });
+    expect((form as FormData).get("proof")).toBe("confirmed-image");
   });
 
   it("asks before marking replaced", async () => {

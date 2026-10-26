@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { uploadFile } from "@/features/files/client";
 
 import { OrderActionDialog } from "./action-dialog";
 import { deliverOrder, dispatchOrder, startPreparing } from "./actions";
@@ -20,9 +21,11 @@ function MarkDelivered({ id, triggerClassName }: { id: number; triggerClassName?
       confirm="Mark as delivered"
       busy="Marking delivered…"
       disabled={photo === null}
-      run={() => {
+      run={async () => {
+        const uploaded = await uploadFile("Fulfilment", photo as File);
+        if (!uploaded.ok) return uploaded;
         const form = new FormData();
-        form.set("photo", photo as File);
+        form.set("photo", uploaded.reference);
 
         return deliverOrder(id, form);
       }}

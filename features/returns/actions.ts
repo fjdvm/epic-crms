@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { changeReturnStatus, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
 import { gatewayFileStorage } from "@/lib/gateway";
-import { checkImage, IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "@/features/tickets/attachments";
+import { recordUpload } from "@/features/files/server";
 import type { ReturnResolution } from "./returns";
 import { database } from "@/lib/db";
 import { RETURNS_MODULE } from "@/lib/portal/config";
@@ -53,17 +53,13 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData): Pr
           current.final_resolution === (decision.status === "refunded" ? "refund" : "replacement");
     if (!allowed) return { ok: false, reason: "Return already changed or is not ready for this step; refresh it before trying again." };
     if (decision.status === "refunded") {
-      if (!(form instanceof FormData) || form.getAll("proof").length !== 1 || !(form.get("proof") instanceof File)) {
+      if (!(form instanceof FormData) || form.getAll("proof").length !== 1) {
         return { ok: false, reason: "Choose exactly one refund proof screenshot." };
       }
-      const file = form.get("proof") as File;
-      if (file.size > MAX_IMAGE_BYTES) return { ok: false, reason: IMAGE_REFUSALS["image-too-large"] };
-      const image = { filename: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
-      const checked = checkImage(image);
-      if (!checked.ok) return { ok: false, reason: IMAGE_REFUSALS[checked.reason] };
       try {
-        const fileId = await gatewayFileStorage.upload({ ...image, contentType: checked.contentType, retentionType: "temporary" });
-        if (!fileId) throw new Error("Missing File id");
+        const upload = await recordUpload(RETURNS_MODULE, form.get("proof"), staff.username);
+        if (!upload) return { ok: false, reason: "Choose exactly one refund proof screenshot." };
+        const fileId = upload.fileId;
         await gatewayFileStorage.linkRefundProof(fileId, id);
         decision = { status: "refunded", refundProofFileId: fileId };
       } catch {
@@ -111,7 +107,7 @@ export async function markReturnGoodsReceived(id: number): Promise<ReturnChangeR
 }
 
 export async function markReturnRefunded(id: number, form?: FormData): Promise<ReturnChangeResult> {
-  // File ids from the browser are ignored; only this upload may supply one.
+  // Only a confirmed, signed upload reference may supply the proof File id.
   return decide(id, { status: "refunded", refundProofFileId: "" }, form);
 }
 

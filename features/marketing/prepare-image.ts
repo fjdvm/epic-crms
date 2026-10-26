@@ -1,9 +1,8 @@
 import { IMAGE_WIDTH } from "./image-limits";
 
 /**
- * Shrinks a photo in the browser before it is sent, because a 25 MB original is over what a server
- * action's request may carry. If the browser cannot read the file, it is sent as it is and the server
- * says whether it is an image at all.
+ * Prepares the email-friendly JPEG before the browser uploads it directly to storage. If the browser
+ * cannot decode it, the shared upload still checks its original bytes and declared type.
  */
 export async function prepareImage(file: File): Promise<File> {
   try {

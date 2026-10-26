@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { uploadFile } from "@/features/files/client";
 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -122,9 +123,11 @@ function Refund({ id, number }: { id: number; number: string }) {
       confirm="Mark refunded"
       busy="Saving…"
       disabled={proof === null}
-      run={() => {
+      run={async () => {
+        const uploaded = await uploadFile("Returns", proof as File);
+        if (!uploaded.ok) return uploaded;
         const form = new FormData();
-        form.set("proof", proof as File);
+        form.set("proof", uploaded.reference);
 
         return markReturnRefunded(id, form);
       }}

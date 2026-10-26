@@ -12,14 +12,28 @@ import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, p
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 
-import { FakeFileStorage, PNG, JPEG, PDF } from "./fake-file-storage";
+import { sealUpload } from "@/features/files/reference";
+import { FakeFileStorage, PNG } from "./fake-file-storage";
 
 const storage = new FakeFileStorage();
 vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
+vi.mock("@/features/files/storage", () => ({
+  storageUrl: (url: string) => url,
+  directFileStorage: { view: vi.fn(async (id: string) => {
+    if (storage.failUpload) throw new Error("storage unavailable");
+    const file = storage.files.get(id);
+    if (!file) throw new Error("missing file");
+    return { ...file, id, url: await storage.viewUrl(id) };
+  }) },
+}));
 
-function deliveryPhoto() {
+function deliveryPhoto(bytes: Uint8Array = PNG) {
+  const id = `file-${storage.files.size + 1}`;
+  storage.files.set(id, { filename: "delivery.png", contentType: "image/png", size: bytes.length,
+    visibility: "private", retentionType: "temporary", status: "active" });
   const form = new FormData();
-  form.append("photo", new File([PNG], "delivery.png", { type: "image/png" }));
+  form.set("photo", sealUpload({ filename: "delivery.png", contentType: "image/png", size: bytes.length, fileId: id,
+    module: "Fulfilment", staffId: "ana", context: { ticketId: null }, phase: "ready", expires: Date.now() + 60_000 }));
   return form;
 }
 
@@ -274,102 +288,15 @@ describe("Fulfilment Order actions", () => {
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
-  it("refuses invalid, empty and oversized photos by their bytes before uploading", async () => {
+  it("refuses raw bytes, bare File ids and multiple references before contacting the storefront", async () => {
     const id = await order("delivery", "dispatched");
-    for (const [bytes, reason] of [
-      [PDF, "Only JPG or PNG"],
-      [new Uint8Array(), "empty"],
-      [new Uint8Array(5 * 1024 * 1024 + 1), "over 5 MB"],
-    ] as const) {
-      const form = new FormData();
-      form.append("photo", new File([bytes], "delivery.png", { type: "image/png" }));
-      expect(await deliverOrder(id, form)).toMatchObject({ ok: false, reason: expect.stringContaining(reason) });
+    const bytes = new FormData(); bytes.set("photo", new File([PNG], "delivery.png"));
+    const bare = new FormData(); bare.set("photo", "file-from-browser");
+    const duplicate = deliveryPhoto(); duplicate.append("photo", "second-reference");
+    for (const form of [bytes, bare, duplicate]) {
+      expect(await deliverOrder(id, form)).toEqual({ ok: false, reason: "Choose exactly one Delivery photo." });
     }
-    const duplicate = deliveryPhoto();
-    duplicate.append("photo", new File([PNG], "second.png"));
-    expect(await deliverOrder(id, duplicate)).toEqual({ ok: false, reason: "Choose exactly one Delivery photo." });
-    const text = new FormData();
-    text.append("photo", "file-id-from-browser");
-    expect(await deliverOrder(id, text)).toEqual({ ok: false, reason: "Choose exactly one Delivery photo." });
     expect(storefront.requests).toBe(0);
-    expect(storage.files.size).toBe(0);
-    expect(revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it("uploads a real JPG or PNG and sends its File id for Delivery and Pickup", async () => {
-    for (const [method, bytes, contentType] of [
-      ["delivery", PNG, "image/png"], ["pickup", JPEG, "image/jpeg"],
-    ] as const) {
-      const id = await order(method, "dispatched");
-      const form = new FormData();
-      // The browser's extension and MIME claim do not decide the stored type.
-      form.append("photo", new File([bytes], "handover.bin", { type: "application/octet-stream" }));
-      expect(await deliverOrder(id, form)).toMatchObject({ ok: true, order: { id, status: "delivered" } });
-      const fileId = [...storage.files.keys()].at(-1)!;
-      expect(storage.files.get(fileId)).toMatchObject({ filename: "handover.bin", contentType, size: bytes.length });
-      expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: fileId } });
-    }
-  });
-
-  it("uploads a Temporary Delivery photo and promotes only after the storefront confirms it", async () => {
-    const { gatewayFileStorage } = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
-    vi.spyOn(storage, "upload").mockImplementation(gatewayFileStorage.upload);
-    vi.spyOn(storage, "promote").mockImplementation(gatewayFileStorage.promote);
-    vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
-    vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "fake-gateway-key");
-    const registrations: unknown[] = [];
-    const uploads: Uint8Array[] = [];
-    let confirmed = false;
-    let delivered = false;
-    let promoted = false;
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init);
-      if (request.url.startsWith(FAKE_STOREFRONT_URL)) {
-        expect(confirmed).toBe(true);
-        const response = await storefront.handle(request);
-        delivered = response.ok;
-        return response;
-      }
-      if (request.url === "https://bucket.test/photo" && request.method === "PUT") {
-        expect(request.headers.has("authorization")).toBe(false);
-        uploads.push(new Uint8Array(await request.arrayBuffer()));
-        return new Response(null, { status: 200 });
-      }
-      expect(request.headers.get("authorization")).toBe("Bearer fake-gateway-key");
-      if (request.url === "https://gateway.test/files" && request.method === "POST") {
-        registrations.push(await request.json());
-        return Response.json({ id: "delivery-file", uploadUrl: "https://bucket.test/photo" });
-      }
-      if (request.url === "https://gateway.test/files/delivery-file/confirm" && request.method === "POST") {
-        confirmed = true;
-        return Response.json({});
-      }
-      if (request.url === "https://gateway.test/files/delivery-file" && request.method === "PATCH") {
-        expect(delivered).toBe(true);
-        expect(await request.json()).toEqual({ retentionType: "permanent" });
-        promoted = true;
-        return Response.json({ id: "delivery-file", retentionType: "permanent", expiresAt: null });
-      }
-      throw new Error("Unexpected file request");
-    });
-    const id = await order("delivery", "dispatched");
-    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: true });
-    expect(registrations).toEqual([{
-      filename: "delivery.png", contentType: "image/png", size: PNG.length,
-      visibility: "private", retentionType: "temporary",
-    }]);
-    expect(uploads).toEqual([PNG]);
-    expect(promoted).toBe(true);
-    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: "delivery-file" } });
-  });
-
-  it("accepts a photo of exactly 5 MB", async () => {
-    const bytes = new Uint8Array(5 * 1024 * 1024);
-    bytes.set(PNG);
-    const form = new FormData();
-    form.append("photo", new File([bytes], "delivery.png"));
-    expect(await deliverOrder(await order("pickup", "dispatched"), form)).toMatchObject({ ok: true });
-    expect(storage.files.get("file-1")?.size).toBe(5 * 1024 * 1024);
   });
 
   it("does not contact the storefront if the photo cannot be stored", async () => {
@@ -413,7 +340,8 @@ describe("Fulfilment Order actions", () => {
     const id = await order("delivery", "dispatched");
     expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(true);
     expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
-    expect(storage.files.size).toBe(1);
+    expect(storage.files.get("file-1")?.retentionType).toBe("permanent");
+    expect(storage.files.get("file-2")?.retentionType).toBe("temporary");
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: "file-1" } });
     expect(storefront.requests).toBe(1);
   });
@@ -443,7 +371,7 @@ describe("Fulfilment Order actions", () => {
     expect((await startPreparing(id)).ok).toBe(true);
     portal.revoke("ben", "Fulfilment");
     await expect(dispatchOrder(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
-    await expect(deliverOrder(id, deliveryPhoto())).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    await expect(deliverOrder(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     await expect(reconcileDeliveryPhoto(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(1);

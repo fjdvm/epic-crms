@@ -9,6 +9,7 @@ import { CampaignForm, type CampaignFormActions } from "@/features/marketing/cam
 import { CampaignList, SubscribersCard } from "@/features/marketing/campaign-list";
 
 const push = vi.fn();
+vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn(async (_module: string, file: File) => ({ ok: true, reference: file.name })) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -34,7 +35,7 @@ const row = (overrides: Partial<AnnouncementRow> = {}): AnnouncementRow => ({
   ...overrides,
 });
 
-const imageName = (form: FormData) => (form.get("image") as File).name;
+const imageName = (form: FormData) => form.get("image") as string;
 
 function fakeActions(): CampaignFormActions {
   return {

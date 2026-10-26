@@ -9,6 +9,7 @@ import { OrderDetailView } from "@/features/orders/order-detail";
 import type { OrderDetail } from "@/features/orders/orders";
 
 const refresh = vi.fn();
+vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn(async () => ({ ok: true, reference: "confirmed-image" })) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/orders/actions", () => ({
   quoteDeliveryFee: vi.fn(),
@@ -201,7 +202,7 @@ describe("moving an Order on the board", () => {
     expect(deliverOrder).toHaveBeenCalledTimes(1);
     const [id, form] = vi.mocked(deliverOrder).mock.calls[0];
     expect(id).toBe(1042);
-    expect(form?.getAll("photo")).toEqual([photo]);
+    expect(form?.getAll("photo")).toEqual(["confirmed-image"]);
   });
 
   it("cannot confirm delivery until a Delivery photo is chosen, and says so", () => {
