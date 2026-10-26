@@ -10,7 +10,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 import { FakeFileStorage, PNG } from "./fake-file-storage";
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn(async () => {}), get gatewayFileStorage() { return storage; } }));
 function proof() {
   const form = new FormData();
   form.set("proof", storage.readyEvidence("Returns", PNG, "ana"));

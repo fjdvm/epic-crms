@@ -14,7 +14,7 @@ import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFet
 
 import { FakeFileStorage, PNG } from "./fake-file-storage";
 
-const audit = vi.hoisted(() => vi.fn(async () => {}));
+const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(async () => {}));
 const storage = new FakeFileStorage();
 vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({
@@ -650,11 +650,59 @@ describe("Order and Payment Audit Events", () => {
     expect(results.filter(result => result.ok)).toHaveLength(1);
     expect(audit).toHaveBeenCalledTimes(1);
   });
-  it("does not audit Fulfilment actions or Payment queue reads", async () => {
+  it("does not audit Payment queue reads", async () => {
     await loadPaymentQueue();
-    const id = await order("delivery", "confirmed");
-    expect((await startPreparing(id)).ok).toBe(true);
     expect(audit).not.toHaveBeenCalled();
   });
 
+});
+
+describe("Fulfilment Audit Events", () => {
+  const cases = [
+    { status: "confirmed", next: "preparing", run: startPreparing, actions: ["order.preparing"] },
+    { status: "preparing", next: "dispatched", run: dispatchOrder, actions: ["order.dispatched"] },
+    { status: "dispatched", next: "delivered", run: (id: number) => deliverOrder(id, deliveryPhoto()), actions: ["order.delivered", "order.delivery_photo_attached"] },
+  ];
+  it.each(cases)("audits $next exactly once across retries", async test => {
+    const id = await order("delivery", test.status);
+    vi.mocked(requireModule).mockResolvedValue({ id: "portal-user-123", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
+    expect((await test.run(id)).ok).toBe(true);
+    expect(audit.mock.calls.map(([event]) => event.action)).toEqual(test.actions);
+    for (const action of test.actions) {
+      expect(audit).toHaveBeenCalledWith({
+        action, module: "Fulfilment", outcome: "success",
+        actor: { type: "user", id: "portal-user-123", display_name: "Ana" },
+        target: { type: "order", id: String(id), display_name: `Order #${id}` },
+        description: expect.stringMatching(new RegExp(`Ana.*Order #${id}`)),
+        occurred_at: expect.any(String), operationId: `order:${id}:${action}`,
+      });
+    }
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(test.actions.length);
+  });
+  it.each(cases)("preserves $next when audit fails", async test => {
+    const id = await order("delivery", test.status);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    test.actions.forEach(() => audit.mockRejectedValueOnce(new Error("offline")));
+    expect((await test.run(id)).ok).toBe(true);
+    expect(logged).toHaveBeenCalledTimes(test.actions.length);
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: test.next } });
+    expect(revalidatePath).toHaveBeenCalledWith(`/orders/${id}`);
+  });
+  it.each(cases)("does not audit refused $next", async test => {
+    const id = await order("delivery", test.status);
+    storefront.refusal = "Already changed";
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("audits delivery and attachment even when photo promotion fails, without duplicating on reconciliation", async () => {
+    const id = await order("delivery", "dispatched");
+    storage.failPromote = true;
+    expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(2);
+    storage.failPromote = false;
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(2);
+  });
 });

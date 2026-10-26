@@ -29,7 +29,7 @@ async function act(
   id: number,
   run: (order: CurrentOrder, staff: Staff) => Promise<OrderChangeResult>,
   requiredModule: string = ORDERS_MODULE,
-  audit?: { action: "order.delivery_fee_quoted" | "order.confirmed" | "order.cancelled" | "order.marked_paid"; description: (staff: Staff) => string },
+  audit?: { action: string; description: (staff: Staff) => string },
 ): Promise<OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
   const staff = await requireModule(requiredModule);
@@ -48,14 +48,7 @@ async function act(
   // Order writes are never optimistic, and a refusal must not look like a changed Order.
   if (result.ok) {
     if (audit) {
-      await recordAudit(gatewayAuditTrail, {
-        action: audit.action, module: requiredModule, outcome: "success",
-        actor: staffAuditActor(staff),
-        target: { type: "order", id: String(id), display_name: `Order #${id}` },
-        description: audit.description(staff), occurred_at: new Date().toISOString(),
-        // These transitions happen at most once per Order; no request token is needed.
-        operationId: `order:${id}:${audit.action}`,
-      });
+      await auditOrder(id, staff, requiredModule, audit.action, audit.description(staff));
     }
     revalidatePath(`/orders/${id}`);
     revalidatePath("/orders");
@@ -64,6 +57,15 @@ async function act(
     revalidatePath("/customer-profiles", "layout");
   }
   return result;
+}
+
+/** These transitions and the Delivery photo attachment happen at most once per Order. */
+async function auditOrder(id: number, staff: Staff, module: string, action: string, description: string) {
+  await recordAudit(gatewayAuditTrail, {
+    action, module, outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "order", id: String(id), display_name: `Order #${id}` },
+    description, occurred_at: new Date().toISOString(), operationId: `order:${id}:${action}`,
+  });
 }
 
 /** Quote in integer centavos; the storefront confirms the Delivery Order in the same write. */
@@ -156,7 +158,9 @@ export async function startPreparing(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "Order is not ready to prepare or has already changed. Refresh it before trying again." };
     }
     return changeOrderStatus(id, { status: "preparing" });
-  }, FULFILMENT_MODULE);
+  }, FULFILMENT_MODULE, {
+    action: "order.preparing", description: staff => `${staff.name} started preparing Order #${id}.`,
+  });
 }
 
 export async function dispatchOrder(id: number): Promise<OrderChangeResult> {
@@ -165,7 +169,9 @@ export async function dispatchOrder(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "Only a preparing Order can be dispatched; it may have already changed. Refresh it before trying again." };
     }
     return changeOrderStatus(id, { status: "dispatched" });
-  }, FULFILMENT_MODULE);
+  }, FULFILMENT_MODULE, {
+    action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}.`,
+  });
 }
 
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
@@ -188,6 +194,8 @@ export async function deliverOrder(id: number, form?: FormData): Promise<OrderCh
     // Refused or uncertain writes leave Temporary evidence for file-storage's seven-day cleanup.
     const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId });
     if (result.ok) {
+      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered", `${staff.name} marked Order #${id} delivered.`);
+      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivery_photo_attached", `${staff.name} attached a Delivery photo to Order #${id}.`);
       try {
         await gatewayFileStorage.promote(deliveryPhotoFileId);
       } catch {

@@ -8,7 +8,8 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 import { FakeFileStorage, PNG } from "./fake-file-storage";
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
+const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(async () => {}));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({
   storageUrl: (url: string) => url,
   directFileStorage: { view: vi.fn((id: string) => storage.view(id)) },
@@ -402,5 +403,62 @@ describe("Staff Return decisions", () => {
       expect(revalidatePath).toHaveBeenCalledWith("/(app)/returns", "layout");
     }
     expect(vi.mocked(requireModule).mock.calls.every(([module]) => module === "Returns")).toBe(true);
+  });
+});
+
+describe("Return Audit Events", () => {
+  const cases = [
+    { status: "requested", next: "approved", run: (id: number) => approveReturn(id, true) },
+    { status: "requested", next: "declined", run: (id: number) => declineReturn(id, "Wrong item") },
+    { status: "approved", next: "goods received", run: markReturnGoodsReceived },
+    { status: "goods received", next: "refunded", run: (id: number) => markReturnRefunded(id, proof()) },
+    { status: "goods received", next: "replaced", run: markReturnReplaced },
+  ];
+  async function ready(test: typeof cases[number]) {
+    const id = await requested();
+    await db.sql`update order_returns set status = ${test.status}, goods_required = true,
+      final_resolution = ${test.next === "replaced" ? "replacement" : "refund"} where id = ${id}`;
+    vi.mocked(requireModule).mockResolvedValue({ ...ana, id: "portal-user-123" });
+    return id;
+  }
+  it.each(cases)("audits $next once across retries with Portal identity", async test => {
+    const id = await ready(test);
+    expect((await test.run(id)).ok).toBe(true);
+    const action = `return.${test.next.replaceAll(" ", "_")}`;
+    expect(audit).toHaveBeenCalledExactlyOnceWith({
+      action, module: "Returns", outcome: "success",
+      actor: { type: "user", id: "portal-user-123", display_name: "Ana Reyes" },
+      target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+      description: `Ana Reyes marked Return RMA-${id} (Order #1) ${test.next}.`,
+      occurred_at: expect.any(String), operationId: `return:${id}:${action}`,
+    });
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+  it.each(cases)("preserves $next when audit throws", async test => {
+    const id = await ready(test);
+    const error = new Error("offline");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    audit.mockRejectedValueOnce(error);
+    expect((await test.run(id)).ok).toBe(true);
+    expect(logged).toHaveBeenCalledWith("CREOMS Audit Event could not be recorded", error);
+    expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: test.next } });
+    expect(revalidatePath).toHaveBeenCalledWith("/(app)/returns", "layout");
+  });
+  it.each(cases)("does not audit refused $next", async test => {
+    const id = await ready(test);
+    storefront.refusal = "Already changed";
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("audits a confirmed refund before proof promotion, without duplicating on reconciliation", async () => {
+    const id = await ready(cases[3]);
+    storage.failPromote = true;
+    expect((await markReturnRefunded(id, proof())).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
+    storage.failPromote = false;
+    expect(await reconcileRefundProof(id)).toEqual({ ok: true });
+    expect((await markReturnRefunded(id, proof())).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
   });
 });

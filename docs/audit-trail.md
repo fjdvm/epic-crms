@@ -55,3 +55,21 @@ page invalidation. No outbox or replay of uncertain storefront writes is added.
 
 No schema migration or historical backfill is required. Tests drive the public
 Server Actions with a fake AuditTrail and the existing fake storefront.
+
+## Fulfilment and Returns (#259)
+
+Fulfilment records `order.preparing`, `order.dispatched`, `order.delivered`
+and `order.delivery_photo_attached` in the Fulfilment Module. The delivered
+transition attaches its photo atomically in the storefront and emits two events.
+Returns records `return.approved`, `return.declined`, `return.goods_received`,
+`return.refunded` and `return.replaced` in the Returns Module. Each event names
+the Staff member and Order or Return and carries the Portal User Actor.
+
+Each transition occurs at most once for its Target, so the Target and action
+provide a stable operation identity across retries. Refused, stale and uncertain
+writes emit no success event. Confirmed delivery and refund events are recorded
+before evidence promotion: promotion failure does not erase the saved change,
+and reconciliation does not repeat its Audit Events. Audit delivery remains
+best effort and never changes the action result.
+
+No database migration or historical backfill is required.
