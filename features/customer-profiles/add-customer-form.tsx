@@ -15,7 +15,7 @@ import { addWalkInCustomer, type AddWalkInActionResult } from "./actions";
 import { PREFERRED_CONTACTS, SOURCES, validateWalkIn, type WalkInField } from "./walk-in-rules";
 
 type Errors = Partial<Record<WalkInField, string>>;
-type Save = (input: Parameters<typeof addWalkInCustomer>[0]) => Promise<AddWalkInActionResult>;
+type Save = (input: Parameters<typeof addWalkInCustomer>[0], operationId?: string) => Promise<AddWalkInActionResult>;
 
 const CONTROL =
   "h-auto w-full rounded-lg border border-[#e4e4e7] bg-white px-3 py-2.5 text-sm text-foreground shadow-none placeholder:text-[#a1a1aa] focus-visible:border-primary";
@@ -143,7 +143,7 @@ export function AddCustomerForm({ save = addWalkInCustomer }: { save?: Save }) {
     setErrors({});
 
     startTransition(async () => {
-      const result = await save(payload);
+      const result = await save(payload, crypto.randomUUID());
 
       if (result.ok) return router.push(`/customer-profiles/${encodeURIComponent(result.id)}`);
       if ("errors" in result) return setErrors(result.errors);

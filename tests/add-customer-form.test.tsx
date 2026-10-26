@@ -62,7 +62,7 @@ describe("AddCustomerForm", () => {
     await user.click(screen.getByRole("button", { name: "Save customer" }));
 
     await waitFor(() => expect(push).toHaveBeenCalledWith("/customer-profiles/w-123"));
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ firstName: "Ada", lastName: "Lovelace", mobile: "0917 123 4567" }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ firstName: "Ada", lastName: "Lovelace", mobile: "0917 123 4567" }), expect.any(String));
   });
 
   it("links to the existing profile when the email or mobile number is a duplicate", async () => {
@@ -92,6 +92,6 @@ describe("AddCustomerForm", () => {
     await user.click(screen.getByRole("button", { name: "Save customer" }));
 
     await waitFor(() => expect(save).toHaveBeenCalled());
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ tags: ["vip"], smsConsent: true, emailConsent: false, notes: "June wedding" }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ tags: ["vip"], smsConsent: true, emailConsent: false, notes: "June wedding" }), expect.any(String));
   });
 });

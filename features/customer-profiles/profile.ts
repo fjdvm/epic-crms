@@ -1,4 +1,7 @@
 import type postgres from "postgres";
+import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
+import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
+import type { CustomerAudit } from "./walk-ins";
 
 import { getCustomerCart, type Cart } from "./cart";
 import { getCustomerOrders, type CustomerOrder } from "./orders";
@@ -224,5 +227,38 @@ async function readEmailsReceived(connectCrms: () => postgres.Sql, customerId: s
   } catch (error) {
     console.error("Customer Profile could not read the Emails received", error);
     return null;
+  }
+}
+
+/** Audit a visible profile using only its identity; background reads never call this. */
+export async function recordCustomerProfileView(
+  connect: () => postgres.Sql,
+  id: string,
+  audit: CustomerAudit & { operationId: string },
+  connectCrms: () => postgres.Sql = crmsDatabase,
+): Promise<void> {
+  try {
+    let name: string;
+    if (isWalkInId(id)) {
+      const walkIn = await getWalkIn(connectCrms(), id);
+      if (!walkIn) return;
+      name = walkIn.name;
+    } else {
+      const [customer] = await connect()<{ name: string }[]>`
+        select c.full_name as name from public.customers c
+        join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
+        where c.id = ${id}`;
+      if (!customer) return;
+      name = customer.name;
+    }
+    await recordAudit(audit.trail, {
+      module: CUSTOMER_PROFILES_MODULE, action: "customer_profile.viewed", outcome: "success",
+      actor: staffAuditActor(audit.staff),
+      target: { type: "customer_profile", id, display_name: name },
+      description: `${audit.staff.name} opened Customer Profile ${name}.`,
+      occurred_at: new Date().toISOString(), operationId: audit.operationId,
+    });
+  } catch (error) {
+    console.error("Customer Profile view could not be audited", error);
   }
 }

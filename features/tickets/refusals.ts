@@ -4,6 +4,8 @@ import { IMAGE_REFUSALS } from "./attachments";
 type Refusal = Exclude<TicketActionOutcome | ReplyOutcome, { ok: true }>;
 
 const REASONS: Record<Refusal["reason"], string> = {
+  "invalid-priority": "Choose a valid Priority.",
+  unchanged: "This Ticket already has that Priority.",
   "not-found": "This Ticket no longer exists.",
   claimed: "Another Staff member has already claimed this Ticket.",
   "not-claimer": "Only the Staff member who claimed a Ticket can release it.",
