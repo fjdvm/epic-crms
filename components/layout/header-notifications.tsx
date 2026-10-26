@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useTransition } from "react";
+import React from "react";
 import Link from "next/link";
 import { Bell, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,15 +13,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatAgo } from "@/features/customer-profiles/format";
-import {
-  markAllNotificationsRead,
-  markNotificationRead,
-} from "@/features/notifications/actions";
 import { describeNotification } from "@/features/notifications/describe";
 import type { NotificationFeed } from "@/features/notifications/notifications";
 
-export function HeaderNotifications({ feed }: { feed: NotificationFeed | null }) {
-  const [pending, startTransition] = useTransition();
+export function HeaderNotifications({
+  feed,
+  onMarkRead,
+  onMarkAllRead,
+}: {
+  feed: NotificationFeed | null;
+  /** Called as a row is opened, before navigation, so a slow link cannot leave it highlighted. */
+  onMarkRead: (id: string) => void;
+  onMarkAllRead: () => void;
+}) {
   const unread = feed?.unread ?? 0;
 
   return (
@@ -54,8 +58,8 @@ export function HeaderNotifications({ feed }: { feed: NotificationFeed | null })
           <Button
             variant="ghost"
             size="sm"
-            disabled={pending || unread === 0}
-            onClick={() => startTransition(() => markAllNotificationsRead())}
+            disabled={unread === 0}
+            onClick={onMarkAllRead}
             className="h-auto p-0 text-label-sm text-muted-foreground hover:text-foreground"
           >
             <CheckCheck /> Mark all read
@@ -79,7 +83,7 @@ export function HeaderNotifications({ feed }: { feed: NotificationFeed | null })
                   <Link
                     href={href}
                     onClick={() => {
-                      if (!n.read) startTransition(() => markNotificationRead(n.id));
+                      if (!n.read) onMarkRead(n.id);
                     }}
                     className="flex items-start gap-sm p-sm hover:bg-accent"
                   >
