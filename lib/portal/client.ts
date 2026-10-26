@@ -32,6 +32,7 @@ async function postJson(path: string, body: unknown): Promise<Response | null> {
       headers: { authorization: basicAuth(), "content-type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
     });
   } catch {
     return null;

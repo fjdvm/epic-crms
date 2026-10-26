@@ -109,3 +109,36 @@ emit nothing. Audit failures cannot affect the visible profile.
 All events use the shared best-effort boundary. Tests drive the public actions
 with a fake AuditTrail, with an in-memory Postgres for the database behavior.
 No schema migration or historical backfill is required.
+
+## CREOMS access (#261)
+
+The successful Portal callback records `crms.signed_in` once per exchanged code.
+The hashed opaque handle supplies the operation identity; neither the handle nor
+code is sent to audit-logs. Refused page, Server Action and in-page Module guards
+record `crms.access_denied`, naming the refused Module as the Target and in the
+Description. Both use Source CRMS with no Module field. Sidebar discovery, held
+Module checks and successful ordinary page loads do not produce access events.
+An Order detail request allowed by any of its Modules produces no refusal events.
+
+Portal exchange and 403 responses carry no Staff profile. After exchange, CREOMS
+resolves the identity from a positive live validation of a registered Module and
+stores the Portal User id and captured name against a SHA-256 hash of the handle,
+with the handle's expiry. This attribution is never used to authorize a request.
+It survives revocation of every Module for an already identified session. Old
+sessions fall back to identity discovery through another held Module; if no
+identity can be established (including a Portal outage), auditing logs the error
+and leaves the access result unchanged. No username or browser-provided identity
+is substituted. Expired attribution rows are removed at later sign-ins.
+
+An atomic conditional upsert in `crms.access_audit_refusals` admits only one event
+per Staff member and Module in a rolling 60 seconds, including concurrent
+requests and different sessions or app instances. The operation identity includes
+the Staff member, Module and minute. A failed delivery still consumes the cooldown;
+there is no outbox or automatic retry. Storage failure suppresses the refusal
+event rather than risking a flood, and sign-in delivery can proceed without
+storage. All access audit work is best effort and bounded to five seconds.
+
+Apply `docs/db/crms-access-audit.sql` as `creoms_writer` before deployment. It adds
+only attribution and cooldown tables and an expiry index; it changes no existing
+records. Fresh installations also include these in `crms-schema.sql`. Historical
+sign-ins are not backfilled.
