@@ -189,7 +189,7 @@ describe("signing out", () => {
     await userEvent.click(screen.getByRole("button", { name: "Log out" }));
 
     expect(screen.getByText("Log out?")).toBeTruthy();
-    expect(screen.getByText(/log out of the Enterprise Suite/)).toBeTruthy();
+    expect(screen.getByText(/signed out of the portal and every system you opened/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
     const confirm = screen.getAllByRole("button", { name: "Log out" }).find((b) => b.getAttribute("form") === "logout-form")!;
     expect(confirm.getAttribute("type")).toBe("submit");

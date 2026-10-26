@@ -27,7 +27,7 @@ beforeAll(async () => {
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   await db.sql`truncate customers restart identity cascade`;
-  await db.sql`truncate crms.notifications, crms.seen_returns, crms.return_sync_state restart identity`;
+  await db.sql`truncate crms.notifications, crms.seen_returns, crms.return_sync_state restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Jane Doe', 'jane@example.com')`;
   await db.sql`insert into orders (customer_id, status) values ('c1', 'delivered')`;
 });
@@ -52,7 +52,7 @@ describe("Return notifications", () => {
         { kind: "return-requested", returnId: id, orderId: 1, customerId: "c1", customerName: "Jane Doe" },
       ]);
       expect(describeNotification(feed.notifications[0])).toEqual({
-        text: `Jane Doe requested Return RMA-${id}`, href: "/orders/1",
+        text: `Jane Doe requested Return RMA-${id}`, href: `/returns#return-${id}`,
       });
     }
   });

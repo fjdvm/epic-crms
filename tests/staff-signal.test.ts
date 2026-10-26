@@ -26,7 +26,7 @@ afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   await db.sql`truncate ticket_messages, tickets, order_feedback, orders, customers, neon_auth."user" restart identity cascade`;
   await db.sql`truncate crms.notifications, crms.seen_customers, crms.sync_state, crms.seen_order_events, crms.order_sync_state,
-    crms.seen_ticket_events, crms.ticket_sync_state, crms.seen_feedback, crms.feedback_sync_state, crms.seen_returns, crms.return_sync_state, crms.notification_signal_state restart identity`;
+    crms.seen_ticket_events, crms.ticket_sync_state, crms.seen_feedback, crms.feedback_sync_state, crms.seen_returns, crms.return_sync_state, crms.notification_signal_state restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Jane Doe', 'jane@example.com')`;
   vi.stubEnv("CREOMS_SIGNAL_SECRET", secret);
   vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test"); vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "crms-key");

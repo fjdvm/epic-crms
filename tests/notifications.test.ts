@@ -37,7 +37,7 @@ describe.skipIf(!url)("New Customer notifications", () => {
   });
 
   beforeEach(async () => {
-    await sql.unsafe(`truncate ${schema}.notifications, ${schema}.seen_customers, ${schema}.sync_state`);
+    await sql.unsafe(`truncate ${schema}.notifications, ${schema}.seen_customers, ${schema}.sync_state cascade`);
   });
 
   afterAll(async () => {

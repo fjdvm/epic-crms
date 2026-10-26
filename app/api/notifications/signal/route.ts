@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { crmsDatabase } from "@/lib/crms-db";
 import { signalNotifications } from "@/features/notifications/signal";
-import { syncNotifications } from "@/features/notifications/sync";
+import { syncNotifications, syncNotificationCopies } from "@/features/notifications/sync";
 import { nudgeStaff } from "@/features/notifications/staff-live";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,8 @@ export async function POST(request: NextRequest) {
   }
   // Ignore every body field and query parameter: signals cannot manufacture or select events.
   try {
-    const result = await signalNotifications(crmsDatabase(), () => syncNotifications(), nudgeStaff);
+    const result = await signalNotifications(crmsDatabase(), () => syncNotifications({ copies: false }), nudgeStaff);
+    if (!result.coalesced) await syncNotificationCopies();
     return NextResponse.json({ accepted: true, coalesced: result.coalesced }, { status: 202 });
   } catch (error) {
     console.error("Staff signal sync failed", error);
