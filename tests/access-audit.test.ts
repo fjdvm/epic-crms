@@ -170,3 +170,14 @@ it("audits actual page refusals and redirects to the refusal page", async () => 
   await expect(requireAnyModule(["Customer Profiles", "Fulfilment"])).resolves.toEqual(ada);
   expect(audit).not.toHaveBeenCalled();
 });
+
+it("uses the Staff name at refusal time when a live Module can identify them", async () => {
+  const { handle } = await signIn();
+  portal.addStaff(ada.id, { ...ada, name: "Ada Reyes" });
+  audit.mockClear();
+  await guarded(accessFor(handle), "Tickets", async () => "secret");
+  expect(audit.mock.calls[0][0]).toMatchObject({
+    actor: { type: "user", id: ada.id, display_name: "Ada Reyes" },
+    description: "Ada Reyes was refused the Tickets Module.",
+  });
+});

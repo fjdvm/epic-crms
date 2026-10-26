@@ -124,7 +124,8 @@ Portal exchange and 403 responses carry no Staff profile. After exchange, CREOMS
 resolves the identity from a positive live validation of a registered Module and
 stores the Portal User id and captured name against a SHA-256 hash of the handle,
 with the handle's expiry. This attribution is never used to authorize a request.
-It survives revocation of every Module for an already identified session. Old
+Refusals refresh the display name through live validation when possible, falling
+back to the saved identity after every Module is revoked. Old
 sessions fall back to identity discovery through another held Module; if no
 identity can be established (including a Portal outage), auditing logs the error
 and leaves the access result unchanged. No username or browser-provided identity
@@ -142,3 +143,8 @@ Apply `docs/db/crms-access-audit.sql` as `creoms_writer` before deployment. It a
 only attribution and cooldown tables and an expiry index; it changes no existing
 records. Fresh installations also include these in `crms-schema.sql`. Historical
 sign-ins are not backfilled.
+
+Migration verification (2026-10-27): applied twice on a temporary branch of the
+configured ecommerce production database, verified table ownership and rolling
+cooldown behavior as `creoms_writer`, then applied to the configured production
+branch as that role. The temporary database branch was removed afterward.

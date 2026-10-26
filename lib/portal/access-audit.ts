@@ -60,7 +60,7 @@ export async function auditAccessDenied(handle: string, module: string, audit: A
       select staff_id, staff_name from crms.access_audit_sessions
       where handle_hash = ${handleHash(handle)} and expires_at > ${now}`;
     // Pre-deployment sessions have no mapping; a held Module can still identify them.
-    const staff = saved ? { id: saved.staff_id, name: saved.staff_name } : await identify(handle);
+    let staff = saved ? { id: saved.staff_id, name: saved.staff_name } : await identify(handle);
     if (!staff) throw new Error("The Portal could not identify the refused Staff member");
     const claimed = await sql`
       insert into crms.access_audit_refusals (staff_id, module, recorded_at)
@@ -69,6 +69,8 @@ export async function auditAccessDenied(handle: string, module: string, audit: A
       where crms.access_audit_refusals.recorded_at <= excluded.recorded_at - interval '1 minute'
       returning recorded_at`;
     if (!claimed.length) return;
+    // Refresh the display name where possible; retain attribution if every grant was revoked.
+    if (saved) staff = await identify(handle) ?? staff;
     await recordAudit(audit, {
       action: "crms.access_denied", outcome: "failure", actor: staffAuditActor(staff),
       target: { type: "module", id: module, display_name: module },
