@@ -4,7 +4,7 @@ import { salesHeadline, soFarNote, type Month } from "./sales-headline";
 
 const CARD =
   "flex min-w-0 flex-col items-start gap-3 rounded-xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]";
-const PLOT = "h-40 w-full";
+const PLOT = "min-h-40 w-full flex-1";
 
 const shortMonth = (label: string) =>
   new Date(`${label}-01T00:00:00Z`).toLocaleString("en-PH", {
