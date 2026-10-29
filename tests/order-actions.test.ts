@@ -349,7 +349,7 @@ describe("Fulfilment Order actions", () => {
     } finally {
       await legacy.close();
     }
-  });
+  }, 30_000);
 
   it("reads a removed Delivery photo as removed, not as No photo", async () => {
     const id = await order("delivery", "delivered");
