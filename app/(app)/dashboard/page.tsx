@@ -155,19 +155,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               </Suspense>
             )}
           </div>
-          {(show.monthlySales || attention) && (
-            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              {show.monthlySales && (
-                <Suspense fallback={<SalesChartSkeleton />}>
-                  <MonthlySalesChart figures={figures} />
-                </Suspense>
-              )}
-              {attention && (
-                <Suspense fallback={<NeedsAttentionSkeleton />}>
-                  <NeedsAttentionCard figures={figures} now={now} />
-                </Suspense>
-              )}
-            </div>
+          {show.monthlySales && (
+            <Suspense fallback={<SalesChartSkeleton />}>
+              <MonthlySalesChart figures={figures} />
+            </Suspense>
           )}
           {show.breakdowns && (
             <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-3">
@@ -191,6 +182,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                 <NewCustomers figures={figures} periodLabel={PERIOD_LABELS[preset]} />
               </Suspense>
             </div>
+          )}
+          {attention && (
+            <Suspense fallback={<NeedsAttentionSkeleton />}>
+              <NeedsAttentionCard figures={figures} now={now} />
+            </Suspense>
           )}
         </>
       ) : (

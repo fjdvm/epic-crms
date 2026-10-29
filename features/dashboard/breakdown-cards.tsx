@@ -6,7 +6,7 @@ import {
 import type { BestSellers, Breakdown, MonthlyBuyers, PaymentAndReceiving } from "./breakdowns";
 
 const CARD =
-  "flex min-w-0 flex-col items-start gap-4 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-5 leading-[normal]";
+  "flex min-w-0 flex-col items-start gap-3 rounded-xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]";
 const TITLE = "text-[13px] font-medium text-[#71717a]";
 const MUTED = "text-sm text-[#71717a]";
 const EMPTY = "No Orders in this period";
@@ -18,8 +18,8 @@ const shortMonth = (label: string) =>
 
 function Bar({ share, soft }: { share: number; soft?: boolean }) {
   return (
-    <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#f1edf6]">
-      <div className={soft ? "h-full rounded-full bg-[#c9b3e0]" : "h-full rounded-full bg-[#5b2a86]"} style={{ width: `${Math.round(share * 100)}%` }} />
+    <div className="h-2 w-full overflow-hidden rounded-full bg-[#f1edf6]">
+      <div className={soft ? "h-full bg-[#c9b3e0]" : "h-full bg-[#5b2a86]"} style={{ width: `${Math.round(share * 100)}%` }} />
     </div>
   );
 }
@@ -65,13 +65,13 @@ export function BestSellersCard({
 
   return (
     <section className={CARD}>
-      <h2 className="text-[15px] font-semibold leading-snug text-[#18181b]">{bestSellersHeadline(widget.products)}</h2>
-      <ol className="flex w-full flex-col gap-4">
+      <h2 className="text-base font-semibold text-[#18181b]">{bestSellersHeadline(widget.products)}</h2>
+      <ol className="flex w-full flex-col gap-3">
         {widget.products.map((p) => (
           <li key={p.productName} className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between gap-2 text-sm">
               <span className="min-w-0 truncate font-medium text-[#18181b]">{p.productName}</span>
-              <span className="text-xs font-medium text-[#71717a]">{percent(p.share)}</span>
+              <span className="font-medium text-[#18181b]">{percent(p.share)}</span>
             </div>
             <Bar share={p.share ?? 0} />
             <span className="text-xs text-[#71717a]">{`${p.units} sold · ${format(p.sales)}`}</span>
@@ -98,7 +98,7 @@ export function BuyersCard({ widget }: { widget: Breakdown<MonthlyBuyers> }) {
 
   return (
     <section className={CARD}>
-      <h2 className="text-[15px] font-semibold leading-snug text-[#18181b]">{buyersHeadline(widget.months)}</h2>
+      <h2 className="text-base font-semibold text-[#18181b]">{buyersHeadline(widget.months)}</h2>
       <ol className="flex w-full flex-col gap-3">
         {widget.months.map((m) => {
           return (
@@ -143,7 +143,7 @@ function Section({ title, rows }: { title: string; rows: ReturnType<typeof secti
         <div key={r.method} className="flex flex-col gap-1">
           <div className="flex items-baseline justify-between gap-2 text-sm">
             <span className="font-medium text-[#18181b]">{METHOD_LABELS[r.method] ?? r.method}</span>
-            <span className="text-xs font-medium text-[#71717a]">{percent(r.share)}</span>
+            <span className="font-medium text-[#18181b]">{percent(r.share)}</span>
           </div>
           <Bar share={r.share} />
           <span className="text-xs text-[#71717a]">{`${r.orders} ${r.orders === 1 ? "Order" : "Orders"}`}</span>
@@ -159,7 +159,7 @@ export function PaymentCard({ widget }: { widget: Breakdown<PaymentAndReceiving>
 
   return (
     <section className={CARD}>
-      <h2 className="text-[15px] font-semibold leading-snug text-[#18181b]">{paymentHeadline(widget.payment)}</h2>
+      <h2 className="text-base font-semibold text-[#18181b]">{paymentHeadline(widget.payment)}</h2>
       <Section title="Payment method" rows={section(widget.payment, ["gcash", "cash-on-delivery"])} />
       <Section title="How Orders are received" rows={section(widget.receiving, ["pickup", "delivery"])} />
     </section>
