@@ -33,8 +33,15 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * CREOMS's public origin. Redirects must be built from this, never from `request.url`: behind the
+ * container proxy `request.url` carries the bind address (https://0.0.0.0:3000), not the public host.
+ */
+export function appUrl(): string {
+  return (process.env.CREOMS_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+}
+
 export function portalConfig() {
-  const appUrl = (process.env.CREOMS_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
   const portalUrl = required("PORTAL_URL").replace(/\/$/, "");
 
@@ -43,6 +50,6 @@ export function portalConfig() {
     systemName: process.env.PORTAL_SYSTEM_NAME ?? "CRMS",
     systemSecret: required("PORTAL_SYSTEM_SECRET"),
     logoutUrl: `${portalUrl}/logout`,
-    callbackUrl: `${appUrl}${CALLBACK_PATH}`,
+    callbackUrl: `${appUrl()}${CALLBACK_PATH}`,
   };
 }
