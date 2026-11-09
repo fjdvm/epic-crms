@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auditSignIn } from "@/lib/portal/access-audit";
 import { exchangeCode } from "@/lib/portal/client";
-import { HANDOFF_COOKIE, CALLBACK_PATH, SESSION_COOKIE } from "@/lib/portal/config";
+import { appUrl, HANDOFF_COOKIE, CALLBACK_PATH, SESSION_COOKIE } from "@/lib/portal/config";
 import { safeReturnTo } from "@/lib/portal/return-to";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ function readHandoff(request: NextRequest): Handoff | null {
 }
 
 function failed(request: NextRequest, reason: "denied" | "failed" | "unavailable") {
-  const response = NextResponse.redirect(new URL(`/sign-in-error?reason=${reason}`, request.url));
+  const response = NextResponse.redirect(new URL(`/sign-in-error?reason=${reason}`, appUrl()));
   response.cookies.delete({ name: HANDOFF_COOKIE, path: CALLBACK_PATH });
 
   return response;
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
   await auditSignIn(exchanged.sessionHandle, exchanged.expiresAt);
 
-  const response = NextResponse.redirect(new URL(handoff.returnTo, request.url));
+  const response = NextResponse.redirect(new URL(handoff.returnTo, appUrl()));
   response.cookies.delete({ name: HANDOFF_COOKIE, path: CALLBACK_PATH });
   response.cookies.set(SESSION_COOKIE, exchanged.sessionHandle, {
     httpOnly: true,
