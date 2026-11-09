@@ -36,3 +36,92 @@ jobs:
           test "$bytes" -lt 471859200
       - name: Smoke test the running container
         run: bash scripts/container-smoke/run.sh creoms:smoke
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: container-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: creoms-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      RESOURCE_GROUP: rg-brenraphaels
+      CONTAINER_APP: ca-creoms
+      CREOMS_PUBLIC_URL: https://creoms.buildwrite.me
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Resolve image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish production image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          build-args: NEXT_PUBLIC_APP_URL=${{ env.CREOMS_PUBLIC_URL }}
+          cache-from: type=gha,scope=creoms-production
+          cache-to: type=gha,mode=max,scope=creoms-production
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy and verify creoms revision
+        shell: bash
+        env:
+          DEPLOY_SECRETS: ${{ toJSON(secrets) }}
+          GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+          CREOMS_IMAGE: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          export AZURE_CORE_ONLY_SHOW_ERRORS=true
+          export CONTAINER_ENVIRONMENT_ID
+          CONTAINER_ENVIRONMENT_ID=$(az containerapp env show -g "$RESOURCE_GROUP" -n cae-brenraphaels --query id -o tsv)
+          # The manifest replaces the whole app config, so carry over any custom domain
+          # already bound (creoms.buildwrite.me is bound later by hand) or a deploy would drop it.
+          export EXISTING_CUSTOM_DOMAINS='[]'
+          if az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --query name -o tsv >/dev/null 2>&1; then
+            EXISTING_CUSTOM_DOMAINS=$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" \
+              --query "properties.configuration.ingress.customDomains || \`[]\`" -o json)
+          fi
+          export REVISION_SUFFIX="gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          manifest="$RUNNER_TEMP/creoms-deploy.json"
+          trap 'rm -f "$manifest"' EXIT
+          python3 scripts/deploy/render-container-app.py "$manifest"
+          # Suppress the ARM response: it can contain configuration/secret fields.
+          az containerapp create -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --yaml "$manifest" --output none
+          revision="$CONTAINER_APP--$REVISION_SUFFIX"
+          ready=false
+          for attempt in $(seq 1 60); do
+            state=$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --revision "$revision" --query properties.healthState -o tsv)
+            if [ "$state" = Healthy ]; then ready=true; break; fi
+            sleep 10
+          done
+          test "$ready" = true
+          fqdn=$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --query properties.configuration.ingress.fqdn -o tsv)
+          latest=$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --query properties.latestReadyRevisionName -o tsv)
+          test "$latest" = "$revision"
+          # Min 0 replicas: the first request may wake the app, so retry.
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-all-errors "https://$fqdn/api/health"
+          {
+            echo '### creoms deployment'
+            echo "- Default address: https://$fqdn"
+            echo "- Healthy revision: $revision"
+            echo "- Image: $CREOMS_IMAGE"
+            echo '- Replicas: min 0 (may take a few seconds to wake), max 2; 0.5 vCPU / 1 GiB'
+            echo '- Previous revisions retained inactive for rollback (up to 10).'
+          } >> "$GITHUB_STEP_SUMMARY"
