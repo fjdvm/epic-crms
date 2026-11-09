@@ -10,6 +10,7 @@ import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-p
 
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
 import { CancelPaymentDialog, MarkPaidDialog } from "./payments-actions";
+import { isViewableScreenshot } from "./payment-screenshot";
 import { PAYMENTS_WINDOW_DAYS, summarize, type PaymentRow, type PaymentTab } from "./payments";
 
 const METHOD: Record<PaymentRow["method"], string> = { gcash: "GCash", "cash-on-delivery": "Cash on delivery" };
@@ -24,14 +25,11 @@ function ago(date: Date, now: Date): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-/** A screenshot is a link only when the storefront gave one Staff can open; a bare pathname is not. */
-const isUrl = (value: string | null): value is string => value !== null && /^https?:\/\//.test(value);
-
 function Receipt({ order, size }: { order: PaymentRow; size: "thumb" | "full" }) {
   const screenshot = order.proof?.screenshot ?? null;
   const frame = size === "thumb" ? "h-10 w-8 rounded-sm" : "w-full rounded-lg p-6";
 
-  return isUrl(screenshot) ? (
+  return isViewableScreenshot(screenshot) ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={screenshot}

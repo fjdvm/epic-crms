@@ -32,6 +32,7 @@ const SCHEMA = `
     payment_method text not null default 'cash-on-delivery',
     gcash_reference_number text,
     payment_proof_screenshot_pathname text,
+    payment_proof_file_id text,
     payment_proof_submitted_at timestamptz,
     delivered_at timestamptz,
     delivery_photo_file_id text,
