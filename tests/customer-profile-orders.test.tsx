@@ -101,16 +101,16 @@ describe("OrdersTab", () => {
   it("shows a file-storage screenshot as an image through the Staff route, and a legacy pathname as text", () => {
     const { container, rerender } = render(
       <OrdersTab
-        orders={[order({ id: 7, paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "/api/orders/7/payment-proof", submittedAt: null } })]}
+        orders={[order({ paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "/api/orders/1/payment-proof", submittedAt: null } })]}
         expanded={open}
         onToggle={() => {}}
       />,
     );
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("/api/orders/7/payment-proof");
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("/api/orders/1/payment-proof");
 
     rerender(
       <OrdersTab
-        orders={[order({ id: 7, paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "proofs/a.png", submittedAt: null } })]}
+        orders={[order({ paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "proofs/a.png", submittedAt: null } })]}
         expanded={open}
         onToggle={() => {}}
       />,
