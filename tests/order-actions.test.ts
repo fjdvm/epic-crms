@@ -471,6 +471,11 @@ describe("the Payments queue", () => {
       paymentProof: { reference: `ref-${older}`, screenshot: "receipts/old.png", submittedAt: new Date("2026-10-21T10:00:00Z") },
     });
     expect(result.orders[2].paymentProof.screenshot).toBeNull();
+    await db.sql`update orders set payment_proof_file_id = 'file-1' where id = ${newer}`;
+    const withFile = await loadPaymentQueue();
+    if (!withFile.ok) throw new Error("expected the Payments queue to load");
+    expect(withFile.orders.find(o => o.id === newer)!.paymentProof.screenshot).toBe(`/api/orders/${newer}/payment-proof`);
+    expect(withFile.orders.find(o => o.id === older)!.paymentProof.screenshot).toBe("receipts/old.png");
     expect(requireModule).toHaveBeenCalledWith("Payments");
   });
 });

@@ -97,6 +97,27 @@ describe("OrdersTab", () => {
 
     expect(screen.getByText(/REF123/)).toBeTruthy();
   });
+
+  it("shows a file-storage screenshot as an image through the Staff route, and a legacy pathname as text", () => {
+    const { container, rerender } = render(
+      <OrdersTab
+        orders={[order({ id: 7, paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "/api/orders/7/payment-proof", submittedAt: null } })]}
+        expanded={open}
+        onToggle={() => {}}
+      />,
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("/api/orders/7/payment-proof");
+
+    rerender(
+      <OrdersTab
+        orders={[order({ id: 7, paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "proofs/a.png", submittedAt: null } })]}
+        expanded={open}
+        onToggle={() => {}}
+      />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByText(/proofs\/a\.png/)).toBeTruthy();
+  });
 });
 
 describe("paymentStatusOf", () => {

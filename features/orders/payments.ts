@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 
+import { paymentScreenshotSource } from "./payment-screenshot";
+
 export interface PaymentQueueOrder {
   id: number;
   createdAt: Date;
@@ -15,12 +17,12 @@ export type PaymentQueueResult = { ok: true; orders: PaymentQueueOrder[] } | { o
 export async function paymentQueue(sql: postgres.Sql): Promise<PaymentQueueOrder[]> {
   const rows = await sql<{
     id: number; created_at: Date; customer_id: string; full_name: string; total: number;
-    gcash_reference_number: string | null; payment_proof_screenshot_pathname: string | null;
+    gcash_reference_number: string | null; payment_proof_screenshot_pathname: string | null; payment_proof_file_id: string | null;
     payment_proof_submitted_at: Date;
   }[]>`
     select o.id, o.created_at, o.customer_id, c.full_name,
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total,
-      o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_submitted_at
+      o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at
     from public.orders o join public.customers c on c.id = o.customer_id
     where o.payment_method = 'gcash' and o.status = 'awaiting payment'
       and o.payment_proof_submitted_at is not null
@@ -30,7 +32,7 @@ export async function paymentQueue(sql: postgres.Sql): Promise<PaymentQueueOrder
     id: o.id, createdAt: o.created_at,
     customer: { id: o.customer_id, name: o.full_name }, total: o.total,
     paymentProof: {
-      reference: o.gcash_reference_number, screenshot: o.payment_proof_screenshot_pathname,
+      reference: o.gcash_reference_number, screenshot: paymentScreenshotSource(o.id, o.payment_proof_file_id, o.payment_proof_screenshot_pathname),
       submittedAt: o.payment_proof_submitted_at,
     },
   }));
@@ -62,12 +64,12 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date()): Pr
   const since = new Date(now.getTime() - PAYMENTS_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const rows = await sql<{
     id: number; customer_id: string; full_name: string; payment_method: PaymentMethod; status: string; total: number;
-    gcash_reference_number: string | null; payment_proof_screenshot_pathname: string | null;
+    gcash_reference_number: string | null; payment_proof_screenshot_pathname: string | null; payment_proof_file_id: string | null;
     payment_proof_submitted_at: Date | null;
   }[]>`
     select o.id, o.customer_id, c.full_name, o.payment_method, o.status,
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total,
-      o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_submitted_at
+      o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at
     from public.orders o join public.customers c on c.id = o.customer_id
     where ((o.payment_method = 'gcash' and o.payment_proof_submitted_at is not null)
         or o.payment_method = 'cash-on-delivery')
@@ -78,7 +80,7 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date()): Pr
     id: o.id, customer: { id: o.customer_id, name: o.full_name }, method: o.payment_method, status: o.status,
     total: o.total,
     proof: o.payment_proof_submitted_at
-      ? { reference: o.gcash_reference_number, screenshot: o.payment_proof_screenshot_pathname, submittedAt: o.payment_proof_submitted_at }
+      ? { reference: o.gcash_reference_number, screenshot: paymentScreenshotSource(o.id, o.payment_proof_file_id, o.payment_proof_screenshot_pathname), submittedAt: o.payment_proof_submitted_at }
       : null,
   }));
 }
