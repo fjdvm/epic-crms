@@ -1,0 +1,100 @@
+name: CREOMS rollback
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Full deployed commit SHA or this repository GHCR image reference (tag or digest)'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: creoms-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: rg-brenraphaels
+      CONTAINER_APP: ca-creoms
+      CREOMS_PUBLIC_URL: https://creoms.buildwrite.me
+      AZURE_CORE_ONLY_SHOW_ERRORS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate image before changing production
+        id: image
+        env:
+          REQUESTED_IMAGE: ${{ inputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          image="$REQUESTED_IMAGE"
+          if [[ "$image" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            image="$repository:${image,,}"
+          fi
+          # Only images in the production repository can use its existing pull credentials.
+          if [[ "$image" != "$repository:"* && "$image" != "$repository@sha256:"* ]] || [[ "$image" =~ [[:space:]] ]]; then
+            echo '::error::Use a full 40-character commit SHA or an image reference in this repository GHCR package.'
+            exit 1
+          fi
+          # Resolve tags to immutable digests before Azure login or any app mutation.
+          if ! digest=$(docker buildx imagetools inspect "$image" --format '{{.Manifest.Digest}}'); then
+            echo '::error::Image could not be resolved in GHCR. Production has not been changed.'
+            exit 1
+          fi
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo '::error::Registry did not return a valid image digest. Production has not been changed.'
+            exit 1
+          fi
+          echo "image=$repository@$digest" >> "$GITHUB_OUTPUT"
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Update image and verify production
+        env:
+          CREOMS_IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous=$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --query properties.latestReadyRevisionName -o tsv)
+          previous_image=$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --revision "$previous" --query 'properties.template.containers[0].image' -o tsv)
+          {
+            echo '### Rollback request'
+            echo "- Previous ready revision: $previous"
+            echo "- Previous image (save for roll-forward): $previous_image"
+            echo "- Requested image: $CREOMS_IMAGE"
+          } >> "$GITHUB_STEP_SUMMARY"
+          export REVISION_SUFFIX="rb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # Update only the image; retain environment, secrets, ingress and certificates.
+          az containerapp update -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" \
+            --container-name creoms --image "$CREOMS_IMAGE" --revision-suffix "$REVISION_SUFFIX" --output none
+          bash scripts/deploy/verify-revision.sh
+      - name: Record final production state
+        if: always() && steps.image.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Azure login may have failed; never claim success from the requested image alone.
+          live=$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --query properties.latestReadyRevisionName -o tsv)
+          live_image=$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --revision "$live" --query 'properties.template.containers[0].image' -o tsv)
+          {
+            echo '### Final production state (latest ready revision)'
+            echo "- Revision: $live"
+            echo "- Image: $live_image"
+            echo '- Only a successful verification step confirms public health.'
+          } >> "$GITHUB_STEP_SUMMARY"

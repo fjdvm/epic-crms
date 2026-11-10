@@ -6,16 +6,15 @@ RUN npm ci --ignore-scripts --no-audit --no-fund
 FROM dependencies AS build
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY . .
-ARG NEXT_PUBLIC_APP_URL
 # No real database, Portal or gateway credentials are needed or copied into the image;
-# every setting is read at runtime (see .env.example).
+# server settings are read at runtime (see .env.example).
 # The sidebar links to the other Systems are inlined at build time. An unset one keeps the app's own default.
 ARG NEXT_PUBLIC_HOST_URL
 ARG NEXT_PUBLIC_CRMS_URL
 ARG NEXT_PUBLIC_HRMS_URL
 ARG NEXT_PUBLIC_POS_URL
 ARG NEXT_PUBLIC_IMS_URL
-RUN for v in NEXT_PUBLIC_HOST_URL NEXT_PUBLIC_CRMS_URL NEXT_PUBLIC_HRMS_URL NEXT_PUBLIC_POS_URL NEXT_PUBLIC_IMS_URL; do \
+RUN --mount=type=cache,target=/app/.next/cache for v in NEXT_PUBLIC_HOST_URL NEXT_PUBLIC_CRMS_URL NEXT_PUBLIC_HRMS_URL NEXT_PUBLIC_POS_URL NEXT_PUBLIC_IMS_URL; do \
       eval "[ -n \"\$$v\" ] || unset $v"; \
     done && npm run build
 
