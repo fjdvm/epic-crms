@@ -15,7 +15,7 @@ fixed = {
     'PORTAL_SYSTEM_NAME': 'CRMS',
     'CREOMS_APP_URL': public_url,
     'CREOMS_STOREFRONT_URL': 'https://shop.buildwrite.me',
-    'CREOMS_GATEWAY_URL': 'https://api-gateway.jude-nitram08.workers.dev',
+    'CREOMS_GATEWAY_URL': 'https://api.buildwrite.me',
 }
 # Optional: left out of the container when no GitHub secret is set.
 optional = ['CREOMS_UPLOAD_SECRET']
