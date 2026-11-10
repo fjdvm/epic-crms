@@ -77,6 +77,7 @@ describe("render-container-app.py", () => {
     expect(env.CREOMS_APP_URL.value).toBe("https://creoms.buildwrite.me");
     expect(env.PORTAL_URL.value).toBe("https://portal.buildwrite.me");
     expect(env.CREOMS_STOREFRONT_URL.value).toBe("https://shop.buildwrite.me");
+    expect(env.CREOMS_GATEWAY_URL.value).toBe("https://api.buildwrite.me");
   });
 
   it("names every missing secret and writes nothing", () => {
