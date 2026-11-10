@@ -6,6 +6,13 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  SYSTEM_BUILD_ARGS: |
+    NEXT_PUBLIC_HOST_URL=https://portal.buildwrite.me/
+    NEXT_PUBLIC_CRMS_URL=https://creoms.buildwrite.me/
+    NEXT_PUBLIC_HRMS_URL=https://hrms.buildwrite.me/
+    NEXT_PUBLIC_POS_URL=https://web-pos-alpha-vert.vercel.app/
+    NEXT_PUBLIC_IMS_URL=https://br-sims.vercel.app/
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -87,12 +94,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          build-args: |
-            NEXT_PUBLIC_HOST_URL=https://portal.buildwrite.me/
-            NEXT_PUBLIC_CRMS_URL=https://creoms.buildwrite.me/
-            NEXT_PUBLIC_HRMS_URL=https://hrms.buildwrite.me/
-            NEXT_PUBLIC_POS_URL=https://web-pos-alpha-vert.vercel.app/
-            NEXT_PUBLIC_IMS_URL=https://br-sims.vercel.app/
+          build-args: ${{ env.SYSTEM_BUILD_ARGS }}
           load: true
           tags: creoms:smoke
           # PRs only read the dependency cache published by main.
@@ -187,12 +189,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          build-args: |
-            NEXT_PUBLIC_HOST_URL=https://portal.buildwrite.me/
-            NEXT_PUBLIC_CRMS_URL=https://creoms.buildwrite.me/
-            NEXT_PUBLIC_HRMS_URL=https://hrms.buildwrite.me/
-            NEXT_PUBLIC_POS_URL=https://web-pos-alpha-vert.vercel.app/
-            NEXT_PUBLIC_IMS_URL=https://br-sims.vercel.app/
+          build-args: ${{ env.SYSTEM_BUILD_ARGS }}
           push: true
           tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
           cache-from: type=gha,scope=creoms-production

@@ -13,5 +13,8 @@ latest=$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" --query p
 test "$latest" = "$revision"
 # Min 0 replicas: the first request may wake the app, so retry.
 curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-all-errors "https://$fqdn/api/health"
+bound=$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINER_APP" \
+  --query "properties.configuration.ingress.customDomains[?name=='creoms.buildwrite.me' && bindingType=='SniEnabled'] | length(@)" -o tsv)
+test "$bound" = 1 || { echo '::error::creoms.buildwrite.me is not bound with SniEnabled'; exit 1; }
 curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-all-errors "$CREOMS_PUBLIC_URL/api/health"
 echo "Healthy revision: $revision ($CREOMS_IMAGE)" >> "$GITHUB_STEP_SUMMARY"
