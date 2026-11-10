@@ -2,46 +2,61 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
+import { staffOrdersLiveUrl } from "./live-actions";
 
-/** Orders change on the storefront where CREOMS cannot clear its cache, so a page is never older than this plus a render. */
-export const REFRESH_INTERVAL_MS = 15_000;
-
-/**
- * Keeps an Orders page fresh: the cached page shows at once, then this refreshes it in the
- * background on opening and every few seconds while the tab is visible (ADR-0002, Tickets tier).
- */
+/** Order and Return pages catch up on connect and refresh only when ecommerce signals a change. */
 export function BackgroundRefresh() {
   const router = useRouter();
   const refresh = useRef(router.refresh);
+  useEffect(() => { refresh.current = router.refresh; });
 
   useEffect(() => {
-    refresh.current = router.refresh;
-  });
-
-  useEffect(() => {
-    const visible = () => document.visibilityState === "visible";
-    let timer: ReturnType<typeof setInterval> | undefined;
-
-    const start = () => {
-      refresh.current();
-      timer ??= setInterval(() => refresh.current(), REFRESH_INTERVAL_MS);
+    let stopped = false;
+    let socket: WebSocket | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const reconnect = () => {
+      if (stopped) return;
+      const ceiling = Math.min(30_000, 1_000 * 2 ** Math.min(attempts++, 5));
+      retry = setTimeout(connect, ceiling * (0.5 + Math.random() * 0.5));
     };
-
-    const stop = () => {
-      clearInterval(timer);
-      timer = undefined;
+    const connect = async () => {
+      retry = undefined;
+      let url: string | null = null;
+      try { url = await staffOrdersLiveUrl(); }
+      catch (error) { console.error("Staff Orders connection could not be issued", error); }
+      if (stopped) return;
+      if (!url) return reconnect();
+      let ws: WebSocket;
+      try { ws = new WebSocket(url); }
+      catch { return reconnect(); }
+      socket = ws;
+      let openedAt = Infinity;
+      ws.onopen = () => {
+        openedAt = Date.now();
+        refresh.current();
+      };
+      ws.onmessage = ({ data }) => {
+        try {
+          if (JSON.parse(data).type === "orders.changed") refresh.current();
+        } catch { /* Ignore frames outside the Orders signal contract. */ }
+      };
+      ws.onclose = () => {
+        if (socket !== ws) return;
+        socket = undefined;
+        if (Date.now() - openedAt >= 10_000) attempts = 0;
+        reconnect();
+      };
     };
-
-    const onVisibilityChange = () => (visible() ? start() : stop());
-
-    if (visible()) start();
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
+    void connect();
     return () => {
-      stop();
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      stopped = true;
+      clearTimeout(retry);
+      if (socket) {
+        socket.onopen = socket.onmessage = socket.onclose = null;
+        socket.close();
+      }
     };
   }, []);
-
   return null;
 }
