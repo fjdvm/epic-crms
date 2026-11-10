@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { describeNotification } from "./describe";
 import type { NotificationFeed } from "./notifications";
 
-export const POLL_INTERVAL_MS = 5_000;
 /** How long a new Customer stays highlighted as New in the list. */
 export const HIGHLIGHT_MS = 10_000;
 const PING_INTERVAL_MS = 30_000;
@@ -30,7 +29,7 @@ export function useFeedActions(): FeedActions {
   return useContext(ActionsContext);
 }
 
-/** The bell's feed, kept current by the provider's polling. */
+/** The bell's feed, kept current by socket nudges. */
 export function useLiveFeed(): NotificationFeed | null {
   return useContext(FeedContext);
 }
@@ -41,19 +40,14 @@ export function useNewCustomerIds(): ReadonlySet<string> {
 }
 
 /**
- * Keeps the feed current without a refresh. `poll` asks the server for the latest feed. A nudge
- * on the shared Staff channel (`liveUrl` issues its socket address) makes the provider ask at
- * once; the poll stays as a backstop for a lost nudge or a dropped connection. A nudge carries
- * nothing, so what the Staff member may see is decided only when the feed is fetched.
- *
- * Polls only while the tab is visible. Each tab toasts a notification at most once; the
- * notifications themselves are one per Customer in the database, so tabs never duplicate them.
+ * Keeps the feed current through the shared Staff socket. Every connection and nudge
+ * refetches the current feed; nudges carry no data or permission decisions.
+ * Each tab toasts a Notification at most once, including those missed while disconnected.
  */
 export function LiveUpdatesProvider({
   initialFeed,
   poll,
   enabled,
-  intervalMs = POLL_INTERVAL_MS,
   liveUrl,
   markRead,
   markAllRead,
@@ -63,7 +57,6 @@ export function LiveUpdatesProvider({
   /** Resolves to the latest feed, or null when it could not be read. */
   poll: () => Promise<NotificationFeed | null>;
   enabled: boolean;
-  intervalMs?: number;
   /** Resolves to the socket address for the Staff channel, or null when none can be issued. */
   liveUrl?: () => Promise<string | null>;
   markRead?: (id: string) => Promise<unknown>;
@@ -112,7 +105,7 @@ export function LiveUpdatesProvider({
     };
   }, [markRead, markAllRead, received]);
 
-  // A fresh server render (e.g. after marking read) wins over the last poll.
+  // A fresh server render (e.g. after marking read) wins over the last fetched feed.
   if (initialFeed !== serverFeed) {
     setServerFeed(initialFeed);
     setFeed(initialFeed);
@@ -126,7 +119,6 @@ export function LiveUpdatesProvider({
     if (!enabled) return;
 
     const highlightTimers = new Set<ReturnType<typeof setTimeout>>();
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let running = false;
     let stopped = false;
 
@@ -163,9 +155,7 @@ export function LiveUpdatesProvider({
     let queued = false;
 
     const refresh = async () => {
-      clearTimeout(timer);
-      timer = undefined;
-      if (stopped || !visible()) {
+      if (stopped) {
         queued = false;
         return;
       }
@@ -179,7 +169,7 @@ export function LiveUpdatesProvider({
         const next = await pollRef.current();
         if (next && !stopped) receive(next);
       } catch (error) {
-        console.error("Live update poll failed", error);
+        console.error("Live feed refresh failed", error);
       } finally {
         running = false;
       }
@@ -188,18 +178,11 @@ export function LiveUpdatesProvider({
       if (queued) {
         queued = false;
         void refresh();
-      } else if (visible()) {
-        timer = setTimeout(refresh, intervalMs);
       }
     };
 
     const onVisibilityChange = () => {
-      if (visible()) {
-        if (timer === undefined && !running) void refresh();
-      } else {
-        clearTimeout(timer);
-        timer = undefined;
-      }
+      if (visible()) void refresh();
     };
 
     let socket: WebSocket | undefined;
@@ -209,7 +192,8 @@ export function LiveUpdatesProvider({
 
     const scheduleReconnect = () => {
       if (stopped) return;
-      reconnect = setTimeout(connect, Math.min(MAX_RECONNECT_MS, 1_000 * 2 ** attempts++));
+      const ceiling = Math.min(MAX_RECONNECT_MS, 1_000 * 2 ** Math.min(attempts++, 5));
+      reconnect = setTimeout(connect, ceiling * (0.5 + Math.random() * 0.5));
     };
 
     const connect = async () => {
@@ -256,13 +240,11 @@ export function LiveUpdatesProvider({
       };
     };
 
-    if (visible()) timer = setTimeout(refresh, intervalMs);
     document.addEventListener("visibilitychange", onVisibilityChange);
     void connect();
 
     return () => {
       stopped = true;
-      clearTimeout(timer);
       clearTimeout(reconnect);
       clearInterval(pinger);
       const closing = socket;
@@ -271,7 +253,7 @@ export function LiveUpdatesProvider({
       highlightTimers.forEach(clearTimeout);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [enabled, intervalMs]);
+  }, [enabled]);
 
   return (
     <FeedContext.Provider value={feed}>
