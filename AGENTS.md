@@ -15,3 +15,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 3. If waiting for PR checks is unavoidable, use one blocking `gh pr checks <PR> --watch --fail-fast` command. Never loop on status commands.
 4. Never wait for production deployment. GitHub's failed-workflow notification emails the owner; Azure retains the previous revision if deployment fails.
 5. Track required live-production checks in a separate verification ticket.
+
+## No polling
+
+No app polls (ADR-0005 in the Portal repo, `docs/adr/0005-no-polling-anywhere.md`). Never repeat a data request on a timer, window focus or tab visibility; use the WebSocket, refetch on (re)connect, or refetch on a user action. A 30–60 second in-memory heartbeat is a keepalive, not polling, and timers that never touch the network (clocks, countdowns) are fine. Idle-tab check: `tests/no-polling.test.ts`, `tests/live-updates.test.tsx` and `tests/orders-live.test.tsx`.
