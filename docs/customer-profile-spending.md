@@ -7,7 +7,7 @@ Both the Customer list and Customer Profile use:
 - Less the sum of `amount_in_centavos` for Returns on those Orders whose status is exactly `refunded`.
 
 For example, a received Order worth 115,000 centavos with two Refunded Returns of 25,000
-and 10,000 contributes 80,000. Requested, Approved, Goods received, Declined and cancelled
+and 10,000 contributes 80,000. Requested, Approved, Goods received, Replaced, Declined and cancelled
 Returns contribute no deduction, even if their amount is the full Order total. Refunds
 for another Customer's Orders are never included. Refunds are summed per Order rather
 than joined into the Order rows, so multiple Returns cannot multiply the Order count or

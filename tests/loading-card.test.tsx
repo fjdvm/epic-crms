@@ -15,6 +15,8 @@ import ConversationsLoading from "@/app/(app)/conversations/loading";
 import EmailCampaignsLoading from "@/app/(app)/email-campaigns/loading";
 import TicketLoading from "@/app/(app)/tickets/[id]/loading";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), back: vi.fn() }), usePathname: () => "/" }));
+
 beforeEach(() => vi.useFakeTimers());
 
 afterEach(() => {
@@ -45,8 +47,12 @@ describe("the sign-in handoff loading card", () => {
 
 const pageLoadings = [
   ["any CREOMS page", AppLoading],
-  ["a Customer profile", CustomerProfileLoading],
-  ["a Ticket", TicketLoading],
+] as const;
+
+/** Detail pages keep their back link and card titles, and label their own skeleton. */
+const detailLoadings = [
+  ["a Customer profile", CustomerProfileLoading, "Loading customer"],
+  ["a Ticket", TicketLoading, "Loading Ticket"],
 ] as const;
 
 /** These pages keep their static chrome and skeleton only the data. */
@@ -67,6 +73,15 @@ describe("the page navigation skeleton", () => {
     expect(screen.queryByText("Getting this page ready")).toBeNull();
   });
 
+describe("the detail page navigation skeleton", () => {
+  it.each(detailLoadings)("shows a skeleton straight away, not the loading card, on %s", (_page, Loading, label) => {
+    render(<Loading />);
+
+    expect(screen.getByRole("status", { name: label })).toBeTruthy();
+    expect(screen.queryByText("Getting this page ready")).toBeNull();
+  });
+});
+
 describe("the page navigation skeleton that keeps the page's static chrome", () => {
   it.each(chromeLoadings)("shows the heading and a skeleton for the data on %s", (_page, Loading, heading) => {
     render(<Loading />);
@@ -82,7 +97,7 @@ describe("the return to the Portal loading card", () => {
   function openLogOut() {
     render(
       <StaffProvider
-        staff={{ name: "Ada Okafor", username: "ada.okafor", email: "ada@brenraphaels.test", role: "Customer Support" }}
+        staff={{ name: "Ada Okafor", id: "ada", username: "ada.okafor", email: "ada@brenraphaels.test", role: "Customer Support" }}
       >
         <SidebarProfileFooter />
       </StaffProvider>,

@@ -2,7 +2,7 @@ import type postgres from "postgres";
 
 import { DEFAULT_SCHEMA, schemaIdent, type SyncResult } from "./notifications";
 
-type OrderEventKind = "order-delivery-fee" | "order-payment-proof";
+type OrderEventKind = "order-delivery-fee" | "order-placed" | "order-payment-proof";
 
 interface OrderEvent {
   key: string;
@@ -12,7 +12,7 @@ interface OrderEvent {
   customerName: string;
 }
 
-/** Read only from the storefront: a Delivery Order needing a fee, or a submitted GCash proof.
+/** Read placement of every Order and submitted GCash proofs from the storefront.
  * Proofs remain events after the Order moves on, so a payment checked between polls is still seen.
  * A Customer submits proof once; each kind therefore has one stable key per Order.
  */
@@ -20,11 +20,12 @@ export async function readOrderEvents(reader: postgres.Sql): Promise<OrderEvent[
   const rows = await reader<{
     key: string; kind: OrderEventKind; order_id: number; customer_id: string; customer_name: string;
   }[]>`
-    select 'order-delivery-fee:' || o.id as key, 'order-delivery-fee' as kind,
+    select 'order-placed:' || o.id as key,
+      case when o.status = 'placed' and o.fulfillment_method = 'delivery' and o.delivery_fee_in_centavos is null
+        then 'order-delivery-fee' else 'order-placed' end as kind,
       o.id as order_id, o.customer_id, c.full_name as customer_name
     from public.orders o
     join public.customers c on c.id = o.customer_id
-    where o.status = 'placed' and o.fulfillment_method = 'delivery' and o.delivery_fee_in_centavos is null
 
     union all
 
@@ -52,7 +53,7 @@ export async function syncOrderEvents(
 
   return writer.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${`${schema}.order-sync`}))`;
-    const [state] = await tx`select 1 from ${s}.order_sync_state`;
+    const [state] = await tx`select all_orders_baselined from ${s}.order_sync_state`;
 
     const fresh = await tx<{ event_key: string }[]>`
       insert into ${s}.seen_order_events (event_key)
@@ -61,14 +62,16 @@ export async function syncOrderEvents(
       returning event_key`;
 
     if (state === undefined) {
-      await tx`insert into ${s}.order_sync_state default values`;
+      await tx`insert into ${s}.order_sync_state (all_orders_baselined) values (true)`;
       return { baselined: true, created: 0 };
     }
+
+    if (!state.all_orders_baselined) await tx`update ${s}.order_sync_state set all_orders_baselined = true`;
 
     if (fresh.length === 0) return { baselined: false, created: 0 };
 
     const freshKeys = new Set(fresh.map((f) => f.event_key));
-    const arrived = events.filter((e) => freshKeys.has(e.key));
+    const arrived = events.filter((e) => freshKeys.has(e.key) && (state.all_orders_baselined || e.kind !== "order-placed"));
     const created = await tx`
       insert into ${s}.notifications (kind, customer_id, customer_name, order_id)
       select * from unnest(

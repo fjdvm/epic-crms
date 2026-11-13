@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 
+import { paymentScreenshotSource } from "@/features/orders/payment-screenshot";
 import type { Sentiment } from "@/features/feedback/analysis";
 
 export interface OrderLine {
@@ -57,7 +58,7 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
   const orders = await sql<Record<string, unknown>[]>`
     select o.id, o.created_at, o.status, o.fulfillment_method, o.payment_method,
       o.subtotal_in_centavos, o.delivery_fee_in_centavos,
-      o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_submitted_at,
+      o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at,
       a.label as a_label, a.street as a_street, a.barangay as a_barangay, a.city as a_city,
       a.province as a_province, a.postal_code as a_postal_code, a.country as a_country,
       f.rating as f_rating, f.comment as f_comment, f.created_at as f_created_at, f.sentiment as f_sentiment
@@ -79,7 +80,11 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
     const subtotal = o.subtotal_in_centavos as number;
     const deliveryFee = (o.delivery_fee_in_centavos as number | null) ?? null;
     const reference = (o.gcash_reference_number as string | null) ?? null;
-    const screenshot = (o.payment_proof_screenshot_pathname as string | null) ?? null;
+    const screenshot = paymentScreenshotSource(
+      o.id as number,
+      (o.payment_proof_file_id as string | null) ?? null,
+      (o.payment_proof_screenshot_pathname as string | null) ?? null,
+    );
     const submittedAt = (o.payment_proof_submitted_at as Date | null) ?? null;
 
     return {

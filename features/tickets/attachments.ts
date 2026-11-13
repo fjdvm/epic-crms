@@ -36,14 +36,16 @@ export function checkImage(image: ImageUpload): { ok: true; contentType: ImageCo
 
 /**
  * The file-storage boundary, reached through the api-gateway (see lib/gateway.ts). Tests replace it
- * with a fake. Every File is Private and Permanent.
+ * with a fake. Files are Private; Message attachments default to Permanent.
  */
 export interface FileStorage {
   /** Stores the bytes as an Active Private File and returns its id. */
-  upload(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array }): Promise<string>;
+  upload?(file: { filename: string; contentType: ImageContentType; bytes: Uint8Array; retentionType?: "permanent" | "temporary" }): Promise<string>;
   /** Labels the File as belonging to a Message. */
   linkToMessage(fileId: string, messageId: number): Promise<void>;
   /** A short-lived signed address to show the File from. */
   viewUrl(fileId: string): Promise<string>;
+  /** Like viewUrl, with what kind of file it is, so a PDF or video is not shown as an image. */
+  viewFile?(fileId: string): Promise<{ url: string; filename: string; contentType: string }>;
   remove(fileId: string): Promise<void>;
 }

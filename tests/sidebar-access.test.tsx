@@ -20,7 +20,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const ada = { name: "Ada Okafor", username: "ada.okafor", email: "ada@brenraphaels.test", role: "Customer Support" };
+const ada = { name: "Ada Okafor", id: "ada", username: "ada.okafor", email: "ada@brenraphaels.test", role: "Customer Support" };
 
 function renderSidebar(permittedPages: string[]) {
   return render(
@@ -97,14 +97,16 @@ describe("the sidebar", () => {
     expect(screen.queryByText("CUSTOMERS")).toBeNull();
   });
 
-  it("lists the rest of the design as a dimmed entry that is not a link", async () => {
+  it("links the Dashboard only for Staff who hold its Module", async () => {
+    const { unmount } = renderSidebar(["/dashboard", "/customer-profiles"]);
+
+    expect((await screen.findByRole("link", { name: "Dashboard" })).getAttribute("href")).toBe("/dashboard");
+    unmount();
+
     renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
-    for (const name of ["Dashboard"]) {
-      expect(screen.getByText(name).closest("[aria-disabled]")?.getAttribute("aria-disabled")).toBe("true");
-      expect(screen.queryByRole("link", { name })).toBeNull();
-    }
+    expect(screen.queryByText("Dashboard")).toBeNull();
   });
 
   it("links Orders, Payments and Fulfilment only for the Modules the Staff member holds", async () => {

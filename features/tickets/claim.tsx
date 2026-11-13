@@ -30,8 +30,8 @@ export function useClaimer(ticketId: number, server: Claimer | null, viewer: Cla
     claimer: state,
     isClaimer: state !== null && state.id === viewer.id,
     pending,
-    claim: () => run(viewer, () => claimAction(ticketId), { refusal: refusalMessage }),
-    release: () => run(null, () => releaseAction(ticketId), { refusal: refusalMessage }),
+    claim: () => run(viewer, () => claimAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
+    release: () => run(null, () => releaseAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
   };
 }
 

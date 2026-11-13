@@ -1,0 +1,73 @@
+# Staff alert Portal copies (#249, #252)
+
+Every Staff alert gets one Portal copy for each eligible Staff member. New
+Customer alerts require Customer Profiles; Ticket alerts require Tickets and
+respect the saved Claimer recipient (Unclaimed alerts go to everyone with Tickets);
+low Feedback requires Feedback; Order placements require Orders; Payment proof
+requires Payments; Return requests require Returns. The feed's existing SQL
+visibility predicate is reused. Portal backend authentication scopes the directory to the
+calling System, and excludes Deleted Users, Users still using a Temporary
+password, and revoked grants. Portal User ids, not usernames or Neon Auth ids,
+are the inbox recipients.
+
+The first successful directory lookup snapshots each alert's audience in one
+CREOMS transaction. Delivery retries recheck current Modules before creating an unsent copy.
+If a send response was lost, CREOMS recovers the already-sent copy by its key,
+including after revocation. No Portal notification is deleted on revocation. Opening the linked
+page still requires current CREOMS Module access. A new grant does not replay
+alerts whose audience was already resolved.
+
+## Contract
+
+- `POST <Portal>/api/integrations/recipients`, authenticated with the existing
+  System Basic credentials, returns `{ staff: [{ id, username, modules: ["Orders"] }] }`.
+  `id` addresses the inbox; `username` matches the Ticket Claimer stored by CREOMS.
+  Deploy the directory username addition before CREOMS #252.
+  It accepts no System id or audience from the request body. It is never cached.
+- CREOMS calls gateway `/notifications/notifications` with `sendingApp: "CREOMS"`,
+  `targetApp: "Portal"`, and one saved Portal User id. The Portal displays the
+  CREOMS badge. Both `type` and `idempotencyKey` remain `creoms.order.<ledger-id>` for
+  every kind to preserve retry compatibility with delivered Order copies. The
+  ledger id is unique across kinds. Title/body use the existing feed description;
+  link is the matching Customer Profile, Ticket, Feedback, Order or Return page
+  under `CREOMS_APP_URL`.
+- Idempotency is scoped by sending app, target app, User and key in notifications.
+  An uncertain response is retried using the same key. If no new row is returned,
+  CREOMS finds the original by its indexed retry key via `/notifications/lookup`.
+
+## Read state and failures
+
+The existing shared CREOMS read state is preserved: a read by any eligible Staff
+member clears that alert and all its Portal copies. CREOMS read actions reconcile
+copies immediately; Portal reads reconcile on the next poll, signal or scheduler
+sync. No webhook or additional browser session is needed. Exact lookups by id or sender/key avoid paging through inbox history. All HTTP
+work shares one four-second abort deadline, and remote read state is monotonic. Mark-all-read uses the same
+path. Failed sends and failed read updates remain pending for the next sync.
+
+Each recipient failure is isolated. A directory failure leaves unresolved alerts
+for retry and still reconciles existing copies. Copy work is bounded in batches
+of ten with a four-second scheduling budget per delivery/read phase; HTTP calls
+have three-second timeouts. Each phase selects at most 100 pending copies, with
+oldest attempts first for fairness. Lookups do not depend on inbox size. The HTTP deadline covers the whole
+copy sync, so slow requests cannot hold the feed indefinitely. Copies never roll back an alert, hide the CREOMS feed or prevent other event
+syncs. Signal nudges go out before copy work, after the alert commits.
+
+## Rollout
+
+1. Deploy the Portal directory/badge and notifications `/notifications/lookup`
+   dependencies first.
+2. Ensure notifications #245 is deployed and its
+   `0004_notification_idempotency.sql` migration is applied.
+3. Run `docs/db/crms-portal-copies.sql` as `creoms_writer` before deploying CREOMS.
+   It adds only CREOMS tables/indexes and is safe to re-run. No storefront or
+   Portal schema changes are required. New installs include it in crms-schema.sql.
+4. CREOMS needs its existing `PORTAL_URL`, `PORTAL_SYSTEM_NAME`,
+   `PORTAL_SYSTEM_SECRET`, `CREOMS_APP_URL`, gateway Caller key and writer URL.
+   No new secrets are required.
+5. Run the authenticated sync. Existing alerts of every kind get copies too; there is no
+   replay of events for which the ledger never created an alert. Confirm one
+   copy per eligible Staff member and check reads in each direction. Grant
+   revocation leaves the old copy in the inbox while CREOMS denies its link.
+
+Migration verified against the configured Neon database as `creoms_writer` on
+2026-10-26. The notifications idempotency column was already present.

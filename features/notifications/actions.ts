@@ -1,19 +1,15 @@
 "use server";
 
-import { syncOrderEvents } from "./order-events";
-import { syncReturnEvents } from "./return-events";
+import { syncNotifications, syncNotificationCopies } from "./sync";
+import { staffLiveUrl } from "./staff-live";
 
 import { revalidatePath } from "next/cache";
 
 import { crmsDatabase } from "@/lib/crms-db";
-import { database } from "@/lib/db";
 import { getShell } from "@/lib/portal/staff";
-import { ticketsDatabase } from "@/lib/tickets-db";
 
 import { loadNotifications, viewerFor } from "./load";
-import { markAllRead, markRead, readCustomers, syncNewCustomers, DEFAULT_SCHEMA, type NotificationFeed } from "./notifications";
-import { syncFeedbackEvents } from "./feedback-events";
-import { syncTicketEvents } from "./ticket-events";
+import { markAllRead, markRead, DEFAULT_SCHEMA, type NotificationFeed } from "./notifications";
 
 /** Server actions are public endpoints, so each one works out what this Staff member may see. */
 async function currentViewer() {
@@ -27,6 +23,7 @@ export async function markNotificationRead(id: string) {
   if (!viewer) return;
 
   await markRead(crmsDatabase(), id, DEFAULT_SCHEMA, viewer);
+  await syncNotificationCopies();
   revalidatePath("/", "layout");
 }
 
@@ -35,6 +32,7 @@ export async function markAllNotificationsRead() {
   if (!viewer) return;
 
   await markAllRead(crmsDatabase(), DEFAULT_SCHEMA, viewer);
+  await syncNotificationCopies();
   revalidatePath("/", "layout");
 }
 
@@ -46,35 +44,14 @@ export async function pollNotifications(): Promise<NotificationFeed | null> {
   const viewer = await currentViewer();
   if (!viewer) return null;
 
-  try {
-    await syncNewCustomers(crmsDatabase(), await readCustomers(database()));
-  } catch (error) {
-    console.error("New Customer sync failed", error);
-  }
-
-  try {
-    await syncTicketEvents(crmsDatabase(), ticketsDatabase());
-  } catch (error) {
-    console.error("Ticket notification sync failed", error);
-  }
-
-  try {
-    await syncFeedbackEvents(crmsDatabase(), ticketsDatabase());
-  } catch (error) {
-    console.error("Feedback notification sync failed", error);
-  }
-
-  try {
-    await syncOrderEvents(crmsDatabase(), ticketsDatabase());
-  } catch (error) {
-    console.error("Order notification sync failed", error);
-  }
-
-  try {
-    await syncReturnEvents(crmsDatabase(), database());
-  } catch (error) {
-    console.error("Return notification sync failed", error);
-  }
+  await syncNotifications();
 
   return loadNotifications(crmsDatabase, viewer);
+}
+
+/** A shared content-free channel: only authenticated Staff may obtain its short-lived pass. */
+export async function staffNotificationsLiveUrl(): Promise<string | null> {
+  await getShell();
+  try { return await staffLiveUrl(); }
+  catch (error) { console.error("Staff live connection unavailable", error); return null; }
 }

@@ -12,6 +12,7 @@ import {
   Star,
   Ticket,
   Users2,
+  Package,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -35,6 +36,13 @@ export interface SystemItem {
 }
 
 export type SystemChild = SystemItem;
+
+export const dashboardItem: NavItem = {
+  group: "",
+  name: "Dashboard",
+  href: "/dashboard",
+  icon: LayoutDashboard,
+};
 
 export const customerProfilesItem: NavItem = {
   group: "CUSTOMERS",
@@ -99,14 +107,9 @@ export const emailCampaignsItem: NavItem = {
   icon: Mail,
 };
 
-/** An entry from the Figma sidebar whose page is still to come. */
-function comingSoon(group: string, name: string, icon: LucideIcon): NavItem {
-  return { group, name, href: null, icon };
-}
-
-/** The Figma sidebar, top to bottom. Entries with no page yet are dimmed and do nothing. */
+/** The Figma sidebar, top to bottom. */
 export const sidebarItems: NavItem[] = [
-  comingSoon("", "Dashboard", LayoutDashboard),
+  dashboardItem,
   customerProfilesItem,
   ordersItem,
   paymentsItem,
@@ -125,41 +128,34 @@ export const systems: SystemItem[] = [
     icon: LayoutGrid,
     active: false,
     portal: true,
-    url: process.env.NEXT_PUBLIC_HOST_URL ?? "https://localhost:3000/",
+    url: process.env.NEXT_PUBLIC_HOST_URL ?? "https://portal.buildwrite.me/",
   },
   {
     fullName: "Customer Relationship Management",
     desc: "Contact profiles, tickets & marketing",
     icon: Building2,
     active: true,
-    url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://localhost:3005/",
+    url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://creoms.buildwrite.me/",
   },
   {
     fullName: "Human Resource Management",
     desc: "Staff directory & payroll",
     icon: Users2,
     active: false,
-    url: process.env.NEXT_PUBLIC_HRMS_URL ?? "https://localhost:3001/",
-  },
-  {
-    fullName: "E-Commerce Storefront",
-    desc: "Online orders & products",
-    icon: ShoppingCart,
-    active: false,
-    url: process.env.NEXT_PUBLIC_OOS_URL ?? "https://localhost:3004/",
+    url: process.env.NEXT_PUBLIC_HRMS_URL ?? "https://hrms.buildwrite.me/",
   },
   {
     fullName: "Point of Sale",
     desc: "Retail & register checkout",
     icon: CreditCard,
     active: false,
-    url: process.env.NEXT_PUBLIC_POS_URL ?? "https://localhost:3002/",
+    url: process.env.NEXT_PUBLIC_POS_URL ?? "https://web-pos-alpha-vert.vercel.app/",
   },
   {
-    fullName: "Supply Chain Management",
-    desc: "Inventory & logistics",
-    icon: Truck,
+    fullName: "Inventory Management System",
+    desc: "Inventory & stock management",
+    icon: Package,
     active: false,
-    url: process.env.NEXT_PUBLIC_SCMS_URL ?? "https://localhost:3003/",
+    url: process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/",
   },
 ];

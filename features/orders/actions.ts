@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 
 import { database } from "@/lib/db";
-import { gatewayFileStorage } from "@/lib/gateway";
-import { checkImage, IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "@/features/tickets/attachments";
+import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
+import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
+import { recordUpload } from "@/features/files/server";
 import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 import type { Staff } from "@/lib/portal/client";
 import { requireModule } from "@/lib/portal/staff";
@@ -28,6 +29,7 @@ async function act(
   id: number,
   run: (order: CurrentOrder, staff: Staff) => Promise<OrderChangeResult>,
   requiredModule: string = ORDERS_MODULE,
+  audit?: { action: string; description: (staff: Staff) => string },
 ): Promise<OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
   const staff = await requireModule(requiredModule);
@@ -45,6 +47,9 @@ async function act(
 
   // Order writes are never optimistic, and a refusal must not look like a changed Order.
   if (result.ok) {
+    if (audit) {
+      await auditOrder(id, staff, requiredModule, audit.action, audit.description(staff));
+    }
     revalidatePath(`/orders/${id}`);
     revalidatePath("/orders");
     revalidatePath("/payments");
@@ -52,6 +57,15 @@ async function act(
     revalidatePath("/customer-profiles", "layout");
   }
   return result;
+}
+
+/** These transitions and the Delivery photo attachment happen at most once per Order. */
+async function auditOrder(id: number, staff: Staff, module: string, action: string, description: string) {
+  await recordAudit(gatewayAuditTrail, {
+    action, module, outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "order", id: String(id), display_name: `Order #${id}` },
+    description, occurred_at: new Date().toISOString(), operationId: `order:${id}:${action}`,
+  });
 }
 
 /** Quote in integer centavos; the storefront confirms the Delivery Order in the same write. */
@@ -65,6 +79,9 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     }
     if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
     return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos });
+  }, ORDERS_MODULE, {
+    action: "order.delivery_fee_quoted",
+    description: staff => `${staff.name} quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)} and confirmed Order #${id}.`,
   });
 }
 
@@ -75,6 +92,8 @@ export async function confirmPickup(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "A Delivery Order needs a Delivery fee." };
     }
     return changeOrderStatus(id, { status: "confirmed" });
+  }, ORDERS_MODULE, {
+    action: "order.confirmed", description: staff => `${staff.name} confirmed Order #${id}.`,
   });
 }
 
@@ -85,7 +104,9 @@ async function cancel(id: number, module: string): Promise<OrderChangeResult> {
       return { ok: false, reason: ALREADY_CHANGED };
     }
     return changeOrderStatus(id, { status: "cancelled" });
-  }, module);
+  }, module, {
+    action: "order.cancelled", description: staff => `${staff.name} cancelled Order #${id}.`,
+  });
 }
 
 export async function cancelOrder(id: number): Promise<OrderChangeResult> {
@@ -125,7 +146,9 @@ export async function markPaid(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "Only a GCash Order with submitted Payment proof can be marked paid." };
     }
     return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
-  }, PAYMENTS_MODULE);
+  }, PAYMENTS_MODULE, {
+    action: "order.marked_paid", description: staff => `${staff.name} marked Order #${id} paid.`,
+  });
 }
 
 /** Preparation uses the same readiness rule as the board; the storefront still owns the write. */
@@ -135,7 +158,9 @@ export async function startPreparing(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "Order is not ready to prepare or has already changed. Refresh it before trying again." };
     }
     return changeOrderStatus(id, { status: "preparing" });
-  }, FULFILMENT_MODULE);
+  }, FULFILMENT_MODULE, {
+    action: "order.preparing", description: staff => `${staff.name} started preparing Order #${id}.`,
+  });
 }
 
 export async function dispatchOrder(id: number): Promise<OrderChangeResult> {
@@ -144,33 +169,40 @@ export async function dispatchOrder(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "Only a preparing Order can be dispatched; it may have already changed. Refresh it before trying again." };
     }
     return changeOrderStatus(id, { status: "dispatched" });
-  }, FULFILMENT_MODULE);
+  }, FULFILMENT_MODULE, {
+    action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}.`,
+  });
 }
 
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
 export async function deliverOrder(id: number, form?: FormData): Promise<OrderChangeResult> {
-  return act(id, async (order) => {
+  return act(id, async (order, staff) => {
     if (order.status !== "dispatched") {
       return { ok: false, reason: "Only a dispatched Order can be delivered; it may have already changed. Refresh it before trying again." };
     }
     if (!(form instanceof FormData) || form.getAll("photo").length !== 1) {
       return { ok: false, reason: "Choose exactly one Delivery photo." };
     }
-    const file = form.get("photo");
-    if (!(file instanceof File)) return { ok: false, reason: "Choose exactly one Delivery photo." };
-    if (file.size > MAX_IMAGE_BYTES) return { ok: false, reason: IMAGE_REFUSALS["image-too-large"] };
-    const image = { filename: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
-    const checked = checkImage(image);
-    if (!checked.ok) return { ok: false, reason: IMAGE_REFUSALS[checked.reason] };
     let deliveryPhotoFileId: string;
     try {
-      deliveryPhotoFileId = await gatewayFileStorage.upload({ ...image, contentType: checked.contentType });
-      if (!deliveryPhotoFileId) throw new Error("Missing File id");
+      const upload = await recordUpload(FULFILMENT_MODULE, form.get("photo"), staff.username);
+      if (!upload) return { ok: false, reason: "Choose exactly one Delivery photo." };
+      deliveryPhotoFileId = upload.fileId;
     } catch {
       return { ok: false, reason: "Delivery photo could not be stored. The Order was not marked delivered." };
     }
-    // Keep the Permanent File even if the storefront response is uncertain: it may be attached.
-    return changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId });
+    // Refused or uncertain writes leave Temporary evidence for file-storage's seven-day cleanup.
+    const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId });
+    if (result.ok) {
+      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered", `${staff.name} marked Order #${id} delivered.`);
+      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivery_photo_attached", `${staff.name} attached a Delivery photo to Order #${id}.`);
+      try {
+        await gatewayFileStorage.promote(deliveryPhotoFileId);
+      } catch {
+        return { ok: false, reason: "The Order was marked delivered, but its Delivery photo could not be made Permanent. Refresh the Order; do not repeat delivery." };
+      }
+    }
+    return result;
   }, FULFILMENT_MODULE);
 }
 
@@ -178,4 +210,21 @@ export async function deliverOrder(id: number, form?: FormData): Promise<OrderCh
 export async function getFulfilmentBoard(): Promise<FulfilmentBoardResult> {
   await requireModule(FULFILMENT_MODULE);
   return loadFulfilmentBoard(database);
+}
+
+/** Settle uncertain delivery evidence from the recorded Order, never by replaying delivery. */
+export async function reconcileDeliveryPhoto(id: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+  await requireModule(FULFILMENT_MODULE);
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
+  try {
+    const [order] = await database()<{ status: string; file_id: string | null }[]>`
+      select status, to_jsonb(o)->>'delivery_photo_file_id' as file_id from public.orders o where id = ${id}`;
+    if (!order || !["delivered", "received"].includes(order.status) || !order.file_id) {
+      return { ok: false, reason: "The Order has no confirmed Delivery photo. Refresh the Order before trying again." };
+    }
+    await gatewayFileStorage.promote(order.file_id);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "The Delivery photo could not be made Permanent. Refresh the Order; do not repeat delivery." };
+  }
 }

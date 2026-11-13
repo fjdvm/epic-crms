@@ -16,9 +16,8 @@ function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? "";
 }
 
+// Nothing here waits on the Portal or the database, so the header and skeleton reach the browser at once.
 export default async function ReturnsPage({ searchParams }: { searchParams: SearchParams }) {
-  await requireModule(RETURNS_MODULE);
-
   const raw = await searchParams;
   const tab = RETURN_TABS.find((t) => t === first(raw.tab)) ?? "requested";
   const page = Math.max(1, Number.parseInt(first(raw.page), 10) || 1);
@@ -38,6 +37,8 @@ export default async function ReturnsPage({ searchParams }: { searchParams: Sear
 }
 
 async function ReturnsData({ params }: { params: ReturnListParams }) {
+  await requireModule(RETURNS_MODULE);
+
   const [result, stats] = await Promise.all([
     loadReturns(ticketsDatabase, { status: params.tab, page: params.page }),
     loadReturnStats(ticketsDatabase),

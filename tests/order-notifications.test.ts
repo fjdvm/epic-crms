@@ -27,6 +27,7 @@ beforeAll(async () => {
   db = await startTestDatabase();
   for (const statement of crmsStatements()) await db.sql.unsafe(statement);
   await db.sql.unsafe(readFileSync("docs/db/crms-order-notifications.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-staff-signals.sql", "utf8"));
 }, 60_000);
 
 afterAll(async () => {
@@ -35,7 +36,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.sql`truncate order_feedback, orders, customers restart identity cascade`;
-  await db.sql`truncate crms.notifications, crms.seen_order_events, crms.order_sync_state restart identity`;
+  await db.sql`truncate crms.notifications, crms.seen_order_events, crms.order_sync_state restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Jane Doe', 'jane@example.com')`;
 });
 
@@ -104,14 +105,16 @@ describe("Order notifications", () => {
     expect(await listNotifications(db.sql, "crms", 20, viewer)).toEqual({ unread: 0, notifications: [] });
   });
 
-  it("raises no Delivery fee alert for Pickup, already quoted or progressed Orders", async () => {
+  it("alerts once for Pickup, quoted and progressed Orders without claiming a Delivery fee is needed", async () => {
     await sync();
-    const pickup = await order();
-    const quoted = await order();
-    const confirmed = await order();
+    const pickup = await order(); const quoted = await order(); const progressed = await order();
     await db.sql`update orders set fulfillment_method = 'pickup' where id = ${pickup}`;
     await db.sql`update orders set delivery_fee_in_centavos = 0 where id = ${quoted}`;
-    await db.sql`update orders set status = 'confirmed' where id = ${confirmed}`;
+    await db.sql`update orders set status = 'preparing' where id = ${progressed}`;
+    expect(await sync()).toEqual({ baselined: false, created: 3 });
+    const feed = await listNotifications(db.sql, "crms", 20, ordersViewer());
+    expect(feed.notifications.map(n => n.kind)).toEqual(["order-placed", "order-placed", "order-placed"]);
+    expect(describeNotification(feed.notifications[0]).text).toBe(`Jane Doe placed Order #${progressed}`);
     expect(await sync()).toEqual({ baselined: false, created: 0 });
   });
 
@@ -122,7 +125,8 @@ describe("Order notifications", () => {
     await db.sql`update orders set status = 'awaiting payment'`;
     await db.sql`update orders set payment_method = 'gcash', gcash_reference_number = '123' where id = ${noProof}`;
     await db.sql`update orders set payment_proof_submitted_at = now() where id = ${cod}`;
-    expect(await sync()).toEqual({ baselined: false, created: 0 });
+    expect(await sync()).toEqual({ baselined: false, created: 2 });
+    expect((await listNotifications(db.sql, "crms", 20, viewerFor(staff, ["/payments"])!)).unread).toBe(0);
   });
 
   it("keeps both events once across repeated and concurrent syncs and later Order progress", async () => {
@@ -169,4 +173,38 @@ describe("Order notifications", () => {
     expect(viewerFor(staff, ["/fulfilment"])).toBeNull();
     expect(viewerFor(staff, [])).toBeNull();
   });
+});
+
+it("upgrades the legacy ledger without replaying Delivery alerts or flooding historical Pickup Orders", async () => {
+  const oldDelivery = await order(); const oldPickup = await order();
+  await db.sql`update orders set fulfillment_method = 'pickup' where id = ${oldPickup}`;
+  await db.sql`insert into crms.order_sync_state (all_orders_baselined) values (false)`;
+  await db.sql`insert into crms.seen_order_events (event_key) values (${`order-delivery-fee:${oldDelivery}`})`;
+  await db.sql`insert into crms.notifications (kind, customer_id, customer_name, order_id)
+    values ('order-delivery-fee', 'c1', 'Jane Doe', ${oldDelivery})`;
+  const migration = readFileSync("docs/db/crms-staff-signals.sql", "utf8");
+  await db.sql.unsafe(migration); await db.sql.unsafe(migration);
+  expect(await sync()).toEqual({ baselined: false, created: 0 });
+  expect((await listNotifications(db.sql, "crms", 20, ordersViewer())).unread).toBe(1);
+  const next = await order();
+  await db.sql`update orders set fulfillment_method = 'pickup', payment_method = 'cash-on-delivery' where id = ${next}`;
+  expect(await sync()).toEqual({ baselined: false, created: 1 });
+  expect((await listNotifications(db.sql, "crms", 20, ordersViewer())).notifications).toMatchObject([
+    { kind: "order-placed", orderId: next }, { kind: "order-delivery-fee", orderId: oldDelivery },
+  ]);
+});
+
+it.each([
+  ['delivery', 'cash-on-delivery', 'order-delivery-fee'],
+  ['delivery', 'gcash', 'order-delivery-fee'],
+  ['pickup', 'cash-on-delivery', 'order-placed'],
+  ['pickup', 'gcash', 'order-placed'],
+])("alerts exactly once for a new %s / %s Order", async (method, payment, kind) => {
+  await sync();
+  await db.sql`insert into orders (customer_id, fulfillment_method, payment_method) values ('c1', ${method}, ${payment})`;
+  await Promise.all([sync(), sync(), sync()]);
+  const feed = await listNotifications(db.sql, "crms", 20, ordersViewer());
+  expect(feed.notifications).toMatchObject([{ kind, orderId: 1 }]);
+  expect(feed.unread).toBe(1);
+  expect((await listNotifications(db.sql, "crms", 20, viewerFor(staff, ['/payments'])!)).unread).toBe(0);
 });

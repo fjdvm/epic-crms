@@ -1,8 +1,7 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
-import type { WriteAuditEvent } from "@/features/feedback/analysis";
-import type { AuditLog, MarketingMail, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
-import type { ImageStore } from "@/features/marketing/image-limits";
+import { recordAudit, type AuditTrail } from "@/lib/audit-trail";
+import type { MarketingMail, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
@@ -23,21 +22,21 @@ export const sendAppEmail: SendAppEmail = async (email) => {
   if (!response.ok) throw new Error(`The gateway refused the email: ${response.status}`);
 };
 
-/** Posts one Audit Event through the api-gateway to audit-logs, as the "crms" Caller. Callers decide whether a failure matters. */
-async function postAuditEvent(event: object): Promise<void> {
+/** Delivers every CREOMS Audit Event through the gateway, with a bounded, best-effort write. */
+export const gatewayAuditTrail: AuditTrail = (event) => recordAudit(async () => {
   const { base, key } = gateway();
-
+  const { operationId, ...fields } = event;
+  const idempotencyKey = createHash("sha256")
+    .update(JSON.stringify([event.action, event.target.type, event.target.id, operationId]))
+    .digest("hex");
   const response = await fetch(`${base}/audit/events`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify(event),
+    body: JSON.stringify({ ...fields, source: "CRMS", idempotency_key: idempotencyKey }),
     signal: AbortSignal.timeout(5_000),
   });
-
   if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
-}
-
-export const writeAuditEvent: WriteAuditEvent = postAuditEvent;
+}, event);
 
 /** Where the Customer reviews a Ticket in the storefront. */
 export function storefrontTicketUrl(id: number): string {
@@ -92,31 +91,26 @@ async function storage<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (response.status === 204 ? undefined : await response.json()) as T;
 }
 
-/** Images are Private and Permanent Files, Linked to the Message they belong to. */
-export const gatewayFileStorage: FileStorage = {
-  async upload({ filename, contentType, bytes }) {
-    const pending = await storage<{ id: string; uploadUrl: string }>("", {
+/** Private images default to Permanent; delivery and refund evidence starts Temporary. */
+export const gatewayFileStorage: Omit<FileStorage, "upload"> & {
+  linkRefundProof(fileId: string, returnId: number): Promise<void>;
+  promote(fileId: string): Promise<void>;
+} = {
+  async promote(fileId) {
+    const file = await storage<{ id: string; retentionType: string; expiresAt: string | null }>(`/${encodeURIComponent(fileId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ retentionType: "permanent" }),
+    });
+    if (file?.id !== fileId || file.retentionType !== "permanent" || file.expiresAt !== null) {
+      throw new Error("file-storage did not confirm Permanent retention");
+    }
+  },
+
+  async linkRefundProof(fileId, returnId) {
+    await storage(`/${fileId}/links`, {
       method: "POST",
-      body: JSON.stringify({
-        filename,
-        contentType,
-        size: bytes.length,
-        visibility: "private",
-        retentionType: "permanent",
-      }),
+      body: JSON.stringify({ system: "CRMS", entityType: "return", entityId: String(returnId), role: "refund-proof" }),
     });
-
-    // The signed address is file-storage's own, so it takes no gateway key.
-    const put = await fetch(pending.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": contentType },
-      body: bytes as BodyInit,
-    });
-    if (!put.ok) throw new Error(`The image upload was refused: ${put.status}`);
-
-    await storage(`/${pending.id}/confirm`, { method: "POST" });
-
-    return pending.id;
   },
 
   async linkToMessage(fileId, messageId) {
@@ -138,53 +132,6 @@ export const gatewayFileStorage: FileStorage = {
   async remove(fileId) {
     await storage(`/${fileId}`, { method: "DELETE" });
   },
-};
-
-/**
- * Announcement images are Public and Permanent Files, so a recipient's mail app can fetch them long
- * after the email is sent. A Draft's images are not Linked: file-storage's Links name records, and
- * an Announcement not yet saved has none.
- */
-export const gatewayImageStore: ImageStore = {
-  async store({ contentType, bytes }) {
-    const pending = await storage<{ id: string; uploadUrl: string }>("", {
-      method: "POST",
-      body: JSON.stringify({
-        filename: `announcement-${Date.now()}.jpg`,
-        contentType,
-        size: bytes.length,
-        visibility: "public",
-        retentionType: "permanent",
-      }),
-    });
-
-    // The signed address is file-storage's own, so it takes no gateway key.
-    const put = await fetch(pending.uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: bytes as BodyInit });
-    if (!put.ok) throw new Error(`The image upload was refused: ${put.status}`);
-
-    await storage(`/${pending.id}/confirm`, { method: "POST" });
-
-    const { url } = await storage<{ url: string }>(`/${pending.id}`);
-    if (!url.startsWith("https://")) throw new Error("file-storage gave an image address that is not HTTPS");
-
-    return url;
-  },
-};
-
-/** Announcement actions as Audit Events: CRMS, Marketing Module, acted by a Staff member. */
-export const gatewayAuditLog: AuditLog = {
-  record: (event) =>
-    postAuditEvent({
-      source: "CRMS",
-      module: "Marketing",
-      action: event.action,
-      outcome: "success",
-      actor: { type: "staff", id: event.actor.id, display_name: event.actor.name },
-      target: { type: "announcement", id: event.announcement.id, display_name: event.announcement.title },
-      description: event.description,
-      ...(event.subscribers === undefined ? {} : { metadata: { subscribers: event.subscribers } }),
-      occurred_at: event.occurredAt.toISOString(),
-    }),
 };
 
 /**

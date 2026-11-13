@@ -33,11 +33,17 @@ export function ReturnDetailView({
   detail,
   imageUrls,
   deliveryPhotoUrl,
+  videoUrl,
+  refundProofUrl,
 }: {
   detail: ReturnDetail;
   imageUrls: ImageUrls;
   /** Null when the Delivery photo exists but could not be reached; undefined when the Order has none. */
   deliveryPhotoUrl?: string | null;
+  /** Null when the evidence video exists but could not be reached. */
+  videoUrl?: string | null;
+  /** Null when the refund proof exists but could not be reached. */
+  refundProofUrl?: string | null;
 }) {
   const goods = goodsLine(detail);
 
@@ -65,6 +71,8 @@ export function ReturnDetailView({
             number={detail.number}
             status={detail.status}
             goodsRequired={detail.goodsRequired}
+            preferredResolution={detail.preferredResolution}
+            finalResolution={detail.finalResolution}
           />
         </div>
       </div>
@@ -75,6 +83,10 @@ export function ReturnDetailView({
             <h2 className={CARD_TITLE}>Reason</h2>
             <p className="text-sm font-medium text-[#1f1a2e]">{orderLabel(detail.reason)}</p>
             <p className="whitespace-pre-wrap text-sm text-[#1f1a2e]">{detail.note || "No note."}</p>
+            <p className="text-sm text-[#6e6680]">Customer preferred: {orderLabel(detail.preferredResolution)}</p>
+            {detail.finalResolution && (
+              <p className="text-sm text-[#6e6680]">Staff decided: {orderLabel(detail.finalResolution)}</p>
+            )}
             {goods && <p className="text-sm text-[#6e6680]">{goods}</p>}
             {detail.declineReason && (
               <p className="text-sm text-[#9a3412]">Declined: {detail.declineReason}</p>
@@ -91,6 +103,17 @@ export function ReturnDetailView({
                   <Photo key={image.fileId} url={imageUrls[i] ?? null} alt={`Defect image ${i + 1} for ${detail.number}`} />
                 ))}
               </div>
+            )}
+          </section>
+
+          <section className={CARD}>
+            <h2 className={CARD_TITLE}>Video</h2>
+            {!detail.videoFileId ? (
+              <p className="text-sm text-[#6e6680]">No video.</p>
+            ) : videoUrl ? (
+              <video src={videoUrl} controls className="max-h-64 rounded-md border border-[#e6e1ee]" />
+            ) : (
+              <p className="text-sm text-[#6e6680]">The video could not be loaded. Reload to try again.</p>
             )}
           </section>
 
@@ -162,10 +185,19 @@ export function ReturnDetailView({
             </dl>
           </section>
 
+          {detail.refundProofFileId && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Refund proof</h2>
+              <Photo url={refundProofUrl ?? null} alt={`Refund proof for ${detail.number}`} />
+            </section>
+          )}
+
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Delivery photo</h2>
             {deliveryPhotoUrl === undefined ? (
-              <p className="text-sm text-[#6e6680]">No photo</p>
+              <p className="text-sm text-[#6e6680]">
+                {detail.deliveryPhotoRemovedAt ? "The Delivery photo was removed." : "No photo"}
+              </p>
             ) : (
               <Photo url={deliveryPhotoUrl} alt={`Delivery photo for Order #${detail.orderId}`} />
             )}

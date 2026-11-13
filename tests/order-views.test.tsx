@@ -3,7 +3,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee } from "@/features/orders/actions";
-import { BackgroundRefresh, REFRESH_INTERVAL_MS } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
@@ -140,6 +139,7 @@ describe("the Orders list", () => {
 
 const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
+  deliveryPhotoRemovedAt: null,
   paidBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),
@@ -686,55 +686,6 @@ describe("the Payments Module's actions on an Order's detail", () => {
     expect(screen.getByText("Verified by").nextElementSibling?.textContent).toBe("Bernice · 20 Oct 2026");
   });
 });
-
-describe("keeping a page fresh", () => {
-  it("refreshes in the background well inside 30 seconds, while the page is visible", () => {
-    vi.useFakeTimers();
-    render(<BackgroundRefresh />);
-    refresh.mockClear();
-
-    expect(REFRESH_INTERVAL_MS).toBeLessThanOrEqual(20_000);
-
-    act(() => void vi.advanceTimersByTime(REFRESH_INTERVAL_MS));
-    expect(refresh).toHaveBeenCalledTimes(1);
-
-    act(() => void vi.advanceTimersByTime(REFRESH_INTERVAL_MS * 2));
-    expect(refresh).toHaveBeenCalledTimes(3);
-  });
-
-  it("refreshes at once on opening, since the page may have come from the cache", () => {
-    vi.useFakeTimers();
-    render(<BackgroundRefresh />);
-
-    expect(refresh).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not refresh while the tab is hidden, and refreshes when it comes back", () => {
-    vi.useFakeTimers();
-    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-    render(<BackgroundRefresh />);
-    refresh.mockClear();
-
-    act(() => void vi.advanceTimersByTime(REFRESH_INTERVAL_MS * 3));
-    expect(refresh).not.toHaveBeenCalled();
-
-    visibility.mockReturnValue("visible");
-    act(() => void document.dispatchEvent(new Event("visibilitychange")));
-    expect(refresh).toHaveBeenCalledTimes(1);
-    visibility.mockRestore();
-  });
-
-  it("stops when the page unmounts", () => {
-    vi.useFakeTimers();
-    const { unmount } = render(<BackgroundRefresh />);
-    unmount();
-    refresh.mockClear();
-
-    act(() => void vi.advanceTimersByTime(REFRESH_INTERVAL_MS * 3));
-    expect(refresh).not.toHaveBeenCalled();
-  });
-});
-
 
 describe("Returns-only Order detail access", () => {
   it("shows Order context and a Returns back link without Orders, Payments or Fulfilment actions", () => {

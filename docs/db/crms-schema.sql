@@ -35,12 +35,12 @@ CREATE TABLE crms.sync_state (
 -- Bell notifications. kind says what happened: a New Customer (at most one per Customer) or a
 -- Ticket event, Order event, Return request or low-rating Feedback. recipient_id is the Claimer's Portal id; NULL means every
 -- Staff member who may see that kind (Customer Profiles for new-customer, Tickets for the Ticket
--- kinds, Feedback for feedback-low, Orders for order-delivery-fee, Payments for order-payment-proof, Returns for return-requested).
+-- kinds, Feedback for feedback-low, Orders for order-delivery-fee and order-placed, Payments for order-payment-proof, Returns for return-requested).
 -- read_at is shared.
 CREATE TABLE crms.notifications (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   kind          text NOT NULL DEFAULT 'new-customer'
-                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'feedback-low', 'order-delivery-fee', 'order-payment-proof', 'return-requested')),
+                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'feedback-low', 'order-delivery-fee', 'order-placed', 'order-payment-proof', 'return-requested')),
   customer_id   text NOT NULL,
   customer_name text NOT NULL,
   ticket_id     integer,
@@ -111,7 +111,7 @@ CREATE TABLE crms.feedback_sync_state (
   baselined_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Stable keys for Delivery fee and Payment proof events; the first sync baselines existing events.
+-- Stable placement and Payment proof keys; the first sync baselines existing events.
 CREATE TABLE crms.seen_order_events (
   event_key text PRIMARY KEY,
   seen_at   timestamptz NOT NULL DEFAULT now()
@@ -119,7 +119,17 @@ CREATE TABLE crms.seen_order_events (
 
 CREATE TABLE crms.order_sync_state (
   singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-  baselined_at timestamptz NOT NULL DEFAULT now()
+  baselined_at timestamptz NOT NULL DEFAULT now(),
+  all_orders_baselined boolean NOT NULL DEFAULT false
+);
+
+CREATE TABLE crms.notification_signal_state (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  requested bigint NOT NULL DEFAULT 0,
+  processed bigint NOT NULL DEFAULT 0,
+  next_run_at timestamptz NOT NULL DEFAULT '-infinity',
+  lease_id uuid,
+  lease_until timestamptz
 );
 
 -- Each Return request alerts once, regardless of later Return progress.
@@ -131,6 +141,39 @@ CREATE TABLE crms.seen_returns (
 CREATE TABLE crms.return_sync_state (
   singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
   baselined_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Run as creoms_writer before deploying #249. Additive and safe to re-run.
+create table if not exists crms.portal_copy_audiences (
+  notification_id bigint primary key references crms.notifications(id) on delete cascade
+);
+create table if not exists crms.portal_copies (
+  notification_id bigint not null references crms.notifications(id) on delete cascade,
+  user_id text not null,
+  remote_id text,
+  read_synced boolean not null default false,
+  last_attempt_at timestamptz,
+  primary key (notification_id, user_id)
+);
+
+create index if not exists portal_copies_pending_idx on crms.portal_copies (last_attempt_at) where not read_synced;
+
+-- #261: run as creoms_writer before deploying. Additive and safe to re-run.
+-- Attribution only: neither table grants access or replaces live Portal validation.
+create table if not exists crms.access_audit_sessions (
+  handle_hash text primary key,
+  staff_id text not null,
+  staff_name text not null,
+  expires_at timestamptz not null
+);
+create index if not exists access_audit_sessions_expiry on crms.access_audit_sessions (expires_at);
+
+-- One row per Staff member and Module, shared across sessions and app instances.
+create table if not exists crms.access_audit_refusals (
+  staff_id text not null,
+  module text not null,
+  recorded_at timestamptz not null,
+  primary key (staff_id, module)
 );
 
 RESET ROLE;

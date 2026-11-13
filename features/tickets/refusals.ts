@@ -4,15 +4,18 @@ import { IMAGE_REFUSALS } from "./attachments";
 type Refusal = Exclude<TicketActionOutcome | ReplyOutcome, { ok: true }>;
 
 const REASONS: Record<Refusal["reason"], string> = {
+  "invalid-priority": "Choose a valid Priority.",
+  unchanged: "This Ticket already has that Priority.",
   "not-found": "This Ticket no longer exists.",
   claimed: "Another Staff member has already claimed this Ticket.",
   "not-claimer": "Only the Staff member who claimed a Ticket can release it.",
   "not-claimed": "This Ticket is no longer claimed by you.",
   completed: "The Customer has completed this Ticket, so it can no longer change.",
   "already-resolved": "This Ticket is already resolved.",
-  "empty-message": "Write a reply or attach an image first.",
+  "empty-message": "Write a reply or attach a file first.",
   ...IMAGE_REFUSALS,
-  "storage-unavailable": "CREOMS could not store that image. Try again in a moment.",
+  "invalid-attachment": "That attachment is invalid or expired. Attach the file again.",
+  "storage-unavailable": "CREOMS could not store that file. Try again in a moment.",
   unavailable: "CREOMS could not save that. Try again in a moment.",
 };
 

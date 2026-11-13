@@ -4,6 +4,7 @@ import type { Staff } from "./client";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 export const DEV_STAFF: Staff = {
+  id: "dev-staff",
   name: "Dev Staff",
   username: "dev.staff",
   email: "dev.staff@localhost",

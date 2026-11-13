@@ -9,6 +9,7 @@ import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
 import type { OrderDetail } from "./orders";
 import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
+import { isViewableScreenshot } from "./payment-screenshot";
 import { PaymentPill } from "./status-pill";
 
 function DeliveryFee({ order }: { order: OrderDetail }) {
@@ -50,7 +51,7 @@ function PaymentProof({ order }: { order: OrderDetail }) {
         {proof.submittedAt && ` · submitted ${formatDate(proof.submittedAt)}`}
       </p>
       {proof.screenshot &&
-        (/^https?:\/\//.test(proof.screenshot) ? (
+        (isViewableScreenshot(proof.screenshot) ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={proof.screenshot}
@@ -76,6 +77,8 @@ function DeliveryPhoto({ order, url }: { order: OrderDetail; url: string | null 
         <img src={url} alt={`Delivery photo for Order #${order.id}`} className="max-h-64 rounded-md border border-[#e6e1ee]" />
       ) : order.deliveryPhotoFileId ? (
         <p className="text-sm text-[#6e6680]">The Delivery photo could not be loaded. Reload to try again.</p>
+      ) : order.deliveryPhotoRemovedAt ? (
+        <p className="text-sm text-[#6e6680]">The Delivery photo was removed.</p>
       ) : (
         <p className="text-sm text-[#6e6680]">No photo</p>
       )}

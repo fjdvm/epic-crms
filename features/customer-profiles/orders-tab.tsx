@@ -5,6 +5,7 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 import { Field } from "./field";
 import { formatDate, formatPesos } from "./format";
+import { isViewableScreenshot } from "@/features/orders/payment-screenshot";
 import { orderAnchor, type CustomerOrder } from "./orders";
 import { orderLabel as label, paymentStatusOf } from "./rules";
 
@@ -88,7 +89,7 @@ function OrderDetails({ order }: { order: CustomerOrder }) {
             {proof.submittedAt && ` · submitted ${formatDate(proof.submittedAt)}`}
           </p>
           {proof.screenshot &&
-            (/^https?:\/\//.test(proof.screenshot) ? (
+            (isViewableScreenshot(proof.screenshot) ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={proof.screenshot} alt={`Payment proof for order ${order.id}`} className="max-h-64 rounded-md border border-border" />
             ) : (

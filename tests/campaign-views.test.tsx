@@ -3,17 +3,22 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 
+import { prepareImage } from "@/features/marketing/prepare-image";
+import { uploadFile } from "@/features/files/client";
 import type { AnnouncementRow } from "@/features/marketing/announcements";
 import { AnnouncementDetail } from "@/features/marketing/announcement-detail";
 import { CampaignForm, type CampaignFormActions } from "@/features/marketing/campaign-form";
 import { CampaignList, SubscribersCard } from "@/features/marketing/campaign-list";
 
 const push = vi.fn();
+vi.mock("@/features/marketing/prepare-image", () => ({ prepareImage: vi.fn(async (file: File) => file) }));
+vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn(async (_module: string, file: File) => ({ ok: true, reference: file.name })) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -34,7 +39,7 @@ const row = (overrides: Partial<AnnouncementRow> = {}): AnnouncementRow => ({
   ...overrides,
 });
 
-const imageName = (form: FormData) => (form.get("image") as File).name;
+const imageName = (form: FormData) => form.get("image") as string;
 
 function fakeActions(): CampaignFormActions {
   return {
@@ -129,7 +134,7 @@ describe("the campaign form", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }));
+    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }, expect.any(String)));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 
@@ -151,7 +156,7 @@ describe("the campaign form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(actions.edit).toHaveBeenCalledWith("d1", { title: "New", description: "Words.", images: [] }));
+    await waitFor(() => expect(actions.edit).toHaveBeenCalledWith("d1", { title: "New", description: "Words.", images: [] }, expect.any(String)));
     expect(actions.save).not.toHaveBeenCalled();
   });
 
@@ -165,7 +170,7 @@ describe("the campaign form", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(actions.remove).toHaveBeenCalledWith("d1"));
+    await waitFor(() => expect(actions.remove).toHaveBeenCalledWith("d1", expect.any(String)));
   });
 
   it("asks before sending a test copy, and sends the saved Draft on confirming", async () => {
@@ -178,7 +183,7 @@ describe("the campaign form", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
 
-    await waitFor(() => expect(actions.sendTest).toHaveBeenCalledWith("d1"));
+    await waitFor(() => expect(actions.sendTest).toHaveBeenCalledWith("d1", expect.any(String)));
     expect(actions.save).not.toHaveBeenCalled();
     expect(actions.edit).not.toHaveBeenCalled();
   });
@@ -232,7 +237,7 @@ describe("the campaign form", () => {
       fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
       await waitFor(() =>
-        expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Old", description: "Words.", images: photos(2), imageLayout: "two-rows" }),
+        expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Old", description: "Words.", images: photos(2), imageLayout: "two-rows" }, expect.any(String)),
       );
     });
 
@@ -336,7 +341,7 @@ describe("images on the campaign form", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: ["https://cdn.test/a.png"] }),
+      expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: ["https://cdn.test/a.png"] }, expect.any(String)),
     );
   });
 
@@ -366,6 +371,18 @@ describe("images on the campaign form", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("not an image")));
     expect(screen.getByRole("button", { name: "Remove image 1" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Remove image 2" })).toBeNull();
+  });
+
+  it("refuses an image the browser cannot prepare instead of uploading the original", async () => {
+    const actual = await vi.importActual<typeof import("@/features/marketing/prepare-image")>("@/features/marketing/prepare-image");
+    vi.mocked(prepareImage).mockImplementationOnce(actual.prepareImage);
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => { throw new Error("Invalid image"); }));
+    const actions = fakeActions();
+    render(<CampaignForm actions={actions} />);
+    pick([png("broken.png")]);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("not an image")));
+    expect(uploadFile).not.toHaveBeenCalled();
+    expect(actions.addImage).not.toHaveBeenCalled();
   });
 
   it("refuses an image over 25 MB before sending it anywhere", async () => {
@@ -407,8 +424,8 @@ describe("sending now from the form", () => {
 
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Send now" }));
 
-    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("new"));
-    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] });
+    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("new", expect.any(String)));
+    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }, expect.any(String));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 
@@ -419,8 +436,8 @@ describe("sending now from the form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send now" }));
     fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Send now" }));
 
-    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("d1"));
-    expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Halaya", description: "Restocked.", images: [] });
+    await waitFor(() => expect(actions.send).toHaveBeenCalledWith("d1", expect.any(String)));
+    expect(actions.edit).toHaveBeenCalledWith("d1", { title: "Halaya", description: "Restocked.", images: [] }, expect.any(String));
   });
 
   it("blocks sending when there are no Subscribers", async () => {
@@ -477,7 +494,7 @@ describe("an Announcement that is no longer a Draft", () => {
 
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Retry" }));
 
-    await waitFor(() => expect(retry).toHaveBeenCalledWith("a1"));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("a1", expect.any(String)));
   });
 });
 
@@ -502,8 +519,8 @@ describe("scheduling from the form", () => {
     expect(actions.schedule).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Schedule" }));
 
-    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("new", "2099-10-25T09:30"));
-    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] });
+    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("new", "2099-10-25T09:30", expect.any(String)));
+    expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: [] }, expect.any(String));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 
@@ -543,8 +560,8 @@ describe("scheduling from the form", () => {
     fireEvent.change(input, { target: { value: "2099-11-01T18:00" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Reschedule" }));
 
-    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("d1", "2099-11-01T18:00"));
-    expect(actions.edit).toHaveBeenCalledWith("d1", expect.objectContaining({ title: "Halaya" }));
+    await waitFor(() => expect(actions.schedule).toHaveBeenCalledWith("d1", "2099-11-01T18:00", expect.any(String)));
+    expect(actions.edit).toHaveBeenCalledWith("d1", expect.objectContaining({ title: "Halaya" }), expect.any(String));
   });
 
   it("cancels the schedule back to a Draft, only after asking", async () => {
@@ -557,7 +574,7 @@ describe("scheduling from the form", () => {
 
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel schedule" }));
 
-    await waitFor(() => expect(actions.unschedule).toHaveBeenCalledWith("d1"));
+    await waitFor(() => expect(actions.unschedule).toHaveBeenCalledWith("d1", expect.any(String)));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/email-campaigns"));
   });
 

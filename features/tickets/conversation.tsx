@@ -8,6 +8,7 @@ import { formatDate } from "@/features/customer-profiles/format";
 
 import type { ConnectLive, LiveConnection, LiveEvent } from "./live";
 import { connectLive } from "./live-socket";
+import { MessageAttachment } from "./message-attachment";
 import type { TicketMessage } from "./ticket";
 import { Composer } from "./ticket-controls";
 
@@ -52,21 +53,7 @@ export function Bubbles({ messages }: { messages: TicketMessage[] }) {
                   {message.body}
                 </p>
               )}
-              {message.attachmentUrl ? (
-                <a href={message.attachmentUrl} target="_blank" rel="noreferrer" className="block">
-                  {/* A short-lived signed address from file-storage, so next/image's optimizer cannot cache it. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={message.attachmentUrl}
-                    alt={`Image attached by ${message.senderName}`}
-                    className="max-h-64 max-w-full rounded-lg object-contain"
-                  />
-                </a>
-              ) : (
-                message.hasAttachment && (
-                  <p className="text-xs leading-[normal] font-medium text-[#5b2a86]">Photo attached</p>
-                )
-              )}
+              <MessageAttachment message={message} imageClassName="max-h-64 max-w-full rounded-lg object-contain" />
               <p className="text-[11px] leading-[normal] text-[#6e6680]">{byline(message, messages[i - 1])}</p>
             </div>
           </div>

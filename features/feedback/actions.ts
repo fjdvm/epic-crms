@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { writeAuditEvent } from "@/lib/gateway";
+import { gatewayAuditTrail } from "@/lib/gateway";
 import { feedbackWriterDatabase } from "@/lib/feedback-db";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
@@ -23,8 +23,8 @@ export async function analyze(): Promise<AnalyzeOutcome> {
     const result = await runAnalysis({
       sql: feedbackWriterDatabase(),
       ...configuredClients(),
-      actor: { kind: "staff", id: staff.username, name: staff.name },
-      audit: writeAuditEvent,
+      actor: { kind: "staff", id: staff.id, name: staff.name },
+      audit: gatewayAuditTrail,
       cooldown: true,
     });
 

@@ -1,11 +1,12 @@
 "use client";
 
 import { HeaderNotifications } from "./header-notifications";
-import { useLiveFeed } from "@/features/notifications/live-updates";
+import { useFeedActions, useLiveFeed } from "@/features/notifications/live-updates";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
 export function Header() {
   const notifications = useLiveFeed();
+  const { markRead, markAllRead } = useFeedActions();
 
   return (
     <header className="sticky top-0 z-50 flex justify-between items-center w-full gap-4 px-4 sm:px-6 h-16 bg-background border-b border-sidebar-border">
@@ -14,7 +15,7 @@ export function Header() {
 
       {/* Right: Notifications */}
       <div className="flex items-center gap-xs shrink-0">
-        <HeaderNotifications feed={notifications} />
+        <HeaderNotifications feed={notifications} onMarkRead={markRead} onMarkAllRead={markAllRead} />
       </div>
     </header>
   );

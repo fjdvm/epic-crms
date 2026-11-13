@@ -29,7 +29,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.sql`truncate ticket_messages, tickets, customers restart identity cascade`;
-  await db.sql`truncate crms.notifications, crms.seen_ticket_events, crms.ticket_sync_state, crms.seen_customers, crms.sync_state restart identity`;
+  await db.sql`truncate crms.notifications, crms.seen_ticket_events, crms.ticket_sync_state, crms.seen_customers, crms.sync_state restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Jane Doe', 'jane@example.com')`;
 });
 

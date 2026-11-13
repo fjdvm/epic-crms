@@ -1,9 +1,14 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
+import { ticketUpload } from "@/features/files/server";
+
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 
 import {
+  gatewayAuditTrail,
   gatewayFileStorage,
   liveConversationUrl,
   sendAppEmail,
@@ -16,10 +21,12 @@ import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 import { customerOrders, openTicket, searchCustomers, type CustomerChoice, type OpenTicketResult, type OrderChoice } from "./new-ticket";
 import {
   claimTicket,
+  changeTicketPriority,
   markResolved,
   releaseTicket,
   replyToTicket,
   type Actor,
+  type TicketAudit,
   type ReplyResult,
   type TicketActionResult,
 } from "./ticket-actions";
@@ -30,12 +37,13 @@ export type ReplyOutcome = ReplyResult | { ok: false; reason: "unavailable" };
 /** Server actions are public endpoints, so each proves the Staff member holds the Tickets Module. */
 async function act<R extends TicketActionResult | ReplyResult>(
   id: number,
-  run: (actor: Actor) => Promise<R>,
+  run: (actor: Actor, audit: TicketAudit) => Promise<R>,
+  operationId: string = randomUUID(),
 ): Promise<R | { ok: false; reason: "unavailable" }> {
   const staff = await requireModule(TICKETS_MODULE);
 
   try {
-    const result = await run({ id: staff.username, name: staff.name });
+    const result = await run({ id: staff.username, name: staff.name }, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath(`/tickets/${id}`);
 
     return result;
@@ -46,12 +54,12 @@ async function act<R extends TicketActionResult | ReplyResult>(
   }
 }
 
-export async function claim(id: number) {
-  return act(id, (actor) => claimTicket(ticketsWriterDatabase(), id, actor));
+export async function claim(id: number, operationId?: string) {
+  return act(id, (actor, audit) => claimTicket(ticketsWriterDatabase(), id, actor, audit), operationId);
 }
 
-export async function release(id: number) {
-  return act(id, (actor) => releaseTicket(ticketsWriterDatabase(), id, actor));
+export async function release(id: number, operationId?: string) {
+  return act(id, (actor, audit) => releaseTicket(ticketsWriterDatabase(), id, actor, audit), operationId);
 }
 
 /** The reply form: a `body` and, optionally, one `image` file. */
@@ -61,25 +69,22 @@ export async function reply(id: number, form: FormData) {
   // An empty file input still posts a nameless, empty File; that is "no image", not an empty image.
   const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
 
-  return act(id, async (actor) =>
-    replyToTicket(
-      ticketsWriterDatabase(),
-      id,
-      actor,
-      body,
-      picked
-        ? {
-            image: { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) },
-            storage: gatewayFileStorage,
-          }
-        : undefined,
-    ),
-  );
+  return act(id, async (actor) => {
+    const reference = form.get("attachment");
+    const upload = typeof reference === "string" ? await ticketUpload(reference, actor.id, id) : null;
+    if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" as const };
+    return replyToTicket(ticketsWriterDatabase(), id, actor, body,
+      upload ? { fileId: upload.fileId, storage: gatewayFileStorage } : picked ? {
+        image: { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) },
+        storage: gatewayFileStorage,
+      } : undefined);
+  });
 }
 
-export async function resolve(id: number) {
-  return act(id, () =>
-    markResolved(ticketsWriterDatabase(), ticketsDatabase(), id, storefrontTicketUrl, sendAppEmail),
+export async function resolve(id: number, operationId?: string) {
+  return act(id, (_actor, audit) =>
+    markResolved(ticketsWriterDatabase(), ticketsDatabase(), id, storefrontTicketUrl, sendAppEmail, audit),
+    operationId,
   );
 }
 
@@ -110,11 +115,15 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
   const orderId = String(form.get("orderId") ?? "");
 
   try {
+    const reference = form.get("attachment");
+    const upload = typeof reference === "string" ? await ticketUpload(reference, staff.username, null) : null;
+    if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" };
     const result = await openTicket(
       ticketsWriterDatabase(),
       ticketsDatabase(),
       { id: staff.username, name: staff.name },
       {
+        fileId: upload?.fileId,
         subject: String(form.get("subject") ?? ""),
         customerId: String(form.get("customerId") ?? ""),
         orderId: /^\d+$/.test(orderId) ? Number(orderId) : null,
@@ -160,4 +169,9 @@ export async function findCustomerOrders(customerId: string): Promise<OrderChoic
 
     return [];
   }
+}
+
+/** Backend endpoint for Priority changes; the Tickets Module is checked by act. */
+export async function changePriority(id: number, priority: string, operationId?: string) {
+  return act(id, (_actor, audit) => changeTicketPriority(ticketsWriterDatabase(), id, priority, audit), operationId);
 }

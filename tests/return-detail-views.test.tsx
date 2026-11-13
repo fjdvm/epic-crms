@@ -10,21 +10,25 @@ const { refresh, toast } = vi.hoisted(() => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn(async () => ({ ok: true, reference: "confirmed-image" })) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/returns/actions", () => ({
   approveReturn: vi.fn(),
   declineReturn: vi.fn(),
   markReturnGoodsReceived: vi.fn(),
   markReturnRefunded: vi.fn(),
+  markReturnReplaced: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast }));
 
-import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded } from "@/features/returns/actions";
+import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
+  replacedAt: null, videoFileId: null, refundProofFileId: null,
+  preferredResolution: "refund", finalResolution: null,
   id: 15,
   number: "RMA-15",
   orderId: 1042,
@@ -42,6 +46,7 @@ const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
   paymentMethod: "gcash",
   deliveredAt: new Date("2026-10-19T00:00:00Z"),
   deliveryPhotoFileId: "photo-1",
+  deliveryPhotoRemovedAt: null,
   refundWindowEndsAt: null,
   images: [{ fileId: "img-1", position: 0 }],
   history: [
@@ -50,12 +55,31 @@ const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
   ...overrides,
 });
 
-const view = (d: ReturnDetail, urls: (string | null)[] = ["https://files/img-1"], photo: string | null | undefined = "https://files/photo-1") =>
-  render(<ReturnDetailView detail={d} imageUrls={urls} deliveryPhotoUrl={photo} />);
+const view = (
+  d: ReturnDetail,
+  urls: (string | null)[] = ["https://files/img-1"],
+  photo: string | null | undefined = "https://files/photo-1",
+  extra: { videoUrl?: string | null; refundProofUrl?: string | null } = {},
+) => render(<ReturnDetailView detail={d} imageUrls={urls} deliveryPhotoUrl={photo} {...extra} />);
+
+const picture = (name = "proof.png", type = "image/png") => new File([new Uint8Array([1, 2, 3])], name, { type });
 
 const buttons = () => screen.queryAllByRole("button").map((b) => b.textContent);
 
 describe("the Return detail", () => {
+  it("says the Delivery photo was removed, and No photo when the Order never had one", () => {
+    const { unmount } = render(
+      <ReturnDetailView detail={detail({ deliveryPhotoFileId: null, deliveryPhotoRemovedAt: new Date("2026-10-30T00:00:00Z") })} imageUrls={[]} />,
+    );
+    expect(screen.getByText("The Delivery photo was removed.")).toBeTruthy();
+    expect(screen.queryByText("No photo")).toBeNull();
+    unmount();
+
+    render(<ReturnDetailView detail={detail({ deliveryPhotoFileId: null })} imageUrls={[]} />);
+    expect(screen.getByText("No photo")).toBeTruthy();
+    expect(screen.queryByText("The Delivery photo was removed.")).toBeNull();
+  });
+
   it("shows the reason, note, items, amount, images, payment method and Delivery photo", () => {
     view(detail());
 
@@ -97,12 +121,64 @@ describe("the Return detail", () => {
     ["approved", false, ["Mark refunded"]],
     ["goods received", true, ["Mark refunded"]],
     ["refunded", true, []],
+    ["replaced", true, []],
     ["declined", null, []],
     ["cancelled", null, []],
   ] as const)("offers only the allowed actions for %s (goods required: %s)", (status, goodsRequired, expected) => {
-    view(detail({ status, goodsRequired }));
+    view(detail({ status, goodsRequired, finalResolution: status === "requested" ? null : "refund" }));
 
     expect(buttons()).toEqual(expected);
+  });
+
+  it("offers Mark replaced, not Mark refunded, once Staff chose a replacement", () => {
+    view(detail({ status: "approved", goodsRequired: false, finalResolution: "replacement" }));
+    expect(buttons()).toEqual(["Mark replaced"]);
+    cleanup();
+
+    view(detail({ status: "goods received", goodsRequired: true, finalResolution: "replacement" }));
+    expect(buttons()).toEqual(["Mark replaced"]);
+  });
+
+  it("shows the preferred and final Resolution", () => {
+    view(detail({ status: "approved", goodsRequired: false, preferredResolution: "refund", finalResolution: "replacement" }));
+
+    expect(screen.getByText("Customer preferred: Refund")).toBeTruthy();
+    expect(screen.getByText("Staff decided: Replacement")).toBeTruthy();
+  });
+
+  it("shows only the preference before Staff decide", () => {
+    view(detail({ preferredResolution: "replacement" }));
+
+    expect(screen.getByText("Customer preferred: Replacement")).toBeTruthy();
+    expect(screen.queryByText(/Staff decided/)).toBeNull();
+  });
+
+  it("shows the evidence video, or says there is none", () => {
+    const { container } = view(detail({ videoFileId: "vid-1" }), undefined, undefined, { videoUrl: "https://files/vid-1" });
+
+    expect(container.querySelector("video")?.getAttribute("src")).toBe("https://files/vid-1");
+    cleanup();
+
+    view(detail());
+    expect(screen.getByText("No video.")).toBeTruthy();
+  });
+
+  it("says a video that could not be reached could not be loaded", () => {
+    view(detail({ videoFileId: "vid-1" }), undefined, undefined, { videoUrl: null });
+
+    expect(screen.getByText(/The video could not be loaded/)).toBeTruthy();
+  });
+
+  it("shows the refund proof once refunded, and nothing before", () => {
+    view(detail({ status: "refunded", finalResolution: "refund", refundProofFileId: "proof-1" }), undefined, undefined, {
+      refundProofUrl: "https://files/proof-1",
+    });
+
+    expect(screen.getByAltText("Refund proof for RMA-15").getAttribute("src")).toBe("https://files/proof-1");
+    cleanup();
+
+    view(detail());
+    expect(screen.queryByText("Refund proof")).toBeNull();
   });
 
   it("shows a decline reason on a declined Return", () => {
@@ -137,8 +213,32 @@ describe("approving", () => {
     fireEvent.click(within(dialog).getByLabelText(label));
     fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
 
-    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, goodsRequired));
+    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, goodsRequired, "refund"));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15 approved."));
+  });
+
+  it.each(["refund", "replacement"] as const)("defaults the Resolution to the Customer's preference (%s)", async (preferred) => {
+    vi.mocked(approveReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
+    view(detail({ preferredResolution: preferred }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const dialog = screen.getByRole("alertdialog");
+
+    expect((within(dialog).getByLabelText(new RegExp(`^${preferred}`, "i")) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(within(dialog).getByLabelText("No, refund without the goods"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
+
+    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, false, preferred));
+  });
+
+  it("sends a Resolution that differs from the preference", async () => {
+    vi.mocked(approveReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
+    const dialog = open();
+
+    fireEvent.click(within(dialog).getByLabelText(/^replacement/i));
+    fireEvent.click(within(dialog).getByLabelText("Yes, the Customer returns the goods"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
+
+    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, true, "replacement"));
   });
 });
 
@@ -182,23 +282,66 @@ describe("goods received and refunded", () => {
     await waitFor(() => expect(markReturnGoodsReceived).toHaveBeenCalledWith(15));
   });
 
-  it("asks before marking refunded", async () => {
-    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true, return: { id: 15, status: "refunded" } });
-    view(detail({ status: "goods received", goodsRequired: true }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
-    expect(markReturnRefunded).not.toHaveBeenCalled();
+  const refundable = () => detail({ status: "goods received", goodsRequired: true, finalResolution: "refund" });
+  const attach = (file: File) =>
+    fireEvent.change(within(screen.getByRole("alertdialog")).getByLabelText("Refund proof"), { target: { files: [file] } });
+  const confirmRefund = () =>
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark refunded" }));
 
-    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledWith(15));
+  it("cannot mark refunded until a refund proof is attached", () => {
+    view(refundable());
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
+    const confirm = within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark refunded" }) as HTMLButtonElement;
+
+    expect(confirm.disabled).toBe(true);
+    expect(markReturnRefunded).not.toHaveBeenCalled();
+  });
+
+  it("refuses a proof that is not a JPG or PNG", () => {
+    view(refundable());
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
+    attach(picture("proof.gif", "image/gif"));
+
+    expect(within(screen.getByRole("alertdialog")).getByRole("alert")).toBeTruthy();
+    expect((within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark refunded" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("asks before marking refunded, and sends the proof", async () => {
+    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true, return: { id: 15, status: "refunded" } });
+    view(refundable());
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
+    attach(picture());
+    expect(markReturnRefunded).not.toHaveBeenCalled();
+    confirmRefund();
+
+    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledTimes(1));
+    const [id, form] = vi.mocked(markReturnRefunded).mock.calls[0];
+    expect(id).toBe(15);
+    expect((form as FormData).get("proof")).toBe("confirmed-image");
+  });
+
+  it("asks before marking replaced", async () => {
+    vi.mocked(markReturnReplaced).mockResolvedValue({ ok: true, return: { id: 15, status: "replaced" } });
+    view(detail({ status: "approved", goodsRequired: false, finalResolution: "replacement" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark replaced" }));
+    expect(markReturnReplaced).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark replaced" }));
+
+    await waitFor(() => expect(markReturnReplaced).toHaveBeenCalledWith(15));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15 marked replaced."));
   });
 
   it("shows a refusal as an error and never as success", async () => {
     vi.mocked(markReturnRefunded).mockResolvedValue({ ok: false, reason: "Return already changed; refresh it before trying again." });
-    view(detail({ status: "goods received", goodsRequired: true }));
+    view(refundable());
 
     fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark refunded" }));
+    attach(picture());
+    confirmRefund();
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Return already changed; refresh it before trying again."));
     expect(toast.success).not.toHaveBeenCalled();
@@ -206,10 +349,11 @@ describe("goods received and refunded", () => {
 
   it("treats an action that never answers as a failure", async () => {
     vi.mocked(markReturnRefunded).mockRejectedValue(new Error("offline"));
-    view(detail({ status: "goods received", goodsRequired: true }));
+    view(refundable());
 
     fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark refunded" }));
+    attach(picture());
+    confirmRefund();
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(toast.success).not.toHaveBeenCalled();

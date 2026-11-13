@@ -46,15 +46,23 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
   if (!result.detail) notFound();
 
   const { detail } = result;
-  const [imageUrls, deliveryPhotoUrl] = await Promise.all([
+  const [imageUrls, deliveryPhotoUrl, videoUrl, refundProofUrl] = await Promise.all([
     Promise.all(detail.images.map((image) => viewUrl(image.fileId))),
     detail.deliveryPhotoFileId ? viewUrl(detail.deliveryPhotoFileId) : undefined,
+    detail.videoFileId ? viewUrl(detail.videoFileId) : undefined,
+    detail.refundProofFileId ? viewUrl(detail.refundProofFileId) : undefined,
   ]);
 
   return (
     <>
       <BackgroundRefresh />
-      <ReturnDetailView detail={detail} imageUrls={imageUrls} deliveryPhotoUrl={deliveryPhotoUrl} />
+      <ReturnDetailView
+        detail={detail}
+        imageUrls={imageUrls}
+        deliveryPhotoUrl={deliveryPhotoUrl}
+        videoUrl={videoUrl}
+        refundProofUrl={refundProofUrl}
+      />
     </>
   );
 }

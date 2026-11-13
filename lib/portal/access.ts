@@ -1,5 +1,6 @@
 import { validateSession, type Staff, type Validation } from "./client";
 import { DEV_STAFF, devBypassEnabled } from "./dev-bypass";
+import { auditAccessDenied } from "./access-audit";
 import { pages } from "./pages";
 
 export type Overview =
@@ -69,5 +70,10 @@ export function accessFor(
       : { decision: "allowed", staff: allowed[0].staff, pages: allowed.map((a) => a.href) };
   }
 
-  return { check, checkAny, overview };
+  /** Only explicit refusals are audited; permission discovery is deliberately silent. */
+  async function recordDenial(module: string) {
+    if (!bypass && sessionHandle) await auditAccessDenied(sessionHandle, module);
+  }
+
+  return { check, checkAny, overview, recordDenial };
 }

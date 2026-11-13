@@ -1,6 +1,8 @@
 import { portalConfig } from "./config";
 
 export type Staff = {
+  /** Portal User primary key, returned as user_id by session validation. */
+  id: string;
   name: string;
   username: string;
   email: string;
@@ -30,6 +32,7 @@ async function postJson(path: string, body: unknown): Promise<Response | null> {
       headers: { authorization: basicAuth(), "content-type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
     });
   } catch {
     return null;
@@ -103,10 +106,10 @@ export async function validateSession(
   }
 
   const body = response.ok
-    ? ((await response.json().catch(() => null)) as { active?: boolean; staff?: Staff } | null)
+    ? ((await response.json().catch(() => null)) as { active?: boolean; user_id?: string; staff?: Omit<Staff, "id"> } | null)
     : null;
 
-  return body?.active === true && body.staff
-    ? { decision: "allowed", staff: body.staff }
+  return body?.active === true && body.staff && typeof body.user_id === "string" && body.user_id.length > 0
+    ? { decision: "allowed", staff: { ...body.staff, id: body.user_id } }
     : { decision: "unavailable" };
 }

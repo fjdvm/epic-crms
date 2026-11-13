@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CustomerProfileView } from "@/features/customer-profiles/customer-profile";
+import { ProfileViewAudit } from "@/features/customer-profiles/profile-view-audit";
 import { loadCustomerProfile } from "@/features/customer-profiles/profile";
 import { database } from "@/lib/db";
 import { CUSTOMER_PROFILES_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
@@ -32,6 +33,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
 
   return (
     <div className="px-xl py-7">
+      <ProfileViewAudit id={id} />
       <CustomerProfileView profile={result.profile} canOpenOrder={await canOpenOrders()} canViewReturns={canViewReturns} />
     </div>
   );

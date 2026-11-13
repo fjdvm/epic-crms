@@ -23,6 +23,7 @@ const REASONS: Record<Exclude<OpenTicketOutcome, { ok: true }>["reason"], string
   "unknown-customer": "Choose a Customer from the search results.",
   "order-not-theirs": "That Order does not belong to this Customer.",
   ...IMAGE_REFUSALS,
+  "invalid-attachment": "That attachment is invalid or expired. Attach the file again.",
   "storage-unavailable": "CREOMS could not store that image. Try again in a moment.",
   unavailable: "CREOMS could not open that Ticket. Try again in a moment.",
 };

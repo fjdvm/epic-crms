@@ -1,5 +1,7 @@
 @AGENTS.md
 
+Follow the Checks and PR completion rules in AGENTS.md for every implementation ticket.
+
 ## Agent skills
 
 ### Issue tracker

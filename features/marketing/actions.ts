@@ -1,14 +1,16 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
+import { recordUpload } from "@/features/files/server";
 import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
-import { gatewayAuditLog, gatewayImageStore, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
+import { gatewayAuditTrail, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 
-import { addImage } from "./add-image";
 import {
   cancelSchedule,
   deleteDraft,
@@ -34,10 +36,10 @@ import { parsePhilippineTime } from "./philippine-time";
 
 export type Unavailable = { ok: false; reason: "unavailable" };
 
-const ports = (): Ports => ({
-  audit: gatewayAuditLog,
+const ports = (operationId: string = randomUUID()): Ports => ({
+  operationId,
+  audit: gatewayAuditTrail,
   mail: gatewayMarketingMail,
-  images: gatewayImageStore,
   subscribers: storefrontSubscribers(database()),
   mailer: gatewayMarketingMailer,
   now: () => new Date(),
@@ -50,7 +52,7 @@ async function act<R extends { ok: boolean }>(
   const staff = await requireModule(MARKETING_MODULE);
 
   try {
-    const result = await run({ id: staff.username, name: staff.name }, staff.email);
+    const result = await run({ id: staff.id, name: staff.name }, staff.email);
     if (result.ok) revalidatePath("/email-campaigns");
 
     return result;
@@ -61,28 +63,28 @@ async function act<R extends { ok: boolean }>(
   }
 }
 
-export async function saveDraftAction(input: AnnouncementInput): Promise<SaveResult | Unavailable> {
-  return act((actor) => saveDraft(crmsDatabase(), actor, input, ports()));
+export async function saveDraftAction(input: AnnouncementInput, operationId?: string): Promise<SaveResult | Unavailable> {
+  return act((actor) => saveDraft(crmsDatabase(), actor, input, ports(operationId)));
 }
 
-export async function editDraftAction(id: string, input: AnnouncementInput): Promise<EditResult | Unavailable> {
-  return act((actor) => editDraft(crmsDatabase(), actor, id, input, ports()));
+export async function editDraftAction(id: string, input: AnnouncementInput, operationId?: string): Promise<EditResult | Unavailable> {
+  return act((actor) => editDraft(crmsDatabase(), actor, id, input, ports(operationId)));
 }
 
-export async function deleteDraftAction(id: string): Promise<DeleteResult | Unavailable> {
-  return act((actor) => deleteDraft(crmsDatabase(), actor, id, ports()));
+export async function deleteDraftAction(id: string, operationId?: string): Promise<DeleteResult | Unavailable> {
+  return act((actor) => deleteDraft(crmsDatabase(), actor, id, ports(operationId)));
 }
 
-export async function sendNowAction(id: string): Promise<SendResult | Unavailable> {
-  return act((actor) => sendNow(crmsDatabase(), actor, id, ports()));
+export async function sendNowAction(id: string, operationId?: string): Promise<SendResult | Unavailable> {
+  return act((actor) => sendNow(crmsDatabase(), actor, id, ports(operationId)));
 }
 
-export async function retrySendAction(id: string): Promise<SendResult | Unavailable> {
-  return act((actor) => retrySend(crmsDatabase(), actor, id, ports()));
+export async function retrySendAction(id: string, operationId?: string): Promise<SendResult | Unavailable> {
+  return act((actor) => retrySend(crmsDatabase(), actor, id, ports(operationId)));
 }
 
 /** `when` is a date and time typed in Philippine Time, as a datetime-local input holds it: "2026-10-25T09:30". */
-export async function scheduleAction(id: string, when: string): Promise<ScheduleResult | Unavailable> {
+export async function scheduleAction(id: string, when: string, operationId?: string): Promise<ScheduleResult | Unavailable> {
   const at = parsePhilippineTime(when);
   if (!at) {
     await requireModule(MARKETING_MODULE);
@@ -90,30 +92,26 @@ export async function scheduleAction(id: string, when: string): Promise<Schedule
     return { ok: false, reason: "invalid-time" };
   }
 
-  return act((actor) => schedule(crmsDatabase(), actor, id, at, ports()));
+  return act((actor) => schedule(crmsDatabase(), actor, id, at, ports(operationId)));
 }
 
-export async function cancelScheduleAction(id: string): Promise<CancelScheduleResult | Unavailable> {
-  return act((actor) => cancelSchedule(crmsDatabase(), actor, id, ports()));
+export async function cancelScheduleAction(id: string, operationId?: string): Promise<CancelScheduleResult | Unavailable> {
+  return act((actor) => cancelSchedule(crmsDatabase(), actor, id, ports(operationId)));
 }
 
 /** Sends to the signed-in Staff member's own email, taken from their session and never from the caller. */
-export async function sendTestCopyAction(id: string): Promise<TestCopyResult | Unavailable> {
-  return act((actor, email) => sendTestCopy(crmsDatabase(), actor, email, id, ports()));
+export async function sendTestCopyAction(id: string, operationId?: string): Promise<TestCopyResult | Unavailable> {
+  return act((actor, email) => sendTestCopy(crmsDatabase(), actor, email, id, ports(operationId)));
 }
 
-/** Shrinks and stores one image; it joins an Announcement only when the Draft is saved with its address. */
+/** A Public, Permanent upload joins an Announcement only when the Draft is saved with its address. */
 export async function addImageAction(form: FormData): Promise<AddImageResult | Unavailable> {
   const staff = await requireModule(MARKETING_MODULE);
-  const file = form.get("image");
-
-  if (!(file instanceof File)) return { ok: false, reason: "not-an-image" };
-
+  if (!(form instanceof FormData) || form.getAll("image").length !== 1) return { ok: false, reason: "not-an-image" };
   try {
-    return await addImage({ id: staff.username, name: staff.name }, { filename: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, ports());
-  } catch (error) {
-    console.error("Announcement image could not be added", error);
-
-    return { ok: false, reason: "unavailable" };
+    const upload = await recordUpload(MARKETING_MODULE, form.get("image"), staff.username);
+    return upload ? { ok: true, url: upload.url } : { ok: false, reason: "not-an-image" };
+  } catch {
+    return { ok: false, reason: "storage-unavailable" };
   }
 }

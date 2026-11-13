@@ -16,9 +16,8 @@ function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? "";
 }
 
+// Nothing here waits on the Portal or the database, so the header and skeleton reach the browser at once.
 export default async function OrdersPage({ searchParams }: { searchParams: SearchParams }) {
-  await requireModule(ORDERS_MODULE);
-
   const raw = await searchParams;
   const tab = ORDER_TABS.find((t) => t === first(raw.tab)) ?? "all";
   const page = Math.max(1, Number.parseInt(first(raw.page), 10) || 1);
@@ -45,6 +44,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Searc
 }
 
 async function OrdersData({ params }: { params: OrderListParams }) {
+  await requireModule(ORDERS_MODULE);
+
   const result = await loadOrders(ticketsDatabase, params);
 
   if (!result.ok) {

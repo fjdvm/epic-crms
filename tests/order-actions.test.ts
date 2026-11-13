@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOrder, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee,
-  startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard,
+  startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
@@ -12,14 +12,19 @@ import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, p
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 
-import { FakeFileStorage, PNG, JPEG, PDF } from "./fake-file-storage";
+import { FakeFileStorage, PNG } from "./fake-file-storage";
 
+const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(async () => {}));
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/features/files/storage", () => ({
+  storageUrl: (url: string) => url,
+  directFileStorage: { view: vi.fn((id: string) => storage.view(id)) },
+}));
 
-function deliveryPhoto() {
+function deliveryPhoto(bytes: Uint8Array = PNG, staffId = "ana") {
   const form = new FormData();
-  form.append("photo", new File([PNG], "delivery.png", { type: "image/png" }));
+  form.set("photo", storage.readyEvidence("Fulfilment", bytes, staffId));
   return form;
 }
 
@@ -40,7 +45,7 @@ beforeEach(async () => {
   vi.stubGlobal("fetch", storefrontFetch(storefront));
   vi.stubEnv("CREOMS_STOREFRONT_URL", FAKE_STOREFRONT_URL);
   vi.stubEnv("CREOMS_SERVICE_SECRET", FAKE_SERVICE_SECRET);
-  vi.mocked(requireModule).mockResolvedValue({ username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
+  vi.mocked(requireModule).mockResolvedValue({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 async function order(method = "delivery", status = "placed", payment = "cash-on-delivery") {
@@ -50,7 +55,7 @@ async function order(method = "delivery", status = "placed", payment = "cash-on-
 }
 async function signInWithModules(modules: string[]) {
   const portal = new FakePortal();
-  portal.addStaff("ben", { username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" }, modules);
+  portal.addStaff("ben", { id: "ben", username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" }, modules);
   portal.signIn("ben");
   const verifier = "test-proof";
   const authorize = new URL("/api/integrations/authorize", FAKE_PORTAL_URL);
@@ -141,7 +146,7 @@ describe("Order actions", () => {
   it("refuses a second Staff confirmation as already changed", async () => {
     const id = await order();
     expect((await quoteDeliveryFee(id, 15000)).ok).toBe(true);
-    vi.mocked(requireModule).mockResolvedValue({ username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
+    vi.mocked(requireModule).mockResolvedValue({ id: "ben", username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
     expect(await quoteDeliveryFee(id, 20000)).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
     expect(storefront.requests).toBe(1);
   });
@@ -187,6 +192,82 @@ describe("Order actions", () => {
 });
 
 describe("Fulfilment Order actions", () => {
+  it("reconciles only the photo recorded on a delivered or received Order", async () => {
+    const id = await order("delivery", "dispatched");
+    storefront.refusal = "Delivery refused.";
+    await deliverOrder(id, deliveryPhoto());
+    expect((await reconcileDeliveryPhoto(id)).ok).toBe(false);
+    expect((await reconcileDeliveryPhoto(999)).ok).toBe(false);
+    expect(await reconcileDeliveryPhoto(0)).toEqual({ ok: false, reason: "Invalid Order number." });
+    storefront.refusal = null;
+    await deliverOrder(id, deliveryPhoto());
+    // Simulate a failed promotion of the committed File; refused file-1 is still unrelated.
+    storage.files.get("file-2")!.retentionType = "temporary";
+    storage.failPromote = true;
+    expect((await reconcileDeliveryPhoto(id)).ok).toBe(false);
+    expect(storage.files.get("file-2")?.retentionType).toBe("temporary");
+    storage.failPromote = false;
+    await db.sql`update orders set status = 'received' where id = ${id}`;
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")?.retentionType).toBe("temporary");
+    expect(storage.files.get("file-2")?.retentionType).toBe("permanent");
+    expect(storefront.requests).toBe(2);
+  });
+
+  it("leaves Temporary evidence after malformed responses and transport failures without retrying", async () => {
+    const id = await order("delivery", "dispatched");
+    vi.mocked(revalidatePath).mockClear();
+    const replies = [() => new Response("invalid JSON"), () => new Response(null, { status: 204 }),
+      () => new Response(null, { status: 503 }), () => { throw new Error("Connection lost"); }];
+    for (const reply of replies) {
+      const send = vi.fn(async () => reply());
+      vi.stubGlobal("fetch", send);
+      expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
+      expect(send).toHaveBeenCalledTimes(1);
+    }
+    expect([...storage.files.values()].map(file => file.retentionType)).toEqual(["temporary", "temporary", "temporary", "temporary"]);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat a confirmed delivery when making its photo Permanent fails", async () => {
+    const id = await order("delivery", "dispatched");
+    storage.failPromote = true;
+    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("The Order was marked delivered") });
+    expect(storefront.requests).toBe(1);
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary" });
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "delivered", deliveryPhotoFileId: "file-1" } });
+  });
+
+  it("does not claim the photo is Permanent when the gateway fails to confirm promotion", async () => {
+    const { gatewayFileStorage } = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
+    vi.spyOn(storage, "promote").mockImplementation(gatewayFileStorage.promote);
+    vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
+    vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "fake-gateway-key");
+    const send = storefrontFetch(storefront);
+    for (const reply of [{}, { id: "another-file", retentionType: "permanent", expiresAt: null },
+      { id: "file-1", retentionType: "temporary", expiresAt: "2026-11-02T00:00:00Z" }]) {
+      storage.reset();
+      const id = await order("delivery", "dispatched");
+      vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        return request.url.startsWith(FAKE_STOREFRONT_URL) ? send(request) : Promise.resolve(Response.json(reply));
+      });
+      expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("The Order was marked delivered") });
+    }
+    expect(storefront.requests).toBe(3);
+  });
+
+  it("keeps a refused Delivery photo Temporary and says the Order was not changed", async () => {
+    const id = await order("delivery", "dispatched");
+    storefront.refusal = "The Order is no longer dispatched.";
+    expect(await deliverOrder(id, deliveryPhoto())).toEqual({ ok: false, reason: storefront.refusal });
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary" });
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "dispatched", deliveryPhotoFileId: null } });
+    expect(storefront.requests).toBe(1);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
   it("requires a Delivery photo before contacting the storefront, including Pickup", async () => {
     for (const method of ["delivery", "pickup"]) {
       expect(await deliverOrder(await order(method, "dispatched"))).toEqual({
@@ -198,90 +279,15 @@ describe("Fulfilment Order actions", () => {
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
-  it("refuses invalid, empty and oversized photos by their bytes before uploading", async () => {
+  it("refuses raw bytes, bare File ids and multiple references before contacting the storefront", async () => {
     const id = await order("delivery", "dispatched");
-    for (const [bytes, reason] of [
-      [PDF, "Only JPG or PNG"],
-      [new Uint8Array(), "empty"],
-      [new Uint8Array(5 * 1024 * 1024 + 1), "over 5 MB"],
-    ] as const) {
-      const form = new FormData();
-      form.append("photo", new File([bytes], "delivery.png", { type: "image/png" }));
-      expect(await deliverOrder(id, form)).toMatchObject({ ok: false, reason: expect.stringContaining(reason) });
+    const bytes = new FormData(); bytes.set("photo", new File([PNG], "delivery.png"));
+    const bare = new FormData(); bare.set("photo", "file-from-browser");
+    const duplicate = deliveryPhoto(); duplicate.append("photo", "second-reference");
+    for (const form of [bytes, bare, duplicate]) {
+      expect(await deliverOrder(id, form)).toEqual({ ok: false, reason: "Choose exactly one Delivery photo." });
     }
-    const duplicate = deliveryPhoto();
-    duplicate.append("photo", new File([PNG], "second.png"));
-    expect(await deliverOrder(id, duplicate)).toEqual({ ok: false, reason: "Choose exactly one Delivery photo." });
-    const text = new FormData();
-    text.append("photo", "file-id-from-browser");
-    expect(await deliverOrder(id, text)).toEqual({ ok: false, reason: "Choose exactly one Delivery photo." });
     expect(storefront.requests).toBe(0);
-    expect(storage.files.size).toBe(0);
-    expect(revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it("uploads a real JPG or PNG and sends its File id for Delivery and Pickup", async () => {
-    for (const [method, bytes, contentType] of [
-      ["delivery", PNG, "image/png"], ["pickup", JPEG, "image/jpeg"],
-    ] as const) {
-      const id = await order(method, "dispatched");
-      const form = new FormData();
-      // The browser's extension and MIME claim do not decide the stored type.
-      form.append("photo", new File([bytes], "handover.bin", { type: "application/octet-stream" }));
-      expect(await deliverOrder(id, form)).toMatchObject({ ok: true, order: { id, status: "delivered" } });
-      const fileId = [...storage.files.keys()].at(-1)!;
-      expect(storage.files.get(fileId)).toMatchObject({ filename: "handover.bin", contentType, size: bytes.length });
-      expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: fileId } });
-    }
-  });
-
-  it("stores the Delivery photo Private and Permanent through the gateway", async () => {
-    const { gatewayFileStorage } = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
-    vi.spyOn(storage, "upload").mockImplementation(gatewayFileStorage.upload);
-    vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
-    vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "fake-gateway-key");
-    const registrations: unknown[] = [];
-    const uploads: Uint8Array[] = [];
-    let confirmed = false;
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init);
-      if (request.url.startsWith(FAKE_STOREFRONT_URL)) {
-        expect(confirmed).toBe(true);
-        return storefront.handle(request);
-      }
-      if (request.url === "https://bucket.test/photo" && request.method === "PUT") {
-        expect(request.headers.has("authorization")).toBe(false);
-        uploads.push(new Uint8Array(await request.arrayBuffer()));
-        return new Response(null, { status: 200 });
-      }
-      expect(request.headers.get("authorization")).toBe("Bearer fake-gateway-key");
-      if (request.url === "https://gateway.test/files" && request.method === "POST") {
-        registrations.push(await request.json());
-        return Response.json({ id: "delivery-file", uploadUrl: "https://bucket.test/photo" });
-      }
-      if (request.url === "https://gateway.test/files/delivery-file/confirm" && request.method === "POST") {
-        confirmed = true;
-        return Response.json({});
-      }
-      throw new Error("Unexpected file request");
-    });
-    const id = await order("delivery", "dispatched");
-    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: true });
-    expect(registrations).toEqual([{
-      filename: "delivery.png", contentType: "image/png", size: PNG.length,
-      visibility: "private", retentionType: "permanent",
-    }]);
-    expect(uploads).toEqual([PNG]);
-    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: "delivery-file" } });
-  });
-
-  it("accepts a photo of exactly 5 MB", async () => {
-    const bytes = new Uint8Array(5 * 1024 * 1024);
-    bytes.set(PNG);
-    const form = new FormData();
-    form.append("photo", new File([bytes], "delivery.png"));
-    expect(await deliverOrder(await order("pickup", "dispatched"), form)).toMatchObject({ ok: true });
-    expect(storage.files.get("file-1")?.size).toBe(5 * 1024 * 1024);
   });
 
   it("does not contact the storefront if the photo cannot be stored", async () => {
@@ -301,16 +307,23 @@ describe("Fulfilment Order actions", () => {
     });
     expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
     expect(storefront.requests).toBe(1);
-    expect(storage.files.has("file-1")).toBe(true);
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary" });
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "delivered", deliveryPhotoFileId: "file-1" } });
     expect(revalidatePath).not.toHaveBeenCalled();
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "permanent" });
+    expect(storefront.requests).toBe(1);
   });
 
   it("requires the storefront to confirm the photo id as well as the status", async () => {
     const id = await order("delivery", "dispatched");
-    vi.stubGlobal("fetch", async () => Response.json({ id, status: "delivered", deliveryFeeInCentavos: null }));
-    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
-    expect(storage.files.has("file-1")).toBe(true);
+    for (const deliveryPhotoFileId of [undefined, "another-photo"]) {
+      const send = vi.fn(async () => Response.json({ id, status: "delivered", deliveryFeeInCentavos: null, deliveryPhotoFileId }));
+      vi.stubGlobal("fetch", send);
+      expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Order") });
+      expect(send).toHaveBeenCalledTimes(1);
+    }
+    expect([...storage.files.values()].map(file => file.retentionType)).toEqual(["temporary", "temporary"]);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
@@ -318,7 +331,8 @@ describe("Fulfilment Order actions", () => {
     const id = await order("delivery", "dispatched");
     expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(true);
     expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
-    expect(storage.files.size).toBe(1);
+    expect(storage.files.get("file-1")?.retentionType).toBe("permanent");
+    expect(storage.files.get("file-2")?.retentionType).toBe("temporary");
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: "file-1" } });
     expect(storefront.requests).toBe(1);
   });
@@ -331,16 +345,26 @@ describe("Fulfilment Order actions", () => {
       await legacy.sql`alter table orders drop column delivery_photo_file_id`;
       await legacy.sql`insert into customers (id, full_name, email) values ('legacy', 'Maria', 'legacy@example.com')`;
       const [row] = await legacy.sql`insert into orders (customer_id, status) values ('legacy', 'delivered') returning id`;
-      expect(await loadOrder(() => legacy.sql, row.id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: null } });
+      expect(await loadOrder(() => legacy.sql, row.id)).toMatchObject({ ok: true, order: { deliveryPhotoFileId: null, deliveryPhotoRemovedAt: null } });
     } finally {
       await legacy.close();
     }
+  }, 30_000);
+
+  it("reads a removed Delivery photo as removed, not as No photo", async () => {
+    const id = await order("delivery", "delivered");
+    await db.sql`update orders set delivery_photo_file_id = null, delivery_photo_removed_at = '2026-10-30T00:00:00Z' where id = ${id}`;
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({
+      ok: true, order: { deliveryPhotoFileId: null, deliveryPhotoRemovedAt: new Date("2026-10-30T00:00:00Z") },
+    });
+    const never = await order("delivery", "delivered");
+    expect(await loadOrder(() => db.sql, never)).toMatchObject({ ok: true, order: { deliveryPhotoRemovedAt: null } });
   });
 
   it("denies Orders and Payments Staff, and rechecks a revoked Fulfilment grant", async () => {
     const id = await order("delivery", "confirmed");
     const portal = await signInWithModules(["Orders", "Payments"]);
-    for (const action of [() => startPreparing(id), () => dispatchOrder(id), () => deliverOrder(id), getFulfilmentBoard]) {
+    for (const action of [() => startPreparing(id), () => dispatchOrder(id), () => deliverOrder(id), () => reconcileDeliveryPhoto(id), getFulfilmentBoard]) {
       await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     }
     expect(storefront.requests).toBe(0);
@@ -348,7 +372,8 @@ describe("Fulfilment Order actions", () => {
     expect((await startPreparing(id)).ok).toBe(true);
     portal.revoke("ben", "Fulfilment");
     await expect(dispatchOrder(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
-    await expect(deliverOrder(id, deliveryPhoto())).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    await expect(deliverOrder(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
+    await expect(reconcileDeliveryPhoto(id)).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(1);
   });
@@ -401,6 +426,7 @@ describe("Fulfilment Order actions", () => {
     const result = await loadFulfilmentBoard(() => db.sql);
     expect(result.ok && result.board.delivered).toEqual([expect.objectContaining({ id, deliveredAt: expect.any(Date) })]);
     expect(requireModule).toHaveBeenCalledWith("Fulfilment");
+    expect(storage.files.get("file-1")).toMatchObject({ retentionType: "permanent" });
   });
   it("dispatches an Order being prepared through the storefront", async () => {
     const id = await order("delivery", "preparing");
@@ -445,6 +471,11 @@ describe("the Payments queue", () => {
       paymentProof: { reference: `ref-${older}`, screenshot: "receipts/old.png", submittedAt: new Date("2026-10-21T10:00:00Z") },
     });
     expect(result.orders[2].paymentProof.screenshot).toBeNull();
+    await db.sql`update orders set payment_proof_file_id = 'file-1' where id = ${newer}`;
+    const withFile = await loadPaymentQueue();
+    if (!withFile.ok) throw new Error("expected the Payments queue to load");
+    expect(withFile.orders.find(o => o.id === newer)!.paymentProof.screenshot).toBe(`/api/orders/${newer}/payment-proof`);
+    expect(withFile.orders.find(o => o.id === older)!.paymentProof.screenshot).toBe("receipts/old.png");
     expect(requireModule).toHaveBeenCalledWith("Payments");
   });
 });
@@ -503,8 +534,8 @@ describe("Payments refusals", () => {
   it("settles simultaneous payment checks without overwriting the first Staff attribution", async () => {
     const id = await proof();
     vi.mocked(requireModule)
-      .mockResolvedValueOnce({ username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" })
-      .mockResolvedValueOnce({ username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
+      .mockResolvedValueOnce({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" })
+      .mockResolvedValueOnce({ id: "ben", username: "ben", name: "Ben", email: "ben@example.com", role: "Staff" });
     const results = await Promise.all([markPaid(id), markPaid(id)]);
     expect(results.filter(r => r.ok)).toHaveLength(1);
     expect(results.find(r => !r.ok)).toMatchObject({ ok: false, reason: expect.stringMatching(/already changed/) });
@@ -568,5 +599,115 @@ describe("Payments Module access", () => {
       await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     }
     expect(storefront.requests).toBe(1);
+  });
+});
+
+
+describe("Order and Payment Audit Events", () => {
+  const cases = [
+    { action: "order.delivery_fee_quoted", module: "Orders", method: "delivery", status: "placed", run: (id: number) => quoteDeliveryFee(id, 15000), description: "Ana quoted a Delivery fee of ₱150.00 and confirmed Order #" },
+    { action: "order.confirmed", module: "Orders", method: "pickup", status: "placed", run: confirmPickup, description: "Ana confirmed Order #" },
+    { action: "order.cancelled", module: "Orders", method: "delivery", status: "confirmed", run: cancelOrder, description: "Ana cancelled Order #" },
+    { action: "order.cancelled", module: "Payments", method: "delivery", status: "awaiting payment", run: cancelPaymentOrder, description: "Ana cancelled Order #" },
+    { action: "order.marked_paid", module: "Payments", method: "delivery", status: "awaiting payment", run: markPaid, description: "Ana marked Order #" },
+  ];
+  async function ready(test: typeof cases[number]) {
+    const id = await order(test.method, test.status, "gcash");
+    await db.sql`update orders set payment_proof_submitted_at = now() where id = ${id}`;
+    vi.mocked(requireModule).mockResolvedValue({ id: "portal-user-123", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
+    return id;
+  }
+  it.each(cases)("records exactly one $action event in $module, including after a retry", async test => {
+    const id = await ready(test);
+    expect((await test.run(id)).ok).toBe(true);
+    expect(audit).toHaveBeenCalledExactlyOnceWith({
+      action: test.action, module: test.module, outcome: "success",
+      actor: { type: "user", id: "portal-user-123", display_name: "Ana" },
+      target: { type: "order", id: String(id), display_name: `Order #${id}` },
+      description: `${test.description}${id}${test.action === "order.marked_paid" ? " paid" : ""}.`,
+      occurred_at: expect.any(String), operationId: `order:${id}:${test.action}`,
+    });
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+  it.each(cases)("keeps the $action change when the audit trail fails", async test => {
+    const id = await ready(test);
+    const error = new Error("audit offline");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    audit.mockRejectedValueOnce(error);
+    expect((await test.run(id)).ok).toBe(true);
+    expect(logged).toHaveBeenCalledWith("CREOMS Audit Event could not be recorded", error);
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(revalidatePath).toHaveBeenCalledWith(`/orders/${id}`);
+    const result = await loadOrder(() => db.sql, id);
+    expect(result).toMatchObject({ ok: true, order: { status: test.action === "order.marked_paid" ? "paid" : test.action === "order.cancelled" ? "cancelled" : "confirmed" } });
+  });
+  it.each(cases)("does not report a successful $action event after storefront refusal", async test => {
+    const id = await ready(test);
+    storefront.refusal = "Order already changed.";
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("records only the winner of concurrent confirmations", async () => {
+    const id = await ready(cases[0]);
+    const results = await Promise.all([quoteDeliveryFee(id, 15000), quoteDeliveryFee(id, 20000)]);
+    expect(results.filter(result => result.ok)).toHaveLength(1);
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+  it("does not audit Payment queue reads", async () => {
+    await loadPaymentQueue();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+});
+
+describe("Fulfilment Audit Events", () => {
+  const cases = [
+    { status: "confirmed", next: "preparing", run: startPreparing, actions: ["order.preparing"] },
+    { status: "preparing", next: "dispatched", run: dispatchOrder, actions: ["order.dispatched"] },
+    { status: "dispatched", next: "delivered", run: (id: number) => deliverOrder(id, deliveryPhoto()), actions: ["order.delivered", "order.delivery_photo_attached"] },
+  ];
+  it.each(cases)("audits $next exactly once across retries", async test => {
+    const id = await order("delivery", test.status);
+    vi.mocked(requireModule).mockResolvedValue({ id: "portal-user-123", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
+    expect((await test.run(id)).ok).toBe(true);
+    expect(audit.mock.calls.map(([event]) => event.action)).toEqual(test.actions);
+    for (const action of test.actions) {
+      expect(audit).toHaveBeenCalledWith({
+        action, module: "Fulfilment", outcome: "success",
+        actor: { type: "user", id: "portal-user-123", display_name: "Ana" },
+        target: { type: "order", id: String(id), display_name: `Order #${id}` },
+        description: expect.stringMatching(new RegExp(`Ana.*Order #${id}`)),
+        occurred_at: expect.any(String), operationId: `order:${id}:${action}`,
+      });
+    }
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(test.actions.length);
+  });
+  it.each(cases)("preserves $next when audit fails", async test => {
+    const id = await order("delivery", test.status);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    test.actions.forEach(() => audit.mockRejectedValueOnce(new Error("offline")));
+    expect((await test.run(id)).ok).toBe(true);
+    expect(logged).toHaveBeenCalledTimes(test.actions.length);
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: test.next } });
+    expect(revalidatePath).toHaveBeenCalledWith(`/orders/${id}`);
+  });
+  it.each(cases)("does not audit refused $next", async test => {
+    const id = await order("delivery", test.status);
+    storefront.refusal = "Already changed";
+    expect((await test.run(id)).ok).toBe(false);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("audits delivery and attachment even when photo promotion fails, without duplicating on reconciliation", async () => {
+    const id = await order("delivery", "dispatched");
+    storage.failPromote = true;
+    expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(2);
+    storage.failPromote = false;
+    expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
+    expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(2);
   });
 });

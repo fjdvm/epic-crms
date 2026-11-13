@@ -1,6 +1,25 @@
 import type postgres from "postgres";
+import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
+import { TICKETS_MODULE } from "@/lib/portal/config";
+import { TICKET_PRIORITIES } from "./tickets";
 
 import { checkImage, type FileStorage, type ImageRefusal, type ImageUpload } from "./attachments";
+
+export interface TicketAudit {
+  trail: AuditTrail;
+  operationId: string;
+  staff: { id: string; name: string };
+}
+
+async function auditChange(audit: TicketAudit | undefined, id: number, action: string, change: string) {
+  if (!audit) return;
+  await recordAudit(audit.trail, {
+    module: TICKETS_MODULE, action, outcome: "success", actor: staffAuditActor(audit.staff),
+    target: { type: "ticket", id: String(id), display_name: `TKT-${id}` },
+    description: `${audit.staff.name} ${change} TKT-${id}.`,
+    occurred_at: new Date().toISOString(), operationId: JSON.stringify([audit.staff.id, audit.operationId]),
+  });
+}
 
 /** The Staff member acting: the Portal username is their opaque id, and the name is snapshotted onto the Ticket. */
 export interface Actor {
@@ -9,6 +28,8 @@ export interface Actor {
 }
 
 export type TicketActionFailure =
+  | "invalid-priority"
+  | "unchanged"
   | "not-found"
   /** Someone else holds the Claim; nobody takes a Claimed Ticket from its Claimer. */
   | "claimed"
@@ -18,6 +39,7 @@ export type TicketActionFailure =
   | "completed"
   | "already-resolved"
   | "empty-message"
+  | "invalid-attachment"
   | ImageRefusal
   /** file-storage could not take the image; nothing was saved. */
   | "storage-unavailable";
@@ -43,13 +65,16 @@ async function whyNot(sql: postgres.Sql, id: number, actor: Actor): Promise<Tick
 }
 
 /** Staff take an Unclaimed Ticket for themselves. */
-export async function claimTicket(sql: postgres.Sql, id: number, actor: Actor): Promise<TicketActionResult> {
+export async function claimTicket(sql: postgres.Sql, id: number, actor: Actor, audit?: TicketAudit): Promise<TicketActionResult> {
   const rows = await sql`
     update tickets set claimed_by_id = ${actor.id}, claimed_by_name = ${actor.name}
     where id = ${id} and claimed_by_id is null and status <> 'completed'
     returning id`;
 
-  if (rows.length) return { ok: true };
+  if (rows.length) {
+    await auditChange(audit, id, "ticket.claimed", "claimed Ticket");
+    return { ok: true };
+  }
 
   const reason = await whyNot(sql, id, actor);
   if (reason !== "not-claimed" && reason !== "claimed") return { ok: false, reason };
@@ -65,13 +90,17 @@ export async function releaseTicket(
   sql: postgres.Sql,
   id: number,
   actor: Actor,
+  audit?: TicketAudit,
 ): Promise<TicketActionResult> {
   const rows = await sql`
     update tickets set claimed_by_id = null, claimed_by_name = null
     where id = ${id} and claimed_by_id = ${actor.id} and status <> 'completed'
     returning id`;
 
-  if (rows.length) return { ok: true };
+  if (rows.length) {
+    await auditChange(audit, id, "ticket.released", "released Ticket");
+    return { ok: true };
+  }
 
   const reason = await whyNot(sql, id, actor);
 
@@ -79,28 +108,28 @@ export async function releaseTicket(
 }
 
 /**
- * A Staff Message: text, one JPG or PNG image, or both. Only the Claimer can reply: an Unclaimed
- * Ticket must be Claimed first, and a Ticket someone else Claimed cannot be replied to. An image is
- * stored first and removed again if the Message is not saved, so file-storage never keeps an image
- * no Message shows.
+ * Only the Claimer can reply. Direct File ids are trusted inputs verified by the server action;
+ * legacy images are uploaded here. Only images created in this call are discarded on a failed save,
+ * since a confirmed direct upload may already belong to an earlier Message.
  */
 export async function replyToTicket(
   sql: postgres.Sql,
   id: number,
   actor: Actor,
   body: string,
-  attachment?: { image: ImageUpload; storage: FileStorage },
+  attachment?: ({ image: ImageUpload } | { fileId: string }) & { storage: FileStorage },
 ): Promise<ReplyResult> {
   const text = body.trim();
   if (!text && !attachment) return { ok: false, reason: "empty-message" };
 
-  let fileId: string | null = null;
+  let fileId: string | null = attachment && "fileId" in attachment ? attachment.fileId : null;
 
-  if (attachment) {
+  if (attachment && "image" in attachment) {
     const checked = checkImage(attachment.image);
     if (!checked.ok) return checked;
 
     try {
+      if (!attachment.storage.upload) throw new Error("Use a confirmed direct upload");
       fileId = await attachment.storage.upload({
         filename: attachment.image.filename,
         contentType: checked.contentType,
@@ -118,13 +147,13 @@ export async function replyToTicket(
   try {
     result = await saveReply(sql, id, actor, text, fileId);
   } catch (error) {
-    await discard(attachment?.storage, fileId);
+    if (attachment && "image" in attachment) await discard(attachment.storage, fileId);
 
     throw error;
   }
 
   if (!result.ok) {
-    await discard(attachment?.storage, fileId);
+    if (attachment && "image" in attachment) await discard(attachment.storage, fileId);
   } else if (attachment && fileId !== null) {
     try {
       await attachment.storage.linkToMessage(fileId, result.messageId);
@@ -193,6 +222,7 @@ export async function markResolved(
   id: number,
   storefrontTicketUrl: (id: number) => string,
   sendEmail: SendAppEmail,
+  audit?: TicketAudit,
 ): Promise<TicketActionResult & { emailed?: boolean }> {
   const [t] = await writer<{ subject: string; customer_id: string }[]>`
     update tickets set status = 'resolved', resolved_at = now()
@@ -209,6 +239,8 @@ export async function markResolved(
       reason: existing.status === "completed" ? "completed" : "already-resolved",
     };
   }
+
+  await auditChange(audit, id, "ticket.status_changed", "marked Resolved Ticket");
 
   try {
     const [customer] = await reader<{ email: string; first_name: string; full_name: string }[]>`
@@ -227,4 +259,19 @@ export async function markResolved(
   }
 
   return { ok: true, emailed: true };
+}
+
+/** Priority may change while a Ticket is Open or Resolved; Completed is final. */
+export async function changeTicketPriority(sql: postgres.Sql, id: number, priority: string, audit?: TicketAudit): Promise<TicketActionResult> {
+  if (!(TICKET_PRIORITIES as string[]).includes(priority)) return { ok: false, reason: "invalid-priority" };
+  const [row] = await sql`
+    update tickets set priority = ${priority}
+    where id = ${id} and status <> 'completed' and priority <> ${priority}
+    returning id`;
+  if (!row) {
+    const [ticket] = await sql`select status from tickets where id = ${id}`;
+    return { ok: false, reason: !ticket ? "not-found" : ticket.status === "completed" ? "completed" : "unchanged" };
+  }
+  await auditChange(audit, id, "ticket.priority_changed", `changed Priority to ${priority} on Ticket`);
+  return { ok: true };
 }

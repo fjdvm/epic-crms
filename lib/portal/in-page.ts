@@ -24,6 +24,7 @@ export async function guarded<T>(
     case "invalid":
       return { status: "session-ended" };
     case "denied":
+      await access.recordDenial(module);
       return { status: "no-access" };
     case "unavailable":
       return { status: "unavailable" };
