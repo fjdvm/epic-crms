@@ -28,8 +28,8 @@ export function LoadingCard({
               className="absolute left-1/2 top-0 block h-[78.23%] w-[49.96%] max-w-none"
             />
           </div>
-          <div className="absolute left-[14px] top-[14px] size-[44px] overflow-hidden rounded-[10px] bg-black">
-            <img src="/loading/logo.svg" alt="" className="size-[44px]" />
+          <div className="absolute left-[14px] top-[14px] size-[44px] overflow-hidden rounded-[10px] border border-[#ece6f2] bg-white">
+            <img src="/images/brand/logo-tile.png" alt="" className="size-[44px] object-contain p-[3px]" />
           </div>
         </div>
         <div className="flex flex-col items-center gap-1 whitespace-nowrap">

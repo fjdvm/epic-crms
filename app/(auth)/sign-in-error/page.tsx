@@ -1,3 +1,4 @@
+import { BrandLockup } from "@/components/brand/brand-lockup";
 import { LOGIN_PATH } from "@/lib/portal/config";
 
 const MESSAGES: Record<string, { title: string; body: string }> = {
@@ -25,7 +26,8 @@ export default async function SignInErrorPage({
 
   return (
     <main className="min-h-screen flex items-center justify-center p-md">
-      <div className="max-w-[28rem] space-y-sm text-center">
+      <div className="flex max-w-[28rem] flex-col items-center space-y-sm text-center">
+        <BrandLockup system="Enterprise Suite" className="mb-md" />
         <h1 className="text-headline-md text-foreground">{message.title}</h1>
         <p className="text-body-sm text-muted-foreground">{message.body}</p>
         <a href={LOGIN_PATH} className="text-sm font-medium underline">
