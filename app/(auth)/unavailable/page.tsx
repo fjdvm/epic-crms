@@ -1,3 +1,4 @@
+import { BrandLockup } from "@/components/brand/brand-lockup";
 import { safeReturnTo } from "@/lib/portal/return-to";
 
 export default async function UnavailablePage({
@@ -9,7 +10,8 @@ export default async function UnavailablePage({
 
   return (
     <main className="min-h-screen flex items-center justify-center p-md">
-      <div className="max-w-[28rem] space-y-sm text-center">
+      <div className="flex max-w-[28rem] flex-col items-center space-y-sm text-center">
+        <BrandLockup system="Enterprise Suite" className="mb-md" />
         <h1 className="text-headline-md text-foreground">CREOMS is temporarily unavailable</h1>
         <p className="text-body-sm text-muted-foreground">
           CREOMS could not reach the Portal to check your access, so nothing can be opened right

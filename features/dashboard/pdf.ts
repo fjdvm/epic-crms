@@ -19,8 +19,8 @@ export async function dashboardPdf(
   figures: DashboardFigures,
   { period, preset, now }: { period: Period; preset: PeriodPreset; now: Date },
 ): Promise<Buffer> {
-  const logo = await sharp(path.join(process.cwd(), "public/images/bren-raphaels-logo.svg"))
-    .resize(180, 180).png().toBuffer();
+  const logo = await sharp(path.join(process.cwd(), "public/images/brand/logo-tile.png"))
+    .resize(180, 180, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } }).png().toBuffer();
   const doc = new PDFDocument({
     size: "A4", margin: 44,
     font: path.join(process.cwd(), "features/dashboard/assets/DejaVuSans.ttf"),
