@@ -46,11 +46,11 @@ describe("the sidebar", () => {
     expect(screen.queryByRole("link", { name: "Customer Profiles" })).toBeNull();
   });
 
-  it("groups Customer Profiles under CUSTOMERS and shows the product tag", async () => {
+  it("groups Customer Profiles under CUSTOMERS and shows the system name", async () => {
     renderSidebar(["/customer-profiles"]);
 
     expect(await screen.findByText("CUSTOMERS")).toBeTruthy();
-    expect(screen.getByText("Customer Relationship Mgmt.")).toBeTruthy();
+    expect(screen.getByText("Customer Relation & Ecommerce Ordering Management System")).toBeTruthy();
     expect(screen.getAllByRole("link")).toHaveLength(1);
   });
 

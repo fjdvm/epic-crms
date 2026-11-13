@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CREOMS",
+  title: "Bren Raphael's | Customer Relation & Ecommerce Ordering Management System",
   description: "Customer Relationship Management",
 };
 

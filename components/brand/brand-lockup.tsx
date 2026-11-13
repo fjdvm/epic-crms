@@ -3,7 +3,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 const SYSTEM_NAMES = {
-  CREOMS: "Customer Relation & Ecommerce Management System",
+  CREOMS: "Customer Relation & Ecommerce Ordering Management System",
   HRMS: "Human Resource Management System",
   IMS: "Inventory Management System",
   POS: "Point of Sale System",
