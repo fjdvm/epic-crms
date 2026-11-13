@@ -17,7 +17,7 @@ export function InboxPreview({
     <div className="flex flex-col overflow-hidden rounded-[10px] border border-[#e4e4e7] bg-white" data-testid="inbox-preview">
       <div className="flex items-center gap-[10px] bg-[#18181b] px-[14px] py-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/bren-raphaels-logo.svg" alt="" className="size-7 shrink-0 rounded-[7px] bg-black" />
+        <img src="/images/brand/logo-tile.png" alt="" className="size-7 shrink-0 rounded-[7px] bg-white object-contain" />
         <p className="text-sm font-semibold leading-[normal] text-white">Bren Raphael&apos;s</p>
       </div>
       <div className="flex flex-col gap-3 p-[18px]">
