@@ -70,7 +70,7 @@ manifest = {
                     'timeoutSeconds': 5, 'failureThreshold': failures,
                 } for kind, delay, failures in [('Startup', 5, 30), ('Readiness', 5, 3), ('Liveness', 30, 3)]],
             }],
-            'scale': {'minReplicas': 0, 'maxReplicas': 2},
+            'scale': {'minReplicas': 1, 'maxReplicas': 2},
         },
     },
 }

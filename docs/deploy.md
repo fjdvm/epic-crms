@@ -6,7 +6,7 @@ OIDC and rolls out a new revision of `ca-creoms` (resource group `rg-brenraphael
 `cae-brenraphaels`, Indonesia Central). The job passes when the new revision is Healthy and `/api/health`
 answers; its default address is printed in the workflow summary. Pull requests and manual runs never deploy.
 
-The app runs at min 0 replicas (the first request after idle may take a few seconds), max 2, 0.5 vCPU / 1 GiB.
+The app keeps at least 1 replica running, max 2, with 0.5 vCPU / 1 GiB per replica.
 The app is created on the first run. The public address `https://creoms.buildwrite.me` is baked in as the
 `NEXT_PUBLIC_APP_URL` build argument; until the domain is bound, use the default address from the summary.
 
