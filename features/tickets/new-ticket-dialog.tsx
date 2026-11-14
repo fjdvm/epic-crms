@@ -25,6 +25,7 @@ const REASONS: Record<Exclude<OpenTicketOutcome, { ok: true }>["reason"], string
   ...IMAGE_REFUSALS,
   "invalid-attachment": "That attachment is invalid or expired. Attach the file again.",
   "storage-unavailable": "CREOMS could not store that image. Try again in a moment.",
+  "read-only": "Your Role can only view shop work.",
   unavailable: "CREOMS could not open that Ticket. Try again in a moment.",
 };
 

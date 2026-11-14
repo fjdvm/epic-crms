@@ -14,6 +14,5 @@ export function shopRole(role: string): ShopRole | null {
 export function canWork(staff: Staff): boolean {
   return ["staff", "manager"].includes(shopRole(staff.role) ?? "");
 }
-export function requireShopWriter(staff: Staff): void {
-  if (!canWork(staff)) throw new Error("Your Role can only view shop work.");
-}
+export const READ_ONLY_REASON = "Your Role can only view shop work.";
+export const READ_ONLY_REFUSAL = { ok: false, reason: "read-only" } as const;

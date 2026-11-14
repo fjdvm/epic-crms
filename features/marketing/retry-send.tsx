@@ -41,7 +41,7 @@ export function RetrySend({
 
         setConfirming(false);
         if (!result.ok) {
-          return void toast.error(result.reason === "unavailable" ? "CREOMS could not reach its database. Try again in a moment." : SEND_REFUSALS[result.reason]);
+          return void toast.error(result.reason === "read-only" ? "Only a Manager can change Announcements." : result.reason === "unavailable" ? "CREOMS could not reach its database. Try again in a moment." : SEND_REFUSALS[result.reason]);
         }
 
         if (result.state === "sent") toast.success(`Sent to ${plural(result.subscribers)}.`);

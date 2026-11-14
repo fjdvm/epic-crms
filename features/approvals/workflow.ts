@@ -19,12 +19,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const failure = (reason: string): ApprovalResult => ({ ok: false, reason });
 
 /** Money is integer centavos; a refund/write-off alone can enter the CEO step. */
-function needsCEO(request: ApprovalRequest): boolean {
+function needsCEO(request: Pick<ApprovalRequest, "action" | "amount_in_centavos" | "limit_in_centavos">): boolean {
   return ["return.refund", "write-off"].includes(request.action) &&
     BigInt(request.amount_in_centavos) > BigInt(request.limit_in_centavos);
 }
 
-export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: ApprovalNotice) {
+export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: ApprovalNotice, defer: (work: () => Promise<void>) => void | Promise<void> = work => work()) {
   async function event(tx: postgres.TransactionSql, staff: Staff, action: string, requestId: string | null, details: Record<string, unknown> = {}) {
     const id = randomUUID();
     await tx`insert into crms.approval_events (id, request_id, action, actor_id, actor_name, details)
@@ -43,7 +43,9 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
   async function deliverNotices() {
     const pending = await sql<{ key: string; request_id: string; audience: "manager" | "ceo" | "requester"; text: string }[]>`
       select * from crms.approval_notices where delivered_at is null order by key limit 50`;
+    const deadline = Date.now() + 4_000;
     for (const item of pending) {
+      if (Date.now() >= deadline) break;
       const [request] = await sql<ApprovalRequest[]>`select * from crms.approval_requests where id = ${item.request_id}`;
       try {
         await notify({ request, audience: item.audience, text: item.text, key: item.key });
@@ -59,13 +61,13 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
       await tx`update crms.approval_settings set limit_in_centavos = ${amount}, changed_by_id = ${staff.id}, changed_by_name = ${staff.name}, changed_at = now() where singleton`;
       return event(tx, staff, "approval_limit.changed", null, { previous: String(previous.limit_in_centavos), amountInCentavos: amount });
     });
-    await publish(e);
+    await defer(() => publish(e));
     return { ok: true as const };
   }
   async function list(staff: Staff, module: string) {
     const role = shopRole(staff.role);
     if (!role) return [];
-    await deliverNotices();
+    await defer(deliverNotices);
     return sql<ApprovalRequest[]>`select * from crms.approval_requests where module = ${module}
       and (${role !== "staff"} or requester_id = ${staff.id}) order by requested_at desc`;
   }
@@ -88,8 +90,7 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
       return { request: updated, event: await event(tx, staff, decision === "approve" ? "approval.granted" : "approval.declined", id, { step: manager ? "manager" : "ceo", status, reason }) };
     });
     if (result.error) return result.error;
-    await publish(result.event!);
-    await deliverNotices();
+    await defer(async () => { await publish(result.event!); await deliverNotices(); });
     return { ok: true as const, request: result.request! };
   }
   async function run<R extends { ok: boolean }>(staff: Staff, input: ApprovalInput, options: ApprovalOptions, execute: () => Promise<R>): Promise<R | ApprovalResult> {
@@ -118,7 +119,7 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
 
     const reason = options.reason?.trim();
     const [settings] = await sql`select limit_in_centavos from crms.approval_settings where singleton`;
-    const large = ["return.refund", "write-off"].includes(input.action) && input.amountInCentavos > Number(settings.limit_in_centavos);
+    const large = needsCEO({ action: input.action, amount_in_centavos: String(input.amountInCentavos), limit_in_centavos: String(settings.limit_in_centavos) });
     if (role === "manager" && !large) return execute();
     if (!reason) return failure("Request approval with a reason.");
     const result = await sql.begin(async tx => {
@@ -133,13 +134,12 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
       await queueNotice(tx, request, role === "manager" ? "ceo" : "manager", `${staff.name} requested approval: ${reason}`);
       return { request, events };
     });
-    for (const e of result.events) await publish(e);
-    await deliverNotices();
+    await defer(async () => { for (const e of result.events) await publish(e); await deliverNotices(); });
     return { ok: false, reason: "Waiting for approval", approvalId: result.request.id, status: result.request.status };
   }
   async function acceptAI(staff: Staff, module: string, suggestionId: string, targetId: string) {
     const e = await sql.begin(tx => event(tx, staff, "ai_suggestion.accepted", null, { module, suggestionId, targetId }));
-    await publish(e);
+    await defer(() => publish(e));
     return { ok: true };
   }
   return { setLimit, list, decide, run, acceptAI };

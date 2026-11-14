@@ -56,6 +56,7 @@ const MESSAGES: Record<string, string> = {
   "not-a-draft": "That Announcement is no longer a Draft, so it cannot be changed.",
   "not-editable": "That Announcement has been sent or is being sent, so it cannot be changed.",
   "send-failed": "The test copy could not be sent. Try again in a moment.",
+  "read-only": "Only a Manager can change Announcements.",
   unavailable: "CREOMS could not reach its database. Try again in a moment.",
 };
 

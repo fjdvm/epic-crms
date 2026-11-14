@@ -465,3 +465,5 @@ describe("Return Audit Events", () => {
 });
 
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
+
+vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));

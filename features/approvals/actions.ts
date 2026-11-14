@@ -13,7 +13,7 @@ export async function decideApproval(module: string, id: string, decision: "appr
   return approvals().decide(staff, module, id, decision, reason);
 }
 export async function setApprovalLimit(amountInCentavos: number) {
-  const staff = await requireModule(RETURNS_MODULE);
+  const staff = await requireModule("Portal Settings");
   return approvals().setLimit(staff, amountInCentavos);
 }
 

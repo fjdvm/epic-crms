@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayAuditTrail } from "@/lib/gateway";
 import { portalGateway } from "@/features/notifications/portal-gateway";
@@ -9,10 +10,16 @@ export function approvals() {
   return approvalWorkflow(crmsDatabase(), gatewayAuditTrail, async ({ request, audience, text, key }) => {
     const portal = portalGateway();
     const people = await portal.recipients();
-    for (const person of people) {
+    if (people.some(person => person.modules.includes(request.module) && typeof person.role !== "string")) {
+      throw new Error("Portal approval recipients must include their Role");
+    }
+    const recipients = people.filter(person => person.modules.includes(request.module) &&
+      (audience === "requester" ? person.id === request.requester_id : shopRole(person.role ?? "") === audience));
+    if (!recipients.length) throw new Error("No eligible approval recipient is available");
+    for (const person of recipients) {
       if (!person.modules.includes(request.module)) continue;
       if (audience === "requester" ? person.id !== request.requester_id : shopRole(person.role ?? "") !== audience) continue;
       await portal.send({ key: `${key}:${person.id}`, userId: person.id, text, link: `${appUrl()}/returns` });
     }
-  });
+  }, after);
 }

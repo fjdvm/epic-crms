@@ -15,7 +15,7 @@ import {
   storefrontTicketUrl,
 } from "@/lib/gateway";
 import { TICKETS_MODULE } from "@/lib/portal/config";
-import { requireShopWriter, canWork } from "@/lib/portal/roles";
+import { canWork, READ_ONLY_REFUSAL } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
@@ -32,19 +32,19 @@ import {
   type TicketActionResult,
 } from "./ticket-actions";
 
-export type TicketActionOutcome = TicketActionResult | { ok: false; reason: "unavailable" };
-export type ReplyOutcome = ReplyResult | { ok: false; reason: "unavailable" };
+export type TicketActionOutcome = TicketActionResult | { ok: false; reason: "unavailable" | "read-only" };
+export type ReplyOutcome = ReplyResult | { ok: false; reason: "unavailable" | "read-only" };
 
 /** Server actions are public endpoints, so each proves the Staff member holds the Tickets Module. */
 async function act<R extends TicketActionResult | ReplyResult>(
   id: number,
   run: (actor: Actor, audit: TicketAudit) => Promise<R>,
   operationId: string = randomUUID(),
-): Promise<R | { ok: false; reason: "unavailable" }> {
+): Promise<R | { ok: false; reason: "unavailable" | "read-only" }> {
   const staff = await requireModule(TICKETS_MODULE);
 
+  if (!canWork(staff)) return READ_ONLY_REFUSAL;
   try {
-    requireShopWriter(staff);
     const result = await run({ id: staff.username, name: staff.name }, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath(`/tickets/${id}`);
 
@@ -107,7 +107,7 @@ export async function liveUrl(id: number): Promise<string | null> {
   }
 }
 
-export type OpenTicketOutcome = OpenTicketResult | { ok: false; reason: "unavailable" };
+export type OpenTicketOutcome = OpenTicketResult | { ok: false; reason: "unavailable" | "read-only" };
 
 /** The New ticket dialog: `subject`, `customerId`, optional `orderId`, `priority`, `description` and optional `image`. */
 export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> {
@@ -117,8 +117,8 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
   const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
   const orderId = String(form.get("orderId") ?? "");
 
+  if (!canWork(staff)) return READ_ONLY_REFUSAL;
   try {
-    requireShopWriter(staff);
     const reference = form.get("attachment");
     const upload = typeof reference === "string" ? await ticketUpload(reference, staff.username, null) : null;
     if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" };

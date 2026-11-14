@@ -111,7 +111,7 @@ export function AddCustomerForm({ save = addWalkInCustomer }: { save?: Save }) {
   const [smsConsent, setSmsConsent] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [duplicate, setDuplicate] = useState<{ id: string; name: string; field: "email" | "mobile" } | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
+  const [unavailable, setUnavailable] = useState<string | false>(false);
 
   const set = (key: keyof typeof values) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setValues((v) => ({ ...v, [key]: e.target.value }));
@@ -146,9 +146,10 @@ export function AddCustomerForm({ save = addWalkInCustomer }: { save?: Save }) {
       const result = await save(payload, crypto.randomUUID());
 
       if (result.ok) return router.push(`/customer-profiles/${encodeURIComponent(result.id)}`);
+      if ("forbidden" in result) return setUnavailable(result.message);
       if ("errors" in result) return setErrors(result.errors);
       if ("duplicate" in result) return setDuplicate(result.duplicate);
-      setUnavailable(true);
+      setUnavailable("The customer could not be saved. Try again; if it keeps happening, tell whoever maintains CREOMS.");
     });
   }
 
@@ -165,7 +166,7 @@ export function AddCustomerForm({ save = addWalkInCustomer }: { save?: Save }) {
       )}
       {unavailable && (
         <div role="alert" className="rounded-lg border border-destructive/30 bg-badge-destructive px-4 py-3 text-sm text-badge-destructive-foreground">
-          The customer could not be saved. Try again; if it keeps happening, tell whoever maintains CREOMS.
+          {unavailable}
         </div>
       )}
 

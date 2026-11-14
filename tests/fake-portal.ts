@@ -174,7 +174,8 @@ export class FakePortal {
       return Response.json({ error: "access_denied" }, { status: 403 });
     }
 
-    if (!this.modulesById.get(staffId)?.has(body.module)) {
+    const settings = body.module === "Portal Settings" && ["Super Admin", "Admin", "CEO", "CRMS Manager", "CREOMS Manager", "Manager"].includes(staff.role);
+    if (!settings && !this.modulesById.get(staffId)?.has(body.module)) {
       return Response.json({ error: "module_not_granted" }, { status: 403 });
     }
 

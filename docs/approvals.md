@@ -34,7 +34,7 @@ screens. No UI is introduced here.
 The Portal Settings backend is `POST /api/creoms/approval-limit`: `{}` reads,
 `{amountInCentavos}` changes (Admin only). It issues a 60-second, centrally bound
 CREOMS handle, calls `POST /api/approvals/limit`, then revokes the handle. The
-CREOMS endpoint validates Returns access against the live Portal. No extra shared
+CREOMS endpoint validates the Portal-owned `Portal Settings` capability against the live Portal. This capability admits only Admin, CEO and CREOMS Manager identities and does not depend on shop Module grants; no CREOMS page uses it. No extra shared
 secret or database credential is required. `setApprovalLimit` is the corresponding
 CREOMS action. The initial limit is 500000 centavos; every change is recorded with
 the Admin's identity and previous amount in an atomic local audit record and sent
@@ -42,7 +42,7 @@ to the shared Audit service.
 
 Approval notifications are durable outbox entries delivered through the existing
 in-app Portal notification service. Manager/CEO recipients must have the relevant
-Module and Role; decisions notify the requester. Failed delivery retries on a user
+Module and Role; decisions notify the requester. Delivery runs after the response with a bounded batch. Failed delivery retries on a user
 request/list/decision, using stable keys, never a timer. Role names are included in
 the Portal's backend-only recipient directory.
 

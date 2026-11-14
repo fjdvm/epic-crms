@@ -8,7 +8,7 @@ import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
 import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 import type { Staff } from "@/lib/portal/client";
-import { requireShopWriter } from "@/lib/portal/roles";
+import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { changeOrderStatus, type OrderChangeResult } from "@/lib/storefront";
 
@@ -37,8 +37,8 @@ async function act(
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
 
   let result: OrderChangeResult;
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
-    requireShopWriter(staff);
     const [order] = await database()<CurrentOrder[]>`
       select status, fulfillment_method, payment_method, payment_proof_submitted_at from public.orders where id = ${id}`;
     if (!order) return { ok: false, reason: "Order was not found." };
@@ -218,8 +218,8 @@ export async function getFulfilmentBoard(): Promise<FulfilmentBoardResult> {
 export async function reconcileDeliveryPhoto(id: number): Promise<{ ok: true } | { ok: false; reason: string }> {
   const staff = await requireModule(FULFILMENT_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
-    requireShopWriter(staff);
     const [order] = await database()<{ status: string; file_id: string | null }[]>`
       select status, to_jsonb(o)->>'delivery_photo_file_id' as file_id from public.orders o where id = ${id}`;
     if (!order || !["delivered", "received"].includes(order.status) || !order.file_id) {

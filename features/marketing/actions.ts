@@ -9,7 +9,7 @@ import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
 import { gatewayAuditTrail, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
-import { requireShopWriter, shopRole } from "@/lib/portal/roles";
+import { shopRole, READ_ONLY_REFUSAL } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 
 import {
@@ -35,7 +35,7 @@ import {
 import type { AddImageResult } from "./image-limits";
 import { parsePhilippineTime } from "./philippine-time";
 
-export type Unavailable = { ok: false; reason: "unavailable" };
+export type Unavailable = { ok: false; reason: "unavailable" | "read-only" };
 
 const ports = (operationId: string = randomUUID()): Ports => ({
   operationId,
@@ -52,9 +52,8 @@ async function act<R extends { ok: boolean }>(
 ): Promise<R | Unavailable> {
   const staff = await requireModule(MARKETING_MODULE);
 
+  if (shopRole(staff.role) !== "manager") return READ_ONLY_REFUSAL;
   try {
-    requireShopWriter(staff);
-    if (shopRole(staff.role) !== "manager") throw new Error("Only a Manager can change Announcements.");
     const result = await run({ id: staff.id, name: staff.name }, staff.email);
     if (result.ok) revalidatePath("/email-campaigns");
 
@@ -111,9 +110,8 @@ export async function sendTestCopyAction(id: string, operationId?: string): Prom
 export async function addImageAction(form: FormData): Promise<AddImageResult | Unavailable> {
   const staff = await requireModule(MARKETING_MODULE);
   if (!(form instanceof FormData) || form.getAll("image").length !== 1) return { ok: false, reason: "not-an-image" };
+  if (shopRole(staff.role) !== "manager") return READ_ONLY_REFUSAL;
   try {
-    requireShopWriter(staff);
-    if (shopRole(staff.role) !== "manager") throw new Error("Only a Manager can change Announcements.");
     const upload = await recordUpload(MARKETING_MODULE, form.get("image"), staff.username);
     return upload ? { ok: true, url: upload.url } : { ok: false, reason: "not-an-image" };
   } catch {

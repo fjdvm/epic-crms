@@ -51,6 +51,8 @@ function report(outcome: AnalyzeOutcome) {
       return toast.error("An analysis is already running.");
     case "cooling-down":
       return toast.error(`Analyze is available again at ${clock.format(outcome.until)}.`);
+    case "read-only":
+      return toast.error("Your Role can only view shop work.");
     case "unavailable":
       return toast.error("The analysis could not run. Try again in a moment.");
   }

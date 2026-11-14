@@ -124,3 +124,5 @@ describe('Returns server access', () => {
 });
 
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
+
+vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));
