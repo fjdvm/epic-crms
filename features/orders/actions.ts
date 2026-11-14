@@ -10,7 +10,7 @@ import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/
 import type { Staff } from "@/lib/portal/client";
 import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
-import { cancelStorefrontItems, changeOrderStatus, type OrderChangeResult } from "@/lib/storefront";
+import { cancelStorefrontItems, changeOrderStatus, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
 
 import { CANCELLABLE_STATUSES } from "./orders";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
@@ -32,7 +32,7 @@ async function act(
   id: number,
   run: (order: CurrentOrder, staff: Staff) => Promise<OrderChangeResult>,
   requiredModule: string = ORDERS_MODULE,
-  audit?: { action: string; description: (staff: Staff) => string },
+  audit?: { action: string; description: (staff: Staff) => string; metadata?: Record<string, unknown> },
 ): Promise<OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
   const staff = await requireModule(requiredModule);
@@ -52,7 +52,7 @@ async function act(
   // Order writes are never optimistic, and a refusal must not look like a changed Order.
   if (result.ok) {
     if (audit) {
-      await auditOrder(id, staff, requiredModule, audit.action, audit.description(staff));
+      await auditOrder(id, staff, requiredModule, audit.action, audit.description(staff), audit.metadata);
     }
     revalidatePath(`/orders/${id}`);
     revalidatePath("/orders");
@@ -64,11 +64,11 @@ async function act(
 }
 
 /** These transitions and the Delivery photo attachment happen at most once per Order. */
-async function auditOrder(id: number, staff: Staff, module: string, action: string, description: string) {
+async function auditOrder(id: number, staff: Staff, module: string, action: string, description: string, metadata?: Record<string, unknown>) {
   await recordAudit(gatewayAuditTrail, {
     action, module, outcome: "success", actor: staffAuditActor(staff),
     target: { type: "order", id: String(id), display_name: `Order #${id}` },
-    description, occurred_at: new Date().toISOString(), operationId: `order:${id}:${action}`,
+    description, ...(metadata ? { metadata } : {}), occurred_at: new Date().toISOString(), operationId: `order:${id}:${action}`,
   });
 }
 
@@ -208,14 +208,41 @@ export async function startPreparing(id: number): Promise<OrderChangeResult> {
   });
 }
 
-export async function dispatchOrder(id: number): Promise<OrderChangeResult> {
+/** What Staff typed in the dispatch dialog; only the Courier and https link are required, and only for Delivery. */
+export interface CourierInput { courier: string; trackingUrl: string; riderName?: string; riderPlate?: string; riderPhone?: string }
+
+function courierBooking(input: CourierInput | undefined): { ok: true; booking: CourierBooking } | { ok: false; reason: string } {
+  const name = input?.courier;
+  if (name !== "Lalamove" && name !== "Grab") return { ok: false, reason: "Choose Lalamove or Grab to dispatch a Delivery Order." };
+  let url: URL;
+  try { url = new URL(String(input?.trackingUrl ?? "").trim()); } catch { return { ok: false, reason: "Enter the booking's share link, starting with https://." }; }
+  if (url.protocol !== "https:") return { ok: false, reason: "Enter the booking's share link, starting with https://." };
+  const optional = (value: string | undefined) => value?.trim() || undefined;
+  return { ok: true, booking: {
+    name, trackingUrl: url.href,
+    ...(optional(input?.riderName) && { riderName: optional(input?.riderName) }),
+    ...(optional(input?.riderPlate) && { riderPlate: optional(input?.riderPlate) }),
+    ...(optional(input?.riderPhone) && { riderPhone: optional(input?.riderPhone) }),
+  } };
+}
+
+/** A Delivery Order needs its courier booking; Pickup needs none. The storefront stores it and emails the link once. */
+export async function dispatchOrder(id: number, courier?: CourierInput): Promise<OrderChangeResult> {
+  let booking: CourierBooking | undefined;
   return act(id, async (order) => {
     if (order.status !== "preparing") {
       return { ok: false, reason: "Only a preparing Order can be dispatched; it may have already changed. Refresh it before trying again." };
     }
-    return changeOrderStatus(id, { status: "dispatched" });
+    if (order.fulfillment_method === "delivery") {
+      const checked = courierBooking(courier);
+      if (!checked.ok) return checked;
+      booking = checked.booking;
+    }
+    return changeOrderStatus(id, booking ? { status: "dispatched", courier: booking } : { status: "dispatched" });
   }, FULFILMENT_MODULE, {
-    action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}.`,
+    action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}${booking ? ` with ${booking.name}` : ""}.`,
+    // The courier's name only; never the rider's phone or plate.
+    get metadata() { return booking ? { courier: booking.name } : undefined; },
   });
 }
 

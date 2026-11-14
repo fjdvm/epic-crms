@@ -228,6 +228,41 @@ describe("Order actions", () => {
   });
 });
 
+const COURIER = { courier: "Lalamove", trackingUrl: "https://share.lalamove.com/abc" };
+const dispatch = (id: number) => dispatchOrder(id, COURIER);
+
+describe("Courier details at dispatch", () => {
+  it("refuses a Delivery dispatch without a courier or an https link, before the storefront", async () => {
+    const id = await order("delivery", "preparing");
+    const requests = storefront.requests;
+    for (const input of [undefined, { ...COURIER, courier: "" }, { ...COURIER, courier: "Other" }, { ...COURIER, trackingUrl: "" },
+      { ...COURIER, trackingUrl: "http://share.lalamove.com/abc" }, { ...COURIER, trackingUrl: "not a link" }]) {
+      expect((await dispatchOrder(id, input)).ok).toBe(false);
+    }
+    expect(storefront.requests).toBe(requests);
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "preparing" } });
+  });
+  it("sends the booking with optional rider details and audits only the courier", async () => {
+    const id = await order("delivery", "preparing");
+    expect(await dispatchOrder(id, { ...COURIER, courier: "Grab", riderName: " Juan ", riderPhone: "0917 123 4567", riderPlate: "" })).toEqual({ ok: true, order: { id, status: "dispatched", deliveryFeeInCentavos: null } });
+    expect(storefront.couriers.get(id)).toEqual({ name: "Grab", trackingUrl: COURIER.trackingUrl, riderName: "Juan", riderPhone: "0917 123 4567" });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.dispatched", metadata: { courier: "Grab" } }));
+    expect(JSON.stringify(audit.mock.calls)).not.toContain("0917");
+  });
+  it("dispatches a Pickup Order without a courier", async () => {
+    const id = await order("pickup", "preparing");
+    expect(await dispatch(id)).toEqual({ ok: true, order: { id, status: "dispatched", deliveryFeeInCentavos: null } });
+    expect(storefront.couriers.has(id)).toBe(false);
+    expect(audit).toHaveBeenCalledWith(expect.not.objectContaining({ metadata: expect.anything() }));
+  });
+  it("reports the storefront's refusal without auditing", async () => {
+    const id = await order("delivery", "preparing");
+    storefront.refusal = "Another Staff member has already moved this Order.";
+    expect(await dispatch(id)).toEqual({ ok: false, reason: storefront.refusal });
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
 describe("Fulfilment Order actions", () => {
   it("reconciles only the photo recorded on a delivered or received Order", async () => {
     const id = await order("delivery", "dispatched");
@@ -436,14 +471,14 @@ describe("Fulfilment Order actions", () => {
 
   it("preserves the storefront refusal for each move without reporting success", async () => {
     storefront.refusal = "Another Staff member has already moved this Order.";
-    for (const [status, move] of [["confirmed", startPreparing], ["preparing", dispatchOrder], ["dispatched", deliverOrder]] as const) {
+    for (const [status, move] of [["confirmed", startPreparing], ["preparing", (id: number) => dispatch(id)], ["dispatched", deliverOrder]] as const) {
       expect(await move(await order("delivery", status), deliveryPhoto())).toEqual({ ok: false, reason: storefront.refusal });
     }
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("only confirms one of two Staff making the same move", async () => {
-    for (const [status, move] of [["confirmed", startPreparing], ["preparing", dispatchOrder], ["dispatched", deliverOrder]] as const) {
+    for (const [status, move] of [["confirmed", startPreparing], ["preparing", (id: number) => dispatch(id)], ["dispatched", deliverOrder]] as const) {
       const id = await order("delivery", status);
       const results = await Promise.all([move(id, deliveryPhoto()), move(id, deliveryPhoto())]);
       expect(results.filter(result => result.ok)).toHaveLength(1);
@@ -467,7 +502,7 @@ describe("Fulfilment Order actions", () => {
   });
   it("dispatches an Order being prepared through the storefront", async () => {
     const id = await order("delivery", "preparing");
-    expect(await dispatchOrder(id)).toEqual({ ok: true, order: { id, status: "dispatched", deliveryFeeInCentavos: null } });
+    expect(await dispatch(id)).toEqual({ ok: true, order: { id, status: "dispatched", deliveryFeeInCentavos: null } });
     expect(requireModule).toHaveBeenCalledWith("Fulfilment");
   });
   it("starts preparation only after the storefront confirms a payable-ready Order", async () => {
@@ -702,7 +737,7 @@ describe("Order and Payment Audit Events", () => {
 describe("Fulfilment Audit Events", () => {
   const cases = [
     { status: "confirmed", next: "preparing", run: startPreparing, actions: ["order.preparing"] },
-    { status: "preparing", next: "dispatched", run: dispatchOrder, actions: ["order.dispatched"] },
+    { status: "preparing", next: "dispatched", run: dispatch, actions: ["order.dispatched"] },
     { status: "dispatched", next: "delivered", run: (id: number) => deliverOrder(id, deliveryPhoto()), actions: ["order.delivered", "order.delivery_photo_attached"] },
   ];
   it.each(cases)("audits $next exactly once across retries", async test => {
@@ -716,6 +751,7 @@ describe("Fulfilment Audit Events", () => {
         actor: { type: "user", id: "portal-user-123", display_name: "Ana" },
         target: { type: "order", id: String(id), display_name: `Order #${id}` },
         description: expect.stringMatching(new RegExp(`Ana.*Order #${id}`)),
+        ...(action === "order.dispatched" ? { metadata: { courier: "Lalamove" } } : {}),
         occurred_at: expect.any(String), operationId: `order:${id}:${action}`,
       });
     }

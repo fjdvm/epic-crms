@@ -1,10 +1,19 @@
 import type { ReturnResolution } from "@/features/returns/returns";
 import { createHmac } from "node:crypto";
 
+export interface CourierBooking {
+  name: "Lalamove" | "Grab";
+  trackingUrl: string;
+  riderName?: string;
+  riderPlate?: string;
+  riderPhone?: string;
+}
+
 export type OrderStatusUpdate =
-  | { status: "confirmed" | "cancelled" | "preparing" | "dispatched"; deliveryFeeInCentavos?: number }
-  | { status: "delivered"; deliveryPhotoFileId: string; deliveryFeeInCentavos?: never }
-  | { status: "paid"; staffId: string; staffName: string; deliveryFeeInCentavos?: never };
+  | { status: "confirmed" | "cancelled" | "preparing"; deliveryFeeInCentavos?: number; courier?: never }
+  | { status: "dispatched"; courier?: CourierBooking; deliveryFeeInCentavos?: never }
+  | { status: "delivered"; deliveryPhotoFileId: string; deliveryFeeInCentavos?: never; courier?: never }
+  | { status: "paid"; staffId: string; staffName: string; deliveryFeeInCentavos?: never; courier?: never };
 export type OrderChangeResult =
   | { ok: true; order: { id: number; status: string; deliveryFeeInCentavos: number | null } }
   | { ok: false; reason: string };
@@ -42,6 +51,7 @@ async function orderRequest(id: number, update: OrderStatusUpdate | { lineIds: n
     if (!response.ok) return { ok: false, reason: typeof body.error === "string" ? body.error : "Storefront refused the change." };
     if (("status" in update && update.status === "delivered" && body.deliveryPhotoFileId !== update.deliveryPhotoFileId) ||
       body.id !== id || ("status" in update ? body.status !== (responseStatus ?? update.status) : !["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(body.status)) ||
+      ("courier" in update && update.courier !== undefined && (body.courier?.name !== update.courier.name || body.courier?.trackingUrl !== update.courier.trackingUrl)) ||
       ("deliveryFeeInCentavos" in update && update.deliveryFeeInCentavos !== undefined && body.deliveryFeeInCentavos !== update.deliveryFeeInCentavos) ||
       !(body.deliveryFeeInCentavos === null || Number.isSafeInteger(body.deliveryFeeInCentavos))) {
       return { ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." };

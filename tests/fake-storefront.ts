@@ -10,6 +10,8 @@ export class FakeStorefront {
   refusal: string | null = null;
   unavailable = false;
   requests = 0;
+  /** Courier bookings the fake storefront has recorded, by Order id. */
+  couriers = new Map<number, Record<string, string>>();
 
   constructor(private sql: postgres.Sql, private now: () => Date = () => new Date(), private files?: FakeFileStorage) {}
 
@@ -176,6 +178,10 @@ export class FakeStorefront {
     if (mayDeliver && (!update.deliveryPhotoFileId || order.delivery_photo_file_id)) {
       return Response.json({ error: "Exactly one permanent Delivery photo is required." }, { status: 400 });
     }
+    if (mayDispatch && order.fulfillment_method === "delivery" &&
+      (!["Lalamove", "Grab"].includes(update.courier?.name) || !/^https:\/\//.test(update.courier?.trackingUrl ?? ""))) {
+      return Response.json({ error: "Dispatching a Delivery Order needs the courier and an https tracking link." }, { status: 400 });
+    }
     if (mayMarkPaid && (!update.staffId || !update.staffName)) {
       return Response.json({ error: "Staff attribution is required." }, { status: 400 });
     }
@@ -194,7 +200,8 @@ export class FakeStorefront {
         paid_at = ${mayMarkPaid ? new Date() : order.paid_at}
       where id = ${id} and status = ${order.status} returning id, status, delivery_fee_in_centavos, delivery_photo_file_id`;
     if (!changed) return Response.json({ error: "Order already changed." }, { status: 409 });
-    return Response.json({ id: changed.id, status: changed.status, deliveryFeeInCentavos: changed.delivery_fee_in_centavos, deliveryPhotoFileId: changed.delivery_photo_file_id });
+    if (mayDispatch && update.courier) this.couriers.set(id, update.courier);
+    return Response.json({ id: changed.id, status: changed.status, ...(this.couriers.has(id) ? { courier: this.couriers.get(id) } : {}), deliveryFeeInCentavos: changed.delivery_fee_in_centavos, deliveryPhotoFileId: changed.delivery_photo_file_id });
   };
 }
 

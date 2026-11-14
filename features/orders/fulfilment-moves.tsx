@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { uploadFile } from "@/features/files/client";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 import { OrderActionDialog } from "./action-dialog";
 import { deliverOrder, dispatchOrder, startPreparing } from "./actions";
@@ -41,16 +43,82 @@ function MarkDelivered({ id, triggerClassName }: { id: number; triggerClassName?
   );
 }
 
+const COURIERS = ["Lalamove", "Grab"] as const;
+
 /**
- * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. The
- * storefront has no courier or tracking number, so no move asks for one.
+ * A Delivery Order needs the courier and the booking's https share link, so Staff fill them in here. It emails the
+ * Customer and sends the link outside the app, so it waits for the server instead of updating the screen first.
+ */
+function DispatchDelivery({ id, triggerClassName }: { id: number; triggerClassName?: string }) {
+  const [courier, setCourier] = useState<string>("");
+  const [link, setLink] = useState("");
+  const [riderName, setRiderName] = useState("");
+  const [riderPhone, setRiderPhone] = useState("");
+  const [riderPlate, setRiderPlate] = useState("");
+  const linkOk = /^https:\/\/\S+$/i.test(link.trim());
+
+  return (
+    <OrderActionDialog
+      trigger="Mark as dispatched"
+      triggerClassName={triggerClassName}
+      title={`Mark Order #${id} as dispatched?`}
+      description="Record the courier booking. The Customer is emailed once with the tracking link. A dispatched Order can no longer be cancelled."
+      confirm="Mark as dispatched"
+      busy="Dispatching…"
+      disabled={!COURIERS.some(name => name === courier) || !linkOk}
+      run={() => dispatchOrder(id, { courier, trackingUrl: link, riderName, riderPlate, riderPhone })}
+      successMessage={`Order #${id} dispatched.`}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="courier" className="text-[13px] font-medium text-foreground">Courier</Label>
+        <div id="courier" role="radiogroup" aria-label="Courier" className="flex gap-2">
+          {COURIERS.map(name => (
+            <button
+              key={name}
+              type="button"
+              role="radio"
+              aria-checked={courier === name}
+              onClick={() => setCourier(name)}
+              className={`h-9 flex-1 rounded-lg border text-[13px] ${courier === name ? "border-[#5b2a86] bg-[#f4effa] font-medium text-[#5b2a86]" : "border-[#e6e1ee]"}`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="tracking-link" className="text-[13px] font-medium text-foreground">Booking share link</Label>
+        <Input id="tracking-link" type="url" autoComplete="off" placeholder="https://…" value={link} onChange={e => setLink(e.target.value)} />
+        {link.trim() && !linkOk ? <p className="text-xs text-[#dc2626]">The link must start with https://</p> : null}
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="rider-name" className="text-[13px] font-medium text-foreground">Rider name (optional)</Label>
+        <Input id="rider-name" autoComplete="off" value={riderName} onChange={e => setRiderName(e.target.value)} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="rider-contact" className="text-[13px] font-medium text-foreground">Rider contact (optional)</Label>
+          <Input id="rider-contact" type="tel" autoComplete="off" value={riderPhone} onChange={e => setRiderPhone(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="rider-plate" className="text-[13px] font-medium text-foreground">Plate no. (optional)</Label>
+          <Input id="rider-plate" autoComplete="off" value={riderPlate} onChange={e => setRiderPlate(e.target.value)} />
+        </div>
+      </div>
+    </OrderActionDialog>
+  );
+}
+
+/**
+ * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. Dispatching a
+ * Delivery Order asks for the courier booking; Pickup needs none.
  */
 export function FulfilmentMove({
   order,
   triggerClassName,
   onMove,
 }: {
-  order: { id: number; status: string; paymentMethod: string };
+  order: { id: number; status: string; paymentMethod: string; fulfillmentMethod?: string };
   triggerClassName?: string;
   /** Shows the Order in its next status at once; the moves without an outside effect call it. */
   onMove?: (status: "preparing" | "dispatched") => void;
@@ -72,13 +140,16 @@ export function FulfilmentMove({
       />
     );
   }
+  if (order.status === "preparing" && order.fulfillmentMethod === "delivery") {
+    return <DispatchDelivery id={id} triggerClassName={triggerClassName} />;
+  }
   if (order.status === "preparing") {
     return (
       <OrderActionDialog
         trigger="Mark as dispatched"
         triggerClassName={triggerClassName}
         title={`Mark Order #${id} as dispatched?`}
-        description="No courier or tracking number is needed. A dispatched Order can no longer be cancelled."
+        description="Pickup needs no courier or tracking link. A dispatched Order can no longer be cancelled."
         confirm="Mark as dispatched"
         busy="Dispatching…"
         run={() => dispatchOrder(id)}
