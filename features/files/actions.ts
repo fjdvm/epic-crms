@@ -1,5 +1,6 @@
 "use server";
 
+import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { checkFileInfo, filePolicy, isUploadModule, type FileFailure, type FileInfo, type ReadyFile, type UploadContext, type UploadModule } from "./policy";
 import { openUpload, sealUpload } from "./reference";
@@ -16,6 +17,7 @@ export async function requestFileUpload(module: UploadModule, file: FileInfo, co
   if (reason) return { ok: false, reason };
   if (!context || (context.ticketId !== null && (!Number.isSafeInteger(context.ticketId) || context.ticketId < 1))) return invalid();
   file = { filename: file.filename, contentType: file.contentType, size: file.size };
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
     // Check the signing key before creating a remote File.
     sealUpload({ ...file, module, staffId: staff.username, context, fileId: "", phase: "pending", expires: Date.now() + 30 * 60_000 });
@@ -28,6 +30,7 @@ export async function requestFileUpload(module: UploadModule, file: FileInfo, co
 export async function confirmFileUpload(module: UploadModule, reference: string): Promise<ReadyFile | FileFailure> {
   if (!isUploadModule(module)) return invalid();
   const staff = await requireModule(module);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
     const upload = openUpload(reference);
     if (!upload || upload.module !== module || upload.staffId !== staff.username || upload.phase !== "pending") return invalid();

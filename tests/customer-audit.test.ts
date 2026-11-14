@@ -5,7 +5,7 @@ import { loadCustomerProfile } from "@/features/customer-profiles/profile";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(async () => {}));
 vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit }));
-vi.mock("@/lib/portal/staff", () => ({ requireModule: async () => ({ id: "portal-17", username: "ana", name: "Ana" }) }));
+vi.mock("@/lib/portal/staff", () => ({ requireModule: async () => ({ id: "portal-17", username: "ana", name: "Ana", role: "Staff" }) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));

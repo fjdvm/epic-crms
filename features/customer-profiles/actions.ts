@@ -8,6 +8,7 @@ import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayAuditTrail } from "@/lib/gateway";
 import { database } from "@/lib/db";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
+import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 
 import { recordCustomerProfileView } from "./profile";
@@ -15,12 +16,13 @@ import { recordCustomerProfileView } from "./profile";
 import type { WalkInInput } from "./walk-in-rules";
 import { addWalkIn, editWalkIn, type EditWalkInResult, type AddWalkInResult } from "./walk-ins";
 
-export type AddWalkInActionResult = AddWalkInResult | { ok: false; unavailable: true };
+export type AddWalkInActionResult = AddWalkInResult | { ok: false; unavailable: true } | { ok: false; forbidden: true; message: string };
 
 // Server actions are public endpoints, so this proves the Staff member holds the Module.
 export async function addWalkInCustomer(input: WalkInInput, operationId: string = randomUUID()): Promise<AddWalkInActionResult> {
   const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
 
+  if (!canWork(staff)) return { ok: false, forbidden: true, message: READ_ONLY_REASON };
   try {
     const result = await addWalkIn(database(), crmsDatabase(), input, undefined, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath("/customer-profiles");
@@ -34,8 +36,9 @@ export async function addWalkInCustomer(input: WalkInInput, operationId: string 
 }
 
 /** Backend endpoint for editing the entered details of a Walk-in Customer. */
-export async function editWalkInCustomer(id: string, input: WalkInInput, operationId: string = randomUUID()): Promise<EditWalkInResult | { ok: false; unavailable: true }> {
+export async function editWalkInCustomer(id: string, input: WalkInInput, operationId: string = randomUUID()): Promise<EditWalkInResult | { ok: false; unavailable: true } | { ok: false; forbidden: true; message: string }> {
   const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
+  if (!canWork(staff)) return { ok: false, forbidden: true, message: READ_ONLY_REASON };
   try {
     const result = await editWalkIn(database(), crmsDatabase(), id, input, undefined, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) {

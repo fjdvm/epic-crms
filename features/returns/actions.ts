@@ -1,5 +1,8 @@
 "use server";
 
+import { approvals } from "@/features/approvals/server";
+import type { ApprovalOptions, ApprovalResult } from "@/features/approvals/workflow";
+import { canWork } from "@/lib/portal/roles";
 import { revalidatePath } from "next/cache";
 import { changeReturnStatus, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
@@ -26,8 +29,9 @@ export async function getReturnDetail(id: number) {
 }
 
 /** Identity comes only from the Portal; CREOMS only reads the storefront-owned tables. */
-async function decide(id: number, decision: ReturnDecision, form?: FormData): Promise<ReturnChangeResult> {
+async function decide(id: number, decision: ReturnDecision, form?: FormData, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
   const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: "Your Role can only view shop work." };
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
   if (decision.status === "approved" && typeof decision.goodsRequired !== "boolean") {
     return { ok: false, reason: "Say whether the goods must come back." };
@@ -53,6 +57,8 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData): Pr
         : (current.status === "goods received" || (current.status === "approved" && current.goods_required === false)) &&
           current.final_resolution === (decision.status === "refunded" ? "refund" : "replacement");
     if (!allowed) return { ok: false, reason: "Return already changed or is not ready for this step; refresh it before trying again." };
+    if (decision.status === "approved") decision = { ...decision, finalResolution: decision.finalResolution ?? current.preferred_resolution };
+    const execute = async (): Promise<ReturnChangeResult> => {
     if (decision.status === "refunded") {
       if (!(form instanceof FormData) || form.getAll("proof").length !== 1) {
         return { ok: false, reason: "Choose exactly one refund proof screenshot." };
@@ -93,6 +99,21 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData): Pr
         return { ok: false, reason: "The Return was marked refunded, but its refund proof could not be made Permanent. Refresh the Return; do not repeat the refund." };
       }
     }
+    return result;
+    };
+    if (decision.status === "goods received") {
+      result = await execute();
+    } else {
+      // Selling price alone determines the Approval limit; delivery fees are excluded.
+      const [amount] = await database()`select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text as selling
+        from public.order_return_items where return_id = ${id}`;
+      const action = decision.status === "approved" ? "return.approve" : decision.status === "declined" ? "return.decline"
+        : decision.status === "refunded" ? "return.refund" : "return.replace";
+      const approved = await approvals().run(staff, { module: RETURNS_MODULE, action, targetId: String(id),
+        payload: decision.status === "refunded" ? { status: "refunded" } : { ...decision }, amountInCentavos: Number(amount.selling) }, options, execute);
+      if (!approved.ok) return approved;
+      result = approved;
+    }
   } catch {
     return { ok: false, reason: "Return is temporarily unavailable." };
   }
@@ -104,30 +125,31 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData): Pr
   return result;
 }
 
-export async function approveReturn(id: number, goodsRequired = false, finalResolution?: ReturnResolution): Promise<ReturnChangeResult> {
-  return decide(id, { status: "approved", goodsRequired, finalResolution });
+export async function approveReturn(id: number, goodsRequired = false, finalResolution?: ReturnResolution, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
+  return decide(id, { status: "approved", goodsRequired, finalResolution }, undefined, options);
 }
 
-export async function declineReturn(id: number, reason: string): Promise<ReturnChangeResult> {
-  return decide(id, { status: "declined", declineReason: reason });
+export async function declineReturn(id: number, reason: string, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
+  return decide(id, { status: "declined", declineReason: reason }, undefined, options);
 }
 
-export async function markReturnGoodsReceived(id: number): Promise<ReturnChangeResult> {
+export async function markReturnGoodsReceived(id: number): Promise<ReturnChangeResult | ApprovalResult> {
   return decide(id, { status: "goods received" });
 }
 
-export async function markReturnRefunded(id: number, form?: FormData): Promise<ReturnChangeResult> {
+export async function markReturnRefunded(id: number, form?: FormData, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
   // Only a confirmed, signed upload reference may supply the proof File id.
-  return decide(id, { status: "refunded", refundProofFileId: "" }, form);
+  return decide(id, { status: "refunded", refundProofFileId: "" }, form, options);
 }
 
-export async function markReturnReplaced(id: number): Promise<ReturnChangeResult> {
-  return decide(id, { status: "replaced" });
+export async function markReturnReplaced(id: number, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
+  return decide(id, { status: "replaced" }, undefined, options);
 }
 
 /** Settle uncertain proof from the recorded Return without repeating the refund decision. */
 export async function reconcileRefundProof(id: number): Promise<{ ok: true } | { ok: false; reason: string }> {
-  await requireModule(RETURNS_MODULE);
+  const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: "Your Role can only view shop work." };
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
   try {
     const [record] = await database()<{ status: string; refund_proof_file_id: string | null }[]>`

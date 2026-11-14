@@ -16,6 +16,7 @@ const REASONS: Record<Refusal["reason"], string> = {
   ...IMAGE_REFUSALS,
   "invalid-attachment": "That attachment is invalid or expired. Attach the file again.",
   "storage-unavailable": "CREOMS could not store that file. Try again in a moment.",
+  "read-only": "Your Role can only view shop work.",
   unavailable: "CREOMS could not save that. Try again in a moment.",
 };
 

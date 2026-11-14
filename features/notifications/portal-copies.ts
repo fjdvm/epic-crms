@@ -3,7 +3,7 @@ import { describeNotification } from "./describe";
 import { DEFAULT_SCHEMA, schemaIdent, visibleTo, type Notification, type Viewer } from "./notifications";
 
 export interface PortalCopies {
-  recipients(): Promise<{ id: string; username?: string; modules: string[] }[]>;
+  recipients(): Promise<{ id: string; username?: string; role?: string; modules: string[] }[]>;
   send(copy: { key: string; userId: string; text: string; link: string }): Promise<{ id: string; read: boolean }>;
   find(userId: string, key: string): Promise<{ id: string; read: boolean } | null>;
   status(userId: string, id: string): Promise<{ id: string; read: boolean }>;
@@ -95,7 +95,7 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
   }
 }
 
-function staffViewer({ username, modules }: { id: string; username?: string; modules: string[] }): Viewer {
+function staffViewer({ username, modules }: { id: string; username?: string; role?: string; modules: string[] }): Viewer {
   return { customerProfiles: modules.includes("Customer Profiles"),
     ticketsStaffId: modules.includes("Tickets") ? username ?? null : null,
     feedback: modules.includes("Feedback"), returns: modules.includes("Returns"),

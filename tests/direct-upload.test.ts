@@ -5,10 +5,10 @@ import { requireModule } from "@/lib/portal/staff";
 import sharp from "sharp";
 import { FakeFileStorage } from "./fake-file-storage";
 
-vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn(async () => ({ username: "ana", name: "Ana" })) }));
+vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn(async () => ({ username: "ana", name: "Ana", role: "Staff" })) }));
 let storage: FakeFileStorage;
 beforeEach(() => {
-  vi.mocked(requireModule).mockResolvedValue({ username: "ana", name: "Ana" } as Awaited<ReturnType<typeof requireModule>>);
+  vi.mocked(requireModule).mockResolvedValue({ username: "ana", name: "Ana", role: "Staff" } as Awaited<ReturnType<typeof requireModule>>);
   storage = new FakeFileStorage();
   vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
   vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "caller-key");
@@ -88,7 +88,7 @@ it("rejects tampered, expired and another Staff member's confirmation references
   const { pending, ready } = await pdfUpload();
   const calls = storage.calls.length;
   expect(await getFileView("Tickets", ready.reference + "x")).toMatchObject({ ok: false });
-  vi.mocked(requireModule).mockResolvedValue({ username: "bob", name: "Bob" } as Awaited<ReturnType<typeof requireModule>>);
+  vi.mocked(requireModule).mockResolvedValue({ username: "bob", name: "Bob", role: "Staff" } as Awaited<ReturnType<typeof requireModule>>);
   expect(await confirmFileUpload("Tickets", pending.reference)).toMatchObject({ ok: false });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(Date.now() + 61 * 60_000);

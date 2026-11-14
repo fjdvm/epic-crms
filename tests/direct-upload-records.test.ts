@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { uploadFile } from "@/features/files/client";
@@ -16,7 +17,7 @@ let db: TestDatabase;
 let storage: FakeFileStorage;
 let storefront: FakeStorefront;
 let photo: File;
-beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
+beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
@@ -33,7 +34,7 @@ beforeEach(async () => {
   vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "caller-key");
   vi.stubEnv("CREOMS_SERVICE_SECRET", FAKE_SERVICE_SECRET);
   vi.stubEnv("CREOMS_STOREFRONT_URL", FAKE_STOREFRONT_URL);
-  vi.mocked(requireModule).mockResolvedValue({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
+  vi.mocked(requireModule).mockResolvedValue({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "CRMS Manager" });
   photo = new File([new Uint8Array(await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer())], "photo.png", { type: "image/png" });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
@@ -81,7 +82,7 @@ it("refuses another Module's reference and another Staff member's reference", as
   const marketing = await attachment("Marketing", "photo");
   expect(await deliverOrder(1, marketing)).toMatchObject({ ok: false });
   const delivery = await attachment("Fulfilment", "photo");
-  vi.mocked(requireModule).mockResolvedValue({ id: "bob", username: "bob", name: "Bob", email: "bob@example.com", role: "Staff" });
+  vi.mocked(requireModule).mockResolvedValue({ id: "bob", username: "bob", name: "Bob", email: "bob@example.com", role: "CRMS Manager" });
   expect(await deliverOrder(1, delivery)).toMatchObject({ ok: false });
   expect(storefront.requests).toBe(0);
 });
@@ -134,3 +135,7 @@ it("refuses a corrupt Announcement image even when its signature claims a suppor
     .toMatchObject({ ok: false, reason: expect.stringContaining("not an image") });
   expect(storage.files.size).toBe(0);
 });
+
+vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
+
+vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));

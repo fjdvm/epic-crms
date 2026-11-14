@@ -17,7 +17,7 @@ let id: number;
 beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  auth.requireModule.mockResolvedValue({ username: "ana", name: "Ana" });
+  auth.requireModule.mockResolvedValue({ username: "ana", name: "Ana", role: "Staff" });
   storage = new FakeFileStorage();
   vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test");
   vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "caller-key");
@@ -49,7 +49,7 @@ it("refuses a bare id, another Ticket's reference and another uploader's referen
   expect(await reply(id, bare)).toEqual({ ok: false, reason: "invalid-attachment" });
   expect(await reply(id, await attachment(id + 1))).toEqual({ ok: false, reason: "invalid-attachment" });
   const form = await attachment();
-  auth.requireModule.mockResolvedValue({ username: "bob", name: "Bob" });
+  auth.requireModule.mockResolvedValue({ username: "bob", name: "Bob", role: "Staff" });
   expect(await reply(id, form)).toEqual({ ok: false, reason: "invalid-attachment" });
   expect(await db.sql`select * from ticket_messages`).toHaveLength(0);
 });

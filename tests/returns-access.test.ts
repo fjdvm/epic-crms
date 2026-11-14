@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getReturns, getReturnStats, getReturnDetail, approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, reconcileRefundProof } from "@/features/returns/actions";
@@ -30,7 +31,7 @@ vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 let db: TestDatabase;
 let portal: FakePortal;
 let storefront: FakeStorefront;
-beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
+beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8")); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   portal = new FakePortal();
@@ -56,7 +57,7 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function signIn(modules: string[]) {
-  portal.addStaff('ana', { id: 'ana', username: 'ana', name: 'Ana Reyes', email: 'ana@example.com', role: 'Staff' }, modules);
+  portal.addStaff('ana', { id: 'ana', username: 'ana', name: 'Ana Reyes', email: 'ana@example.com', role: 'CRMS Manager' }, modules);
   portal.signIn('ana');
   const verifier = 'proof-for-returns';
   const authorize = new URL('/api/integrations/authorize', FAKE_PORTAL_URL);
@@ -121,3 +122,7 @@ describe('Returns server access', () => {
     expect(await getShell()).toMatchObject({ permittedPages: ['/returns'] });
   });
 });
+
+vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
+
+vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));

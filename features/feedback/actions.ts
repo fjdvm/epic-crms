@@ -5,12 +5,13 @@ import { revalidatePath } from "next/cache";
 import { gatewayAuditTrail } from "@/lib/gateway";
 import { feedbackWriterDatabase } from "@/lib/feedback-db";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
+import { canWork } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 
 import { runAnalysis, type AnalysisResult } from "./analysis";
 import { configuredClients } from "./sentiment-clients";
 
-export type AnalyzeOutcome = AnalysisResult | { status: "unavailable" };
+export type AnalyzeOutcome = AnalysisResult | { status: "unavailable" | "read-only" };
 
 /**
  * The Analyze button: the same run as the schedule, started by the Staff member, who is named in the
@@ -19,6 +20,7 @@ export type AnalyzeOutcome = AnalysisResult | { status: "unavailable" };
 export async function analyze(): Promise<AnalyzeOutcome> {
   const staff = await requireModule(FEEDBACK_MODULE);
 
+  if (!canWork(staff)) return { status: "read-only" };
   try {
     const result = await runAnalysis({
       sql: feedbackWriterDatabase(),
