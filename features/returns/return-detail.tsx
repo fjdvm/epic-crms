@@ -5,6 +5,8 @@ import { orderLabel } from "@/features/customer-profiles/rules";
 import { Pill } from "@/features/tickets/pill";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
+import type { ApprovalView } from "@/features/approvals/view";
+import type { ShopRole } from "@/lib/portal/roles";
 import { ReturnActions } from "./return-actions";
 import type { ReturnDetail } from "./returns";
 import { STATUS_PILLS } from "./returns-table";
@@ -35,6 +37,8 @@ export function ReturnDetailView({
   deliveryPhotoUrl,
   videoUrl,
   refundProofUrl,
+  role,
+  requests,
 }: {
   detail: ReturnDetail;
   imageUrls: ImageUrls;
@@ -44,6 +48,8 @@ export function ReturnDetailView({
   videoUrl?: string | null;
   /** Null when the refund proof exists but could not be reached. */
   refundProofUrl?: string | null;
+  role?: ShopRole | null;
+  requests?: ApprovalView[];
 }) {
   const goods = goodsLine(detail);
 
@@ -73,6 +79,8 @@ export function ReturnDetailView({
             goodsRequired={detail.goodsRequired}
             preferredResolution={detail.preferredResolution}
             finalResolution={detail.finalResolution}
+            role={role}
+            requests={requests}
           />
         </div>
       </div>

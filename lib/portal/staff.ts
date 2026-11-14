@@ -5,6 +5,7 @@ import { accessFor } from "./access";
 import type { Staff } from "./client";
 import { LOGIN_PATH, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
 import { safeReturnTo } from "./return-to";
+import { shopRole } from "./roles";
 
 /** One access checker per page load, so the Portal is asked once however many callers there are. */
 const requestAccess = cache(async () =>
@@ -81,7 +82,11 @@ export async function getShell(): Promise<{ staff: Staff; permittedPages: string
     redirect(NO_ACCESS_PATH);
   }
 
-  return { staff: result.staff, permittedPages: result.pages };
+  // Approvals is not a Module: it follows the Role, and sits beside Returns, whose requests it lists.
+  const approver = ["manager", "ceo", "admin"].includes(shopRole(result.staff.role) ?? "");
+  const pages = approver && result.pages.includes("/returns") ? [...result.pages, "/approvals"] : result.pages;
+
+  return { staff: result.staff, permittedPages: pages };
 }
 
 /** Where `/` goes: the first page the Staff member may open, or the "no access" page. */
