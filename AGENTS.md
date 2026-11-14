@@ -8,6 +8,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+## UI foundation and CREOMS reference (Figma)
+
+- **UI foundation, always use:** [Bren Raphael's CRM - Orders Prototype, node 836:11278](https://www.figma.com/design/76nS6Pw2TXA6fWfUvTmzJ1/Bren-Raphael-s-CRM---Orders-Prototype?node-id=836-11278&p=f&t=BDZjt3iVMQxKa5U7-0). Build every UI from it: reuse its components, tokens, spacing and layout.
+- **CREOMS reference:** [Bren Raphael's CRM - Orders Prototype, node 0:1](https://www.figma.com/design/76nS6Pw2TXA6fWfUvTmzJ1/Bren-Raphael-s-CRM---Orders-Prototype?node-id=0-1&p=f&t=BDZjt3iVMQxKa5U7-0). Consult it for how CREOMS screens and flows should look.
+
+Fetch them with the Figma MCP tools (`get_design_context`, `get_screenshot`; file key `76nS6Pw2TXA6fWfUvTmzJ1`) before building or changing UI.
+
 ## Checks and PR completion
 
 1. Before every push, run `npx next typegen`, `npx tsc --noEmit`, and `npm test`. Push only after all pass.

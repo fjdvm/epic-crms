@@ -48,11 +48,11 @@ describe("render-container-app.py", () => {
   const allSecrets = () => Object.fromEntries(secretKeys().map((key) => [key, `value-of-${key}`]));
   const manifest = () => JSON.parse(readFileSync(output, "utf8"));
 
-  it("scales to zero with a small maximum, 0.5 vCPU and 1 GiB", () => {
+  it("keeps one replica running with a small maximum, 0.5 vCPU and 1 GiB", () => {
     expect(render(allSecrets()).status).toBe(0);
     const { template } = manifest().properties;
 
-    expect(template.scale).toEqual({ minReplicas: 0, maxReplicas: 2 });
+    expect(template.scale).toEqual({ minReplicas: 1, maxReplicas: 2 });
     expect(template.containers[0].resources).toEqual({ cpu: 0.5, memory: "1Gi" });
   });
 
