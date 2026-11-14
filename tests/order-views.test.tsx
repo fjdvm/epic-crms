@@ -414,6 +414,23 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  it("offers optional Lalamove and Grab estimates that are never sent; only the fee to charge is", async () => {
+    vi.mocked(quoteDeliveryFee).mockResolvedValue(confirmed(1042, 19_000));
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
+    fireEvent.change(within(dialog).getByLabelText("Lalamove estimate"), { target: { value: "₱186 · motorcycle" } });
+    fireEvent.change(within(dialog).getByLabelText("Grab estimate"), { target: { value: "₱204 · motorcycle" } });
+    const submit = within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee to charge/), { target: { value: "190" } });
+    fireEvent.click(submit);
+
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000);
+  });
+
   it("quotes a Delivery fee in pesos, sends centavos, and confirms once the server does", async () => {
     const pending = deferred<Awaited<ReturnType<typeof quoteDeliveryFee>>>();
     vi.mocked(quoteDeliveryFee).mockReturnValue(pending.promise);
