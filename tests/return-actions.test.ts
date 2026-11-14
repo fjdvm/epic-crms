@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, getReturnDetail, reconcileRefundProof } from "@/features/returns/actions";
 import { requireModule } from "@/lib/portal/staff";
@@ -26,8 +27,8 @@ vi.mock("@/lib/db", () => ({ database: vi.fn(() => db.sql) }));
 let db: TestDatabase;
 let storefront: FakeStorefront;
 const now = new Date("2026-10-23T08:00:00Z");
-const ana = { id: "ana", username: "ana", name: "Ana Reyes", email: "ana@example.com", role: "Staff" };
-beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
+const ana = { id: "ana", username: "ana", name: "Ana Reyes", email: "ana@example.com", role: "CRMS Manager" };
+beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
@@ -462,3 +463,5 @@ describe("Return Audit Events", () => {
     expect(audit).toHaveBeenCalledTimes(1);
   });
 });
+
+vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));

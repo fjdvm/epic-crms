@@ -17,7 +17,7 @@ import { openNewTicket } from "@/features/tickets/actions";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireModule.mockResolvedValue({ username: "bernice", name: "Bernice" });
+  mocks.requireModule.mockResolvedValue({ username: "bernice", name: "Bernice", role: "Staff" });
 });
 
 it("connects successful saves to Next's post-response scheduler and invalidates Tickets", async () => {

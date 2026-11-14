@@ -77,6 +77,11 @@ export class FakePortal {
   handle = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
 
+    if (url.pathname === "/api/integrations/recipients") {
+      const expected = `Basic ${Buffer.from(`${FAKE_SYSTEM}:${FAKE_SECRET}`).toString("base64")}`;
+      if (request.headers.get("authorization") !== expected) return new Response(null, { status: 401 });
+      return Response.json({ staff: [...this.staffById.entries()].map(([id, staff]) => ({ ...staff, id, modules: [...(this.modulesById.get(id) ?? [])] })) });
+    }
     if (url.pathname === "/logout") return this.logout();
     if (url.pathname === "/api/integrations/authorize") return this.authorize(url);
     if (url.pathname === "/api/integrations/exchange") return this.token(request);

@@ -15,6 +15,7 @@ import {
   storefrontTicketUrl,
 } from "@/lib/gateway";
 import { TICKETS_MODULE } from "@/lib/portal/config";
+import { requireShopWriter, canWork } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
@@ -43,6 +44,7 @@ async function act<R extends TicketActionResult | ReplyResult>(
   const staff = await requireModule(TICKETS_MODULE);
 
   try {
+    requireShopWriter(staff);
     const result = await run({ id: staff.username, name: staff.name }, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath(`/tickets/${id}`);
 
@@ -94,6 +96,7 @@ export async function resolve(id: number, operationId?: string) {
  */
 export async function liveUrl(id: number): Promise<string | null> {
   const staff = await requireModule(TICKETS_MODULE);
+  if (!canWork(staff)) return null;
 
   try {
     return await liveConversationUrl(id, staff.username);
@@ -115,6 +118,7 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
   const orderId = String(form.get("orderId") ?? "");
 
   try {
+    requireShopWriter(staff);
     const reference = form.get("attachment");
     const upload = typeof reference === "string" ? await ticketUpload(reference, staff.username, null) : null;
     if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" };

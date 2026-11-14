@@ -9,6 +9,7 @@ import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
 import { gatewayAuditTrail, gatewayMarketingMail, gatewayMarketingMailer } from "@/lib/gateway";
 import { MARKETING_MODULE } from "@/lib/portal/config";
+import { requireShopWriter, shopRole } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 
 import {
@@ -52,6 +53,8 @@ async function act<R extends { ok: boolean }>(
   const staff = await requireModule(MARKETING_MODULE);
 
   try {
+    requireShopWriter(staff);
+    if (shopRole(staff.role) !== "manager") throw new Error("Only a Manager can change Announcements.");
     const result = await run({ id: staff.id, name: staff.name }, staff.email);
     if (result.ok) revalidatePath("/email-campaigns");
 
@@ -109,6 +112,8 @@ export async function addImageAction(form: FormData): Promise<AddImageResult | U
   const staff = await requireModule(MARKETING_MODULE);
   if (!(form instanceof FormData) || form.getAll("image").length !== 1) return { ok: false, reason: "not-an-image" };
   try {
+    requireShopWriter(staff);
+    if (shopRole(staff.role) !== "manager") throw new Error("Only a Manager can change Announcements.");
     const upload = await recordUpload(MARKETING_MODULE, form.get("image"), staff.username);
     return upload ? { ok: true, url: upload.url } : { ok: false, reason: "not-an-image" };
   } catch {

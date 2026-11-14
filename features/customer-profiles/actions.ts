@@ -8,6 +8,7 @@ import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayAuditTrail } from "@/lib/gateway";
 import { database } from "@/lib/db";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
+import { requireShopWriter } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 
 import { recordCustomerProfileView } from "./profile";
@@ -22,6 +23,7 @@ export async function addWalkInCustomer(input: WalkInInput, operationId: string 
   const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
 
   try {
+    requireShopWriter(staff);
     const result = await addWalkIn(database(), crmsDatabase(), input, undefined, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath("/customer-profiles");
 
@@ -37,6 +39,7 @@ export async function addWalkInCustomer(input: WalkInInput, operationId: string 
 export async function editWalkInCustomer(id: string, input: WalkInInput, operationId: string = randomUUID()): Promise<EditWalkInResult | { ok: false; unavailable: true }> {
   const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
   try {
+    requireShopWriter(staff);
     const result = await editWalkIn(database(), crmsDatabase(), id, input, undefined, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) {
       revalidatePath("/customer-profiles");

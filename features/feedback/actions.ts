@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { gatewayAuditTrail } from "@/lib/gateway";
 import { feedbackWriterDatabase } from "@/lib/feedback-db";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
+import { requireShopWriter } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 
 import { runAnalysis, type AnalysisResult } from "./analysis";
@@ -20,6 +21,7 @@ export async function analyze(): Promise<AnalyzeOutcome> {
   const staff = await requireModule(FEEDBACK_MODULE);
 
   try {
+    requireShopWriter(staff);
     const result = await runAnalysis({
       sql: feedbackWriterDatabase(),
       ...configuredClients(),
