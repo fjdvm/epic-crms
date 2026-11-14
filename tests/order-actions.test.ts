@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cancelOrder, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee,
+  cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee,
   startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
@@ -93,10 +93,34 @@ describe("Order actions", () => {
     expect(storefront.requests).toBe(0);
   });
 
-  it("quotes again when cancelled items reduce the subtotal to exactly ₱2,500", async () => {
-    const id = await order();
-    await db.sql`update orders set subtotal_in_centavos = 250000 where id = ${id}`;
+  it.each(["confirmed", "awaiting payment", "paid", "preparing"])("requires a new quote after cancelling an item from a Free delivery Order in %s", async status => {
+    const id = await order("delivery", status);
+    if (status === "paid") vi.mocked(requireModule).mockResolvedValue({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "CREOMS Manager" });
+    await db.sql`update orders set subtotal_in_centavos = 250001, delivery_fee_in_centavos = 0 where id = ${id}`;
+    await db.sql`insert into order_lines (order_id, product_name, quantity, price_in_centavos) values (${id}, 'Keep', 1, 250000)`;
+    const [line] = await db.sql`insert into order_lines (order_id, product_name, quantity, price_in_centavos) values (${id}, 'Cancel', 1, 1) returning id`;
+    const candidates = await loadCancellableOrderItems(id);
+    expect(candidates).toMatchObject({ ok: true, items: [{ product: "Keep" }, { id: line.id, product: "Cancel" }] });
+    expect(await quoteDeliveryFee(id, 19000)).toMatchObject({ ok: false });
+    expect(await cancelOrderItems(id, [line.id])).toMatchObject({ ok: true, order: { status: "placed", deliveryFeeInCentavos: null } });
+    const detail = await loadOrder(() => db.sql, id);
+    expect(detail).toMatchObject({ ok: true, order: { status: "placed", subtotal: 250000 } });
     expect(await quoteDeliveryFee(id, 19000)).toMatchObject({ ok: true, order: { status: "confirmed", deliveryFeeInCentavos: 19000 } });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.items_cancelled", actor: { type: "user", id: "ana", display_name: "Ana" } }));
+  });
+
+  it("keeps the Order unchanged when item cancellation is refused and asks a Manager for paid items", async () => {
+    const id = await order("delivery", "paid");
+    expect(await cancelOrderItems(id, [1])).toMatchObject({ ok: false, reason: expect.stringContaining("Request approval") });
+    expect(storefront.requests).toBe(0);
+    for (const lineIds of [[], [1, 1], [0], [NaN]]) {
+      expect(await cancelOrderItems(id, lineIds)).toMatchObject({ ok: false });
+    }
+    vi.mocked(requireModule).mockResolvedValue({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "CREOMS Manager" });
+    storefront.refusal = "Storefront refused the change.";
+    expect(await cancelOrderItems(id, [1])).toEqual({ ok: false, reason: storefront.refusal });
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "paid" } });
+    expect(audit).not.toHaveBeenCalled();
   });
 
   it("refuses direct calls when the Portal grants Payments and Fulfilment but no Orders Module", async () => {
