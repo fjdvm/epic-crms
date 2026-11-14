@@ -12,6 +12,9 @@ import { CANCELLABLE_STATUSES, type OrderDetail } from "./orders";
 
 function QuoteFee({ order }: { order: OrderDetail }) {
   const [text, setText] = useState("");
+  // Staff's own notes from the Lalamove and Grab apps. They are never saved or sent: only the fee to charge is.
+  const [lalamove, setLalamove] = useState("");
+  const [grab, setGrab] = useState("");
   const fee = parsePesos(text);
 
   return (
@@ -25,9 +28,20 @@ function QuoteFee({ order }: { order: OrderDetail }) {
       run={() => quoteDeliveryFee(order.id, fee as number)}
       successMessage={`Order #${order.id} confirmed with a ${formatPesos(fee ?? 0)} Delivery fee.`}
     >
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="lalamove-estimate" className="text-[13px] font-medium text-foreground">Lalamove estimate</Label>
+          <Input id="lalamove-estimate" autoComplete="off" placeholder="₱186 · motorcycle" value={lalamove} onChange={(e) => setLalamove(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="grab-estimate" className="text-[13px] font-medium text-foreground">Grab estimate</Label>
+          <Input id="grab-estimate" autoComplete="off" placeholder="₱204 · motorcycle" value={grab} onChange={(e) => setGrab(e.target.value)} />
+        </div>
+        <p className="col-span-2 text-xs text-[#71717a]">Optional. Check the apps yourself; these notes are not saved.</p>
+      </div>
       <div className="space-y-1.5">
         <Label htmlFor="delivery-fee" className="text-[13px] font-medium text-foreground">
-          Delivery fee (₱) <span className="text-[#dc2626]">*</span>
+          Delivery fee to charge (₱) <span className="text-[#dc2626]">*</span>
         </Label>
         <Input
           id="delivery-fee"
@@ -41,6 +55,7 @@ function QuoteFee({ order }: { order: OrderDetail }) {
         {text !== "" && fee === null && (
           <p className="text-xs text-[#b91c1c]">Enter an amount in pesos, like 150 or 150.50.</p>
         )}
+        <p className="text-xs text-[#71717a]">Customers see this as the final delivery fee.</p>
       </div>
       <dl className="space-y-1 text-[#1f1a2e]">
         <div className="flex justify-between">
