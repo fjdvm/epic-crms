@@ -8,9 +8,9 @@ import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
 import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 import type { Staff } from "@/lib/portal/client";
-import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
+import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
-import { changeOrderStatus, type OrderChangeResult } from "@/lib/storefront";
+import { cancelStorefrontItems, changeOrderStatus, type OrderChangeResult } from "@/lib/storefront";
 
 import { CANCELLABLE_STATUSES } from "./orders";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
@@ -20,6 +20,8 @@ interface CurrentOrder {
   status: string;
   fulfillment_method: string;
   payment_method: string;
+  subtotal_in_centavos: number;
+  delivery_fee_in_centavos: number | null;
   payment_proof_submitted_at: Date | null;
 }
 
@@ -40,7 +42,7 @@ async function act(
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
     const [order] = await database()<CurrentOrder[]>`
-      select status, fulfillment_method, payment_method, payment_proof_submitted_at from public.orders where id = ${id}`;
+      select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at from public.orders where id = ${id}`;
     if (!order) return { ok: false, reason: "Order was not found." };
     result = await run(order, staff);
   } catch {
@@ -79,8 +81,11 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     if (order.fulfillment_method !== "delivery") {
       return { ok: false, reason: "Only a placed Delivery Order can be quoted." };
     }
-    if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
-    return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos });
+    if (order.subtotal_in_centavos > 250_000) {
+      return { ok: false, reason: "Free delivery applies to this Order. No Delivery fee quote is needed." };
+    }
+    if (!CANCELLABLE_STATUSES.includes(order.status) || order.delivery_fee_in_centavos !== null) return { ok: false, reason: ALREADY_CHANGED };
+    return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos }, order.status === "placed" ? "confirmed" : order.status);
   }, ORDERS_MODULE, {
     action: "order.delivery_fee_quoted",
     description: staff => `${staff.name} quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)} and confirmed Order #${id}.`,
@@ -108,6 +113,44 @@ async function cancel(id: number, module: string): Promise<OrderChangeResult> {
     return changeOrderStatus(id, { status: "cancelled" });
   }, module, {
     action: "order.cancelled", description: staff => `${staff.name} cancelled Order #${id}.`,
+  });
+}
+
+/** Stable line identifiers for the item-cancellation confirmation. */
+export async function loadCancellableOrderItems(id: number): Promise<
+  { ok: true; items: { id: number; product: string; size: string; quantity: number; price: number }[] } |
+  { ok: false; reason: string }
+> {
+  await requireModule(ORDERS_MODULE);
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
+  try {
+    const items = await database()<{ id: number; product: string; size: string; quantity: number; price: number }[]>`
+      select l.id, l.product_name as product, l.size_label as size, l.quantity, l.price_in_centavos as price
+      from public.order_lines l join public.orders o on o.id = l.order_id
+      where o.id = ${id} and o.status in ('placed', 'confirmed', 'awaiting payment', 'paid', 'preparing') order by l.id`;
+    return { ok: true, items };
+  } catch { return { ok: false, reason: "Order items are temporarily unavailable." }; }
+}
+
+/** Whole line items only; the storefront recalculates the gross subtotal in the same transaction. */
+export async function cancelOrderItems(id: number, lineIds: number[]): Promise<OrderChangeResult> {
+  return act(id, async (order, staff) => {
+    if (!Array.isArray(lineIds) || !lineIds.length || new Set(lineIds).size !== lineIds.length ||
+        lineIds.some(lineId => !Number.isSafeInteger(lineId) || lineId < 1)) {
+      return { ok: false, reason: "Choose this Order's whole line items to cancel." };
+    }
+    if (!CANCELLABLE_STATUSES.includes(order.status)) return { ok: false, reason: ALREADY_CHANGED };
+    if ((order.status === "paid" || order.status === "preparing" && order.payment_method === "gcash") && shopRole(staff.role) !== "manager") {
+      return { ok: false, reason: "Request approval from a CREOMS Manager to cancel paid items." };
+    }
+    const result = await cancelStorefrontItems(id, lineIds, staff, order.status);
+    if (result.ok) await recordAudit(gatewayAuditTrail, {
+      action: "order.items_cancelled", module: ORDERS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+      target: { type: "order", id: String(id), display_name: `Order #${id}` },
+      description: `${staff.name} cancelled items on Order #${id}.`, metadata: { lineIds },
+      occurred_at: new Date().toISOString(), operationId: `order:${id}:items-cancelled:${[...lineIds].sort((a,b) => a-b).join("-")}`,
+    });
+    return result;
   });
 }
 

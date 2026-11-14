@@ -80,7 +80,7 @@ export function OrdersActions({ order }: { order: OrderDetail }) {
           successMessage={`Order #${order.id} cancelled.`}
         />
       )}
-      {placed && !pickup && <QuoteFee order={order} />}
+      {!pickup && order.deliveryFee === null && CANCELLABLE_STATUSES.includes(order.status) && <QuoteFee order={order} />}
       {placed && pickup && (
         <OrderActionDialog
           trigger="Confirm order"
