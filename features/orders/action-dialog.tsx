@@ -92,6 +92,7 @@ export function OrderActionDialog({
       setPending(false);
       setOpen(false);
       if (outcome.ok) toast.success(successMessage);
+      else if (outcome.reason === "Waiting for approval") toast.info("Sent for approval. You will be told when it is decided.");
       else toast.error(outcome.reason);
       // Either way the page catches up with the server, so a refusal also shows what is really there.
       router.refresh();

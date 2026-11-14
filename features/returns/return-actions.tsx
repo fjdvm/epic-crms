@@ -8,7 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 import { DeliveryPhotoPicker } from "@/features/orders/delivery-photo-picker";
 
+import type { ApprovalView } from "@/features/approvals/view";
+import { waitingLabel, WAITING } from "@/features/approvals/view";
+import type { ShopRole } from "@/lib/portal/roles";
 import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "./actions";
+import { RequestApproval } from "./request-approval";
 import type { ReturnResolution, ReturnStatus } from "./returns";
 
 type Step = "approve" | "decline" | "receive" | "refund" | "replace";
@@ -27,9 +31,12 @@ export function availableSteps(
   return [];
 }
 
+/** Only an approved request adds an argument, so everyday calls stay as they were. */
+const withApproval = (approvalId?: string) => (approvalId ? [{ approvalId }] : []);
+
 const RESOLUTIONS: [ReturnResolution, string][] = [["refund", "Refund"], ["replacement", "Replacement"]];
 
-function Approve({ id, number, preferred }: { id: number; number: string; preferred: ReturnResolution }) {
+function Approve({ id, number, preferred, approvalId }: { id: number; number: string; preferred: ReturnResolution; approvalId?: string }) {
   const [goodsRequired, setGoodsRequired] = useState<boolean | null>(null);
   const [resolution, setResolution] = useState<ReturnResolution>(preferred);
 
@@ -41,7 +48,7 @@ function Approve({ id, number, preferred }: { id: number; number: string; prefer
       confirm="Approve Return"
       busy="Approving…"
       disabled={goodsRequired === null}
-      run={() => approveReturn(id, goodsRequired as boolean, resolution)}
+      run={() => approveReturn(id, goodsRequired as boolean, resolution, ...withApproval(approvalId))}
       successMessage={`${number} approved.`}
     >
       <fieldset className="space-y-2">
@@ -81,7 +88,7 @@ function Approve({ id, number, preferred }: { id: number; number: string; prefer
   );
 }
 
-function Decline({ id, number }: { id: number; number: string }) {
+function Decline({ id, number, approvalId }: { id: number; number: string; approvalId?: string }) {
   const [reason, setReason] = useState("");
 
   return (
@@ -94,7 +101,7 @@ function Decline({ id, number }: { id: number; number: string }) {
       busy="Declining…"
       keepLabel="Keep Return"
       disabled={!reason.trim()}
-      run={() => declineReturn(id, reason)}
+      run={() => declineReturn(id, reason, ...withApproval(approvalId))}
       successMessage={`${number} declined.`}
     >
       <div className="space-y-1.5">
@@ -112,8 +119,9 @@ function Decline({ id, number }: { id: number; number: string }) {
   );
 }
 
-function Refund({ id, number }: { id: number; number: string }) {
+function Refund({ id, number, approvalId }: { id: number; number: string; approvalId?: string }) {
   const [proof, setProof] = useState<File | null>(null);
+  const [note, setNote] = useState("");
 
   return (
     <OrderActionDialog
@@ -129,11 +137,17 @@ function Refund({ id, number }: { id: number; number: string }) {
         const form = new FormData();
         form.set("proof", uploaded.reference);
 
-        return markReturnRefunded(id, form);
+        return approvalId || note.trim() ? markReturnRefunded(id, form, { approvalId, reason: note }) : markReturnRefunded(id, form);
       }}
       successMessage={`${number} marked refunded.`}
     >
       <DeliveryPhotoPicker photo={proof} onChange={setProof} label="Refund proof" />
+      {!approvalId && (
+        <div className="space-y-1.5">
+          <Label htmlFor={`refund-note-${id}`} className="text-[13px] font-medium text-foreground">Note for the CEO, if the amount needs their final approval</Label>
+          <Textarea id={`refund-note-${id}`} value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+      )}
     </OrderActionDialog>
   );
 }
@@ -146,6 +160,8 @@ export function ReturnActions({
   goodsRequired,
   preferredResolution,
   finalResolution,
+  role = "manager",
+  requests = [],
 }: {
   id: number;
   number: string;
@@ -153,13 +169,42 @@ export function ReturnActions({
   goodsRequired: boolean | null;
   preferredResolution: ReturnResolution;
   finalResolution: ReturnResolution | null;
+  role?: ShopRole | null;
+  /** This Return's approval requests visible to the viewer. */
+  requests?: ApprovalView[];
 }) {
   const steps = availableSteps(status, goodsRequired, finalResolution);
+  if (role === "admin" || role === "ceo" || role === null) return <p className="text-sm text-[#71717a]">View only</p>;
+  const waiting = requests.find((r) => WAITING.includes(r.status));
+  const ready = (action: string) => requests.find((r) => r.status === "approved" && r.action === action)?.id;
+  const gated = steps.filter((s) => s !== "receive");
+  if (role === "staff") {
+    const finishable = gated.filter((s) => ready(`return.${s}`));
+    return (
+      <div className="flex flex-col items-end gap-2">
+        {waiting && <span className="rounded-full bg-[#fdf1d8] px-3 py-1 text-xs font-medium text-[#8a5a00]">{waitingLabel(waiting.status)}</span>}
+        <div className="flex items-center gap-2">
+          {steps.includes("receive") && (
+            <OrderActionDialog trigger="Mark goods received" title={`Mark goods received for ${number}?`} description="Confirm the returned goods have reached the store."
+              confirm="Mark received" busy="Saving…" run={() => markReturnGoodsReceived(id)} successMessage={`${number} marked goods received.`} />
+          )}
+          {finishable.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} />}
+          {finishable.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} approvalId={ready("return.approve")} />}
+          {finishable.includes("decline") && <Decline id={id} number={number} approvalId={ready("return.decline")} />}
+          {finishable.includes("replace") && (
+            <OrderActionDialog trigger="Carry out approved replacement" title={`Mark ${number} replaced?`} description="Only confirm once the replacement has been sent to the Customer."
+              confirm="Mark replaced" busy="Saving…" run={() => markReturnReplaced(id, ...withApproval(ready("return.replace")))} successMessage={`${number} marked replaced.`} />
+          )}
+          {!waiting && gated.length > 0 && finishable.length === 0 && <RequestApproval id={id} number={number} steps={gated as ("approve" | "decline" | "refund" | "replace")[]} preferred={preferredResolution} />}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-2">
-      {steps.includes("decline") && <Decline id={id} number={number} />}
-      {steps.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} />}
+      {steps.includes("decline") && <Decline id={id} number={number} approvalId={ready("return.decline")} />}
+      {steps.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} approvalId={ready("return.approve")} />}
       {steps.includes("receive") && (
         <OrderActionDialog
           trigger="Mark goods received"
@@ -171,7 +216,7 @@ export function ReturnActions({
           successMessage={`${number} marked goods received.`}
         />
       )}
-      {steps.includes("refund") && <Refund id={id} number={number} />}
+      {steps.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} />}
       {steps.includes("replace") && (
         <OrderActionDialog
           trigger="Mark replaced"
@@ -179,7 +224,7 @@ export function ReturnActions({
           description="Only confirm once the replacement has been sent to the Customer."
           confirm="Mark replaced"
           busy="Saving…"
-          run={() => markReturnReplaced(id)}
+          run={() => markReturnReplaced(id, ...withApproval(ready("return.replace")))}
           successMessage={`${number} marked replaced.`}
         />
       )}

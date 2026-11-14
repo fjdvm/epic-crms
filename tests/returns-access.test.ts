@@ -119,7 +119,7 @@ describe('Returns server access', () => {
     expect(await getReturnDetail(1)).toMatchObject({ ok: true, detail: { number: 'RMA-1' } });
     expect(await canOpenOrders()).toBe(true);
     expect(await requireAnyModule(ORDER_DETAIL_MODULES)).toMatchObject({ username: 'ana' });
-    expect(await getShell()).toMatchObject({ permittedPages: ['/returns'] });
+    expect(await getShell()).toMatchObject({ permittedPages: ['/returns', '/approvals'] });
   });
 });
 

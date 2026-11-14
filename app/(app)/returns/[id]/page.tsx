@@ -6,6 +6,9 @@ import { ReturnDetailView } from "@/features/returns/return-detail";
 import { loadReturnDetail } from "@/features/returns/returns";
 import { gatewayFileStorage } from "@/lib/gateway";
 import { RETURNS_MODULE } from "@/lib/portal/config";
+import { shopRole } from "@/lib/portal/roles";
+import { approvals } from "@/features/approvals/server";
+import { toView } from "@/features/approvals/view";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
@@ -21,7 +24,8 @@ async function viewUrl(fileId: string): Promise<string | null> {
 }
 
 export default async function ReturnPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireModule(RETURNS_MODULE);
+  const staff = await requireModule(RETURNS_MODULE);
+  const role = shopRole(staff.role);
 
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
@@ -46,6 +50,8 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
   if (!result.detail) notFound();
 
   const { detail } = result;
+  const requests = (await approvals().list(staff, RETURNS_MODULE).catch(() => []))
+    .map((row) => toView(row as unknown as Record<string, unknown>)).filter((r) => r.targetId === id);
   const [imageUrls, deliveryPhotoUrl, videoUrl, refundProofUrl] = await Promise.all([
     Promise.all(detail.images.map((image) => viewUrl(image.fileId))),
     detail.deliveryPhotoFileId ? viewUrl(detail.deliveryPhotoFileId) : undefined,
@@ -62,6 +68,8 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
         deliveryPhotoUrl={deliveryPhotoUrl}
         videoUrl={videoUrl}
         refundProofUrl={refundProofUrl}
+        role={role}
+        requests={requests}
       />
     </>
   );

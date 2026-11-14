@@ -14,6 +14,11 @@ import { SalesChart, SalesChartSkeleton } from "@/features/dashboard/sales-chart
 import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
 import { DASHBOARD_DATA_MODULES, DASHBOARD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireModule } from "@/lib/portal/staff";
+import { RoleStrip } from "@/features/dashboard/role-strip";
+import { approvals } from "@/features/approvals/server";
+import { toView } from "@/features/approvals/view";
+import { shopRole } from "@/lib/portal/roles";
+import { RETURNS_MODULE } from "@/lib/portal/config";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -105,7 +110,9 @@ async function NeedsAttentionCard({ figures, now }: FigureProps & { now: Date })
 }
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
-  await requireModule(DASHBOARD_MODULE);
+  const staff = await requireModule(DASHBOARD_MODULE);
+  const role = shopRole(staff.role);
+  const requests = (await approvals().list(staff, RETURNS_MODULE).catch(() => [])).map((row) => toView(row as unknown as Record<string, unknown>));
 
   const raw = (await searchParams).period;
   const preset = PERIOD_PRESETS.find((p) => p === (Array.isArray(raw) ? raw[0] : raw)) ?? "7-days";
@@ -126,6 +133,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </div>
         <PeriodPicker />
       </div>
+      <RoleStrip role={role} requests={requests} now={now.getTime()} />
       {Object.values(show).some(Boolean) || attention ? (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">

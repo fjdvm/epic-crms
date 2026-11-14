@@ -13,6 +13,7 @@ import {
   Ticket,
   Users2,
   Package,
+  ClipboardCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -79,6 +80,13 @@ export const returnsItem: NavItem = {
   icon: RotateCcw,
 };
 
+export const approvalsItem: NavItem = {
+  group: "SALES",
+  name: "Approvals",
+  href: "/approvals",
+  icon: ClipboardCheck,
+};
+
 export const ticketsItem: NavItem = {
   group: "SERVICE",
   name: "Tickets",
@@ -115,6 +123,7 @@ export const sidebarItems: NavItem[] = [
   paymentsItem,
   fulfilmentItem,
   returnsItem,
+  approvalsItem,
   ticketsItem,
   conversationsItem,
   feedbackItem,
