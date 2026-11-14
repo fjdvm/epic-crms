@@ -20,15 +20,15 @@ function credential(secret: string, resource: "orders" | "returns" = "orders"): 
 }
 
 /** The storefront owns all Order writes and Customer emails. Never retry an uncertain write automatically. */
-export async function changeOrderStatus(id: number, update: OrderStatusUpdate): Promise<OrderChangeResult> {
-  return orderRequest(id, update);
+export async function changeOrderStatus(id: number, update: OrderStatusUpdate, responseStatus: string = update.status): Promise<OrderChangeResult> {
+  return orderRequest(id, update, "status", responseStatus);
 }
 
-export async function cancelStorefrontItems(id: number, lineIds: number[], staff: { id: string; name: string }): Promise<OrderChangeResult> {
-  return orderRequest(id, { lineIds, staffId: staff.id, staffName: staff.name }, "items/cancel");
+export async function cancelStorefrontItems(id: number, lineIds: number[], staff: { id: string; name: string }, expectedStatus: string): Promise<OrderChangeResult> {
+  return orderRequest(id, { lineIds, staffId: staff.id, staffName: staff.name, expectedStatus }, "items/cancel");
 }
 
-async function orderRequest(id: number, update: OrderStatusUpdate | { lineIds: number[]; staffId: string; staffName: string }, path = "status"): Promise<OrderChangeResult> {
+async function orderRequest(id: number, update: OrderStatusUpdate | { lineIds: number[]; staffId: string; staffName: string; expectedStatus: string }, path = "status", responseStatus?: string): Promise<OrderChangeResult> {
   const origin = process.env.CREOMS_STOREFRONT_URL;
   const secret = process.env.CREOMS_SERVICE_SECRET;
   if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
@@ -41,7 +41,7 @@ async function orderRequest(id: number, update: OrderStatusUpdate | { lineIds: n
     const body = await response.json();
     if (!response.ok) return { ok: false, reason: typeof body.error === "string" ? body.error : "Storefront refused the change." };
     if (("status" in update && update.status === "delivered" && body.deliveryPhotoFileId !== update.deliveryPhotoFileId) ||
-      body.id !== id || ("status" in update ? body.status !== update.status : !["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(body.status)) ||
+      body.id !== id || ("status" in update ? body.status !== (responseStatus ?? update.status) : !["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(body.status)) ||
       ("deliveryFeeInCentavos" in update && update.deliveryFeeInCentavos !== undefined && body.deliveryFeeInCentavos !== update.deliveryFeeInCentavos) ||
       !(body.deliveryFeeInCentavos === null || Number.isSafeInteger(body.deliveryFeeInCentavos))) {
       return { ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." };

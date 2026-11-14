@@ -139,11 +139,11 @@ export class FakeStorefront {
     const cancelItems = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/items\/cancel$/);
     if (cancelItems && request.method === "POST") {
       const id = Number(cancelItems[1]);
-      const { lineIds, staffId, staffName } = await request.json();
+      const { lineIds, staffId, staffName, expectedStatus } = await request.json();
       if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
       return this.sql.begin(async tx => {
         const [order] = await tx`select * from orders where id = ${id} for update`;
-        if (!order || !["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(order.status) || !staffId || !staffName) {
+        if (!order || order.status !== expectedStatus || !["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(order.status) || !staffId || !staffName) {
           return Response.json({ error: "Items can no longer be cancelled on this Order." }, { status: 409 });
         }
         const lines = await tx`select * from order_lines where order_id = ${id}`;
@@ -153,7 +153,7 @@ export class FakeStorefront {
         const needsQuote = order.fulfillment_method === "delivery" && order.subtotal_in_centavos > 250000 && subtotal <= 250000;
         await tx`delete from order_lines where order_id = ${id} and id in ${tx(lineIds)}`;
         const [updated] = await tx`update orders set subtotal_in_centavos = ${subtotal},
-          status = ${needsQuote ? "placed" : order.status}, delivery_fee_in_centavos = ${needsQuote ? null : order.delivery_fee_in_centavos}
+          status = ${order.status}, delivery_fee_in_centavos = ${needsQuote ? null : order.delivery_fee_in_centavos}
           where id = ${id} returning *`;
         return Response.json({ id, status: updated.status, deliveryFeeInCentavos: updated.delivery_fee_in_centavos });
       });
@@ -165,7 +165,7 @@ export class FakeStorefront {
     const update = await request.json();
     const [order] = await this.sql`select * from orders where id = ${id}`;
     if (!order) return Response.json({ error: "Order was not found." }, { status: 404 });
-    const mayConfirm = update.status === "confirmed" && order.status === "placed";
+    const mayConfirm = update.status === "confirmed" && (order.status === "placed" || order.fulfillment_method === "delivery" && order.delivery_fee_in_centavos === null && ["confirmed", "awaiting payment", "paid", "preparing"].includes(order.status));
     const mayCancel = update.status === "cancelled" &&
       ["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(order.status);
     const mayPrepare = update.status === "preparing" && (order.status === "paid" ||
@@ -185,7 +185,7 @@ export class FakeStorefront {
       return Response.json({ error: "A Delivery fee is required." }, { status: 400 });
     }
     const [changed] = await this.sql`
-      update orders set status = ${update.status},
+      update orders set status = ${mayConfirm && order.status !== "placed" ? order.status : update.status},
         delivery_photo_file_id = ${mayDeliver ? update.deliveryPhotoFileId : order.delivery_photo_file_id},
         delivered_at = ${mayDeliver ? new Date() : order.delivered_at},
         delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos},

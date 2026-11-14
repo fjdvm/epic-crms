@@ -102,10 +102,10 @@ describe("Order actions", () => {
     const candidates = await loadCancellableOrderItems(id);
     expect(candidates).toMatchObject({ ok: true, items: [{ product: "Keep" }, { id: line.id, product: "Cancel" }] });
     expect(await quoteDeliveryFee(id, 19000)).toMatchObject({ ok: false });
-    expect(await cancelOrderItems(id, [line.id])).toMatchObject({ ok: true, order: { status: "placed", deliveryFeeInCentavos: null } });
+    expect(await cancelOrderItems(id, [line.id])).toMatchObject({ ok: true, order: { status, deliveryFeeInCentavos: null } });
     const detail = await loadOrder(() => db.sql, id);
-    expect(detail).toMatchObject({ ok: true, order: { status: "placed", subtotal: 250000 } });
-    expect(await quoteDeliveryFee(id, 19000)).toMatchObject({ ok: true, order: { status: "confirmed", deliveryFeeInCentavos: 19000 } });
+    expect(detail).toMatchObject({ ok: true, order: { status, subtotal: 250000 } });
+    expect(await quoteDeliveryFee(id, 19000)).toMatchObject({ ok: true, order: { status, deliveryFeeInCentavos: 19000 } });
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.items_cancelled", actor: { type: "user", id: "ana", display_name: "Ana" } }));
   });
 
