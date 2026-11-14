@@ -140,7 +140,7 @@ export async function cancelOrderItems(id: number, lineIds: number[]): Promise<O
       return { ok: false, reason: "Choose this Order's whole line items to cancel." };
     }
     if (!CANCELLABLE_STATUSES.includes(order.status)) return { ok: false, reason: ALREADY_CHANGED };
-    if (order.status === "paid" && shopRole(staff.role) !== "manager") {
+    if ((order.status === "paid" || order.status === "preparing" && order.payment_method === "gcash") && shopRole(staff.role) !== "manager") {
       return { ok: false, reason: "Request approval from a CREOMS Manager to cancel paid items." };
     }
     const result = await cancelStorefrontItems(id, lineIds, staff, order.status);
