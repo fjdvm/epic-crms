@@ -12,11 +12,19 @@ import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./orde
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PaymentPill } from "./status-pill";
 
+/** A Delivery Order whose subtotal is strictly over ₱2,500 (250,000 centavos) ships free. */
+export const FREE_DELIVERY_THRESHOLD = 250_000;
+
+export function hasFreeDelivery(order: OrderDetail): boolean {
+  return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0 && order.subtotal > FREE_DELIVERY_THRESHOLD;
+}
+
 function DeliveryFee({ order }: { order: OrderDetail }) {
   if (order.fulfillmentMethod === "pickup") return null;
 
-  const text =
-    order.deliveryFee !== null
+  const text = hasFreeDelivery(order)
+    ? "Free · ₱0"
+    : order.deliveryFee !== null
       ? formatPesos(order.deliveryFee)
       : order.status === "cancelled"
         ? "Not quoted"
@@ -25,8 +33,36 @@ function DeliveryFee({ order }: { order: OrderDetail }) {
   return (
     <div className="flex justify-between">
       <dt className="text-[#6e6680]">Delivery fee</dt>
-      <dd>{text}</dd>
+      <dd className={hasFreeDelivery(order) ? "font-medium text-[#16a34a]" : undefined}>{text}</dd>
     </div>
+  );
+}
+
+function FreeDeliveryRule({ order }: { order: OrderDetail }) {
+  if (!hasFreeDelivery(order)) return null;
+
+  return (
+    <div role="note" aria-label="Free delivery rule" className="flex gap-2.5 rounded-[10px] bg-[#e3f4e8] p-3 text-[#1e6b3a]">
+      <span aria-hidden className="text-sm leading-none">✓</span>
+      <div className="space-y-0.5">
+        <p className="text-[13px] font-semibold">Free delivery rule</p>
+        <p className="text-xs">
+          Subtotal is over {formatPesos(FREE_DELIVERY_THRESHOLD)}, so delivery is free and the order was confirmed at
+          placement. The delivery fee is locked at ₱0 — saving any other amount is refused.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function QuoteAgainNote({ order }: { order: OrderDetail }) {
+  if (!hasFreeDelivery(order)) return null;
+
+  return (
+    <p role="note" aria-label="Quote again" className="rounded-[10px] bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">
+      If items are cancelled and the subtotal drops to {formatPesos(FREE_DELIVERY_THRESHOLD)} or less, staff must quote a
+      delivery fee again.
+    </p>
   );
 }
 
@@ -117,6 +153,9 @@ export function OrderDetailView({
                 Order #{order.id}
               </h1>
               <LiveStatus />
+              {hasFreeDelivery(order) && (
+                <span className="rounded-full bg-[#e3f4e8] px-2.5 py-0.5 text-xs font-medium text-[#1e6b3a]">Free delivery</span>
+              )}
             </div>
             <p className="text-sm leading-[normal] text-[#6e6680]">
               Placed {formatDate(order.createdAt)} ·{" "}
@@ -174,6 +213,7 @@ export function OrderDetailView({
                 <dd>{formatPesos(order.total)}</dd>
               </div>
             </dl>
+            <FreeDeliveryRule order={order} />
           </section>
 
           {modules.includes(RETURNS_MODULE) && (
@@ -225,6 +265,8 @@ export function OrderDetailView({
           {(order.status === "delivered" || order.status === "received") && (
             <DeliveryPhoto order={order} url={deliveryPhotoUrl} />
           )}
+
+          <QuoteAgainNote order={order} />
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>
