@@ -128,19 +128,23 @@ describe("the Fulfilment board", () => {
     expect(within(column("Preparing")).getByText("No Orders here.")).toBeTruthy();
   });
 
-  it("has no courier, tracking or packing-slip fields or buttons, on the board or in any move", () => {
-    board({ preparing: [card({ id: 1, status: "preparing" })], dispatched: [card({ id: 2, status: "dispatched" })] });
-    const fields = /courier|tracking|packing slip|received by|proof of delivery|delivered on/i;
-
-    expect(screen.queryAllByRole("button", { name: fields })).toHaveLength(0);
-    for (const [id, move] of [[1, "Mark as dispatched"], [2, "Mark as delivered"]] as const) {
-      fireEvent.click(within(cardFor(id)).getByRole("button", { name: move }));
+  it("asks for no courier on a Pickup dispatch or a delivery, but a Delivery dispatch asks for the booking", () => {
+    board({
+      preparing: [card({ id: 1, status: "preparing", fulfillmentMethod: "pickup" }), card({ id: 3, status: "preparing" })],
+      dispatched: [card({ id: 2, status: "dispatched" })],
+    });
+    for (const id of [1, 2]) {
+      fireEvent.click(within(cardFor(id)).getByRole("button", { name: id === 1 ? "Mark as dispatched" : "Mark as delivered" }));
       const dialog = screen.getByRole("alertdialog");
       expect(within(dialog).queryAllByRole("textbox")).toHaveLength(0);
-      expect(within(dialog).queryAllByRole("switch")).toHaveLength(0);
-      expect(within(dialog).queryAllByLabelText(fields)).toHaveLength(0);
+      expect(within(dialog).queryAllByLabelText(/courier|link/i)).toHaveLength(0);
       fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     }
+    fireEvent.click(within(cardFor(3)).getByRole("button", { name: "Mark as dispatched" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByRole("radio", { name: "Lalamove" })).toBeTruthy();
+    expect(within(dialog).getByLabelText("Booking share link")).toBeTruthy();
+    for (const label of ["Rider name (optional)", "Rider contact (optional)", "Plate no. (optional)"]) expect(within(dialog).getByLabelText(label)).toBeTruthy();
   });
 });
 
@@ -168,11 +172,11 @@ describe("moving an Order on the board", () => {
   it("closes the dialog at once, and tells Staff only once the server confirms", async () => {
     const pending = deferred<Awaited<ReturnType<typeof dispatchOrder>>>();
     vi.mocked(dispatchOrder).mockReturnValue(pending.promise);
-    board({ preparing: [card({ status: "preparing" })] });
+    board({ preparing: [card({ status: "preparing", fulfillmentMethod: "pickup" })] });
     fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as dispatched" }));
 
     const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 as dispatched?" });
-    expect(within(dialog).getByText(/no courier or tracking number/i)).toBeTruthy();
+    expect(within(dialog).getByText(/no courier or tracking link/i)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as dispatched" }));
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -346,9 +350,34 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     vi.mocked(dispatchOrder).mockResolvedValue(moved(1042, "dispatched"));
     render(<OrderDetailView order={detail({ status: "preparing" })} modules={FULFILMENT} />);
     fireEvent.click(screen.getByRole("button", { name: "Mark as dispatched" }));
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark as dispatched" }));
+    const dialog = screen.getByRole("alertdialog");
+    const confirm = within(dialog).getByRole("button", { name: "Mark as dispatched" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Grab" }));
+    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "http://grab.test/1" } });
+    expect(within(dialog).getByText("The link must start with https://")).toBeTruthy();
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "https://grab.test/1" } });
+    fireEvent.change(within(dialog).getByLabelText("Rider contact (optional)"), { target: { value: "0917 123 4567" } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
 
+    // A Delivery dispatch emails the Customer, so it is never shown as done before the server confirms.
+    expect(toast.success).not.toHaveBeenCalled();
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 dispatched."));
+    expect(dispatchOrder).toHaveBeenCalledWith(1042, { courier: "Grab", trackingUrl: "https://grab.test/1", riderName: "", riderPlate: "", riderPhone: "0917 123 4567" });
+  });
+
+  it("says why when the server refuses a Delivery dispatch", async () => {
+    vi.mocked(dispatchOrder).mockResolvedValue({ ok: false, reason: "Enter the booking's share link, starting with https://." });
+    render(<OrderDetailView order={detail({ status: "preparing" })} modules={FULFILMENT} />);
+    fireEvent.click(screen.getByRole("button", { name: "Mark as dispatched" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Lalamove" }));
+    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "https://x.test/1" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark as dispatched" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Enter the booking's share link, starting with https://."));
   });
 
   it("shows no moves to Staff without the Fulfilment Module", () => {
