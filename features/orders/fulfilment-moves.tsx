@@ -118,7 +118,7 @@ export function FulfilmentMove({
   triggerClassName,
   onMove,
 }: {
-  order: { id: number; status: string; paymentMethod: string; fulfillmentMethod?: string };
+  order: { id: number; status: string; paymentMethod: string; fulfillmentMethod: string };
   triggerClassName?: string;
   /** Shows the Order in its next status at once; the moves without an outside effect call it. */
   onMove?: (status: "preparing" | "dispatched") => void;
