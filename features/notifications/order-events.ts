@@ -2,7 +2,7 @@ import type postgres from "postgres";
 
 import { DEFAULT_SCHEMA, schemaIdent, type SyncResult } from "./notifications";
 
-type OrderEventKind = "order-delivery-fee" | "order-placed" | "order-payment-proof";
+type OrderEventKind = "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof";
 
 interface OrderEvent {
   key: string;
@@ -22,7 +22,9 @@ export async function readOrderEvents(reader: postgres.Sql): Promise<OrderEvent[
   }[]>`
     select 'order-placed:' || o.id as key,
       case when o.status = 'placed' and o.fulfillment_method = 'delivery' and o.delivery_fee_in_centavos is null
-        then 'order-delivery-fee' else 'order-placed' end as kind,
+        then 'order-delivery-fee'
+        when o.fulfillment_method = 'delivery' and o.subtotal_in_centavos > 250000 and o.delivery_fee_in_centavos = 0
+        then 'order-free-delivery' else 'order-placed' end as kind,
       o.id as order_id, o.customer_id, c.full_name as customer_name
     from public.orders o
     join public.customers c on c.id = o.customer_id
@@ -71,7 +73,7 @@ export async function syncOrderEvents(
     if (fresh.length === 0) return { baselined: false, created: 0 };
 
     const freshKeys = new Set(fresh.map((f) => f.event_key));
-    const arrived = events.filter((e) => freshKeys.has(e.key) && (state.all_orders_baselined || e.kind !== "order-placed"));
+    const arrived = events.filter((e) => freshKeys.has(e.key) && (state.all_orders_baselined || !["order-placed", "order-free-delivery"].includes(e.kind)));
     const created = await tx`
       insert into ${s}.notifications (kind, customer_id, customer_name, order_id)
       select * from unnest(

@@ -20,6 +20,7 @@ interface CurrentOrder {
   status: string;
   fulfillment_method: string;
   payment_method: string;
+  subtotal_in_centavos: number;
   payment_proof_submitted_at: Date | null;
 }
 
@@ -40,7 +41,7 @@ async function act(
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
     const [order] = await database()<CurrentOrder[]>`
-      select status, fulfillment_method, payment_method, payment_proof_submitted_at from public.orders where id = ${id}`;
+      select status, fulfillment_method, payment_method, subtotal_in_centavos, payment_proof_submitted_at from public.orders where id = ${id}`;
     if (!order) return { ok: false, reason: "Order was not found." };
     result = await run(order, staff);
   } catch {
@@ -78,6 +79,9 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     }
     if (order.fulfillment_method !== "delivery") {
       return { ok: false, reason: "Only a placed Delivery Order can be quoted." };
+    }
+    if (order.subtotal_in_centavos > 250_000) {
+      return { ok: false, reason: "Free delivery applies to this Order. No Delivery fee quote is needed." };
     }
     if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
     return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos });

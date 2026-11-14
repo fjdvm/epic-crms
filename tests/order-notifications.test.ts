@@ -28,6 +28,7 @@ beforeAll(async () => {
   for (const statement of crmsStatements()) await db.sql.unsafe(statement);
   await db.sql.unsafe(readFileSync("docs/db/crms-order-notifications.sql", "utf8"));
   await db.sql.unsafe(readFileSync("docs/db/crms-staff-signals.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-free-delivery.sql", "utf8"));
 }, 60_000);
 
 afterAll(async () => {
@@ -53,6 +54,17 @@ async function order() {
 }
 
 describe("Order notifications", () => {
+  it("announces Free delivery without asking Staff for a quote, once", async () => {
+    await sync();
+    const id = await order();
+    await db.sql`update orders set subtotal_in_centavos = 250001, delivery_fee_in_centavos = 0, status = 'confirmed' where id = ${id}`;
+    await sync();
+    await sync();
+    const feed = await listNotifications(db.sql, "crms", 20, ordersViewer());
+    expect(feed.notifications).toHaveLength(1);
+    expect(describeNotification(feed.notifications[0])).toEqual({ text: `Jane Doe placed Order #${id} · Free delivery, confirmed. No quote is needed`, href: `/orders/${id}` });
+  });
+
   it("alerts every Staff member with the Orders Module when a Delivery Order needs a fee", async () => {
     await sync();
     const id = await order();

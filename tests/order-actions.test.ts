@@ -86,6 +86,19 @@ async function signInWithModules(modules: string[]) {
   return portal;
 }
 describe("Order actions", () => {
+  it("refuses a quote on Free delivery, including a legacy placed Order", async () => {
+    const id = await order();
+    await db.sql`update orders set subtotal_in_centavos = 250001 where id = ${id}`;
+    expect(await quoteDeliveryFee(id, 100)).toEqual({ ok: false, reason: "Free delivery applies to this Order. No Delivery fee quote is needed." });
+    expect(storefront.requests).toBe(0);
+  });
+
+  it("quotes again when cancelled items reduce the subtotal to exactly ₱2,500", async () => {
+    const id = await order();
+    await db.sql`update orders set subtotal_in_centavos = 250000 where id = ${id}`;
+    expect(await quoteDeliveryFee(id, 19000)).toMatchObject({ ok: true, order: { status: "confirmed", deliveryFeeInCentavos: 19000 } });
+  });
+
   it("refuses direct calls when the Portal grants Payments and Fulfilment but no Orders Module", async () => {
     await signInWithModules(["Payments", "Fulfilment"]);
     for (const action of [() => quoteDeliveryFee(1, 15000), () => confirmPickup(1), () => cancelOrder(1)]) {
