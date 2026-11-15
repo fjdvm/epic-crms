@@ -144,7 +144,7 @@ export function TasksTab({ customerId, tasks, viewer, now, onTaskChange }: {
     <TabCard title="Tasks">
       {viewer && <form noValidate onSubmit={event => { event.preventDefault(); askToCreate(); }} className="shrink-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Input aria-label="Task description" maxLength={400} placeholder="Add a Task… e.g. Check the replacement arrived sealed" value={description} onChange={event => setDescription(event.target.value)} className="min-w-48 flex-1" />
+          <Input aria-label="Task description" maxLength={200} placeholder="Add a Task… e.g. Check the replacement arrived sealed" value={description} onChange={event => setDescription(event.target.value)} className="min-w-48 flex-1" />
           <Input aria-label="Task due date" type="date" required value={dueDate} onChange={event => setDueDate(event.target.value)} className="w-auto" />
           <Button type="submit" variant="secondary" size="sm">Add task</Button>
         </div>
