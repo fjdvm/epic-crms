@@ -19,7 +19,7 @@ export function approvals() {
     for (const person of recipients) {
       if (!person.modules.includes(request.module)) continue;
       if (audience === "requester" ? person.id !== request.requester_id : shopRole(person.role ?? "") !== audience) continue;
-      await portal.send({ key: `${key}:${person.id}`, userId: person.id, text, link: `${appUrl()}/${request.action.startsWith("payment.") ? "payments" : "returns"}` });
+      await portal.send({ key: `${key}:${person.id}`, userId: person.id, text, link: `${appUrl()}/${request.module === "Fulfilment" ? "fulfilment" : request.action.startsWith("payment.") ? "payments" : "returns"}` });
     }
   }, after);
 }

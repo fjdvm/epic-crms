@@ -182,3 +182,27 @@ export async function changeVerification(id: number, change: VerificationChange 
     return { ok: false, reason: uncertain };
   }
 }
+
+export type FailedDeliveryUpdate =
+  | { action: "record"; attemptId: string; reason: string; nextStep: "rebook" | "request-cancellation"; customerMessage: string }
+  | { action: "rebook"; attemptId: string; courier: CourierBooking }
+  | { action: "restock" | "write-off"; attemptId: string };
+export type FailedDeliveryResult = { ok: true; attemptId: string } | { ok: false; reason: string };
+
+/** Stable attempt references make explicit recovery safe. No automatic retry of outside effects. */
+export async function changeFailedDelivery(id: number, update: FailedDeliveryUpdate, staff: { id: string; name: string }): Promise<FailedDeliveryResult> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the failed delivery. Refresh the Order before retrying with the same attempt reference.";
+  try {
+    const response = await fetch(new URL(`/api/internal/orders/${id}/failed-delivery`, origin), {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret)}` },
+      body: JSON.stringify({ ...update, staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : uncertain };
+    if (body?.id !== id || body.status !== "dispatched" || body.attemptId !== update.attemptId || body.action !== update.action) return { ok: false, reason: uncertain };
+    return { ok: true, attemptId: body.attemptId };
+  } catch { return { ok: false, reason: uncertain }; }
+}

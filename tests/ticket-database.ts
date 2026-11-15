@@ -170,6 +170,11 @@ export async function startTestDatabase(): Promise<TestDatabase> {
   const db = await PGlite.create();
   await db.exec(SCHEMA);
   await db.exec(readFileSync(new URL("./returns-schema.sql", import.meta.url), "utf8"));
+  await db.exec(`create table failed_deliveries (
+    id text primary key, order_id integer not null references orders(id), reason text not null, next_step text not null,
+    customer_message text not null, staff_id text not null, staff_name text not null, created_at timestamptz not null default now(),
+    disposition text, disposed_at timestamptz, rebooked_at timestamptz, courier jsonb
+  )`);
 
   const port = await freePort();
   const server = new PGLiteSocketServer({ db, port, host: "127.0.0.1" });
