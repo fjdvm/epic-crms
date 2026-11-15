@@ -24,6 +24,13 @@ create table order_return_items (
   size_label text not null,
   quantity integer not null check (quantity > 0),
   price_in_centavos integer not null check (price_in_centavos >= 0),
+  condition text check (condition in ('sellable','damaged')),
+  inspected_at timestamptz,
+  inspected_by_id text,
+  inspected_by_name text,
+  inspection_id text,
+  restocked_at timestamptz,
+  written_off_at timestamptz,
   primary key (return_id, order_line_id)
 );
 create table order_return_images (

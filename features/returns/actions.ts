@@ -2,9 +2,9 @@
 
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalOptions, ApprovalResult } from "@/features/approvals/workflow";
-import { canWork } from "@/lib/portal/roles";
+import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { revalidatePath } from "next/cache";
-import { changeReturnStatus, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
+import { changeReturnStatus, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
@@ -57,6 +57,12 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
         : (current.status === "goods received" || (current.status === "approved" && current.goods_required === false)) &&
           current.final_resolution === (decision.status === "refunded" ? "refund" : "replacement");
     if (!allowed) return { ok: false, reason: "Return already changed or is not ready for this step; refresh it before trying again." };
+    if ((decision.status === "refunded" || decision.status === "replaced") && current.goods_required === true) {
+      const [pending] = await database()`select count(*)::int as count from public.order_return_items where return_id = ${id}
+        and coalesce(to_jsonb(order_return_items)->>'condition', '') = ''`;
+      const [lines] = await database()`select count(*)::int as count from public.order_return_items where return_id = ${id}`;
+      if (lines.count > 0 && pending.count > 0) return { ok: false, reason: "Inspect the returned items first." };
+    }
     if (decision.status === "approved") decision = { ...decision, finalResolution: decision.finalResolution ?? current.preferred_resolution };
     const execute = async (): Promise<ReturnChangeResult> => {
     if (decision.status === "refunded") {
@@ -68,7 +74,9 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
         if (!upload) return { ok: false, reason: "Choose exactly one refund proof screenshot." };
         const fileId = upload.fileId;
         await gatewayFileStorage.linkRefundProof(fileId, id);
-        decision = { status: "refunded", refundProofFileId: fileId };
+        const [paid] = await database()<{ payment_method: string }[]>`select payment_method from public.orders where id = ${orderId}`;
+        // The refund goes back the way the Customer paid; the storefront checks this against the Order.
+        decision = { status: "refunded", refundProofFileId: fileId, refundMethod: paid?.payment_method };
       } catch {
         return { ok: false, reason: "Refund proof could not be stored. The Return was not marked refunded." };
       }
@@ -80,11 +88,12 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       : decision.status === "declined"
         ? { ...actor, status: "declined", declineReason: decision.declineReason.trim() }
         : decision.status === "refunded"
-          ? { ...actor, status: "refunded", refundProofFileId: decision.refundProofFileId }
+          ? { ...actor, status: "refunded", refundProofFileId: decision.refundProofFileId, refundMethod: decision.refundMethod }
           : { ...actor, status: decision.status };
     result = await changeReturnStatus(id, update);
     if (result.ok) {
-      const action = `return.${update.status.replaceAll(" ", "_")}`;
+      // A refund is only recorded once it was approved and carried out with proof, so it is audited as `return.refund_approved`.
+      const action = update.status === "refunded" ? "return.refund_approved" : `return.${update.status.replaceAll(" ", "_")}`;
       await recordAudit(gatewayAuditTrail, {
         action, module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
         target: { type: "return", id: String(id), display_name: `RMA-${id}` },
@@ -162,4 +171,78 @@ export async function reconcileRefundProof(id: number): Promise<{ ok: true } | {
   } catch {
     return { ok: false, reason: "The refund proof could not be made Permanent. Refresh the Return; do not repeat the refund." };
   }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
+
+/**
+ * Staff inspect a Return's goods item by item: each whole line item is sellable (the storefront adds it back to IMS stock)
+ * or damaged (needs a write-off request). Easy to undo, so Staff may do it; nothing here moves money.
+ */
+export async function inspectReturn(id: number, inspectionId: string, items: { orderLineId: number; condition: "sellable" | "damaged" }[]): Promise<ReturnInspectionResult> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (!Number.isSafeInteger(id) || id < 1 || typeof inspectionId !== "string" || !UUID.test(inspectionId) || !Array.isArray(items)) return { ok: false, reason: "Invalid inspection." };
+  try {
+    const [current] = await database()`select status, order_id from public.order_returns where id = ${id}`;
+    if (!current) return { ok: false, reason: "Return was not found." };
+    const lines = await database()`select order_line_id, inspection_id, to_jsonb(order_return_items)->>'condition' as condition from public.order_return_items where return_id = ${id}`;
+    const resumed = lines.length > 0 && lines.every(line => line.inspection_id === inspectionId);
+    if (!resumed && (current.status !== "goods received" || lines.some(line => line.condition))) return { ok: false, reason: "Return is not ready to inspect or was already inspected." };
+    const ids = new Set(items.map(item => item.orderLineId));
+    if (!lines.length || ids.size !== items.length || ids.size !== lines.length || !lines.every(line => ids.has(Number(line.order_line_id))) ||
+      !items.every(item => item.condition === "sellable" || item.condition === "damaged")) return { ok: false, reason: "Mark every item sellable or damaged." };
+    const result = await inspectStorefrontReturn(id, { action: "inspect", inspectionId, items: items.map(({ orderLineId, condition }) => ({ orderLineId, condition })) }, staff);
+    if (!result.ok) return result;
+    const damaged = items.filter(item => item.condition === "damaged").length;
+    await recordAudit(gatewayAuditTrail, {
+      action: "return.inspected", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+      target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+      description: `${staff.name} inspected Return RMA-${id} (Order #${current.order_id}): ${items.length - damaged} sellable, ${damaged} damaged.`,
+      occurred_at: new Date().toISOString(), operationId: `return:${id}:inspected:${inspectionId}`,
+    });
+    revalidatePath("/(app)/returns", "layout");
+    revalidatePath(`/orders/${current.order_id}`);
+    return result;
+  } catch { return { ok: false, reason: "Inspection is temporarily unavailable. Refresh the Return before retrying." }; }
+}
+
+/**
+ * Write off a Return's damaged items. A Manager approves; above the Approval limit the CEO also does.
+ * The limit is measured by the selling price of all the Return's items, per Return, not just the damaged ones.
+ */
+export async function writeOffReturn(id: number, options: ApprovalOptions = {}): Promise<ReturnInspectionResult | ApprovalResult> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
+  try {
+    const [current] = await database()`select order_id from public.order_returns where id = ${id}`;
+    if (!current) return { ok: false, reason: "Return was not found." };
+    const items = await database()`select inspection_id, to_jsonb(order_return_items)->>'condition' as condition,
+      to_jsonb(order_return_items)->>'written_off_at' as written_off_at from public.order_return_items where return_id = ${id}`;
+    const damaged = items.filter(item => item.condition === "damaged");
+    if (!damaged.length || items.some(item => !item.inspection_id)) return { ok: false, reason: "This Return has no inspected damaged items to write off." };
+    if (damaged.every(item => item.written_off_at)) return { ok: false, reason: "These items were already written off." };
+    const inspectionId = String(items[0].inspection_id);
+    const [amount] = await database()`select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text as selling from public.order_return_items where return_id = ${id}`;
+    const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "write-off", targetId: String(id),
+      payload: { inspectionId, source: "return" }, amountInCentavos: Number(amount.selling) }, options, async () => {
+      const done = await inspectStorefrontReturn(id, { action: "write-off", inspectionId }, staff);
+      if (done.ok) {
+        await recordAudit(gatewayAuditTrail, {
+          action: "writeoff.approved", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+          target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+          description: `Write-off of damaged items on Return RMA-${id} (Order #${current.order_id}) was approved and recorded by ${staff.name}.`,
+          occurred_at: new Date().toISOString(), operationId: `return:${id}:writeoff.approved:${inspectionId}`,
+        });
+      }
+      return done;
+    });
+    if (result.ok) {
+      revalidatePath("/(app)/returns", "layout");
+      revalidatePath(`/orders/${current.order_id}`);
+      revalidatePath("/approvals");
+    }
+    return result;
+  } catch { return { ok: false, reason: "Write-off is temporarily unavailable. Refresh the Return before retrying." }; }
 }

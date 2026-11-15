@@ -120,7 +120,7 @@ describe("the Return detail", () => {
     ["requested", null, ["Decline", "Approve"]],
     ["approved", true, ["Mark goods received"]],
     ["approved", false, ["Issue refund"]],
-    ["goods received", true, ["Issue refund"]],
+    ["goods received", true, ["Issue refund", "Save inspection"]],
     ["refunded", true, []],
     ["replaced", true, []],
     ["declined", null, []],
@@ -137,7 +137,7 @@ describe("the Return detail", () => {
     cleanup();
 
     view(detail({ status: "goods received", goodsRequired: true, finalResolution: "replacement" }));
-    expect(buttons()).toEqual(["Mark replaced"]);
+    expect(buttons()).toEqual(["Mark replaced", "Save inspection"]);
   });
 
   it("shows the preferred and final Resolution", () => {
