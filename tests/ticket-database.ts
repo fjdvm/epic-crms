@@ -52,6 +52,7 @@ const SCHEMA = `
     payment_proof_submitted_at timestamptz,
     payment_proof_rejected_at timestamptz,
     payment_proof_rejections integer not null default 0,
+    dispatched_at timestamptz,
     delivered_at timestamptz,
     delivery_photo_file_id text,
     delivery_photo_removed_at timestamptz,
