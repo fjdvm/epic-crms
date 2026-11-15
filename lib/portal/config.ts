@@ -12,6 +12,7 @@ export const TICKETS_MODULE = "Tickets";
 export const FEEDBACK_MODULE = "Feedback";
 export const MARKETING_MODULE = "Marketing";
 export const ORDERS_MODULE = "Orders";
+export const SENIOR_PWD_MODULE = "Senior/PWD";
 export const PAYMENTS_MODULE = "Payments";
 export const FULFILMENT_MODULE = "Fulfilment";
 export const RETURNS_MODULE = "Returns";
