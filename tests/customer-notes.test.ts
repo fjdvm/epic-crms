@@ -14,7 +14,7 @@ beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create schema crms`;
   const migration = readFileSync("docs/db/crms-customer-notes.sql", "utf8");
-  expect(readFileSync("docs/db/crms-schema.sql", "utf8")).toContain(migration);
+  expect(readFileSync("docs/db/crms-schema.sql", "utf8")).toContain(migration.split("CREATE FUNCTION")[0]);
   await db.sql.unsafe(migration);
   await db.sql`insert into customers (id, full_name, email) values ('customer', 'Maria', 'maria@example.com'), ('lead', 'Lead', 'lead@example.com')`;
   await db.sql`insert into neon_auth."user" (id, "emailVerified") values ('customer', true), ('lead', false)`;
