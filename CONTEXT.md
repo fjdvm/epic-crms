@@ -48,7 +48,7 @@ The Dashboard's money figure for a period: the sum of Order totals for Orders pl
 _Avoid_: Revenue
 
 **Buyer**:
-A Customer with at least one Order counted in Sales in a period. A Buyer is Returning if they had an Order counted in Sales before the period began, and New if their first such Order falls inside it. A Buyer who orders twice in the period is counted once, as New or Returning by their first. Walk-in Customers have no Orders, so they are never Buyers.
+A Customer with at least one Order counted in Sales in a period. A Buyer is Returning if they had an Order counted in Sales before the period began, and New if their first such Order falls inside it. A Buyer who orders twice in the period is counted once, as New or Returning by their first.
 _Avoid_: Shopper, repeat customer (Stage already uses Repeat)
 
 **Dashboard**:
