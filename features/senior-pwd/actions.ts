@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { database } from "@/lib/db";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
-import { ORDERS_MODULE } from "@/lib/portal/config";
+import { SENIOR_PWD_MODULE } from "@/lib/portal/config";
 import type { Staff } from "@/lib/portal/client";
 import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
@@ -27,7 +27,7 @@ const UNAVAILABLE = "Senior/PWD verification is temporarily unavailable.";
 const clean = (text: unknown) => (typeof text === "string" ? text.trim() : "");
 
 export async function loadVerifications(): Promise<{ ok: true; list: VerificationList; now: Date } | { ok: false; reason: string }> {
-  await requireModule(ORDERS_MODULE);
+  await requireModule(SENIOR_PWD_MODULE);
   try {
     const now = new Date();
     return { ok: true, list: await listVerifications(database(), now), now };
@@ -36,7 +36,7 @@ export async function loadVerifications(): Promise<{ ok: true; list: Verificatio
 
 /** A short-lived private address for the photo, only while the photo exists and is still waiting for review. */
 export async function loadVerificationPhoto(id: number): Promise<{ ok: true; url: string; backUrl: string | null } | { ok: false; reason: string }> {
-  await requireModule(ORDERS_MODULE);
+  await requireModule(SENIOR_PWD_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid verification number." };
   try {
     const v = await loadVerification(database(), id);
@@ -56,7 +56,7 @@ async function decide(
   audit: { action: "pwd.approved" | "pwd.declined" | "pwd.revoked"; verb: string; metadata: (v: Verification) => Record<string, unknown> },
   managerOnly = false,
 ): Promise<VerificationActionResult> {
-  const staff = await requireModule(ORDERS_MODULE);
+  const staff = await requireModule(SENIOR_PWD_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid verification number." };
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   if (managerOnly && shopRole(staff.role) !== "manager") return { ok: false, reason: MANAGER_ONLY };
@@ -81,7 +81,7 @@ async function decide(
   }
   // No ID number, photo or hash ever enters an audit event.
   await recordAudit(gatewayAuditTrail, {
-    action: audit.action, module: ORDERS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+    action: audit.action, module: SENIOR_PWD_MODULE, outcome: "success", actor: staffAuditActor(staff),
     target: { type: "customer", id: verification.customerId, display_name: verification.customerName },
     description: `${staff.name} ${audit.verb} the Senior/PWD verification of ${verification.customerName}.`,
     metadata: { verificationId: id, idType: verification.idType, ...audit.metadata(verification) },

@@ -4,12 +4,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { loadVerifications } from "@/features/senior-pwd/actions";
 import { VerificationsView } from "@/features/senior-pwd/review-view";
-import { ORDERS_MODULE } from "@/lib/portal/config";
+import { SENIOR_PWD_MODULE } from "@/lib/portal/config";
 import { shopRole } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 
 export default async function SeniorPwdPage() {
-  const staff = await requireModule(ORDERS_MODULE);
+  const staff = await requireModule(SENIOR_PWD_MODULE);
   const result = await loadVerifications();
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
