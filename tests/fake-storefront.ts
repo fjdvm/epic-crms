@@ -16,6 +16,11 @@ export class FakeStorefront {
   /** Re-upload emails the fake storefront sent, one per rejection. */
   reuploadEmails: { orderId: number; reason: string; link: string }[] = [];
 
+  /** Senior/PWD decision emails, one per decision. They never carry the ID number. */
+  verificationEmails: { verificationId: number; status: string; text: string }[] = [];
+  /** Server secret that keys the ID-number hash. */
+  private static HASH_KEY = "fake-id-hash-key";
+
   constructor(private sql: postgres.Sql, private now: () => Date = () => new Date(), private files?: FakeFileStorage) {}
 
   private async requestReturn(request: Request, orderId: number): Promise<Response> {
@@ -153,6 +158,53 @@ export class FakeStorefront {
     });
   }
 
+  /** The Customer uploads the ID photo and types the number. The number is hashed at once and never stored. */
+  async submitVerification(customerId: string, idType: "senior" | "pwd", idNumber: string, photoFileId: string): Promise<number | { error: string }> {
+    const idHash = createHmac("sha256", FakeStorefront.HASH_KEY).update(idNumber.replace(/\s+/g, "").toUpperCase()).digest("hex");
+    return this.sql.begin(async tx => {
+      const [taken] = await tx`select 1 from senior_pwd_verifications where id_hash = ${idHash} and customer_id <> ${customerId}
+        and status in ('pending', 'approved') limit 1`;
+      if (taken) return { error: "This ID is already used on another account." };
+      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at)
+        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}) returning id`;
+      return Number(row.id);
+    });
+  }
+
+  /** File-storage removes a Temporary photo after seven days; the storefront then asks the Customer to upload again. */
+  async removeStalePhotos(): Promise<void> {
+    await this.sql`update senior_pwd_verifications set status = 'expired', photo_file_id = null
+      where status = 'pending' and submitted_at <= ${new Date(this.now().getTime() - 7 * 24 * 60 * 60 * 1000)}`;
+  }
+
+  private async decideVerification(request: Request, id: number, action: string): Promise<Response> {
+    if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+    const body = await request.json();
+    if (!body.staffId || !body.staffName) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    return this.sql.begin(async tx => {
+      const [v] = await tx`select *, to_char(expires_on, 'YYYY-MM-DD') as expires from senior_pwd_verifications where id = ${id} for update`;
+      if (!v) return Response.json({ error: "Verification was not found." }, { status: 404 });
+      const ok = action === "approve" ? v.status === "pending" || body.override && ["declined", "revoked"].includes(v.status)
+        : action === "decline" ? v.status === "pending" : v.status === "approved";
+      if (!ok) return Response.json({ error: "Verification already changed." }, { status: 409 });
+      if (action === "approve") {
+        const [other] = await tx`select 1 from senior_pwd_verifications where id_hash = ${v.id_hash} and id <> ${id} and status = 'approved'
+          and expires_on > ${this.now()} limit 1`;
+        if (other) return Response.json({ error: "This ID is already verified on another account." }, { status: 409 });
+      }
+      if (action !== "approve" && !String(body.reason ?? "").trim()) return Response.json({ error: "A reason is required." }, { status: 400 });
+      const status = { approve: "approved", decline: "declined", revoke: "revoked" }[action]!;
+      // The photo is deleted right after review.
+      await tx`update senior_pwd_verifications set status = ${status}, photo_file_id = null, decided_at = ${this.now()},
+        decided_by_id = ${body.staffId}, decided_by_name = ${body.staffName},
+        decline_reason = ${action === "approve" ? null : body.reason.trim()},
+        expires_on = ${action === "approve" ? body.expiresOn : v.expires} where id = ${id}`;
+      this.verificationEmails.push({ verificationId: id, status,
+        text: action === "decline" ? `Your Senior/PWD ID was declined: ${body.reason.trim()}` : `Your Senior/PWD verification is ${status}.` });
+      return Response.json({ id, status, expiresOn: action === "approve" ? body.expiresOn : v.expires });
+    });
+  }
+
   handle = async (request: Request): Promise<Response> => {
     this.requests++;
     if (this.unavailable) throw new Error("Storefront unavailable");
@@ -160,7 +212,8 @@ export class FakeStorefront {
     const returnRequest = new URL(request.url).pathname.match(/^\/api\/orders\/(\d+)\/returns$/);
     if (returnRequest && request.method === "POST") return this.requestReturn(request, Number(returnRequest[1]));
     const returnDecision = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/status$/);
-    const resource = returnDecision ? "returns" : "orders";
+    const verificationDecision = new URL(request.url).pathname.match(/^\/api\/internal\/senior-pwd\/(\d+)\/(approve|decline|revoke)$/);
+    const resource = returnDecision ? "returns" : verificationDecision ? "senior-pwd" : "orders";
     const parts = request.headers.get("authorization")?.replace(/^Bearer /, "").split(".");
     if (!parts || parts.length !== 3) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const [header, payload, signature] = parts;
@@ -174,6 +227,7 @@ export class FakeStorefront {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (returnDecision && request.method === "POST") return this.decideReturn(request, Number(returnDecision[1]));
+    if (verificationDecision && request.method === "POST") return this.decideVerification(request, Number(verificationDecision[1]), verificationDecision[2]);
     const cancelItems = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/items\/cancel$/);
     if (cancelItems && request.method === "POST") {
       const id = Number(cancelItems[1]);

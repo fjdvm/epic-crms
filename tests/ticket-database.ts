@@ -22,8 +22,23 @@ const SCHEMA = `
     email text not null,
     marketing_opt_in boolean not null default false
   );
+  create table senior_pwd_verifications (
+    id integer primary key generated always as identity,
+    customer_id text not null references customers (id),
+    id_type text not null,
+    status text not null default 'pending',
+    id_hash text not null,
+    photo_file_id text,
+    submitted_at timestamptz not null default now(),
+    decided_at timestamptz,
+    decided_by_id text,
+    decided_by_name text,
+    decline_reason text,
+    expires_on date
+  );
   create table orders (
     id integer primary key generated always as identity,
+    senior_pwd_verification_id integer references senior_pwd_verifications (id),
     customer_id text not null references customers (id),
     status text not null default 'placed',
     subtotal_in_centavos integer not null default 0,
