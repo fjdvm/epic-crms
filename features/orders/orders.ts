@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { getOrderById, type CustomerOrder } from "@/features/customer-profiles/orders";
 import { paymentStatusOf } from "@/features/customer-profiles/rules";
+import { currentStatus, type IdType, type VerificationStatus } from "@/features/senior-pwd/verifications";
 import { paymentScreenshotSource } from "./payment-screenshot";
 
 export const ORDERS_PAGE_SIZE = 25;
@@ -162,9 +163,27 @@ export interface OrderDetail extends CustomerOrder {
   deliveryPhotoFileId: string | null;
   /** When the retention job removed the photo; null if it never did, so No photo means it never had one. */
   deliveryPhotoRemovedAt: Date | null;
+  /** The Senior/PWD verification attached to this Order, as of now; null when the Order has none. */
+  seniorPwd?: { id: number; idType: IdType; status: VerificationStatus } | null;
 }
 
 export type OrderResult = { ok: true; order: OrderDetail | null } | { ok: false };
+
+/** The Order's Senior/PWD verification, or null. Never selects the ID number or its hash. */
+async function orderVerification(sql: postgres.Sql, orderId: number): Promise<OrderDetail["seniorPwd"]> {
+  try {
+    const [row] = await sql<{ id: number; id_type: IdType; status: VerificationStatus; submitted_at: Date; expires_on: string | null }[]>`
+      select v.id, v.id_type, v.status, v.submitted_at, to_char(v.expires_on, 'YYYY-MM-DD') as expires_on
+      from public.orders o join public.senior_pwd_verifications v on v.id = o.senior_pwd_verification_id
+      where o.id = ${orderId}`;
+    if (!row) return null;
+    const photoExpiresAt = new Date(row.submitted_at.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return { id: row.id, idType: row.id_type, status: currentStatus({ status: row.status, expiresOn: row.expires_on, photoExpiresAt }, new Date()) };
+  } catch {
+    // Before the storefront ships the table, the Order simply has no verification.
+    return null;
+  }
+}
 
 /** One Order with its Customer, or `order: null` if there is no such Order. */
 export async function loadOrder(connect: () => postgres.Sql, orderId: number): Promise<OrderResult> {
@@ -194,6 +213,7 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number): P
           : null,
         deliveryPhotoFileId: customer.delivery_photo_file_id,
         deliveryPhotoRemovedAt: customer.delivery_photo_removed_at ? new Date(customer.delivery_photo_removed_at) : null,
+        seniorPwd: await orderVerification(sql, orderId),
         customer: { id: customer.id, name: customer.full_name },
         paidBy: customer.paid_by_id && customer.paid_by_name && customer.paid_at
           ? { id: customer.paid_by_id, name: customer.paid_by_name, at: customer.paid_at }

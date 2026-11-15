@@ -22,6 +22,17 @@ export function hasFreeDelivery(order: OrderDetail): boolean {
   return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0 && order.subtotal > FREE_DELIVERY_THRESHOLD;
 }
 
+const SENIOR_PWD_STATUS: Record<string, string> = {
+  pending: "Waiting for review", approved: "Verified", declined: "Declined", revoked: "Revoked", expired: "Expired",
+};
+
+/** "Senior Citizen · Verified", or "Not verified" when the Order carries no verification. */
+export function seniorPwdLabel(order: OrderDetail): string {
+  if (!order.seniorPwd) return "Not verified";
+  const kind = order.seniorPwd.idType === "senior" ? "Senior Citizen" : "PWD";
+  return `${kind} · ${SENIOR_PWD_STATUS[order.seniorPwd.status]}`;
+}
+
 /** "Reserved 4 · 18 left": what this line set aside, and what is still available online. */
 function LineStock({ reservation }: { reservation: LineReservation | undefined }) {
   if (!reservation) return <span className="text-[#6e6680]">–</span>;
@@ -315,6 +326,11 @@ export function OrderDetailView({
             >
               {order.customer.name}
             </Link>
+            <p className="mt-2 text-xs text-[#6e6680]">Senior/PWD</p>
+            <p data-testid="senior-pwd-status" className="text-sm text-[#1f1a2e]">{seniorPwdLabel(order)}</p>
+            {order.fulfillmentMethod === "pickup" && order.seniorPwd?.status === "approved" && (
+              <p className="mt-1 text-xs text-[#6e6680]">Ask to see the original ID when the Customer collects.</p>
+            )}
           </section>
         </div>
       </div>

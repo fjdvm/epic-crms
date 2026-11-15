@@ -33,7 +33,13 @@ The storefront owns the verification; CREOMS reads it and asks the storefront to
 
 Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CREOMS migration is needed.
 
-## Not built here
+## Review screen and Order detail (#343)
 
-No review screen yet (no Figma frame exists); it is a follow-up front-end ticket built from the UI foundation node.
-The Portal's Module list has no separate Senior/PWD Module, so review uses the Orders Module for now.
+- `/orders/senior-pwd` (Orders Module): waiting reviews and latest decisions. Review shows the account name, ID type
+  and the private photo (fetched only when the dialog opens); Staff read the number off the photo, which is never stored.
+  Approve needs the ID's expiry date; Decline needs a reason. Staff see "Request approval" on a declined, revoked or
+  approved ID; Managers get Override and Revoke; Admin and CEO see no buttons. No Figma frame exists, so it is built from
+  the foundation node. Never optimistic: the Customer is emailed.
+- Order detail's Customer card shows Senior/PWD status ("Not verified" by default) and, for an approved Pickup,
+  a reminder to see the original ID at collection.
+- The checkout step (photo front/back, number) is Storefront work in the Ecommerce repo, not CREOMS.

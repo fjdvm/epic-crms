@@ -182,6 +182,19 @@ describe("the Orders list", () => {
 });
 
 describe("an Order's detail", () => {
+  it("carries the Senior/PWD verification status, and none when the Order has no ID", async () => {
+    const plain = await order();
+    const withId = await order();
+    await db.sql`insert into senior_pwd_verifications (customer_id, id_type, id_hash, status, expires_on)
+      values ('c1', 'senior', 'h', 'approved', '2099-01-01')`;
+    await db.sql`update orders set senior_pwd_verification_id = (select max(id) from senior_pwd_verifications) where id = ${withId}`;
+    const a = await loadOrder(() => db.sql, plain);
+    const b = await loadOrder(() => db.sql, withId);
+    expect(a.ok && a.order?.seniorPwd).toBeNull();
+    expect(b.ok && b.order?.seniorPwd).toMatchObject({ idType: "senior", status: "approved" });
+    expect(JSON.stringify(b)).not.toContain('"h"');
+  });
+
   it("keeps legacy paid Orders readable without Staff attribution", async () => {
     const id = await order({ status: "paid" });
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "paid", paidBy: null } });
