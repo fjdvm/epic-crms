@@ -158,9 +158,9 @@ export function CustomerProfileView({
           <TabsTrigger className={TAB_TRIGGER} value="emails">
             Emails
           </TabsTrigger>
-          {!p.walkIn && <TabsTrigger className={TAB_TRIGGER} value="notes">
+          <TabsTrigger className={TAB_TRIGGER} value="notes">
             Notes &amp; tasks
-          </TabsTrigger>}
+          </TabsTrigger>
           <TabsTrigger className={TAB_TRIGGER} value="details">
             Details
           </TabsTrigger>
