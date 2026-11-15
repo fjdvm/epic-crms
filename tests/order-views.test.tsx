@@ -172,6 +172,15 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
 });
 
 describe("an Order's detail", () => {
+  it("shows Senior/PWD status, Not verified by default, and the pickup reminder", () => {
+    const { unmount } = render(<OrderDetailView role="staff" order={detail({})} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Not verified");
+    unmount();
+    render(<OrderDetailView role="staff" order={detail({ fulfillmentMethod: "pickup", deliveryFee: 0, seniorPwd: { id: 1, idType: "pwd", status: "approved" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.getByTestId("senior-pwd-status").textContent).toBe("PWD · Verified");
+    expect(screen.getByText(/original ID/)).toBeTruthy();
+  });
+
   it("shows the Free delivery rule, the locked ₱0 fee and the quote-again note on a Free delivery Order", () => {
     render(<OrderDetailView order={detail({ subtotal: 266_900, deliveryFee: 0, total: 266_900 })} />);
 
