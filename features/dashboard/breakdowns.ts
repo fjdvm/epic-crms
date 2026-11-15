@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { PAID_OR_FULFILLED } from "@/features/customer-profiles/rules";
 import type { Span } from "./period";
+import { notReplacement } from "@/lib/replacement-order";
 
 export type Breakdown<T> = ({ ok: true } & T) | { ok: false };
 
@@ -35,7 +36,7 @@ export async function bestSellersIn(sql: postgres.Sql, span: Span, sales: number
       where r.status = 'refunded'
       group by i.order_line_id
     ) r on r.order_line_id = l.id
-    where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}
+    where o.status = any(${PAID_OR_FULFILLED}) and ${notReplacement(sql, "o")} and o.created_at >= ${span.start} and o.created_at < ${span.end}
     group by l.product_name
     having sum(l.quantity - coalesce(r.quantity, 0)) > 0
     order by sales desc, l.product_name asc
@@ -57,7 +58,7 @@ export async function paymentAndReceivingIn(sql: postgres.Sql, span: Span): Prom
         - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
             where r.order_id = o.id and r.status = 'refunded'), 0))::bigint as sales
     from public.orders o
-    where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}
+    where o.status = any(${PAID_OR_FULFILLED}) and ${notReplacement(sql, "o")} and o.created_at >= ${span.start} and o.created_at < ${span.end}
     group by o.payment_method, o.fulfillment_method`;
   const group = (field: "payment_method" | "fulfillment_method") => {
     const grouped = new Map<string, { method: string; orders: number; sales: number }>();

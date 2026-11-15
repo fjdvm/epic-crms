@@ -426,15 +426,19 @@ describe("Return Audit Events", () => {
     const id = await ready(test);
     expect((await test.run(id)).ok).toBe(true);
     const action = test.next === "refunded" ? "return.refund_approved" : `return.${test.next.replaceAll(" ", "_")}`;
-    expect(audit).toHaveBeenCalledExactlyOnceWith({
+    const decided = {
       action, module: "Returns", outcome: "success",
       actor: { type: "user", id: "portal-user-123", display_name: "Ana Reyes" },
       target: { type: "return", id: String(id), display_name: `RMA-${id}` },
       description: `Ana Reyes marked Return RMA-${id} (Order #1) ${test.next}.`,
       occurred_at: expect.any(String), operationId: `return:${id}:${action}`,
-    });
+    };
+    // Sending a replacement also records the linked Replacement Order, once.
+    const calls = test.next === "replaced" ? 2 : 1;
+    expect(audit).toHaveBeenCalledTimes(calls);
+    expect(audit).toHaveBeenCalledWith(decided);
     expect((await test.run(id)).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledTimes(calls);
   });
   it.each(cases)("preserves $next when audit throws", async test => {
     const id = await ready(test);

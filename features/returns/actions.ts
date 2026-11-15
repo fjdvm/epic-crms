@@ -4,7 +4,7 @@ import { approvals } from "@/features/approvals/server";
 import type { ApprovalOptions, ApprovalResult } from "@/features/approvals/workflow";
 import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { revalidatePath } from "next/cache";
-import { changeReturnStatus, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
+import { changeReturnStatus, createStorefrontReplacementOrder, extendStorefrontRefundWindow, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
@@ -80,6 +80,18 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       } catch {
         return { ok: false, reason: "Refund proof could not be stored. The Return was not marked refunded." };
       }
+    }
+    if (decision.status === "replaced") {
+      // Approving the replacement sends it as a linked ₱0 Order with its own Reservation. The Return id keeps this safe to repeat.
+      const created = await createStorefrontReplacementOrder(id, { id: staff.username, name: staff.name });
+      if (!created.ok) return created;
+      await recordAudit(gatewayAuditTrail, {
+        action: "return.replacement_order_created", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+        target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+        description: `${staff.name} approved the replacement for Return RMA-${id} (Order #${orderId}): Replacement Order #${created.replacementOrderId} was created.`,
+        occurred_at: new Date().toISOString(), operationId: `return:${id}:replacement_order_created`,
+        metadata: { orderId, replacementOrderId: created.replacementOrderId },
+      });
     }
     // Rebuild the payload so browser-supplied identity, time and unrelated fields never travel.
     const actor = { staffId: staff.username, staffName: staff.name };
@@ -245,4 +257,42 @@ export async function writeOffReturn(id: number, options: ApprovalOptions = {}):
     }
     return result;
   } catch { return { ok: false, reason: "Write-off is temporarily unavailable. Refresh the Return before retrying." }; }
+}
+
+/**
+ * A Manager extends an Order's Refund window once, by 24 hours, with a reason. Staff ask for it and see "Request approval".
+ * It moves no money, so the amount is zero; the storefront refuses a second extension and a window that no longer applies.
+ */
+export async function extendRefundWindow(orderId: number, reason: string, options: ApprovalOptions = {}): Promise<{ ok: true; endsAt: Date } | { ok: false; reason: string } | ApprovalResult> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (!Number.isSafeInteger(orderId) || orderId < 1) return { ok: false, reason: "Invalid Order number." };
+  const why = typeof reason === "string" ? reason.trim() : "";
+  if (!why) return { ok: false, reason: "Enter a reason for extending the window." };
+  try {
+    const [order] = await database()<{ status: string; delivered_at: Date | null; extended_at: string | null }[]>`
+      select status, delivered_at, to_jsonb(o)->>'refund_window_extended_at' as extended_at from public.orders o where id = ${orderId}`;
+    if (!order) return { ok: false, reason: "Order was not found." };
+    if (order.extended_at) return { ok: false, reason: "The Refund window was already extended once." };
+    if (order.status !== "delivered" || !order.delivered_at) return { ok: false, reason: "Only a delivered Order has a Refund window to extend." };
+    const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "return.extend-window", targetId: String(orderId),
+      payload: { reason: why }, amountInCentavos: 0 }, { ...options, reason: options.reason ?? why }, async () => {
+      const done = await extendStorefrontRefundWindow(orderId, why, { id: staff.username, name: staff.name });
+      if (done.ok) {
+        await recordAudit(gatewayAuditTrail, {
+          action: "return.window_extended", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+          target: { type: "order", id: String(orderId), display_name: `Order #${orderId}` },
+          description: `${staff.name} extended the Refund window on Order #${orderId} by 24 hours: ${why}`,
+          occurred_at: new Date().toISOString(), operationId: `order:${orderId}:window_extended`, metadata: { reason: why },
+        });
+      }
+      return done;
+    });
+    if (result.ok) {
+      revalidatePath("/(app)/returns", "layout");
+      revalidatePath(`/orders/${orderId}`);
+      revalidatePath("/approvals");
+    }
+    return result;
+  } catch { return { ok: false, reason: "The Refund window is temporarily unavailable. Refresh the Return before retrying." }; }
 }

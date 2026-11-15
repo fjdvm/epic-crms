@@ -118,6 +118,56 @@ export class FakeStorefront {
     });
   }
 
+  /** Replacement Order emails the fake storefront sent, one per Replacement Order. */
+  readonly replacementEmails: { returnId: number; replacementOrderId: number }[] = [];
+  /** Stock the fake storefront has set aside, by Size label. Defaults to plenty. */
+  reservations: { orderId: number; productName: string; sizeLabel: string; quantity: number }[] = [];
+  outOfStock = new Set<string>();
+
+  /** The new Order is ₱0, linked to the original, quoted no Delivery fee, and reserves its own stock. Repeating returns the same Order. */
+  private async createReplacementOrder(request: Request, returnId: number): Promise<Response> {
+    if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+    const input = await request.json();
+    if (!input.staffId || !input.staffName) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    return this.sql.begin(async tx => {
+      const [ret] = await tx`select * from order_returns where id = ${returnId} for update`;
+      if (!ret) return Response.json({ error: "Return was not found." }, { status: 404 });
+      const [existing] = await tx`select id from orders where replacement_for_return_id = ${returnId}`;
+      if (existing) return Response.json({ returnId, replacementOrderId: existing.id });
+      if (ret.final_resolution !== "replacement") return Response.json({ error: "This Return is not a replacement." }, { status: 409 });
+      const items = await tx`select * from order_return_items where return_id = ${returnId} order by order_line_id`;
+      const short = items.find(item => this.outOfStock.has(`${item.product_name}|${item.size_label}`));
+      if (short) return Response.json({ error: `${short.product_name} (${short.size_label}) is out of stock for a replacement.` }, { status: 409 });
+      const [original] = await tx`select * from orders where id = ${ret.order_id}`;
+      const [created] = await tx`insert into orders (customer_id, status, subtotal_in_centavos, delivery_fee_in_centavos, fulfillment_method,
+        payment_method, replacement_for_order_id, replacement_for_return_id)
+        values (${original.customer_id}, 'paid', 0, 0, ${original.fulfillment_method}, ${original.payment_method}, ${original.id}, ${returnId}) returning id`;
+      for (const item of items) {
+        await tx`insert into order_lines (order_id, product_name, size_label, price_in_centavos, quantity)
+          values (${created.id}, ${item.product_name}, ${item.size_label}, 0, ${item.quantity})`;
+        this.reservations.push({ orderId: created.id, productName: item.product_name, sizeLabel: item.size_label, quantity: item.quantity });
+      }
+      this.replacementEmails.push({ returnId, replacementOrderId: created.id });
+      return Response.json({ returnId, replacementOrderId: created.id }, { status: 201 });
+    });
+  }
+
+  /** One extension per Order, by 24 hours, with a reason, while the Order is delivered. */
+  private async extendWindow(request: Request, orderId: number): Promise<Response> {
+    if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+    const input = await request.json();
+    if (!input.staffId || !input.staffName) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    if (typeof input.reason !== "string" || !input.reason.trim()) return Response.json({ error: "Enter a reason for extending the window." }, { status: 400 });
+    return this.sql.begin(async tx => {
+      const [order] = await tx`select * from orders where id = ${orderId} for update`;
+      if (!order) return Response.json({ error: "Order was not found." }, { status: 404 });
+      if (order.refund_window_extended_at) return Response.json({ error: "The Refund window was already extended once." }, { status: 409 });
+      if (order.status !== "delivered" || !order.delivered_at) return Response.json({ error: "Only a delivered Order has a Refund window to extend." }, { status: 409 });
+      await tx`update orders set refund_window_extended_at = ${this.now()}, refund_window_extension_reason = ${input.reason.trim()} where id = ${orderId}`;
+      return Response.json({ orderId, endsAt: new Date(order.delivered_at.getTime() + 48 * 60 * 60 * 1000).toISOString() });
+    });
+  }
+
   private async decideReturn(request: Request, id: number): Promise<Response> {
     if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
     const update = await request.json();
@@ -274,7 +324,7 @@ export class FakeStorefront {
     if (returnRequest && request.method === "POST") return this.requestReturn(request, Number(returnRequest[1]));
     const returnDecision = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/status$/);
     const verificationDecision = new URL(request.url).pathname.match(/^\/api\/internal\/senior-pwd\/(\d+)\/(approve|decline|revoke)$/);
-    const resource = returnDecision || /^\/api\/internal\/returns\/\d+\/inspection$/.test(new URL(request.url).pathname) ? "returns" : verificationDecision ? "senior-pwd" : "orders";
+    const resource = returnDecision || /^\/api\/internal\/returns\/\d+\/(inspection|replacement-order)$/.test(new URL(request.url).pathname) || /^\/api\/internal\/orders\/\d+\/refund-window\/extend$/.test(new URL(request.url).pathname) ? "returns" : verificationDecision ? "senior-pwd" : "orders";
     const parts = request.headers.get("authorization")?.replace(/^Bearer /, "").split(".");
     if (!parts || parts.length !== 3) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const [header, payload, signature] = parts;
@@ -289,6 +339,10 @@ export class FakeStorefront {
     }
     if (returnDecision && request.method === "POST") return this.decideReturn(request, Number(returnDecision[1]));
     if (verificationDecision && request.method === "POST") return this.decideVerification(request, Number(verificationDecision[1]), verificationDecision[2]);
+    const replacement = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/replacement-order$/);
+    if (replacement && request.method === "POST") return this.createReplacementOrder(request, Number(replacement[1]));
+    const extension = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/refund-window\/extend$/);
+    if (extension && request.method === "POST") return this.extendWindow(request, Number(extension[1]));
     const cancellation = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/cancellation$/);
     if (cancellation && request.method === "POST") {
       const id = Number(cancellation[1]), input = await request.json();

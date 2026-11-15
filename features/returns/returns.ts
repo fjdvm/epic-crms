@@ -176,6 +176,10 @@ export interface ReturnDetail extends ReturnRow {
   deliveryPhotoRemovedAt: Date | null;
   /** This limits Customer requests only; an existing Return does not expire. */
   refundWindowEndsAt: Date | null;
+  /** A Manager may extend the window once by 24 hours; when they did. */
+  refundWindowExtendedAt: Date | null;
+  /** The ₱0 Replacement Order sent for this Return, once a Manager approved the replacement. */
+  replacementOrderId: number | null;
   images: { fileId: string; position: number }[];
   history: { status: ReturnStatus; actor: { type: "staff" | "customer"; id: string; name: string }; at: Date; note: string | null }[];
 }
@@ -189,9 +193,13 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       reason: ReturnDetail["reason"]; note: string; goods_required: boolean | null; decline_reason: string | null;
       refunded_at: Date | null; replaced_at: Date | null; video_file_id: string | null; refund_proof_file_id: string | null; order_status: string; payment_method: string;
       delivered_at: Date | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null;
+      window_extended_at: string | null; replacement_order_id: number | null;
     })[]>`select r.*, o.customer_id, o.status as order_status, o.payment_method, o.delivered_at,
       to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,
-      to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at, c.full_name from public.order_returns r
+      to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at,
+      to_jsonb(o)->>'refund_window_extended_at' as window_extended_at,
+      (select ro.id from public.orders ro where to_jsonb(ro)->>'replacement_for_return_id' = r.id::text limit 1) as replacement_order_id,
+      c.full_name from public.order_returns r
       join public.orders o on o.id = r.order_id join public.customers c on c.id = o.customer_id
       where r.id = ${id}`;
     if (!row) return { ok: true, detail: null };
@@ -208,7 +216,9 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       orderStatus: row.order_status, paymentMethod: row.payment_method, deliveredAt: row.delivered_at,
       deliveryPhotoFileId: row.delivery_photo_file_id,
       deliveryPhotoRemovedAt: row.delivery_photo_removed_at ? new Date(row.delivery_photo_removed_at) : null,
-      refundWindowEndsAt: row.delivered_at ? new Date(row.delivered_at.getTime() + 24 * 60 * 60 * 1000) : null,
+      refundWindowEndsAt: row.delivered_at ? new Date(row.delivered_at.getTime() + (row.window_extended_at ? 48 : 24) * 60 * 60 * 1000) : null,
+      refundWindowExtendedAt: row.window_extended_at ? new Date(row.window_extended_at) : null,
+      replacementOrderId: row.replacement_order_id,
       images: images.map(image => ({ fileId: image.file_id, position: image.position })),
       history: history.map(step => ({ status: step.status, actor: { type: step.actor_type, id: step.actor_id, name: step.actor_name },
         at: step.occurred_at, note: step.note })),

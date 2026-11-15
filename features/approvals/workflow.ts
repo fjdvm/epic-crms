@@ -4,7 +4,7 @@ import type { Staff } from "@/lib/portal/client";
 import { shopRole } from "@/lib/portal/roles";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 
-export type ApprovalAction = "order.cancel-after-dispatch" | "order.cancel-settle" | "payment.approve-anyway" | "return.approve" | "return.decline" | "return.refund" | "return.replace" | "write-off";
+export type ApprovalAction = "order.cancel-after-dispatch" | "order.cancel-settle" | "payment.approve-anyway" | "return.approve" | "return.decline" | "return.refund" | "return.replace" | "return.extend-window" | "write-off";
 export type ApprovalInput = { module: string; action: ApprovalAction; targetId: string; payload: Record<string, unknown>; amountInCentavos: number };
 export type ApprovalOptions = { reason?: string; approvalId?: string };
 export type ApprovalResult = { ok: false; reason: string; approvalId?: string; status?: string };
