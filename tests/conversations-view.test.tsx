@@ -27,6 +27,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   openedAt: new Date("2026-10-19T02:00:00Z"),
   claimerName: "Bernice",
   claimerId: "bernice",
+  hold: null,
   messages: [
     {
       id: 1,

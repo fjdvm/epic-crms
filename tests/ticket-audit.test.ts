@@ -60,3 +60,15 @@ it("retains submission identity when an old mutation is replayed after another c
   expect(audit.mock.calls[0][0].operationId).toBe(audit.mock.calls[2][0].operationId);
   expect(new Set(audit.mock.calls.map(([e]) => e.operationId)).size).toBe(2);
 });
+it("puts a Ticket on hold with the Claimer's own Message, audits it, and refuses a missing date", async () => {
+  const { putOnHold, takeOffHold } = await import("@/features/tickets/actions");
+  await claim(1);
+  audit.mockClear();
+  const until = new Date(Date.now() + 3_600_000).toISOString();
+
+  expect(await putOnHold(1, { reason: "courier", until: "", message: "hi" })).toEqual({ ok: false, reason: "invalid-hold-date" });
+  expect(await putOnHold(1, { reason: "courier", until, message: " We're waiting on the rider. " })).toEqual({ ok: true, messageSent: true });
+  expect((await db.sql`select body, sender from ticket_messages where ticket_id = 1`)).toEqual([{ body: "We're waiting on the rider.", sender: "staff" }]);
+  expect(await takeOffHold(1)).toEqual({ ok: true });
+  expect(audit.mock.calls.map(([e]) => e.action)).toEqual(["ticket.put_on_hold", "ticket.taken_off_hold"]);
+});

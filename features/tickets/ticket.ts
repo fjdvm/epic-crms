@@ -3,7 +3,7 @@ import type postgres from "postgres";
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "@/features/customer-profiles/rules";
 
 import type { FileStorage } from "./attachments";
-import type { TicketPriority, TicketStatus } from "./tickets";
+import type { HoldReason, TicketHold, TicketPriority, TicketStatus } from "./tickets";
 
 export interface TicketMessage {
   id: number;
@@ -51,6 +51,8 @@ export interface TicketDetail {
   claimerName: string | null;
   /** The Claimer's opaque Staff id; null while Unclaimed. */
   claimerId: string | null;
+  /** Set while the Ticket is On hold; null otherwise. */
+  hold: TicketHold | null;
   /** Oldest first. */
   messages: TicketMessage[];
   /** The Linked order; null when the Ticket has none. */
@@ -67,7 +69,7 @@ export async function getTicket(
   now: Date = new Date(),
 ): Promise<TicketDetail | null> {
   const [t] = await sql<Record<string, unknown>[]>`
-    select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id,
+    select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id, t.hold_reason, t.hold_note, t.hold_until,
       c.id as customer_id, c.full_name, c.first_name
     from tickets t
     join customers c on c.id = t.customer_id
@@ -121,6 +123,14 @@ export async function getTicket(
     openedAt: t.created_at as Date,
     claimerName,
     claimerId: (t.claimed_by_id as string | null) ?? null,
+    hold:
+      t.status === "on_hold" && t.hold_reason && t.hold_until
+        ? {
+            reason: t.hold_reason as HoldReason,
+            note: (t.hold_note as string | null) ?? null,
+            until: t.hold_until as Date,
+          }
+        : null,
     messages: messages.map((m) => ({
       id: m.id as number,
       sender: m.sender as "customer" | "staff",

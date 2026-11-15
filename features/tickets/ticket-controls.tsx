@@ -24,7 +24,8 @@ import { checkFileInfo, FILE_TYPES, type FileContentType } from "@/features/file
 import { claim, reply, resolve, type ReplyOutcome, type TicketActionOutcome } from "./actions";
 import { useClaim } from "./claim";
 import { refusalMessage } from "./refusals";
-import type { TicketStatus } from "./tickets";
+import { HoldDialog } from "./hold-dialog";
+import { useHold } from "./hold";
 
 const OUTLINE =
   "rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium leading-[normal] whitespace-nowrap text-[#1f1a2e] disabled:opacity-50";
@@ -76,12 +77,10 @@ export function ClaimButton({ ticketId }: { ticketId: number }) {
 
 export function TicketActions({
   ticketId,
-  status,
   withReply = true,
   className,
 }: {
   ticketId: number;
-  status: TicketStatus;
   /** Offer the Reply link to the composer; off where the composer sits beside the actions. */
   withReply?: boolean;
   className?: string;
@@ -89,6 +88,7 @@ export function TicketActions({
   const { pending, run } = useTicketAction();
   const { claimer, isClaimer, pending: claiming, claim: claimTicket, release: releaseTicket } = useClaim();
   const claimed = claimer !== null;
+  const { status, pending: holding, takeOffHold } = useHold();
 
   return (
     <div className={cn("flex shrink-0 items-center gap-2", className)}>
@@ -110,6 +110,12 @@ export function TicketActions({
           onClick={releaseTicket}
         >
           Release
+        </button>
+      )}
+      {status === "open" && isClaimer && <HoldDialog ticketId={ticketId} />}
+      {status === "on_hold" && isClaimer && (
+        <button type="button" className={OUTLINE} disabled={holding} onClick={takeOffHold}>
+          Take off hold
         </button>
       )}
       {status === "open" && (

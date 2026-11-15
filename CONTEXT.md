@@ -114,7 +114,7 @@ A support request raised by a Customer, or opened by Staff on a Customer's behal
 _Avoid_: Case, email
 
 **Ticket status**:
-A Ticket is Open, Resolved or Completed. Staff mark it Resolved when they think the problem is dealt with, and the Customer is asked to confirm. The Customer confirming makes it Completed, as does 3 days passing with no confirmation and no disagreement. A new Customer Message, or the Customer saying it is not fixed, reopens a Resolved Ticket to Open. Staff can never set Completed. A Customer can also complete their own Ticket at any time, without Staff marking it Resolved. Completed is final: nobody reopens a Completed Ticket, and a Customer who needs help again opens a new one. "Waiting on customer" is not a status: it is shown while the last Message came from Staff, and is never set by hand.
+A Ticket is Open, On hold, Resolved or Completed. Staff mark it Resolved when they think the problem is dealt with, and the Customer is asked to confirm. The Customer confirming makes it Completed, as does 3 days passing with no confirmation and no disagreement. A new Customer Message, or the Customer saying it is not fixed, reopens a Resolved Ticket to Open. Staff can never set Completed. A Customer can also complete their own Ticket at any time, without Staff marking it Resolved. Completed is final: nobody reopens a Completed Ticket, and a Customer who needs help again opens a new one. On hold is set only by the Claimer, who picks what they are waiting on (Courier (Lalamove or Grab), Kitchen or IMS, Supplier, Manager decision), an optional Staff-only note, and the date and time it returns to Open. Any Staff see the reason; the Customer sees "We're on it" and never the reason. It returns to Open when that time comes, when the Claimer takes it off hold, when the Claimer releases it, or at once when the Customer sends a new Message. The 3-day auto-complete ignores it. "Waiting on customer" is not a status: it is shown while the last Message came from Staff, and is never set by hand.
 _Avoid_: Closed, claimed, cancelled
 
 **Linked order**:
@@ -122,7 +122,7 @@ The Customer's Order a Ticket is about. Optional: a Ticket can have none, and mu
 _Avoid_: Related order, attached order
 
 **Overdue**:
-An Open Ticket whose last Message came from the Customer and has gone more than 24 hours without a Staff reply. A new Ticket nobody has answered counts. A Ticket waiting on the Customer is never Overdue. The limit is the same for every Priority.
+An Open Ticket whose last Message came from the Customer and has gone more than 24 hours without a Staff reply. A new Ticket nobody has answered counts. A Ticket waiting on the Customer, or On hold, is never Overdue. The limit is the same for every Priority.
 _Avoid_: Late, breached
 
 **Priority**:
