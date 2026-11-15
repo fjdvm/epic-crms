@@ -96,8 +96,11 @@ export function TasksTab({ customerId, tasks, viewer, now, onTaskChange }: {
 
   async function confirm() {
     const action = pending;
+    if (!viewer || !action) return setPending(null);
+    // Keep the dialog open so a missing choice never throws the user back to the start.
+    if (action.kind === "due" && !newDate) return;
+    if (action.kind === "reassign" && !owners?.some(person => person.id === ownerId)) return;
     setPending(null);
-    if (!viewer || !action) return;
     setError("");
     if (action.kind === "create") {
       const key = JSON.stringify([description.trim(), dueDate]);
@@ -121,11 +124,10 @@ export function TasksTab({ customerId, tasks, viewer, now, onTaskChange }: {
     if (action.kind === "done") return run(task.id, task, { ...task, doneAt: stamp, doneById: viewer.id, doneByName: viewer.name, overdue: false, saving: true }, () => markCustomerTaskDone(customerId, task.id, operationId));
     if (action.kind === "reopen") return run(task.id, task, withOverdue({ ...task, doneAt: null, doneById: null, doneByName: null, saving: true }), () => reopenCustomerTask(customerId, task.id, operationId));
     if (action.kind === "due") {
-      if (!newDate) return setError("Choose a due date.");
       return run(task.id, task, withOverdue({ ...task, dueDate: newDate, saving: true }), () => changeCustomerTaskDueDate(customerId, task.id, newDate, operationId));
     }
     const owner = owners?.find(person => person.id === ownerId);
-    if (!owner) return setError("Choose who the Task moves to.");
+    if (!owner) return;
     return run(task.id, task, { ...task, ownerId: owner.id, ownerName: owner.name, saving: true }, () => reassignCustomerTask(customerId, task.id, owner, operationId));
   }
 
@@ -190,7 +192,7 @@ export function TasksTab({ customerId, tasks, viewer, now, onTaskChange }: {
               <option value="">{owners ? "Choose a person" : "Loading…"}</option>
               {owners?.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
             </select>}
-            <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => void confirm()}>{dialog.action}</AlertDialogAction></AlertDialogFooter>
+            <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={event => { event.preventDefault(); void confirm(); }}>{dialog.action}</AlertDialogAction></AlertDialogFooter>
           </>}
         </AlertDialogContent>
       </AlertDialog>
