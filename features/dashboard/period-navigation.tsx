@@ -10,6 +10,7 @@ import { PERIOD_LABELS, PERIOD_PRESETS, type PeriodPreset } from "./period";
 interface PeriodState {
   preset: PeriodPreset;
   select: (preset: PeriodPreset) => void;
+  basePath: string;
 }
 
 const PeriodContext = createContext<PeriodState | null>(null);
@@ -22,7 +23,9 @@ function usePeriod() {
 }
 
 /** Highlight the chosen period immediately; let navigation reuse cached figures without forcing skeletons. */
-export function PeriodNavigation({ preset, children }: { preset: PeriodPreset; children: React.ReactNode }) {
+export function PeriodNavigation({
+  preset, basePath = "/dashboard", children,
+}: { preset: PeriodPreset; basePath?: string; children: React.ReactNode }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(preset);
@@ -30,15 +33,15 @@ export function PeriodNavigation({ preset, children }: { preset: PeriodPreset; c
   const select = (next: PeriodPreset) => {
     startTransition(async () => {
       setOptimistic(next);
-      await router.push(`/dashboard?period=${next}`);
+      await router.push(`${basePath}?period=${next}`);
     });
   };
 
-  return <PeriodContext.Provider value={{ preset: optimistic, select }}>{children}</PeriodContext.Provider>;
+  return <PeriodContext.Provider value={{ preset: optimistic, select, basePath }}>{children}</PeriodContext.Provider>;
 }
 
-export function PeriodPicker() {
-  const { preset, select } = usePeriod();
+export function PeriodPicker({ exportable = true }: { exportable?: boolean } = {}) {
+  const { preset, select, basePath } = usePeriod();
 
   return (
     <>
@@ -46,7 +49,7 @@ export function PeriodPicker() {
         {PERIOD_PRESETS.map((p) => (
           <Link
             key={p}
-            href={`/dashboard?period=${p}`}
+            href={`${basePath}?period=${p}`}
             prefetch
             aria-current={p === preset ? "true" : undefined}
             onClick={(event) => {
@@ -60,7 +63,7 @@ export function PeriodPicker() {
           </Link>
         ))}
       </nav>
-      <DashboardExportButton period={preset} />
+      {exportable && <DashboardExportButton period={preset} />}
     </>
   );
 }
