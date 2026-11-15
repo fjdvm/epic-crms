@@ -5,6 +5,7 @@ import { createContext, useContext, useOptimistic } from "react";
 
 import { orderLabel } from "@/features/customer-profiles/rules";
 import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
+import type { ShopRole } from "@/lib/portal/roles";
 import { cn } from "@/lib/utils";
 
 import { FulfilmentMove } from "./fulfilment-moves";
@@ -113,7 +114,7 @@ export function LiveProgress({ order }: { order: OrderDetail }) {
 }
 
 /** The actions the viewer's Modules allow, shown against the live status. */
-export function LiveActions({ order, modules }: { order: OrderDetail; modules: readonly string[] }) {
+export function LiveActions({ order, modules, role, approvalId, waiting }: { order: OrderDetail; modules: readonly string[]; role?: ShopRole | null; approvalId?: string; waiting?: boolean }) {
   const { status, move } = useLiveStatus();
   const live = { ...order, status };
 
@@ -125,7 +126,7 @@ export function LiveActions({ order, modules }: { order: OrderDetail; modules: r
     <div className="flex flex-wrap items-center gap-2">
       {modules.includes(ORDERS_MODULE) && <OrdersActions order={live} />}
       {modules.includes(PAYMENTS_MODULE) && (
-        <PaymentsActions order={live} withCancel={!modules.includes(ORDERS_MODULE)} />
+        <PaymentsActions order={live} withCancel={!modules.includes(ORDERS_MODULE)} role={role} approvalId={approvalId} waiting={waiting} />
       )}
       {modules.includes(FULFILMENT_MODULE) && <PrintPackingSlip id={order.id} />}
       {modules.includes(FULFILMENT_MODULE) && <FulfilmentMove order={live} onMove={move} />}

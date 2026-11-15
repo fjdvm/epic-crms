@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee } from "@/features/orders/actions";
+import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee, rejectPaymentProof } from "@/features/orders/actions";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
@@ -18,6 +18,7 @@ vi.mock("@/features/orders/actions", () => ({
   cancelOrder: vi.fn(),
   cancelPaymentOrder: vi.fn(),
   markPaid: vi.fn(),
+  rejectPaymentProof: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
@@ -227,6 +228,7 @@ describe("an Order's detail", () => {
             submittedAt: new Date("2026-10-20T01:00:00Z"),
             rejectedAt: null,
           },
+          paymentProofs: [{ id: 1, reference: "1234567890", screenshot: "https://files.test/proof.png", submittedAt: new Date("2026-10-20T01:00:00Z"), rejection: null }],
         })}
       />,
     );
@@ -674,7 +676,7 @@ describe("the Payments Module's actions on an Order's detail", () => {
   it("offers Mark paid and Cancel order for a GCash Order awaiting payment, and nothing from the Orders Module", () => {
     render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
 
-    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel order", "Mark paid"]);
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel order", "Reject receipt", "Ask for a new proof", "Mark paid"]);
   });
 
   it("marks paid through the dialog, and cancels through the Payments action", async () => {
@@ -749,5 +751,97 @@ describe("received Orders", () => {
     const current = within(progress).getAllByRole("listitem").find(item => item.getAttribute("aria-current") === "step");
     expect(current?.textContent).toBe("Received");
     expect(screen.queryAllByRole("button").map(b => b.textContent)).toEqual(["Print packing slip"]);
+  });
+});
+
+describe("payment proof history, reject, ask for a new proof and approve anyway", () => {
+  const proof = (id: number, rejection: OrderDetail["paymentProofs"][number]["rejection"] = null) =>
+    ({ id, reference: `REF${id}`, screenshot: null, submittedAt: new Date("2026-10-20T01:00:00Z"), rejection });
+  const awaiting = (overrides: Partial<OrderDetail> = {}) =>
+    detail({
+      status: "awaiting payment",
+      paymentProof: { reference: "REF1", screenshot: null, submittedAt: new Date("2026-10-20T01:00:00Z"), rejectedAt: null },
+      ...overrides,
+    });
+  const capped = () => awaiting({
+    proofRejections: 3,
+    paymentProofs: [1, 2, 3].map((n) => proof(n, { at: new Date("2026-10-21T01:00:00Z"), by: { id: "a", name: "Ana" }, reason: `Blurry ${n}` })),
+  });
+
+  it("lists every proof with who rejected it and why", () => {
+    render(<OrderDetailView order={capped()} modules={PAYMENTS} role="manager" />);
+
+    expect(screen.getByText("Proof 3")).toBeTruthy();
+    expect(screen.getByText(/Rejected by Ana on .*Blurry 2/)).toBeTruthy();
+    expect(screen.getByText(/only a Manager can approve/)).toBeTruthy();
+  });
+
+  it("rejects with a required reason, waits for the server, and rolls back with its reason", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof rejectPaymentProof>>>();
+    vi.mocked(rejectPaymentProof).mockReturnValue(pending.promise);
+    render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reject receipt" }));
+    const dialog = screen.getByRole("alertdialog");
+    const confirm = within(dialog).getByRole("button", { name: "Reject receipt" });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Blurry" } });
+    fireEvent.click(confirm);
+
+    expect(rejectPaymentProof).toHaveBeenCalledWith(1042, "Blurry");
+    expect(within(dialog).getByRole("button", { name: "Rejecting…" })).toBeTruthy();
+    expect(toast.success).not.toHaveBeenCalled();
+    await act(async () => pending.settle({ ok: false, reason: "Order already changed; refresh it before trying again." }));
+    expect(toast.error).toHaveBeenCalledWith("Order already changed; refresh it before trying again.");
+  });
+
+  it("asks for a new proof with the chosen reason and the note", async () => {
+    vi.mocked(rejectPaymentProof).mockResolvedValue({ ok: true, order: { id: 1042, status: "awaiting payment", deliveryFeeInCentavos: null } });
+    render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ask for a new proof" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.click(within(dialog).getByLabelText("The amount does not match the Order"));
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Should be 1,197" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Ask for a new proof" }));
+
+    await waitFor(() => expect(rejectPaymentProof).toHaveBeenCalledWith(1042, "The amount does not match the Order. Should be 1,197"));
+  });
+
+  it("after 3 rejections a Manager approves anyway with a reason, and nothing else offers Mark paid", async () => {
+    vi.mocked(markPaid).mockResolvedValue(paidResult(1042));
+    render(<OrderDetailView order={capped()} modules={PAYMENTS} role="manager" />);
+    expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reject receipt" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Approve anyway" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Seen it in the bank app" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve anyway" }));
+
+    await waitFor(() => expect(markPaid).toHaveBeenCalledWith(1042, { reason: "Seen it in the bank app", approvalId: undefined }));
+  });
+
+  it("shows Staff Request approval, which counts Waiting for approval as sent, not refused", async () => {
+    vi.mocked(markPaid).mockResolvedValue({ ok: false, reason: "Waiting for approval" });
+    render(<OrderDetailView order={capped()} modules={PAYMENTS} role="staff" />);
+    expect(screen.queryByRole("button", { name: "Approve anyway" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Request approval…" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Customer called" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send request" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("lets Staff carry out an approved request, and shows Waiting while it is pending", () => {
+    const { unmount } = render(<OrderDetailView order={capped()} modules={PAYMENTS} role="staff" approvalId="req-1" />);
+    expect(screen.getByRole("button", { name: "Approve anyway" })).toBeTruthy();
+    unmount();
+    render(<OrderDetailView order={capped()} modules={PAYMENTS} role="staff" waitingApproval />);
+    expect(screen.getByText("Waiting for approval")).toBeTruthy();
+  });
+
+  it("gives Admin and the CEO no payment buttons", () => {
+    render(<OrderDetailView order={awaiting()} modules={PAYMENTS} role="ceo" />);
+    expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
   });
 });

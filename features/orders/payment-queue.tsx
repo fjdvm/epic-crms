@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-profiles/format";
 
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
-import { CancelPaymentDialog, MarkPaidDialog } from "./payments-actions";
+import { AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
+import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PAYMENTS_WINDOW_DAYS, summarize, type PaymentRow, type PaymentTab } from "./payments";
 
@@ -60,7 +61,7 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
             Verify payment · Order #{order.id}
           </DialogTitle>
           <DialogDescription className="text-[13px] leading-[normal] text-[#71717a]">
-            {order.customer.name} · GCash · uploaded {formatDate(submittedAt)}
+            {order.customer.name} · {METHOD[order.method]} · uploaded {formatDate(submittedAt)}
           </DialogDescription>
         </div>
         <div className="grid gap-6 px-6 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -75,14 +76,20 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
               <dd className="rounded-lg border border-[#e4e4e7] px-3 py-2.5">{reference ?? "—"}</dd>
             </div>
             <p className="rounded-lg bg-[#eff6ff] px-3 py-2.5 text-[13px] text-[#1d4ed8]">
-              Marking paid tells the Customer their payment was received. Cancelling cancels the Order; there is
-              no asking for another receipt.
+              Marking paid tells the Customer their payment was received. Reject the receipt or ask for a new proof
+              and the Customer is emailed a link to upload again; cancelling cancels the Order.
             </p>
           </dl>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-[#f0f0f2] bg-[#fafafa] px-6 py-3.5">
           <CancelPaymentDialog id={order.id} />
-          <MarkPaidDialog id={order.id} onMarkPaid={onMarkPaid} />
+          <RejectProofDialog id={order.id} />
+          <AskNewProofDialog id={order.id} />
+          {order.rejections >= MANAGER_AFTER_REJECTIONS ? (
+            <Link href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">Open the Order to approve anyway</Link>
+          ) : (
+            <MarkPaidDialog id={order.id} onMarkPaid={onMarkPaid} />
+          )}
         </div>
       </DialogContent>
     </Dialog>
