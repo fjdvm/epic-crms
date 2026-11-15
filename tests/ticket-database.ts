@@ -29,6 +29,7 @@ const SCHEMA = `
     status text not null default 'pending',
     id_hash text not null,
     photo_file_id text,
+    photo_back_file_id text,
     submitted_at timestamptz not null default now(),
     decided_at timestamptz,
     decided_by_id text,

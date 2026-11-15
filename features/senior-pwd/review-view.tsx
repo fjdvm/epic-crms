@@ -19,11 +19,11 @@ const STATUS = { pending: "Waiting for review", approved: "Verified", declined: 
 
 /** The private photo, fetched only when Staff open the review. The number is read from the photo, never stored. */
 function Photo({ id, name }: { id: number; name: string }) {
-  const [state, setState] = useState<{ url: string } | { error: string } | null>(null);
+  const [state, setState] = useState<{ url: string; backUrl: string | null } | { error: string } | null>(null);
   useEffect(() => {
     let live = true;
     loadVerificationPhoto(id).then(
-      (r) => live && setState(r.ok ? { url: r.url } : { error: r.reason }),
+      (r) => live && setState(r.ok ? { url: r.url, backUrl: r.backUrl ?? null } : { error: r.reason }),
       () => live && setState({ error: "The ID photo could not be opened." }),
     );
     return () => { live = false; };
@@ -31,7 +31,12 @@ function Photo({ id, name }: { id: number; name: string }) {
   if (!state) return <div role="status" aria-label="Loading ID photo" className="h-48 animate-pulse rounded-lg bg-[#f1edf6]" />;
   if ("error" in state) return <p role="alert" className="rounded-lg bg-[#fef2f2] px-3 py-2.5 text-[13px] text-[#b91c1c]">{state.error}</p>;
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={state.url} alt={`ID photo of ${name}`} className="max-h-72 w-full rounded-lg border border-[#e4ddee] object-contain" />;
+  return (
+    <div className="space-y-2">
+      <img src={state.url} alt={`ID photo of ${name}`} className="max-h-72 w-full rounded-lg border border-[#e4ddee] object-contain" />
+      {state.backUrl && <img src={state.backUrl} alt={`Back of the ID of ${name}`} className="max-h-72 w-full rounded-lg border border-[#e4ddee] object-contain" />}
+    </div>
+  );
 }
 
 function Facts({ v }: { v: Verification }) {

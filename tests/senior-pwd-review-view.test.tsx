@@ -17,18 +17,19 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 const v = (o: Partial<Verification>): Verification => ({
   id: 1, customerId: "c1", customerName: "Maria Santos", idType: "senior", status: "pending",
-  submittedAt: new Date("2026-11-10T00:00:00Z"), photoFileId: "f", photoExpiresAt: new Date("2026-11-17T00:00:00Z"),
+  submittedAt: new Date("2026-11-10T00:00:00Z"), photoFileId: "f", photoBackFileId: null, photoExpiresAt: new Date("2026-11-17T00:00:00Z"),
   decidedByName: null, decidedAt: null, declineReason: null, expiresOn: null, ...o,
 });
 
 describe("the Senior/PWD review screen", () => {
   it("shows the account name, the photo and no stored number, then approves with an expiry date", async () => {
-    vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: true, url: "https://files.test/photo.png" });
+    vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: true, url: "https://files.test/photo.png", backUrl: "https://files.test/back.png" });
     vi.mocked(approveVerification).mockResolvedValue({ ok: true, status: "approved", photoRemoved: true });
     render(<VerificationsView list={{ pending: [v({})], decided: [] }} role="staff" />);
     expect(screen.getByText("Maria Santos")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect((await screen.findByAltText("ID photo of Maria Santos")).getAttribute("src")).toBe("https://files.test/photo.png");
+    expect(screen.getByAltText("Back of the ID of Maria Santos").getAttribute("src")).toBe("https://files.test/back.png");
     const confirm = screen.getAllByRole("button", { name: "Approve" }).at(-1)!;
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("ID expiry date"), { target: { value: "2030-01-01" } });
@@ -38,7 +39,7 @@ describe("the Senior/PWD review screen", () => {
   });
 
   it("is not optimistic: a refusal is told in plain words", async () => {
-    vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: true, url: "u" });
+    vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: true, url: "u", backUrl: null });
     vi.mocked(declineVerification).mockResolvedValue({ ok: false, reason: "This verification already changed; refresh it before trying again." });
     render(<VerificationsView list={{ pending: [v({})], decided: [] }} role="manager" />);
     fireEvent.click(screen.getByRole("button", { name: "Decline" }));

@@ -20,6 +20,8 @@ export interface Verification {
   submittedAt: Date;
   /** Null once the photo has been deleted (after review, or after 7 days). */
   photoFileId: string | null;
+  /** The back of the ID, when the number is there; null once deleted or never sent. */
+  photoBackFileId: string | null;
   photoExpiresAt: Date;
   decidedByName: string | null;
   decidedAt: Date | null;
@@ -33,7 +35,7 @@ export interface VerificationList { pending: Verification[]; decided: Verificati
 type Row = Record<string, unknown>;
 
 const SELECT = (sql: postgres.Sql) => sql<Row[]>`
-  select v.id, v.customer_id, c.full_name, v.id_type, v.status, v.submitted_at, v.photo_file_id,
+  select v.id, v.customer_id, c.full_name, v.id_type, v.status, v.submitted_at, v.photo_file_id, v.photo_back_file_id,
     v.decided_by_name, v.decided_at, v.decline_reason, to_char(v.expires_on, 'YYYY-MM-DD') as expires_on
   from public.senior_pwd_verifications v join public.customers c on c.id = v.customer_id`;
 
@@ -43,6 +45,7 @@ function toVerification(row: Row): Verification {
     id: row.id as number, customerId: row.customer_id as string, customerName: row.full_name as string,
     idType: row.id_type as IdType, status: row.status as VerificationStatus, submittedAt,
     photoFileId: (row.photo_file_id as string | null) ?? null,
+    photoBackFileId: (row.photo_back_file_id as string | null) ?? null,
     photoExpiresAt: new Date(submittedAt.getTime() + PHOTO_REVIEW_DAYS * DAY),
     decidedByName: (row.decided_by_name as string | null) ?? null, decidedAt: (row.decided_at as Date | null) ?? null,
     declineReason: (row.decline_reason as string | null) ?? null, expiresOn: (row.expires_on as string | null) ?? null,
