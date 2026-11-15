@@ -353,6 +353,9 @@ export function OrderDetailView({
             </Link>
             <p className="mt-2 text-xs text-[#6e6680]">Senior/PWD</p>
             <p data-testid="senior-pwd-status" className="text-sm text-[#1f1a2e]">{seniorPwdLabel(order)}</p>
+            {order.seniorPwd?.status === "pending" && (
+              <Link href="/orders/senior-pwd" className="text-xs font-medium text-[#5b2a86]">Review this ID</Link>
+            )}
             {order.fulfillmentMethod === "pickup" && order.seniorPwd?.status === "approved" && (
               <p className="mt-1 text-xs text-[#6e6680]">Ask to see the original ID when the Customer collects.</p>
             )}
