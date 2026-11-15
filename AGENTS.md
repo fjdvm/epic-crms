@@ -31,7 +31,7 @@ Every screen in the CRM prototype has a dark note card beside it stating who can
 ### Staff / Employee
 
 Handle the shop's daily work and can do anything that is easy to undo. Dashboard shows only their own work for the day.
-- **Customer Profiles:** add and edit customers, including walk-ins; write notes, tasks and call logs.
+- **Customer Profiles:** add and edit customers; write notes and tasks.
 - **Orders:** confirm orders, quote the delivery fee, check the cash-on-delivery flags. Orders are placed by Customers on the storefront; Staff never create them (the one exception is the Replacement Order, made when a Manager approves a replacement).
 - **Payments:** check payment proofs (GCash, Maya or bank transfer, all manual), mark orders paid, ask a customer for a new proof.
 - **Fulfilment:** pack, dispatch with the Lalamove or Grab link, handle pickups, mark orders delivered, record failed deliveries.
