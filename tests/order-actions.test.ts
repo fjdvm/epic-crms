@@ -117,7 +117,8 @@ describe("Order actions", () => {
     expect(await loadPackingSlip(id)).toMatchObject({ ok: true, slip: { id, fulfillmentMethod: "pickup", address: null,
       lines: [{ product: "Halaya", size: "250g", quantity: 2 }], packedBy: { id: "ana", name: "Ana", at: expect.any(Date) } } });
     expect(await startPreparing(id)).toMatchObject({ ok: false });
-    expect(audit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ action: "order.packed", actor: { type: "user", id: "ana", display_name: "Ana" } }));
+    expect(storefront.packedEvents).toEqual([{ action: "order.packed", actor: { id: "ana", name: "Ana" }, at: expect.any(String) }]);
+    expect(audit).not.toHaveBeenCalled();
   });
 
   it("refuses a quote on Free delivery, including a legacy placed Order", async () => {
@@ -770,7 +771,6 @@ describe("Order and Payment Audit Events", () => {
 
 describe("Fulfilment Audit Events", () => {
   const cases = [
-    { status: "confirmed", next: "preparing", run: startPreparing, actions: ["order.packed"] },
     { status: "preparing", next: "dispatched", run: dispatch, actions: ["order.dispatched"] },
     { status: "dispatched", next: "delivered", run: (id: number) => deliverOrder(id, deliveryPhoto()), actions: ["order.delivered", "order.delivery_photo_attached"] },
   ];

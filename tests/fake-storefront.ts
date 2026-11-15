@@ -10,6 +10,7 @@ export class FakeStorefront {
   refusal: string | null = null;
   unavailable = false;
   requests = 0;
+  packedEvents: { action: string; actor: { id: string; name: string }; at: string }[] = [];
   /** Courier bookings the fake storefront has recorded, by Order id. */
   couriers = new Map<number, Record<string, string>>();
 
@@ -203,6 +204,7 @@ export class FakeStorefront {
         paid_at = ${mayMarkPaid ? new Date() : order.paid_at}
       where id = ${id} and status = ${order.status} returning id, status, delivery_fee_in_centavos, delivery_photo_file_id, packed_by_id, packed_by_name, packed_at`;
     if (!changed) return Response.json({ error: "Order already changed." }, { status: 409 });
+    if (mayPrepare) this.packedEvents.push({ action: "order.packed", actor: { id: changed.packed_by_id, name: changed.packed_by_name }, at: changed.packed_at.toISOString() });
     if (mayDispatch && update.courier) this.couriers.set(id, update.courier);
     return Response.json({ id: changed.id, status: changed.status, ...(changed.packed_at ? { packedBy: { id: changed.packed_by_id, name: changed.packed_by_name, at: changed.packed_at.toISOString() } } : {}), ...(this.couriers.has(id) ? { courier: this.couriers.get(id) } : {}), deliveryFeeInCentavos: changed.delivery_fee_in_centavos, deliveryPhotoFileId: changed.delivery_photo_file_id });
   };

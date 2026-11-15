@@ -203,9 +203,7 @@ export async function startPreparing(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "Order is not ready to prepare or has already changed. Refresh it before trying again." };
     }
     return changeOrderStatus(id, { status: "preparing", staffId: staff.username, staffName: staff.name });
-  }, FULFILMENT_MODULE, {
-    action: "order.packed", description: staff => `${staff.name} packed Order #${id}.`,
-  });
+  }, FULFILMENT_MODULE);
 }
 
 /** What Staff typed in the dispatch dialog; only the Courier and https link are required, and only for Delivery. */

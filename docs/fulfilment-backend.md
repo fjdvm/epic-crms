@@ -84,8 +84,11 @@ Delivery, and sends `status: "preparing"`, `staffId` (Portal username), and
 `staffName` to the storefront. `preparing` remains the one packed status. Success
 requires the storefront to confirm `packedBy: { id, name, at }` with the expected
 Staff and a valid server timestamp. Missing attribution is uncertain; CREOMS never
-retries automatically or reports it as success. A confirmed pack records
-`order.packed` once, replacing `order.preparing`.
+retries automatically or reports it as success. The storefront queues
+`order.packed` with the completed pack transaction, replacing `order.preparing`.
+Its durable outbox retries gateway delivery with one stable key even if CREOMS
+never receives the response; CREOMS does not send a second event. The packing
+dialog waits with a spinner because deduction is an outside effect.
 
 `loadPackingSlip(id)` is an authorized Fulfilment read, including for Admin and
 CEO. It returns the Order number/date, Customer, whole snapshotted items and

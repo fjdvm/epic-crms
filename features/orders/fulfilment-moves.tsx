@@ -135,7 +135,6 @@ export function FulfilmentMove({
         confirm="Start preparing"
         busy="Starting…"
         run={() => startPreparing(id)}
-        onOptimistic={onMove && (() => onMove("preparing"))}
         successMessage={`Order #${id} is now preparing.`}
       />
     );

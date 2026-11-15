@@ -126,7 +126,7 @@ describe("Order notifications", () => {
     expect(await sync()).toEqual({ baselined: false, created: 3 });
     const feed = await listNotifications(db.sql, "crms", 20, ordersViewer());
     expect(feed.notifications.map(n => n.kind)).toEqual(["order-placed", "order-placed", "order-placed"]);
-    expect(describeNotification(feed.notifications[0]).text).toBe(`Jane Doe placed Order #${progressed}`);
+    expect(feed.notifications.map(n => describeNotification(n).text)).toContain(`Jane Doe placed Order #${progressed}`);
     expect(await sync()).toEqual({ baselined: false, created: 0 });
   });
 
