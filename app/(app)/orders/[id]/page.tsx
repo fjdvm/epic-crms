@@ -4,10 +4,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadOrder } from "@/features/orders/orders";
+import { loadCancellationState } from "@/features/orders/cancellation-state";
 import { loadLineReservations } from "@/features/orders/stock";
 import { loadEmbeddedReturns } from "@/features/returns/returns";
 import { gatewayFileStorage } from "@/lib/gateway";
-import { ORDER_DETAIL_MODULES, PAYMENTS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
+import { FULFILMENT_MODULE, ORDER_DETAIL_MODULES, PAYMENTS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 import { approvals } from "@/features/approvals/server";
 import { toView, WAITING } from "@/features/approvals/view";
 import { shopRole } from "@/lib/portal/roles";
@@ -59,6 +60,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     loadLineReservations(ticketsDatabase, order.id),
   ]);
 
+  const cancellation = order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) ? await loadCancellationState(order.id) : null;
   const role = shopRole(staff.role);
   const requests = modules.includes(PAYMENTS_MODULE)
     ? (await approvals().list(staff, PAYMENTS_MODULE).catch(() => []))
@@ -75,6 +77,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         role={role}
         approvalId={approvalId}
         waitingApproval={waitingApproval}
+        cancellation={cancellation}
         order={order}
         modules={modules}
         deliveryPhotoUrl={deliveryPhotoUrl}
