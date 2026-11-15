@@ -14,7 +14,7 @@ const LABELS: Record<Step, [string, string]> = {
   approve: ["Approve the return", "The Customer is told it is approved."],
   decline: ["Reject the return", "Customer is told why"],
   refund: ["Refund", "Paid back by the Customer's payment method, with proof."],
-  replace: ["Send a replacement", "A ₱0 Order from a newer batch."],
+  replace: ["Send a replacement", "A ₱0 Replacement Order, packed and dispatched like any Order."],
 };
 
 /** Figma "Dialog · Request manager approval": what Staff suggest and why. Never optimistic: a Manager decides. */
