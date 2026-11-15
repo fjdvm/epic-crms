@@ -3,7 +3,7 @@ import type { FileStorage, ImageContentType } from "@/features/tickets/attachmen
 
 /** An in-memory file-storage: Private Files, short-lived addresses, and whatever failures a test asks for. */
 export class FakeFileStorage implements FileStorage {
-  files = new Map<string, { filename: string; contentType: string; size: number; link?: number; returnId?: number; visibility: "private" | "public"; retentionType: "permanent" | "temporary"; status: "active" | "pending"; bytes?: Uint8Array }>();
+  files = new Map<string, { filename: string; contentType: string; size: number; link?: number; returnId?: number; orderId?: number; visibility: "private" | "public"; retentionType: "permanent" | "temporary"; status: "active" | "pending"; bytes?: Uint8Array }>();
   failUpload = false;
   failLink = false;
   failRemove = false;
@@ -102,6 +102,11 @@ export class FakeFileStorage implements FileStorage {
   async promote(fileId: string) {
     if (this.failPromote) throw new Error("file-storage is down");
     this.files.get(fileId)!.retentionType = "permanent";
+  }
+
+  async linkOrderRefundProof(fileId: string, orderId: number) {
+    if (this.failLink) throw new Error("file-storage is down");
+    this.files.get(fileId)!.orderId = orderId;
   }
 
   async linkRefundProof(fileId: string, returnId: number) {

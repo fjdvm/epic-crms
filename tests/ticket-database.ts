@@ -171,6 +171,12 @@ export async function startTestDatabase(): Promise<TestDatabase> {
   const db = await PGlite.create();
   await db.exec(SCHEMA);
   await db.exec(readFileSync(new URL("./returns-schema.sql", import.meta.url), "utf8"));
+  await db.exec(`create table order_cancellations (
+    id uuid primary key, order_id integer not null unique references orders(id) on delete cascade,
+    reason text not null, actor_type text not null, actor_id text not null, actor_name text not null,
+    status text not null default 'waiting-manager', stock_outcome text, refund_method text, refund_proof_file_id text,
+    created_at timestamptz not null default now()
+  )`);
   await db.exec(`create table failed_deliveries (
     id text primary key, order_id integer not null references orders(id), reason text not null, next_step text not null,
     customer_message text not null, staff_id text not null, staff_name text not null, created_at timestamptz not null default now(),

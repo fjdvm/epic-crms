@@ -30,6 +30,8 @@ export function inTab(status: string, tab: ApprovalTab): boolean {
 }
 
 export const ACTION_LABELS: Record<ApprovalAction, string> = {
+  "order.cancel-after-dispatch": "Cancel after dispatch",
+  "order.cancel-settle": "Cancellation refund and stock",
   "payment.approve-anyway": "Approve payment anyway",
   "return.approve": "Approve return",
   "return.decline": "Reject return",

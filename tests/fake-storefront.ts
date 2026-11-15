@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 import type { FakeFileStorage } from "./fake-file-storage";
 import type postgres from "postgres";
 
@@ -209,6 +209,20 @@ export class FakeStorefront {
     this.requests++;
     if (this.unavailable) throw new Error("Storefront unavailable");
     // Customer authentication in the fake only. Production uses the storefront's own session.
+    const customerCancellation = new URL(request.url).pathname.match(/^\/api\/orders\/(\d+)\/cancellation$/);
+    if (customerCancellation && request.method === "POST") {
+      const customerId = request.headers.get("X-Test-Customer"), id = Number(customerCancellation[1]);
+      if (!customerId) return Response.json({ error: "Sign in first." }, { status: 401 });
+      const { reason } = await request.json();
+      if (typeof reason !== "string" || !reason.trim()) return Response.json({ error: "Enter a reason." }, { status: 400 });
+      return this.sql.begin(async tx => {
+        const [order] = await tx`select o.*, c.full_name from orders o join customers c on c.id = o.customer_id where o.id = ${id} and o.customer_id = ${customerId} for update of o`;
+        if (!order || order.status !== "dispatched") return Response.json({ error: "Only your dispatched Order can have a cancellation request." }, { status: 409 });
+        const [r] = await tx`insert into order_cancellations (id,order_id,reason,actor_type,actor_id,actor_name)
+          values (${randomUUID()},${id},${reason},'customer',${customerId},${order.full_name}) on conflict (order_id) do update set order_id = excluded.order_id returning *`;
+        return Response.json({ id, requestId: r.id, status: r.status }, { status: 202 });
+      });
+    }
     const returnRequest = new URL(request.url).pathname.match(/^\/api\/orders\/(\d+)\/returns$/);
     if (returnRequest && request.method === "POST") return this.requestReturn(request, Number(returnRequest[1]));
     const returnDecision = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/status$/);
@@ -228,6 +242,26 @@ export class FakeStorefront {
     }
     if (returnDecision && request.method === "POST") return this.decideReturn(request, Number(returnDecision[1]));
     if (verificationDecision && request.method === "POST") return this.decideVerification(request, Number(verificationDecision[1]), verificationDecision[2]);
+    const cancellation = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/cancellation$/);
+    if (cancellation && request.method === "POST") {
+      const id = Number(cancellation[1]), input = await request.json();
+      if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+      return this.sql.begin(async tx => {
+        const [order] = await tx`select * from orders where id = ${id} for update`;
+        if (!order || order.status !== "dispatched") return Response.json({ error: "Order already changed." }, { status: 409 });
+        if (input.action === "request") {
+          const [r] = await tx`insert into order_cancellations (id,order_id,reason,actor_type,actor_id,actor_name)
+            values (${randomUUID()},${id},${input.reason},'staff',${input.staffId},${input.staffName}) on conflict (order_id) do update set order_id = excluded.order_id returning *`;
+          return Response.json({ id, requestId: r.id, status: "waiting-manager" });
+        }
+        const [r] = await tx`select * from order_cancellations where id = ${input.requestId} and order_id = ${id}`;
+        if (!r) return Response.json({ error: "Request was not found." }, { status: 409 });
+        if (order.payment_method !== "cash-on-delivery" && this.files?.files.get(input.refundProofFileId)?.orderId !== id) return Response.json({ error: "Link refund proof first." }, { status: 400 });
+        await tx`update orders set status = 'cancelled' where id = ${id}`;
+        await tx`update order_cancellations set status = 'cancelled', stock_outcome = ${input.stockOutcome}, refund_method = ${input.refundMethod}, refund_proof_file_id = ${input.refundProofFileId} where id = ${r.id}`;
+        return Response.json({ id, status: "cancelled", ...input });
+      });
+    }
     const failure = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/failed-delivery$/);
     if (failure && request.method === "POST") {
       if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
