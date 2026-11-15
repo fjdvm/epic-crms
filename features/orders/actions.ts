@@ -12,7 +12,7 @@ import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { cancelStorefrontItems, changeOrderStatus, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
 
-import { CANCELLABLE_STATUSES } from "./orders";
+import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
 
@@ -198,13 +198,13 @@ export async function markPaid(id: number): Promise<OrderChangeResult> {
 
 /** Preparation uses the same readiness rule as the board; the storefront still owns the write. */
 export async function startPreparing(id: number): Promise<OrderChangeResult> {
-  return act(id, async (order) => {
+  return act(id, async (order, staff) => {
     if (!readyToPrepare({ status: order.status, paymentMethod: order.payment_method })) {
       return { ok: false, reason: "Order is not ready to prepare or has already changed. Refresh it before trying again." };
     }
-    return changeOrderStatus(id, { status: "preparing" });
+    return changeOrderStatus(id, { status: "preparing", staffId: staff.username, staffName: staff.name });
   }, FULFILMENT_MODULE, {
-    action: "order.preparing", description: staff => `${staff.name} started preparing Order #${id}.`,
+    action: "order.packed", description: staff => `${staff.name} packed Order #${id}.`,
   });
 }
 
@@ -300,4 +300,23 @@ export async function reconcileDeliveryPhoto(id: number): Promise<{ ok: true } |
   } catch {
     return { ok: false, reason: "The Delivery photo could not be made Permanent. Refresh the Order; do not repeat delivery." };
   }
+}
+
+/** Packing-slip data omits payment evidence and permits read-only Fulfilment roles. */
+export async function loadPackingSlip(id: number) {
+  await requireModule(FULFILMENT_MODULE);
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false as const, reason: "Invalid Order number." };
+  const result = await loadOrder(database, id);
+  if (!result.ok) return { ok: false as const, reason: "Packing slip is temporarily unavailable." };
+  if (!result.order) return { ok: false as const, reason: "Order was not found." };
+  const { id: orderId, createdAt, customer, fulfillmentMethod, lines, address } = result.order;
+  try {
+    const [row] = await database()<{ staff_id: string | null; staff_name: string | null; at: string | null }[]>`
+      select to_jsonb(o)->>'packed_by_id' as staff_id, to_jsonb(o)->>'packed_by_name' as staff_name,
+        to_jsonb(o)->>'packed_at' as at from public.orders o where id = ${id}`;
+    return { ok: true as const, slip: { id: orderId, createdAt, customer, fulfillmentMethod, lines,
+      address: fulfillmentMethod === "pickup" ? null : address,
+      packedBy: row?.staff_id && row.staff_name && row.at ? { id: row.staff_id, name: row.staff_name, at: new Date(row.at) } : null,
+    } };
+  } catch { return { ok: false as const, reason: "Packing slip is temporarily unavailable." }; }
 }

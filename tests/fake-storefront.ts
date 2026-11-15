@@ -182,7 +182,7 @@ export class FakeStorefront {
       (!["Lalamove", "Grab"].includes(update.courier?.name) || !/^https:\/\//.test(update.courier?.trackingUrl ?? ""))) {
       return Response.json({ error: "Dispatching a Delivery Order needs the courier and an https tracking link." }, { status: 400 });
     }
-    if (mayMarkPaid && (!update.staffId || !update.staffName)) {
+    if ((mayMarkPaid || mayPrepare) && (!update.staffId || !update.staffName)) {
       return Response.json({ error: "Staff attribution is required." }, { status: 400 });
     }
     if (!mayConfirm && !mayCancel && !mayPrepare && !mayDispatch && !mayDeliver && !mayMarkPaid) return Response.json({ error: "Order already changed." }, { status: 409 });
@@ -197,11 +197,14 @@ export class FakeStorefront {
         delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos},
         paid_by_id = ${mayMarkPaid ? update.staffId : order.paid_by_id},
         paid_by_name = ${mayMarkPaid ? update.staffName : order.paid_by_name},
+        packed_by_id = ${mayPrepare ? update.staffId : order.packed_by_id},
+        packed_by_name = ${mayPrepare ? update.staffName : order.packed_by_name},
+        packed_at = ${mayPrepare ? new Date() : order.packed_at},
         paid_at = ${mayMarkPaid ? new Date() : order.paid_at}
-      where id = ${id} and status = ${order.status} returning id, status, delivery_fee_in_centavos, delivery_photo_file_id`;
+      where id = ${id} and status = ${order.status} returning id, status, delivery_fee_in_centavos, delivery_photo_file_id, packed_by_id, packed_by_name, packed_at`;
     if (!changed) return Response.json({ error: "Order already changed." }, { status: 409 });
     if (mayDispatch && update.courier) this.couriers.set(id, update.courier);
-    return Response.json({ id: changed.id, status: changed.status, ...(this.couriers.has(id) ? { courier: this.couriers.get(id) } : {}), deliveryFeeInCentavos: changed.delivery_fee_in_centavos, deliveryPhotoFileId: changed.delivery_photo_file_id });
+    return Response.json({ id: changed.id, status: changed.status, ...(changed.packed_at ? { packedBy: { id: changed.packed_by_id, name: changed.packed_by_name, at: changed.packed_at.toISOString() } } : {}), ...(this.couriers.has(id) ? { courier: this.couriers.get(id) } : {}), deliveryFeeInCentavos: changed.delivery_fee_in_centavos, deliveryPhotoFileId: changed.delivery_photo_file_id });
   };
 }
 
