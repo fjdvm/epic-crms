@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee,
-  startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
+  loadPackingSlip, startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
@@ -86,6 +86,41 @@ async function signInWithModules(modules: string[]) {
   return portal;
 }
 describe("Order actions", () => {
+  it.each(["Admin", "CEO"])("keeps packing read-only for %s while allowing packing-slip reads", async role => {
+    const id = await order("delivery", "paid", "gcash");
+    vi.mocked(requireModule).mockResolvedValue({ id: "owner", username: "owner", name: "Owner", email: "owner@example.com", role });
+    expect(await startPreparing(id)).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
+    expect(await loadPackingSlip(id)).toMatchObject({ ok: true, slip: { fulfillmentMethod: "delivery", packedBy: null } });
+    expect(storefront.requests).toBe(0);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("does not accept packing confirmation without the expected Staff identity and time", async () => {
+    const id = await order("pickup", "confirmed");
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id, status: "preparing", deliveryFeeInCentavos: null, packedBy: { id: "someone-else", name: "Other", at: "invalid" } })));
+    expect(await startPreparing(id)).toMatchObject({ ok: false, reason: expect.stringContaining("did not confirm") });
+    expect(audit).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("returns the snapshotted address and whole items in a Delivery packing slip", async () => {
+    const id = await order("delivery", "paid", "gcash");
+    await db.sql`insert into order_delivery_addresses (order_id, street, barangay, city, province, postal_code) values (${id}, '10 Main St', 'San Jose', 'Antipolo', 'Rizal', '1870')`;
+    await db.sql`insert into order_lines (order_id, product_name, size_label, quantity) values (${id}, 'Halaya', '500g', 3)`;
+    expect(await loadPackingSlip(id)).toMatchObject({ ok: true, slip: { id, customer: { name: "Maria Santos" }, fulfillmentMethod: "delivery", lines: [{ product: "Halaya", size: "500g", quantity: 3 }], address: { street: "10 Main St", city: "Antipolo" }, packedBy: null } });
+  });
+
+  it("packs under the Portal Staff identity once and exposes the packing slip", async () => {
+    const id = await order("pickup", "confirmed");
+    await db.sql`insert into order_lines (order_id, product_name, size_label, quantity) values (${id}, 'Halaya', '250g', 2)`;
+    expect(await startPreparing(id)).toMatchObject({ ok: true, order: { status: "preparing" } });
+    expect(await loadPackingSlip(id)).toMatchObject({ ok: true, slip: { id, fulfillmentMethod: "pickup", address: null,
+      lines: [{ product: "Halaya", size: "250g", quantity: 2 }], packedBy: { id: "ana", name: "Ana", at: expect.any(Date) } } });
+    expect(await startPreparing(id)).toMatchObject({ ok: false });
+    expect(storefront.packedEvents).toEqual([{ action: "order.packed", actor: { id: "ana", name: "Ana" }, at: expect.any(String) }]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
   it("refuses a quote on Free delivery, including a legacy placed Order", async () => {
     const id = await order();
     await db.sql`update orders set subtotal_in_centavos = 250001 where id = ${id}`;
@@ -736,7 +771,6 @@ describe("Order and Payment Audit Events", () => {
 
 describe("Fulfilment Audit Events", () => {
   const cases = [
-    { status: "confirmed", next: "preparing", run: startPreparing, actions: ["order.preparing"] },
     { status: "preparing", next: "dispatched", run: dispatch, actions: ["order.dispatched"] },
     { status: "dispatched", next: "delivered", run: (id: number) => deliverOrder(id, deliveryPhoto()), actions: ["order.delivered", "order.delivery_photo_attached"] },
   ];

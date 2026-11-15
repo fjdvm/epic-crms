@@ -75,3 +75,33 @@ storefront implementation, excluded by parent spec #168.
 
 The photo picker (#176) lives in the Mark as delivered dialog. The Order detail page shows
 the photo through the file-storage view URL, or "No photo" when `deliveryPhotoFileId` is null.
+
+## Packing (#338)
+
+`startPreparing(id)` is the existing Pack order move. It checks Fulfilment and a
+working shop Role on every call, accepts only paid Orders or confirmed Cash on
+Delivery, and sends `status: "preparing"`, `staffId` (Portal username), and
+`staffName` to the storefront. `preparing` remains the one packed status. Success
+requires the storefront to confirm `packedBy: { id, name, at }` with the expected
+Staff and a valid server timestamp. Missing attribution is uncertain; CREOMS never
+retries automatically or reports it as success. The storefront queues
+`order.packed` with the completed pack transaction, replacing `order.preparing`.
+Its durable outbox retries gateway delivery with one stable key even if CREOMS
+never receives the response; CREOMS does not send a second event. The packing
+dialog waits with a spinner because deduction is an outside effect.
+
+`loadPackingSlip(id)` is an authorized Fulfilment read, including for Admin and
+CEO. It returns the Order number/date, Customer, whole snapshotted items and
+Sizes/quantities, Pickup or Delivery, the checkout address (null for Pickup), and
+packing attribution when present. It exposes no Payment proof. This backend ticket
+does not add a printable screen, packing checklist, photo or batch selector.
+
+The companion Ecommerce migration `0030_order_packing` adds nullable packing
+intent, Staff and time fields. Apply it and merge the storefront companion before
+this PR. CREOMS owns no Order migration and uses JSON field reads so legacy
+Orders still return null attribution. The storefront alone deducts reservations
+through IMS, reusing the immutable Reservation and line keys on recovery. A partial
+or uncertain deduction fences cancellation until a Staff member explicitly retries
+packing; the Staff member who completes that pack is recorded. Already packed
+Orders refuse another pack. Legacy Orders without reservations record the pack
+without inventing IMS stock. Live rollout checks belong in a separate ticket.
