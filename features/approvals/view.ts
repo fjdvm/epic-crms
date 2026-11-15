@@ -42,7 +42,7 @@ export const ACTION_LABELS: Record<ApprovalAction, string> = {
 
 /** Refunds and write-offs move money or stock, so their approval waits for the server. */
 export function isMoneyDecision(action: ApprovalAction): boolean {
-  return action === "return.refund" || action === "write-off";
+  return action === "return.refund" || action === "write-off" || action === "order.cancel-after-dispatch" || action === "order.cancel-settle";
 }
 
 export const pesos = (centavos: number) =>

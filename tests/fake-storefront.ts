@@ -17,6 +17,7 @@ export class FakeStorefront {
   reuploadEmails: { orderId: number; reason: string; link: string }[] = [];
 
   /** Senior/PWD decision emails, one per decision. They never carry the ID number. */
+  interruptCancellation = false;
   verificationEmails: { verificationId: number; status: string; text: string }[] = [];
   /** Server secret that keys the ID-number hash. */
   private static HASH_KEY = "fake-id-hash-key";
@@ -220,7 +221,7 @@ export class FakeStorefront {
         if (!order || order.status !== "dispatched") return Response.json({ error: "Only your dispatched Order can have a cancellation request." }, { status: 409 });
         const [r] = await tx`insert into order_cancellations (id,order_id,reason,actor_type,actor_id,actor_name)
           values (${randomUUID()},${id},${reason},'customer',${customerId},${order.full_name}) on conflict (order_id) do update set order_id = excluded.order_id returning *`;
-        return Response.json({ id, requestId: r.id, status: r.status }, { status: 202 });
+        return Response.json({ id, requestId: r.id, status: r.status === "waiting-manager" ? r.approval_status : r.status }, { status: 202 });
       });
     }
     const returnRequest = new URL(request.url).pathname.match(/^\/api\/orders\/(\d+)\/returns$/);
@@ -252,11 +253,19 @@ export class FakeStorefront {
         if (input.action === "request") {
           const [r] = await tx`insert into order_cancellations (id,order_id,reason,actor_type,actor_id,actor_name)
             values (${randomUUID()},${id},${input.reason},'staff',${input.staffId},${input.staffName}) on conflict (order_id) do update set order_id = excluded.order_id returning *`;
-          return Response.json({ id, requestId: r.id, status: "waiting-manager" });
+          return Response.json({ id, requestId: r.id, status: r.status === "waiting-manager" ? r.approval_status : r.status });
         }
         const [r] = await tx`select * from order_cancellations where id = ${input.requestId} and order_id = ${id}`;
+        if (r && input.action === "decide") {
+          await tx`update order_cancellations set approval_status = ${input.decision}, decline_reason = ${input.decision === "declined" ? input.reason : null} where id = ${r.id}`;
+          return Response.json({ id, requestId: r.id, status: input.decision });
+        }
         if (!r) return Response.json({ error: "Request was not found." }, { status: 409 });
         if (order.payment_method !== "cash-on-delivery" && this.files?.files.get(input.refundProofFileId)?.orderId !== id) return Response.json({ error: "Link refund proof first." }, { status: 400 });
+        if (this.interruptCancellation) {
+          await tx`update order_cancellations set status = 'settling', stock_outcome = ${input.stockOutcome}, refund_method = ${input.refundMethod}, refund_proof_file_id = ${input.refundProofFileId} where id = ${r.id}`;
+          return Response.json({ error: "IMS did not confirm the restock. Resume the same cancellation." }, { status: 503 });
+        }
         await tx`update orders set status = 'cancelled' where id = ${id}`;
         await tx`update order_cancellations set status = 'cancelled', stock_outcome = ${input.stockOutcome}, refund_method = ${input.refundMethod}, refund_proof_file_id = ${input.refundProofFileId} where id = ${r.id}`;
         return Response.json({ id, status: "cancelled", ...input });

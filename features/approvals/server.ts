@@ -1,3 +1,4 @@
+import { changeDispatchedCancellation } from "@/lib/storefront";
 import { after } from "next/server";
 import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayAuditTrail } from "@/lib/gateway";
@@ -8,6 +9,13 @@ import { approvalWorkflow } from "./workflow";
 
 export function approvals() {
   return approvalWorkflow(crmsDatabase(), gatewayAuditTrail, async ({ request, audience, text, key }) => {
+    if (audience === "requester" && request.action === "order.cancel-after-dispatch" && ["approved", "declined"].includes(request.status)) {
+      const [row] = await crmsDatabase()`select decline_reason from crms.approval_requests where id = ${request.id}`;
+      const result = await changeDispatchedCancellation(Number(request.target_id), { action: "decide", requestId: request.id,
+        decision: request.status as "approved" | "declined", reason: row?.decline_reason ?? "Manager approved cancellation" },
+        { id: request.manager_id!, name: request.manager_name! });
+      if (!result.ok) throw new Error(result.reason);
+    }
     if (audience === "requester" && request.requester_id.startsWith("customer:")) return;
     const portal = portalGateway();
     const people = await portal.recipients();

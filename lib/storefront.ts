@@ -208,10 +208,10 @@ export async function changeFailedDelivery(id: number, update: FailedDeliveryUpd
 }
 
 export type CancellationDecision = { requestId: string; stockOutcome: "restock" | "write-off"; refundMethod: string | null; refundProofFileId: string | null };
-export type CancellationResult = { ok: true; requestId: string; status: string; warning?: string } | { ok: false; reason: string };
+export type CancellationResult = { ok: true; requestId: string; status: string } | { ok: false; reason: string };
 
 /** Stable request IDs make explicit recovery safe; never automatically retry a cancellation. */
-export async function changeDispatchedCancellation(id: number, input: { action: "request"; reason: string } | ({ action: "settle" } & CancellationDecision), staff: { id: string; name: string }): Promise<CancellationResult> {
+export async function changeDispatchedCancellation(id: number, input: { action: "request"; reason: string } | { action: "decide"; requestId: string; decision: "approved" | "declined"; reason: string } | ({ action: "settle" } & CancellationDecision), staff: { id: string; name: string }): Promise<CancellationResult> {
   const origin = process.env.CREOMS_STOREFRONT_URL, secret = process.env.CREOMS_SERVICE_SECRET;
   if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
   const uncertain = "Storefront could not confirm the cancellation. Refresh the Order before trying again.";
@@ -222,7 +222,7 @@ export async function changeDispatchedCancellation(id: number, input: { action: 
     });
     const body = await response.json();
     if (!response.ok) return { ok: false, reason: typeof body.error === "string" ? body.error : uncertain };
-    if (body.id !== id || typeof body.requestId !== "string" || body.status !== (input.action === "request" ? "waiting-manager" : "cancelled") ||
+    if (body.id !== id || typeof body.requestId !== "string" || (input.action === "request" ? !["waiting-manager", "approved", "declined"].includes(body.status) : body.status !== (input.action === "decide" ? input.decision : "cancelled")) ||
       input.action === "settle" && (body.requestId !== input.requestId || body.stockOutcome !== input.stockOutcome || body.refundMethod !== input.refundMethod || body.refundProofFileId !== input.refundProofFileId)) return { ok: false, reason: uncertain };
     return { ok: true, requestId: body.requestId, status: body.status };
   } catch { return { ok: false, reason: uncertain }; }

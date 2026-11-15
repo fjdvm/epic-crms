@@ -174,7 +174,7 @@ export async function startTestDatabase(): Promise<TestDatabase> {
   await db.exec(`create table order_cancellations (
     id uuid primary key, order_id integer not null unique references orders(id) on delete cascade,
     reason text not null, actor_type text not null, actor_id text not null, actor_name text not null,
-    status text not null default 'waiting-manager', stock_outcome text, refund_method text, refund_proof_file_id text,
+    status text not null default 'waiting-manager', approval_status text not null default 'waiting-manager', decline_reason text, stock_outcome text, refund_method text, refund_proof_file_id text,
     created_at timestamptz not null default now()
   )`);
   await db.exec(`create table failed_deliveries (

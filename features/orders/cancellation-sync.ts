@@ -20,8 +20,8 @@ export async function syncCancellationRequests(reader: postgres.Sql = database()
       if (!inserted.length) return;
       created++;
       await tx`insert into crms.approval_events (id, request_id, action, actor_id, actor_name, details)
-        values (${randomUUID()}, ${r.id}, 'order.cancel_requested', ${r.actor_id}, ${r.actor_name}, ${tx.json({ orderId: r.order_id })})`;
-      await recordAudit(gatewayAuditTrail, { action: "order.cancel_requested", module: "Fulfilment", outcome: "success",
+        values (${randomUUID()}, ${r.id}, 'approval.requested', ${r.actor_id}, ${r.actor_name}, ${tx.json({ orderId: r.order_id })})`;
+      await recordAudit(gatewayAuditTrail, { action: "approval.requested", module: "Fulfilment", outcome: "success",
         actor: { type: "user", id: r.actor_id, display_name: r.actor_name }, target: { type: "order", id: String(r.order_id), display_name: `Order #${r.order_id}` },
         description: `${r.actor_name} requested cancellation after dispatch.`, occurred_at: new Date().toISOString(), operationId: `order-cancellation:${r.id}:requested` });
       await tx`insert into crms.approval_notices (key, request_id, audience, text)

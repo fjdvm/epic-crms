@@ -23,7 +23,7 @@ export async function requestDispatchedCancellation(id: number, reason: string):
     if (!result.ok) return result;
     await syncCancellationRequests();
     revalidatePath("/approvals"); revalidatePath(`/orders/${id}`);
-    return { ok: false, reason: "Waiting for approval", status: "waiting-manager", approvalId: result.requestId };
+    return { ok: false, reason: result.status === "approved" ? "Cancellation approved; settlement pending" : result.status === "declined" ? "Cancellation request declined" : "Waiting for approval", status: result.status, approvalId: result.requestId };
   } catch { return { ok: false, reason: "Cancellation request is saved if the storefront confirmed it. Refresh before trying again." }; }
 }
 
@@ -58,21 +58,27 @@ export async function settleDispatchedCancellation(id: number, requestId: string
       payload: { requestId, stockOutcome, refundMethod: prepaid ? order.payment_method : null, moneyDecision: prepaid || stockOutcome === "write-off" },
       amountInCentavos: Number(amount.selling) }, { ...options, reason: options.reason ?? "Settle approved dispatched cancellation" }, async (): Promise<CancellationResult> => {
       let proofId: string | null = null;
-      if (prepaid) {
-        if (!(form instanceof FormData) || form.getAll("proof").length !== 1) return { ok: false, reason: "Choose exactly one refund proof screenshot." };
-        const upload = await recordUpload(FULFILMENT_MODULE, form.get("proof"), staff.username);
-        if (!upload) return { ok: false, reason: "Choose a confirmed refund proof uploaded by you." };
-        proofId = upload.fileId;
-        await gatewayFileStorage.linkOrderRefundProof(proofId, id);
-      }
+      try {
+        const [intent] = await database()`select status, stock_outcome, refund_method, refund_proof_file_id from public.order_cancellations where id = ${requestId} and order_id = ${id}`;
+        if (intent?.status === "settling") {
+          if (intent.stock_outcome !== stockOutcome || intent.refund_method !== (prepaid ? order.payment_method : null)) return { ok: false, reason: "Resume the recorded stock outcome and refund method." };
+          proofId = intent.refund_proof_file_id;
+          if (prepaid && !proofId) return { ok: false, reason: "The recorded refund proof needs reconciliation." };
+        } else if (prepaid) {
+          if (!(form instanceof FormData) || form.getAll("proof").length !== 1) return { ok: false, reason: "Choose exactly one refund proof screenshot." };
+          const upload = await recordUpload(FULFILMENT_MODULE, form.get("proof"), staff.username);
+          if (!upload) return { ok: false, reason: "Choose a confirmed refund proof uploaded by you." };
+          proofId = upload.fileId;
+          await gatewayFileStorage.linkOrderRefundProof(proofId, id);
+        }
+        // Keep approved, linked evidence before potentially interrupted IMS work.
+        // Recovery uses persisted proof, never an expiring browser reference.
+        if (proofId) await gatewayFileStorage.promote(proofId);
+      } catch { return { ok: false, reason: "Refund proof could not be prepared. No cancellation was sent; retry with the same approval." }; }
       const changed = await changeDispatchedCancellation(id, { action: "settle", requestId, stockOutcome,
         refundMethod: prepaid ? order.payment_method : null, refundProofFileId: proofId }, staff);
       if (!changed.ok) return changed;
       await crmsDatabase()`update crms.approval_requests set status = 'completed', completed_at = now() where id = ${requestId} and status = 'approved'`;
-      if (proofId) {
-        try { await gatewayFileStorage.promote(proofId); }
-        catch { return { ...changed, warning: "Order cancelled. Refund proof could not be made Permanent; retry proof retention only. Do not repeat the refund." }; }
-      }
       return changed;
     });
     if (result.ok) { revalidatePath(`/orders/${id}`); revalidatePath("/orders"); revalidatePath("/fulfilment"); revalidatePath("/approvals"); }
