@@ -16,6 +16,7 @@ import { Field } from "./field";
 import { formatAgo, formatDate, formatMonthYear, formatPesos } from "./format";
 import { orderAnchor } from "./orders";
 import { NotesTab, type VisibleCustomerNote } from "./notes-tab";
+import { TasksTab, manilaToday, openFirst, type TaskViewer, type VisibleCustomerTask } from "./tasks-tab";
 import { OrdersTab } from "./orders-tab";
 import { ReturnsTab } from "./returns-tab";
 import type { CustomerProfile } from "./profile";
@@ -52,6 +53,7 @@ export function CustomerProfileView({
   canOpenOrder = false,
   canViewReturns = false,
   noteAuthor,
+  taskViewer,
 }: {
   profile: CustomerProfile;
   now?: Date;
@@ -59,6 +61,8 @@ export function CustomerProfileView({
   /** Staff with the Returns Module get the Returns tab. */
   canViewReturns?: boolean;
   noteAuthor?: { id: string; name: string };
+  /** Staff and Managers only; Admin and CEO see Tasks without controls. */
+  taskViewer?: TaskViewer;
 }) {
   const p = profile;
   const [addedNotes, setAddedNotes] = useState<VisibleCustomerNote[]>([]);
@@ -68,6 +72,15 @@ export function CustomerProfileView({
   function changeNote(id: string, note: VisibleCustomerNote | null) {
     setAddedNotes(old => [...old.filter(item => item.id !== id && item.id !== note?.id), ...(note ? [note] : [])]);
   }
+  const [taskOverrides, setTaskOverrides] = useState<Map<string, VisibleCustomerTask | null>>(new Map());
+  const tasks: VisibleCustomerTask[] | null = p.tasks === null ? null : [
+    ...(p.tasks ?? []).filter(task => !taskOverrides.has(task.id)),
+    ...[...taskOverrides.values()].filter((task): task is VisibleCustomerTask => task !== null),
+  ];
+  function changeTask(id: string, task: VisibleCustomerTask | null) {
+    setTaskOverrides(old => new Map(old).set(id, task));
+  }
+  const openTasks = tasks ? openFirst(tasks.map(task => ({ ...task, overdue: !task.doneAt && task.dueDate < manilaToday(now) }))).filter(task => !task.doneAt) : [];
   const [tab, setTab] = useState("orders");
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
 
@@ -139,6 +152,18 @@ export function CustomerProfileView({
         />
       </div>
 
+      {openTasks.length > 0 && (
+        <section aria-label="Open Tasks" className="space-y-1.5 rounded-xl border border-border bg-card px-5 py-3">
+          <h2 className="text-[13px] font-medium text-muted-foreground">Open Tasks</h2>
+          <ul className="space-y-1">
+            {openTasks.map(task => <li key={task.id} className="flex flex-wrap gap-x-2 text-sm text-foreground">
+              <span>{task.description}</span>
+              <span className={task.overdue ? "font-semibold text-destructive" : "text-muted-foreground"}>{task.overdue ? "Overdue · " : ""}Due {task.dueDate} · {task.ownerName}</span>
+            </li>)}
+          </ul>
+        </section>
+      )}
+
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-5">
@@ -197,7 +222,8 @@ export function CustomerProfileView({
               <EmailsTab marketingOptIn={p.marketingOptIn} emails={p.emailsReceived} />
             </TabsContent>
 
-            <TabsContent forceMount value="notes" className="mt-0 data-[state=inactive]:hidden [&>div]:flex [&>div]:min-h-0 [&>div]:flex-col">
+            <TabsContent forceMount value="notes" className="mt-0 space-y-4 data-[state=inactive]:hidden">
+              <TasksTab customerId={p.id} tasks={tasks} viewer={taskViewer} now={now} onTaskChange={changeTask} />
               <NotesTab customerId={p.id} notes={notes} readFailed={p.notes === null} author={noteAuthor} onNoteChange={changeNote} />
             </TabsContent>
 
@@ -276,7 +302,7 @@ export function CustomerProfileView({
           </div>
 
           <aside className="min-h-0 w-full shrink-0 xl:w-[380px] xl:overflow-y-auto [&>div]:h-full">
-            <ActivityTimeline notes={notes ?? []} orders={p.orderHistory} onOpenOrder={openOrder} />
+            <ActivityTimeline notes={notes ?? []} tasks={tasks ?? []} orders={p.orderHistory} onOpenOrder={openOrder} />
           </aside>
         </div>
       </Tabs>

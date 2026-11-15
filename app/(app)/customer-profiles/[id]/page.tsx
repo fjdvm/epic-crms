@@ -1,4 +1,4 @@
-import { canWork } from "@/lib/portal/roles";
+import { canWork, shopRole } from "@/lib/portal/roles";
 import { notFound } from "next/navigation";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -35,7 +35,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
   return (
     <div className="h-[calc(100dvh-4rem)] min-h-0 overflow-hidden px-xl py-7">
       <ProfileViewAudit id={id} />
-      <CustomerProfileView key={id} noteAuthor={canWork(staff) ? { id: staff.id, name: staff.name } : undefined} profile={result.profile} canOpenOrder={await canOpenOrders()} canViewReturns={canViewReturns} />
+      <CustomerProfileView key={id} noteAuthor={canWork(staff) ? { id: staff.id, name: staff.name } : undefined} taskViewer={canWork(staff) ? { id: staff.id, name: staff.name, role: shopRole(staff.role) === "manager" ? "manager" : "staff" } : undefined} profile={result.profile} canOpenOrder={await canOpenOrders()} canViewReturns={canViewReturns} />
     </div>
   );
 }
