@@ -187,3 +187,8 @@ describe("after 3 rejections", () => {
     expect(await markPaid(b, { approvalId: pending.approvalId })).toMatchObject({ ok: false });
   });
 });
+
+it("sends a refund back the way the Customer paid, and none for Cash on Delivery", async () => {
+  const { refundDestination } = await import("@/features/orders/payment-methods");
+  expect(["gcash", "maya", "bank-transfer", "cash-on-delivery"].map(refundDestination)).toEqual(["GCash", "Maya", "bank transfer", null]);
+});

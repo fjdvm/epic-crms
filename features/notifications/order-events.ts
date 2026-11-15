@@ -13,7 +13,7 @@ interface OrderEvent {
 }
 
 /** Read placement of every Order and submitted proofs (GCash, Maya or bank transfer) from the storefront.
- * Proofs remain events after the Order moves on, so a payment checked between polls is still seen.
+ * Proofs remain events after the Order moves on, so a payment checked between two syncs is still seen.
  * The first proof has one stable key per Order; each resubmission after a rejection has its own.
  */
 export async function readOrderEvents(reader: postgres.Sql): Promise<OrderEvent[]> {

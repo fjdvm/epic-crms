@@ -7,3 +7,10 @@ export const isPrepaid = (method: string): method is PrepaidMethod => (PREPAID_M
 
 /** After this many rejected proofs, only a Manager can approve the Order. */
 export const MANAGER_AFTER_REJECTIONS = 3;
+
+const REFUND_LABELS: Record<PrepaidMethod, string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "bank transfer" };
+
+/** A refund goes back the way the Customer paid; Cash on Delivery has nothing to send back. */
+export function refundDestination(method: string): string | null {
+  return isPrepaid(method) ? REFUND_LABELS[method] : null;
+}
