@@ -7,6 +7,7 @@ import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
 import type { ApprovalView } from "@/features/approvals/view";
 import type { ShopRole } from "@/lib/portal/roles";
+import { InspectReturn } from "./inspect-return";
 import { ReturnActions } from "./return-actions";
 import type { ReturnDetail } from "./returns";
 import { STATUS_PILLS } from "./returns-table";
@@ -125,6 +126,13 @@ export function ReturnDetailView({
               <p className="text-sm text-[#6e6680]">The video could not be loaded. Reload to try again.</p>
             )}
           </section>
+
+          {detail.items.length > 0 && ["goods received", "refunded", "replaced"].includes(detail.status) && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Inspect what came back</h2>
+              <InspectReturn id={detail.id} number={detail.number} status={detail.status} items={detail.items} role={role} requests={requests} />
+            </section>
+          )}
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Items</h2>
