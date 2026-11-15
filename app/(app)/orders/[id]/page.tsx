@@ -51,9 +51,10 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   }
 
   // Returns reads belong to the Returns Module, so nobody else's page even loads them.
-  const returns = modules.includes(RETURNS_MODULE) ? await loadEmbeddedReturns(ticketsDatabase, { orderId: order.id }) : [];
-
-  const reservations = await loadLineReservations(ticketsDatabase, order.id);
+  const [returns, reservations] = await Promise.all([
+    modules.includes(RETURNS_MODULE) ? loadEmbeddedReturns(ticketsDatabase, { orderId: order.id }) : [],
+    loadLineReservations(ticketsDatabase, order.id),
+  ]);
 
   return (
     <>

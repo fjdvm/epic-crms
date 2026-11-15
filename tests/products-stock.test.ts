@@ -16,6 +16,9 @@ afterAll(async () => { await db.close(); });
 
 beforeEach(async () => {
   await db.sql`truncate stock_reservations, sizes, products`;
+  await db.sql`truncate order_delivery_addresses, order_lines, orders, customers restart identity cascade`;
+  await db.sql`insert into customers (id, full_name, first_name, email) values ('c1', 'Maria', 'Maria', 'm@example.com')`;
+  await db.sql`insert into orders (id, customer_id, status) overriding system value values (7, 'c1', 'confirmed')`;
   await db.sql`insert into products values ('halaya', 'Ube Halaya Smooth'), ('powder', '120 Mesh Ube Powder')`;
   await db.sql`insert into sizes values (1, 'halaya', 'Tub 340 g', 39000), (2, 'halaya', 'Jar 250 g', 25000), (3, 'powder', '500 g', 90000)`;
 });
@@ -60,6 +63,12 @@ describe("Order detail reservations", () => {
     await reserve("placed", [{ orderLineId: 11, sizeId: 1, quantity: 4 }, { orderLineId: 12, sizeId: 2, quantity: 2 }]);
     const map = await loadLineReservations(() => db.sql, 7, ims([[1, 26, 8, 18], [2, 12, 5, 9]]));
     expect([...map]).toEqual([[11, { reserved: 4, left: 18 }], [12, { reserved: 2, left: 9 }]]);
+  });
+
+  it("reserves nothing once the Order is dispatched, because the IMS took the stock out at packing", async () => {
+    await reserve("placed", [{ orderLineId: 11, sizeId: 1, quantity: 4 }]);
+    await db.sql`update orders set status = 'dispatched' where id = 7`;
+    expect((await loadLineReservations(() => db.sql, 7, ims([[1, 26, 8, 18]]))).size).toBe(0);
   });
 
   it("reserves nothing for a released or cancelled line, or an Order placed before Reservations", async () => {

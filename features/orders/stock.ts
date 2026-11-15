@@ -78,8 +78,8 @@ export async function loadStock(
 export interface LineReservation { reserved: number; left: number | null }
 
 /**
- * Reserved quantity per Order line, from the storefront's Reservation. A released or cancelled line
- * reserves nothing. Failure returns an empty map so the rest of the Order detail still opens.
+ * Reserved quantity per Order line, from the storefront's Reservation. Only an Order not yet packed
+ * holds one (the IMS takes the stock out at packing); a released or cancelled line reserves nothing. Failure returns an empty map so the rest of the Order detail still opens.
  */
 export async function loadLineReservations(
   connect: () => postgres.Sql,
@@ -88,7 +88,9 @@ export async function loadLineReservations(
 ): Promise<Map<number, LineReservation>> {
   try {
     const [reservation] = await connect()<{ lines: { orderLineId?: number; sizeId: number; quantity: number; release?: boolean; released?: boolean }[] }[]>`
-      select lines from public.stock_reservations where order_id = ${orderId} and state = 'placed'`;
+      select r.lines from public.stock_reservations r join public.orders o on o.id = r.order_id
+      where r.order_id = ${orderId} and r.state = 'placed'
+        and o.status in ('placed', 'confirmed', 'awaiting payment', 'paid', 'preparing')`;
     const held = (reservation?.lines ?? []).filter((line) => line.orderLineId !== undefined && !line.release && !line.released);
     if (held.length === 0) return new Map();
     const stock = await read(held.map((line) => line.sizeId));
