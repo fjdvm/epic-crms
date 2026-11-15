@@ -57,3 +57,20 @@ it.each(["Staff", "CREOMS Manager"])("%s receives the composer on the Profile pa
   await userEvent.click(screen.getByRole("tab", { name: "Notes & tasks" }));
   expect(screen.getByRole("textbox", { name: "Customer note" })).toBeTruthy();
 });
+
+it("shows local pending and saved notes even when the history read is unavailable", async () => {
+  let finish!: (result: AddCustomerNoteResult) => void;
+  add.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  render(<CustomerProfileView profile={{ ...profile, notes: null }} noteAuthor={{ id: "r", name: "Rhea" }} />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name: "Notes & tasks" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Local Customer note" } });
+  await user.click(screen.getByRole("button", { name: "Save note" }));
+  await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save note" }));
+  expect(screen.getByText("saving…")).toBeTruthy();
+  expect(screen.getByText(/Rhea added a Customer note/)).toBeTruthy();
+  await act(async () => finish({ ok: true, note: { id: "42", customerId: "c", authorId: "r", authorName: "Rhea", text: "Local Customer note", createdAt: new Date().toISOString() } }));
+  expect(screen.queryByText("saving…")).toBeNull();
+  expect(screen.getByRole("list", { name: "Customer notes" }).textContent).toContain("Local Customer note");
+  expect(screen.getByRole("alert").textContent).toContain("Customer notes are unavailable");
+});

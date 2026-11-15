@@ -62,8 +62,8 @@ export function CustomerProfileView({
 }) {
   const p = profile;
   const [addedNotes, setAddedNotes] = useState<VisibleCustomerNote[]>([]);
-  const notes = p.notes == null ? p.notes : [
-    ...p.notes.filter(note => !addedNotes.some(added => added.id === note.id)), ...addedNotes,
+  const notes = p.notes == null && addedNotes.length === 0 ? p.notes : [
+    ...(p.notes ?? []).filter(note => !addedNotes.some(added => added.id === note.id)), ...addedNotes,
   ];
   function changeNote(id: string, note: VisibleCustomerNote | null) {
     setAddedNotes(old => [...old.filter(item => item.id !== id && item.id !== note?.id), ...(note ? [note] : [])]);
@@ -198,7 +198,7 @@ export function CustomerProfileView({
             </TabsContent>
 
             <TabsContent forceMount value="notes" className="mt-0 data-[state=inactive]:hidden [&>div]:flex [&>div]:min-h-0 [&>div]:flex-col">
-              <NotesTab customerId={p.id} notes={notes} author={noteAuthor} onNoteChange={changeNote} />
+              <NotesTab customerId={p.id} notes={notes} readFailed={p.notes === null} author={noteAuthor} onNoteChange={changeNote} />
             </TabsContent>
 
             <TabsContent value="details" className="mt-0 space-y-5">

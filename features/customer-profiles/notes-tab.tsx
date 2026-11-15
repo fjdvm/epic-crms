@@ -12,10 +12,11 @@ import { TabCard } from "./tab-card";
 
 export type VisibleCustomerNote = CustomerNote & { saving?: boolean };
 
-export function NotesTab({ customerId, notes, author, onNoteChange }: {
+export function NotesTab({ customerId, notes, readFailed = false, author, onNoteChange }: {
   customerId: string;
   /** Undefined while loading; null means the read failed. */
   notes: VisibleCustomerNote[] | null | undefined;
+  readFailed?: boolean;
   /** Only Staff and Managers receive an author; all other roles view only. */
   author?: { id: string; name: string };
   onNoteChange: (id: string, note: VisibleCustomerNote | null) => void;
@@ -75,8 +76,9 @@ export function NotesTab({ customerId, notes, author, onNoteChange }: {
         <p id="customer-note-counter" className="text-right text-xs text-muted-foreground">{count.toLocaleString("en-US")} / 2,000</p>
       </form>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {(readFailed || notes === null) && <p role="alert" className="text-sm text-muted-foreground">Customer notes are unavailable. Reload to try again.</p>}
       {notes === undefined ? <div role="status" aria-label="Loading Customer notes" className="space-y-3"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div>
-        : notes === null ? <p role="alert" className="text-sm text-muted-foreground">Customer notes are unavailable. Reload to try again.</p>
+        : notes === null ? null
         : notes.length === 0 ? <p className="text-sm text-muted-foreground">No Customer notes yet</p>
         : <ol aria-label="Customer notes" className="min-h-0 space-y-3 overflow-y-auto">
           {[...notes].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).map(note => <li key={note.id} className="space-y-1 rounded-lg bg-secondary px-3.5 py-3">
