@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { sendDue, storefrontSubscribers } from "@/features/marketing/announcements";
 import { crmsDatabase } from "@/lib/crms-db";
 import { cronAuthorised } from "@/lib/cron-auth";
+import { reportLiveError } from "@/lib/error-monitor";
 import { database } from "@/lib/db";
 import { gatewayAuditTrail, gatewayMarketingMailer } from "@/lib/gateway";
 
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("Scheduled Announcements could not be sent", error);
+    await reportLiveError("cron:scheduled-announcements", error);
 
     return NextResponse.json({ error: "scheduled send failed" }, { status: 500 });
   }

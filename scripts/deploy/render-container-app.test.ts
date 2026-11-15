@@ -17,7 +17,7 @@ function exampleKeys() {
 }
 
 function secretKeys() {
-  return exampleKeys().filter((key) => !fixedKeys.includes(key) && key !== "CREOMS_UPLOAD_SECRET" && key !== "PORTAL_SYSTEM_SECRET");
+  return exampleKeys().filter((key) => !fixedKeys.includes(key) && key !== "CREOMS_UPLOAD_SECRET" && key !== "OWNER_ALERT_EMAIL" && key !== "PORTAL_SYSTEM_SECRET");
 }
 
 describe("render-container-app.py", () => {
@@ -56,12 +56,14 @@ describe("render-container-app.py", () => {
     expect(template.containers[0].resources).toEqual({ cpu: 0.5, memory: "1Gi" });
   });
 
-  it("probes the health route", () => {
+  it("probes liveness and startup on the health route and readiness on the database check", () => {
     render(allSecrets());
     const probes = manifest().properties.template.containers[0].probes;
 
     expect(probes.map((probe: { type: string }) => probe.type).sort()).toEqual(["Liveness", "Readiness", "Startup"]);
-    for (const probe of probes) expect(probe.httpGet.path).toBe("/api/health");
+    for (const probe of probes) {
+      expect(probe.httpGet.path).toBe(probe.type === "Readiness" ? "/api/ready" : "/api/health");
+    }
   });
 
   it("gives every .env.example key to the container, secrets by reference and public values in the clear", () => {

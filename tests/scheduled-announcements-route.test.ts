@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendDue = vi.fn();
+const reportLiveError = vi.hoisted(() => vi.fn(async () => {}));
 
 vi.mock("@/features/marketing/announcements", () => ({ sendDue, storefrontSubscribers: () => ({}) }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => ({}) }));
 vi.mock("@/lib/db", () => ({ database: () => ({}) }));
+vi.mock("@/lib/error-monitor", () => ({ reportLiveError }));
 vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: {}, gatewayMarketingMailer: {} }));
 
 const { GET } = await import("@/app/api/cron/scheduled-announcements/route");
@@ -45,5 +47,6 @@ describe("the scheduled Announcements route", () => {
     sendDue.mockRejectedValue(new Error("database down"));
 
     expect((await call("Bearer cron-secret")).status).toBe(500);
+    expect(reportLiveError).toHaveBeenCalledWith("cron:scheduled-announcements", expect.any(Error));
   });
 });

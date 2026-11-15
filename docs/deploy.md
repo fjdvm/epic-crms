@@ -22,7 +22,7 @@ Set in **Settings > Secrets and variables > Actions** of `fjdvm/epic-crms`. The 
 - AI: `GROQ_API_KEY`, `GROQ_MODEL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `GEMINI_MODEL`
 - `PORTAL_SYSTEM_SECRET`: set at the Portal cutover (the Portal only stores its hash). Until then the deploy uses a
   placeholder and warns; the app starts but Portal sign-in fails.
-- Optional: `CREOMS_UPLOAD_SECRET` (left out of the app when unset).
+- Optional: `CREOMS_UPLOAD_SECRET`, `OWNER_ALERT_EMAIL` (left out of the app when unset; without the second, errors are recorded but nobody is emailed). Error alerts need `docs/db/crms-error-alerts.sql` applied once. The Readiness probe calls `/api/ready` (both databases); liveness and startup stay on `/api/health`.
 - Delivery: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `GHCR_PULL_TOKEN`, variable `GHCR_USERNAME`.
 
 Values become Container Apps secrets referenced by environment entries, so they never appear in logs. Secrets

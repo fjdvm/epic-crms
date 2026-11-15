@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const runAnalysis = vi.fn();
+const reportLiveError = vi.hoisted(() => vi.fn(async () => {}));
 
 vi.mock("@/features/feedback/analysis", () => ({ runAnalysis }));
 vi.mock("@/features/feedback/sentiment-clients", () => ({ configuredClients: () => ({ groq: null, gemini: null }) }));
 vi.mock("@/lib/feedback-db", () => ({ feedbackWriterDatabase: () => ({}) }));
+vi.mock("@/lib/error-monitor", () => ({ reportLiveError }));
 vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn() }));
 
 const { GET } = await import("@/app/api/cron/feedback-analysis/route");
@@ -45,5 +47,6 @@ describe("the scheduled Feedback analysis route", () => {
     runAnalysis.mockRejectedValue(new Error("database down"));
 
     expect((await call("Bearer cron-secret")).status).toBe(500);
+    expect(reportLiveError).toHaveBeenCalledWith("cron:feedback-analysis", expect.any(Error));
   });
 });
