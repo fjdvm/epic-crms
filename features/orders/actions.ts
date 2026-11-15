@@ -14,6 +14,7 @@ import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
 import { cancelStorefrontItems, changeOrderStatus, rejectStorefrontProof, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
 import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
@@ -85,7 +86,12 @@ async function auditOrder(id: number, staff: Staff, module: string, action: stri
 }
 
 /** Quote in integer centavos; the storefront confirms the Delivery Order in the same write. */
-export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number): Promise<OrderChangeResult> {
+/** What Staff chose on a flagged Cash on Delivery Order, worded for the log; nothing when there was none. */
+function choiceNote(choice?: CodChoice): string {
+  return choice && COD_CHOICES.includes(choice) ? ` after choosing "${COD_CHOICE_LABELS[choice]}"` : "";
+}
+
+export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
   return act(id, async (order) => {
     if (!Number.isSafeInteger(deliveryFeeInCentavos) || deliveryFeeInCentavos < 0) {
       return { ok: false, reason: "Enter a nonnegative whole number of centavos." };
@@ -101,11 +107,11 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos }, order.status === "placed" ? "confirmed" : order.status);
   }, ORDERS_MODULE, {
     action: "order.delivery_fee_quoted",
-    description: staff => `${staff.name} quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)} and confirmed Order #${id}.`,
+    description: staff => `${staff.name} quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)} and confirmed Order #${id}${choiceNote(codChoice)}.`,
   });
 }
 
-export async function confirmPickup(id: number): Promise<OrderChangeResult> {
+export async function confirmPickup(id: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
   return act(id, async (order) => {
     if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
     if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
@@ -114,7 +120,7 @@ export async function confirmPickup(id: number): Promise<OrderChangeResult> {
     }
     return changeOrderStatus(id, { status: "confirmed" });
   }, ORDERS_MODULE, {
-    action: "order.confirmed", description: staff => `${staff.name} confirmed Order #${id}.`,
+    action: "order.confirmed", description: staff => `${staff.name} confirmed Order #${id}${choiceNote(codChoice)}.`,
   });
 }
 

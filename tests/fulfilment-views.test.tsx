@@ -344,7 +344,7 @@ const FULFILMENT = ["Fulfilment"];
 
 describe("Order detail COD flags", () => {
   it("lists which rules fired, with no score, and shows nothing when none did", () => {
-    const { unmount } = render(<OrderDetailView order={detail({ paymentMethod: "cash-on-delivery" })} modules={FULFILMENT} codFlags={[{ rule: "first-order", label: "First order" }, { rule: "earlier-failed-delivery", label: "Earlier failed delivery" }]} />);
+    const { unmount } = render(<OrderDetailView order={detail({ paymentMethod: "cash-on-delivery" })} modules={FULFILMENT} codFlags={[{ rule: "first-order", label: "First order", reason: "No earlier Orders" }, { rule: "earlier-failed-delivery", label: "Earlier failed delivery", reason: "Failed before" }]} />);
     const card = screen.getByTestId("cod-flags");
     expect(card.textContent).toContain("First order");
     expect(card.textContent).toContain("Earlier failed delivery");

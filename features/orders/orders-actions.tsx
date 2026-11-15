@@ -6,28 +6,48 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPesos, parsePesos } from "@/features/customer-profiles/format";
 
-import { OrderActionDialog } from "./action-dialog";
+import { OrderActionDialog, type ChangeResult } from "./action-dialog";
 import { cancelOrder, confirmPickup, quoteDeliveryFee } from "./actions";
+import { recordAskGcashFirst } from "./cod-actions";
+import { CodConfirmPanel, type CodFlagLine } from "./cod-confirm";
+import type { CodChoice } from "./cod-flags";
 import { CANCELLABLE_STATUSES, type OrderDetail } from "./orders";
 
-function QuoteFee({ order }: { order: OrderDetail }) {
+/** With flags, Staff must pick what to do first; "ask for GCash" leaves the Order as it is and only logs the choice. */
+function useCodChoice(order: OrderDetail, flags: readonly CodFlagLine[], confirmRun: (choice?: CodChoice) => Promise<ChangeResult>, confirmed: string) {
+  const [choice, setChoice] = useState<CodChoice | null>(null);
+  const flagged = flags.length > 0;
+  const asking = choice === "ask-gcash";
+  return {
+    disabled: flagged && choice === null,
+    run: () => (asking ? recordAskGcashFirst(order.id) : confirmRun(flagged ? choice ?? undefined : undefined)),
+    successMessage: asking ? `Order #${order.id} left as it is. Ask the Customer to pay by GCash first.` : confirmed,
+    panel: flagged ? <CodConfirmPanel flags={flags} choice={choice} onChoose={setChoice} /> : null,
+    flagged,
+    asking,
+  };
+}
+
+function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFlagLine[] }) {
   const [text, setText] = useState("");
   // Staff's own notes from the Lalamove and Grab apps. They are never saved or sent: only the fee to charge is.
   const [lalamove, setLalamove] = useState("");
   const [grab, setGrab] = useState("");
   const fee = parsePesos(text);
+  const cod = useCodChoice(order, flags, (choice) => (choice ? quoteDeliveryFee(order.id, fee as number, choice) : quoteDeliveryFee(order.id, fee as number)), `Order #${order.id} confirmed with a ${formatPesos(fee ?? 0)} Delivery fee.`);
 
   return (
     <OrderActionDialog
       trigger="Quote delivery fee"
       title={`Quote a Delivery fee for Order #${order.id}?`}
       description="Quoting the fee confirms the Order, and the Customer is told what they owe."
-      confirm="Quote and confirm"
-      busy="Confirming…"
-      disabled={fee === null}
-      run={() => quoteDeliveryFee(order.id, fee as number)}
-      successMessage={`Order #${order.id} confirmed with a ${formatPesos(fee ?? 0)} Delivery fee.`}
+      confirm={cod.asking ? "Save" : cod.flagged ? "Save & continue" : "Quote and confirm"}
+      busy={cod.asking ? "Saving…" : "Confirming…"}
+      disabled={cod.disabled || (!cod.asking && fee === null)}
+      run={cod.run}
+      successMessage={cod.successMessage}
     >
+      {cod.panel}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="lalamove-estimate" className="text-[13px] font-medium text-foreground">Lalamove estimate</Label>
@@ -71,8 +91,26 @@ function QuoteFee({ order }: { order: OrderDetail }) {
   );
 }
 
+function ConfirmPickup({ order, flags }: { order: OrderDetail; flags: readonly CodFlagLine[] }) {
+  const cod = useCodChoice(order, flags, (choice) => (choice ? confirmPickup(order.id, choice) : confirmPickup(order.id)), `Order #${order.id} confirmed.`);
+  return (
+    <OrderActionDialog
+      trigger="Confirm order"
+      title={`Confirm Order #${order.id}?`}
+      description="This Pickup Order needs no Delivery fee."
+      confirm={cod.asking ? "Save" : cod.flagged ? "Save & continue" : "Confirm order"}
+      busy={cod.asking ? "Saving…" : "Confirming…"}
+      disabled={cod.disabled}
+      run={cod.run}
+      successMessage={cod.successMessage}
+    >
+      {cod.panel}
+    </OrderActionDialog>
+  );
+}
+
 /** The Orders Module's actions: quote a fee or confirm a Pickup Order, and cancel. */
-export function OrdersActions({ order }: { order: OrderDetail }) {
+export function OrdersActions({ order, codFlags = [] }: { order: OrderDetail; codFlags?: readonly CodFlagLine[] }) {
   if (order.status === "dispatched") {
     return <p className="text-sm text-[#6e6680]">A dispatched Order cannot be cancelled.</p>;
   }
@@ -95,18 +133,8 @@ export function OrdersActions({ order }: { order: OrderDetail }) {
           successMessage={`Order #${order.id} cancelled.`}
         />
       )}
-      {!pickup && order.deliveryFee === null && CANCELLABLE_STATUSES.includes(order.status) && <QuoteFee order={order} />}
-      {placed && pickup && (
-        <OrderActionDialog
-          trigger="Confirm order"
-          title={`Confirm Order #${order.id}?`}
-          description="This Pickup Order needs no Delivery fee."
-          confirm="Confirm order"
-          busy="Confirming…"
-          run={() => confirmPickup(order.id)}
-          successMessage={`Order #${order.id} confirmed.`}
-        />
-      )}
+      {!pickup && order.deliveryFee === null && CANCELLABLE_STATUSES.includes(order.status) && <QuoteFee order={order} flags={codFlags} />}
+      {placed && pickup && <ConfirmPickup order={order} flags={codFlags} />}
     </>
   );
 }

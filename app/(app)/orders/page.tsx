@@ -7,6 +7,8 @@ import { OrdersSkeleton } from "@/features/orders/orders-skeleton";
 import { loadOrders, ORDER_TABS } from "@/features/orders/orders";
 import { ticketsDatabase } from "@/lib/tickets-db";
 import { ORDERS_MODULE } from "@/lib/portal/config";
+import { loadCodFlagsForOrders } from "@/features/orders/cod-actions";
+import { shopRole } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { PageHeader } from "./page-header";
 
@@ -44,7 +46,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Searc
 }
 
 async function OrdersData({ params }: { params: OrderListParams }) {
-  await requireModule(ORDERS_MODULE);
+  const staff = await requireModule(ORDERS_MODULE);
 
   const result = await loadOrders(ticketsDatabase, params);
 
@@ -64,11 +66,14 @@ async function OrdersData({ params }: { params: OrderListParams }) {
   }
 
   const { list } = result;
+  // Flags are for Staff and Managers; Admin and CEO see none. A failure to work them out leaves the list as it was.
+  const role = shopRole(staff.role);
+  const flagged = role === "staff" || role === "manager" ? await loadCodFlagsForOrders(list.rows.map((r) => r.id)) : null;
 
   return (
     <>
       <PageHeader count={list.counts.all} />
-      <OrderListView list={list} params={{ tab: params.tab, page: list.page }} />
+      <OrderListView list={list} params={{ tab: params.tab, page: list.page }} codFlags={flagged?.ok ? flagged.flags : {}} />
     </>
   );
 }
