@@ -1,5 +1,8 @@
+import Link from "next/link";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
+import { mayReadFulfilmentReport } from "@/features/reports/fulfilment-report";
 import { loadFulfilmentBoard } from "@/features/orders/fulfilment";
 import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
 import { FULFILMENT_MODULE } from "@/lib/portal/config";
@@ -7,18 +10,25 @@ import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 export default async function FulfilmentPage() {
-  await requireModule(FULFILMENT_MODULE);
+  const staff = await requireModule(FULFILMENT_MODULE);
 
   const result = await loadFulfilmentBoard(ticketsDatabase);
 
   return (
     <div className="flex flex-col gap-5 px-4 py-7 sm:px-8">
       <BackgroundRefresh />
-      <div className="space-y-1">
+      <div className="flex items-start gap-2">
+       <div className="flex-1 space-y-1">
         <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Fulfilment</h1>
         <p className="text-sm leading-[normal] text-[#6e6680]">
           Every Order ready to prepare moves left to right. Each move updates the Order&apos;s status on the store.
         </p>
+       </div>
+       {mayReadFulfilmentReport(staff.role) && (
+        <Link href="/fulfilment/reports" prefetch className="rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-2 text-sm font-medium text-[#18181b]">
+          Reports
+        </Link>
+       )}
       </div>
       {result.ok ? (
         <FulfilmentBoardView board={result.board} />
