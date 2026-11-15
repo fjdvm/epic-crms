@@ -19,6 +19,7 @@ import { canWork, READ_ONLY_REFUSAL } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
+import { HOLD_MESSAGE_MAX } from "./tickets";
 import { customerOrders, openTicket, searchCustomers, type CustomerChoice, type OpenTicketResult, type OrderChoice } from "./new-ticket";
 import {
   claimTicket,
@@ -194,6 +195,7 @@ export async function putOnHold(
 ) {
   const until = new Date(request.until);
   const message = request.message?.trim();
+  if (message && message.length > HOLD_MESSAGE_MAX) return { ok: false as const, reason: "note-too-long" as const };
   const hold: HoldRequest = { reason: request.reason, note: request.note, until: Number.isNaN(until.getTime()) ? null : until };
 
   return act(id, async (actor, audit) => {
