@@ -11,6 +11,23 @@ export const COD_RULE_LABELS: Record<CodRule, string> = {
   "earlier-failed-delivery": "Earlier failed delivery",
 };
 
+/** One plain sentence per rule, shown under its name. No scores, no percentages. */
+export const COD_RULE_REASONS: Record<CodRule, string> = {
+  "first-order": "No earlier Orders on this account",
+  "first-order-over-amount": "A first Order over the amount an Admin set for Cash on Delivery",
+  "refused-earlier-order": "The same phone number refused an earlier Order",
+  "earlier-failed-delivery": "An earlier Order for this Customer or phone failed to deliver",
+};
+
+/** What Staff decide when a flagged Cash on Delivery Order is confirmed. */
+export const COD_CHOICES = ["call-first", "ask-gcash", "as-is"] as const;
+export type CodChoice = (typeof COD_CHOICES)[number];
+export const COD_CHOICE_LABELS: Record<CodChoice, string> = {
+  "call-first": "Call to confirm, then confirm the order",
+  "ask-gcash": "Ask the customer to pay by GCash first",
+  "as-is": "Confirm as is",
+};
+
 /** Centavos: the ₱1,500 starting point of the Admin setting. */
 export const DEFAULT_COD_AMOUNT = 150_000;
 

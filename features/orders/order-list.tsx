@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
@@ -74,7 +74,10 @@ export function TabNav({ params, count }: { params: OrderListParams; count: (tab
   );
 }
 
-export function OrderListView({ list, params }: { list: OrderList; params: OrderListParams }) {
+/** Which Cash on Delivery rules fired, by Order number. Only Staff and Managers are given it; rules only, never a score. */
+export type ListCodFlags = Readonly<Record<number, readonly { rule: string; label: string }[]>>;
+
+export function OrderListView({ list, params, codFlags = {} }: { list: OrderList; params: OrderListParams; codFlags?: ListCodFlags }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       <TabNav params={params} count={(tab) => list.counts[tab]} />
@@ -112,7 +115,16 @@ export function OrderListView({ list, params }: { list: OrderList; params: Order
                   </div>
                   <div className={cn(CELL, COLUMNS[4].className)}>{formatPesos(row.total)}</div>
                   <div className={cn(CELL, COLUMNS[5].className)}>
-                    <PaymentPill label={row.paymentLabel} />
+                    <div className="flex min-w-0 flex-col items-start gap-1">
+                      <PaymentPill label={row.paymentLabel} />
+                      {(codFlags[row.id] ?? []).length > 0 && (
+                        <ul data-testid={`cod-flags-${row.id}`} aria-label={`Cash on Delivery flags for Order #${row.id}`} className="space-y-0.5 text-[11px] leading-tight text-[#8a5a00]">
+                          {codFlags[row.id].map((f) => (
+                            <li key={f.rule} className="flex items-start gap-1"><AlertTriangle aria-hidden className="mt-px size-3 shrink-0" />{f.label}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   </div>
                   <div className={cn(CELL, COLUMNS[6].className)}>
                     <StatusPill status={row.status} />

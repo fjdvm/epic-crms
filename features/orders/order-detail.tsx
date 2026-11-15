@@ -171,7 +171,7 @@ export function OrderDetailView({
   /** The cancel-after-dispatch request on this Order, if any. */
   cancellation?: CancellationState | null;
   /** Which Cash on Delivery rules fired, for Staff to double-check; empty for everyone else. Never shown to the Customer. */
-  codFlags?: readonly { rule: string; label: string }[];
+  codFlags?: readonly { rule: string; label: string; reason: string }[];
   order: OrderDetail;
   /** What this Order set aside per line, by Order line id. Empty for Orders placed before Reservations. */
   reservations?: ReadonlyMap<number, LineReservation>;
@@ -217,7 +217,7 @@ export function OrderDetailView({
             {order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) && (
               <CancelDispatched id={order.id} total={order.total} paymentMethod={order.paymentMethod} role={role} state={cancellation} />
             )}
-            <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} />
+            <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} codFlags={codFlags} />
           </div>
         </div>
         <CancellationNote state={cancellation} />

@@ -114,7 +114,7 @@ export function LiveProgress({ order }: { order: OrderDetail }) {
 }
 
 /** The actions the viewer's Modules allow, shown against the live status. */
-export function LiveActions({ order, modules, role, approvalId, waiting }: { order: OrderDetail; modules: readonly string[]; role?: ShopRole | null; approvalId?: string; waiting?: boolean }) {
+export function LiveActions({ order, modules, role, approvalId, waiting, codFlags }: { codFlags?: readonly { rule: string; label: string; reason: string }[]; order: OrderDetail; modules: readonly string[]; role?: ShopRole | null; approvalId?: string; waiting?: boolean }) {
   const { status, move } = useLiveStatus();
   const live = { ...order, status };
 
@@ -124,7 +124,7 @@ export function LiveActions({ order, modules, role, approvalId, waiting }: { ord
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {modules.includes(ORDERS_MODULE) && <OrdersActions order={live} />}
+      {modules.includes(ORDERS_MODULE) && <OrdersActions order={live} codFlags={codFlags} />}
       {modules.includes(PAYMENTS_MODULE) && (
         <PaymentsActions order={live} withCancel={!modules.includes(ORDERS_MODULE)} role={role} approvalId={approvalId} waiting={waiting} />
       )}
