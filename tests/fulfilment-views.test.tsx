@@ -272,11 +272,12 @@ describe("moving an Order on the board", () => {
     const pending = deferred<Awaited<ReturnType<typeof startPreparing>>>();
     vi.mocked(startPreparing).mockReturnValue(pending.promise);
     board({ ready: [card({})] });
-    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Start preparing" }));
+    const readyCard = cardFor(1042);
+    fireEvent.click(within(readyCard).getByRole("button", { name: "Start preparing" }));
     const dialog = screen.getByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Start preparing" }));
     expect(within(dialog).getByRole("button", { name: "Starting…" }).getAttribute("aria-busy")).toBe("true");
-    expect(within(cardFor(1042)).queryByRole("button", { name: "Mark as dispatched" })).toBeNull();
+    expect(within(readyCard).queryByText("Mark as dispatched")).toBeNull();
     expect(toast.success).not.toHaveBeenCalled();
     await act(async () => pending.settle({ ok: false, reason: "IMS deduction could not be confirmed. Refresh before retrying." }));
     expect(toast.error).toHaveBeenCalledWith("IMS deduction could not be confirmed. Refresh before retrying.");
