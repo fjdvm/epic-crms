@@ -425,7 +425,7 @@ describe("Return Audit Events", () => {
   it.each(cases)("audits $next once across retries with Portal identity", async test => {
     const id = await ready(test);
     expect((await test.run(id)).ok).toBe(true);
-    const action = `return.${test.next.replaceAll(" ", "_")}`;
+    const action = test.next === "refunded" ? "return.refund_approved" : `return.${test.next.replaceAll(" ", "_")}`;
     expect(audit).toHaveBeenCalledExactlyOnceWith({
       action, module: "Returns", outcome: "success",
       actor: { type: "user", id: "portal-user-123", display_name: "Ana Reyes" },

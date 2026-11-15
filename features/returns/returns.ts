@@ -7,7 +7,16 @@ export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 export const RETURN_TABS = ["requested", "approved", "goods received", "refunded", "replaced", "declined"] as const;
 export type ReturnTab = (typeof RETURN_TABS)[number];
 export interface ReturnQuery { status?: ReturnStatus | "all"; orderId?: number; customerId?: string; page?: number; pageSize?: number }
-export interface ReturnItem { orderLineId: number; product: string; size: string; quantity: number; price: number }
+export interface ReturnItem {
+  orderLineId: number; product: string; size: string; quantity: number; price: number;
+  /** Set by Staff at inspection; null until the Return is inspected. */
+  condition?: "sellable" | "damaged" | null;
+  inspectionId?: string | null;
+  inspectedBy?: string | null;
+  inspectedAt?: Date | null;
+  restockedAt?: Date | null;
+  writtenOffAt?: Date | null;
+}
 export interface ReturnRow {
   id: number;
   number: string;
@@ -49,12 +58,15 @@ async function itemsFor(sql: postgres.Sql, ids: number[]): Promise<Map<number, R
   if (ids.length === 0) return items;
   const rows = await sql<{
     return_id: number; order_line_id: number; product_name: string; size_label: string;
-    quantity: number; price_in_centavos: number;
+    quantity: number; price_in_centavos: number; condition?: "sellable" | "damaged" | null; inspection_id?: string | null;
+    inspected_by_name?: string | null; inspected_at?: Date | null; restocked_at?: Date | null; written_off_at?: Date | null;
   }[]>`select * from public.order_return_items where return_id in ${sql(ids)} order by order_line_id`;
   for (const row of rows) {
     const group = items.get(row.return_id) ?? [];
     group.push({ orderLineId: row.order_line_id, product: row.product_name, size: row.size_label,
-      quantity: row.quantity, price: row.price_in_centavos });
+      quantity: row.quantity, price: row.price_in_centavos, condition: row.condition ?? null, inspectionId: row.inspection_id ?? null,
+      inspectedBy: row.inspected_by_name ?? null, inspectedAt: row.inspected_at ?? null, restockedAt: row.restocked_at ?? null,
+      writtenOffAt: row.written_off_at ?? null });
     items.set(row.return_id, group);
   }
   return items;

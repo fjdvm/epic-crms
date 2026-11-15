@@ -72,6 +72,52 @@ export class FakeStorefront {
     });
   }
 
+  /** Whole line items only: each is sellable (added back to IMS stock) or damaged (written off once approved). */
+  readonly restocked: { returnId: number; orderLineId: number; quantity: number }[] = [];
+  readonly writtenOff: { returnId: number; orderLineId: number; quantity: number }[] = [];
+  readonly decisionEmails: { returnId: number; kind: string }[] = [];
+  private async inspectReturn(request: Request, id: number): Promise<Response> {
+    if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+    const input = await request.json();
+    if (!input.staffId || !input.staffName || !input.inspectionId) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    return this.sql.begin(async tx => {
+      const [current] = await tx`select * from order_returns where id = ${id} for update`;
+      if (!current) return Response.json({ error: "Return was not found." }, { status: 404 });
+      const items = await tx`select * from order_return_items where return_id = ${id} order by order_line_id`;
+      const done = { id, inspectionId: input.inspectionId, action: input.action };
+      if (input.action === "inspect") {
+        if (items.every(i => i.inspection_id === input.inspectionId)) return Response.json(done);
+        if (current.status !== "goods received" || items.some(i => i.condition)) return Response.json({ error: "Return is not ready to inspect or was already inspected." }, { status: 409 });
+        const given = new Map((input.items ?? []).map((i: { orderLineId: number; condition: string }) => [i.orderLineId, i.condition]));
+        if (given.size !== items.length || !items.every(i => ["sellable", "damaged"].includes(given.get(i.order_line_id) as string))) {
+          return Response.json({ error: "Mark every item sellable or damaged." }, { status: 400 });
+        }
+        const at = this.now();
+        for (const item of items) {
+          const condition = given.get(item.order_line_id);
+          await tx`update order_return_items set condition = ${condition as string}, inspected_at = ${at}, inspected_by_id = ${input.staffId},
+            inspected_by_name = ${input.staffName}, inspection_id = ${input.inspectionId},
+            restocked_at = ${condition === "sellable" ? at : null} where return_id = ${id} and order_line_id = ${item.order_line_id}`;
+          if (condition === "sellable") this.restocked.push({ returnId: id, orderLineId: item.order_line_id, quantity: item.quantity });
+        }
+        return Response.json(done);
+      }
+      if (input.action === "write-off") {
+        const damaged = items.filter(i => i.condition === "damaged");
+        if (damaged.every(i => i.written_off_at) && damaged.length) return Response.json(done);
+        if (!damaged.length || input.inspectionId !== items[0]?.inspection_id) return Response.json({ error: "Nothing to write off on this Return." }, { status: 409 });
+        const at = this.now();
+        for (const item of damaged) {
+          await tx`update order_return_items set written_off_at = ${at} where return_id = ${id} and order_line_id = ${item.order_line_id}`;
+          this.writtenOff.push({ returnId: id, orderLineId: item.order_line_id, quantity: item.quantity });
+        }
+        this.decisionEmails.push({ returnId: id, kind: "write-off" });
+        return Response.json(done);
+      }
+      return Response.json({ error: "Unknown inspection step." }, { status: 400 });
+    });
+  }
+
   private async decideReturn(request: Request, id: number): Promise<Response> {
     if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
     const update = await request.json();
@@ -228,7 +274,7 @@ export class FakeStorefront {
     if (returnRequest && request.method === "POST") return this.requestReturn(request, Number(returnRequest[1]));
     const returnDecision = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/status$/);
     const verificationDecision = new URL(request.url).pathname.match(/^\/api\/internal\/senior-pwd\/(\d+)\/(approve|decline|revoke)$/);
-    const resource = returnDecision ? "returns" : verificationDecision ? "senior-pwd" : "orders";
+    const resource = returnDecision || /^\/api\/internal\/returns\/\d+\/inspection$/.test(new URL(request.url).pathname) ? "returns" : verificationDecision ? "senior-pwd" : "orders";
     const parts = request.headers.get("authorization")?.replace(/^Bearer /, "").split(".");
     if (!parts || parts.length !== 3) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const [header, payload, signature] = parts;
@@ -271,6 +317,8 @@ export class FakeStorefront {
         return Response.json({ id, status: "cancelled", ...input });
       });
     }
+    const inspection = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/inspection$/);
+    if (inspection && request.method === "POST") return this.inspectReturn(request, Number(inspection[1]));
     const failure = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/failed-delivery$/);
     if (failure && request.method === "POST") {
       if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });

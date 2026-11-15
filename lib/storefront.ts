@@ -83,7 +83,7 @@ export type ReturnDecision =
   | { status: "approved"; goodsRequired: boolean; finalResolution?: ReturnResolution }
   | { status: "declined"; declineReason: string }
   | { status: "goods received" | "replaced" }
-  | { status: "refunded"; refundProofFileId: string };
+  | { status: "refunded"; refundProofFileId: string; refundMethod?: string };
 export type ReturnStatusUpdate = ReturnDecision & { staffId: string; staffName: string };
 export type ReturnChangeResult =
   | { ok: true; return: { id: number; status: ReturnStatusUpdate["status"] } }
@@ -225,5 +225,32 @@ export async function changeDispatchedCancellation(id: number, input: { action: 
     if (body.id !== id || typeof body.requestId !== "string" || (input.action === "request" ? !["waiting-manager", "approved", "declined"].includes(body.status) : body.status !== (input.action === "decide" ? input.decision : "cancelled")) ||
       input.action === "settle" && (body.requestId !== input.requestId || body.stockOutcome !== input.stockOutcome || body.refundMethod !== input.refundMethod || body.refundProofFileId !== input.refundProofFileId)) return { ok: false, reason: uncertain };
     return { ok: true, requestId: body.requestId, status: body.status };
+  } catch { return { ok: false, reason: uncertain }; }
+}
+
+export type ReturnInspectionUpdate =
+  | { action: "inspect"; inspectionId: string; items: { orderLineId: number; condition: "sellable" | "damaged" }[] }
+  | { action: "write-off"; inspectionId: string };
+export type ReturnInspectionResult = { ok: true; inspectionId: string } | { ok: false; reason: string };
+
+/**
+ * The storefront records each whole line item as sellable or damaged and adds sellable stock back through the IMS;
+ * it also carries out an approved write-off and emails the Customer once. A stable inspectionId makes explicit recovery safe.
+ * CREOMS never repeats an uncertain request on its own.
+ */
+export async function inspectStorefrontReturn(id: number, update: ReturnInspectionUpdate, staff: { id: string; name: string }): Promise<ReturnInspectionResult> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the inspection. Refresh the Return before retrying with the same inspection reference.";
+  try {
+    const response = await fetch(new URL(`/api/internal/returns/${id}/inspection`, origin), {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret, "returns")}` },
+      body: JSON.stringify({ ...update, staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : uncertain };
+    if (body?.id !== id || body.inspectionId !== update.inspectionId || body.action !== update.action) return { ok: false, reason: uncertain };
+    return { ok: true, inspectionId: body.inspectionId };
   } catch { return { ok: false, reason: uncertain }; }
 }
