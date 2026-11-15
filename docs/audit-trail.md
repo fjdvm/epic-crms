@@ -157,3 +157,17 @@ branch as that role. The temporary database branch was removed afterward.
 in `instrumentation.ts` (kind = error name + route) and the two cron routes (`cron:feedback-analysis`,
 `cron:scheduled-announcements`). The stock auto-release job runs in the storefront, not CREOMS, so it reports from
 there. `/api/ready` checks both databases; `/api/health` stays liveness-only.
+
+## Customer Tasks (#420)
+
+`customer_task.created`, `customer_task.done`, `customer_task.reopened`,
+`customer_task.due_date_changed` and `customer_task.reassigned` target the Customer
+Profile and include the Task id. Due-date and reassignment metadata retain old and
+new values. The actor id and display name come from Module validation.
+
+Task changes commit their operation receipt and audit payload atomically. Unlike
+the best-effort callers, Tasks use `deliverGatewayAuditEvent`, which acknowledges
+delivery or throws. A failure leaves delivery pending; retrying the same action
+sends its original event with the same gateway idempotency key, without applying
+the change again. Concurrent delivery locks the receipt. No background polling is
+introduced.

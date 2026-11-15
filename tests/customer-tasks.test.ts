@@ -6,10 +6,15 @@ import { loadCustomerProfile } from "@/features/customer-profiles/profile";
 import { readCustomerTasks } from "@/features/customer-profiles/tasks";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 const actor = vi.hoisted(() => ({ id: "ana", name: "Ana", username: "ana", email: "ana@example.com", role: "Staff" }));
-const audit = vi.hoisted(() => vi.fn(async (_event: import("@/lib/audit-trail").AuditEvent) => {}));
-const requireModule = vi.hoisted(() => vi.fn(async (_module: string) => actor));
+const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(async () => {}));
+const recipients = vi.hoisted(() => vi.fn(async (): Promise<{ id: string; name?: string; role: string; modules: string[] }[]> => [
+  { id: "ana", name: "Ana", role: "Staff", modules: ["Customer Profiles"] },
+  { id: "bea", name: "Bea", role: "Staff", modules: ["Customer Profiles"] },
+]));
+vi.mock("@/features/notifications/portal-gateway", () => ({ portalGateway: () => ({ recipients }) }));
+const requireModule = vi.hoisted(() => vi.fn<(module: string) => Promise<typeof actor>>(async () => actor));
 vi.mock("@/lib/portal/staff", () => ({ requireModule }));
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit }));
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -139,4 +144,32 @@ it("keeps the saved Task and its receipt when the audit adapter throws, retrying
     expect(audit).toHaveBeenCalledTimes(2);
     expect(audit.mock.calls[0][0]).toEqual(audit.mock.calls[1][0]);
   } finally { log.mockRestore(); }
+});
+it("retains pending audit after the real gateway refuses delivery and retries the same event", async () => {
+  const gateway = await vi.importActual<typeof import("@/lib/gateway")>("@/lib/gateway");
+  const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 })).mockResolvedValueOnce(new Response(null, { status: 201 }));
+  vi.stubEnv("CREOMS_GATEWAY_URL", "https://gateway.test"); vi.stubEnv("CREOMS_GATEWAY_CALLER_KEY", "test-key"); vi.stubGlobal("fetch", fetch);
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  audit.mockImplementation(gateway.deliverGatewayAuditEvent);
+  try {
+    const op = randomUUID(); const saved = await createCustomerTask("c1", input, op);
+    expect(saved).toMatchObject({ ok: true });
+    expect(await createCustomerTask("c1", input, op)).toEqual(saved);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).idempotency_key).toBe(JSON.parse(fetch.mock.calls[1][1].body).idempotency_key);
+    expect(await readCustomerTasks(db.sql, "c1")).toHaveLength(1);
+  } finally { audit.mockImplementation(async () => {}); log.mockRestore(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); }
+});
+
+it("resolves canonical owner names and refuses nonexistent, read-only or ungranted owners", async () => {
+  actor.role = "CREOMS Manager";
+  for (const person of [undefined, { id: "other", name: "Other", role: "Admin", modules: ["Customer Profiles"] }, { id: "other", name: "Other", role: "CEO", modules: ["Customer Profiles"] }, { id: "other", name: "Other", role: "Staff", modules: [] }]) {
+    recipients.mockResolvedValueOnce(person ? [person] : []);
+    expect(await create({ owner: { id: "other", name: "Forged" } })).toMatchObject({ ok: false, message: expect.any(String) });
+  }
+  const saved = await create({ owner: { id: "bea", name: "Forged" } });
+  expect(saved).toMatchObject({ ok: true, task: { ownerId: "bea", ownerName: "Bea" } });
+  if (!saved.ok) throw new Error("create failed");
+  recipients.mockResolvedValueOnce([]);
+  expect(await reassignCustomerTask("c1", saved.task.id, { id: "missing", name: "Forged" }, randomUUID())).toMatchObject({ ok: false, message: expect.any(String) });
 });
