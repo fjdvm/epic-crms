@@ -228,6 +228,27 @@ export class FakeStorefront {
     }
     if (returnDecision && request.method === "POST") return this.decideReturn(request, Number(returnDecision[1]));
     if (verificationDecision && request.method === "POST") return this.decideVerification(request, Number(verificationDecision[1]), verificationDecision[2]);
+    const failure = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/failed-delivery$/);
+    if (failure && request.method === "POST") {
+      if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+      const id = Number(failure[1]), input = await request.json();
+      return this.sql.begin(async tx => {
+        const [order] = await tx`select * from orders where id = ${id} for update`;
+        if (!order || order.status !== "dispatched" || order.fulfillment_method !== "delivery") return Response.json({ error: "Only dispatched Delivery Orders." }, { status: 409 });
+        const [attempt] = await tx`select * from failed_deliveries where id = ${input.attemptId} and order_id = ${id}`;
+        if (input.action === "record") {
+          if (!input.reason?.trim() || !input.customerMessage?.trim() || !["rebook", "request-cancellation"].includes(input.nextStep)) return Response.json({ error: "Enter a reason and Staff decision." }, { status: 400 });
+          await tx`insert into failed_deliveries (id, order_id, reason, next_step, customer_message, staff_id, staff_name)
+            values (${input.attemptId}, ${id}, ${input.reason}, ${input.nextStep}, ${input.customerMessage}, ${input.staffId}, ${input.staffName}) on conflict do nothing`;
+        } else if (!attempt) return Response.json({ error: "Failed attempt was not found." }, { status: 409 });
+        else if (input.action === "rebook") {
+          if (attempt.disposition) return Response.json({ error: "Goods cannot be rebooked." }, { status: 409 });
+          this.couriers.set(id, input.courier);
+          await tx`update failed_deliveries set courier = ${tx.json(input.courier)}, rebooked_at = now() where id = ${input.attemptId}`;
+        } else await tx`update failed_deliveries set disposition = ${input.action}, disposed_at = now() where id = ${input.attemptId}`;
+        return Response.json({ id, status: "dispatched", attemptId: input.attemptId, action: input.action });
+      });
+    }
     const cancelItems = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/items\/cancel$/);
     if (cancelItems && request.method === "POST") {
       const id = Number(cancelItems[1]);
