@@ -52,7 +52,7 @@ A Customer with at least one Order counted in Sales in a period. A Buyer is Retu
 _Avoid_: Shopper, repeat customer (Stage already uses Repeat)
 
 **Dashboard**:
-The page of business figures Staff see at a glance: Sales, Orders, Average order, Returning Buyers and Average rating for a chosen period, each compared with the previous period of equal length; the last six months of Sales; a Needs attention list of work waiting on Staff; and breakdowns of products, Buyers, payment and how Orders are received, and Customers. Figures are in Philippine Time. Customers by Stage and At risk Customers are always as of today and ignore the chosen period. Walk-in Customers appear nowhere on it. Staff can export what they are looking at as a PDF; it holds only what the Dashboard shows that Staff member.
+The page of business figures Staff see at a glance: Sales, Orders, Average order, Returning Buyers and Average rating for a chosen period, each compared with the previous period of equal length; the last six months of Sales; a Needs attention list of work waiting on Staff; and breakdowns of products, Buyers, payment and how Orders are received, and Customers. Figures are in Philippine Time. Customers by Stage and At risk Customers are always as of today and ignore the chosen period. Staff can export what they are looking at as a PDF; it holds only what the Dashboard shows that Staff member.
 _Avoid_: Analytics, report page, overview
 
 **Order**:
