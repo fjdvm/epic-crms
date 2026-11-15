@@ -146,9 +146,7 @@ const profile = (overrides: Partial<CustomerProfile> = {}): CustomerProfile => (
   addresses: [],
   orderHistory: [],
   cart: { lines: [], total: 0 },
-  walkIn: null,
   emailsReceived: [],
-  mergedWalkIn: null,
   returns: [],
   ...overrides,
 });

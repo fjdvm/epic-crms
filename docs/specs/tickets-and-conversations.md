@@ -51,7 +51,7 @@ Staff Claim Tickets, reply live, and mark them Resolved. The Customer confirms t
 34. As Staff, I want a Customer card showing the Stage, order count, total spent and a link to the Customer Profile, so that I know who I am talking to.
 35. As Staff, I want to open a Ticket on a Customer's behalf, so that I can record a problem that came in by phone or in person.
 36. As Staff, I want the New ticket dialog to take a subject, a Customer, an optional Linked order, a Priority, a description and one optional image, so that the Ticket is complete from the start.
-37. As Staff, I want the Customer search in the New ticket dialog to find only real Customers, so that I cannot open a Ticket for a Walk-in Customer.
+37. As Staff, I want the Customer search in the New ticket dialog to find only real Customers, so that I cannot open a Ticket for a Lead.
 38. As Staff, I want the Linked order list to show only the chosen Customer's Orders, so that I cannot link someone else's Order.
 39. As Staff, I want the description I write to become the first Message the Customer reads, so that I write it for them.
 40. As Staff, I want a Ticket I open to be Claimed by me, so that I do not have to Claim it afterwards.
@@ -95,7 +95,6 @@ Staff Claim Tickets, reply live, and mark them Resolved. The Customer confirms t
 - A Conversation is the chat inside one Ticket. There is no chat without a Ticket, so the Conversations page is an inbox of Ticket chats only. "Not matched", Convert to ticket, Compose, Create order, Add to segment and the whole "Resolve with" card are out of v1.
 - Claim replaces assign. Customer-raised Tickets start Unclaimed. Only the Claimer replies, so a Ticket is Claimed before it is answered. A Ticket Staff open is Claimed by its opener. Only the Claimer releases; nobody takes a Claimed Ticket. The Figma's "Assign to" pickers are removed.
 - Overdue: an Open Ticket whose last Message is from the Customer and unanswered by Staff for more than 24 hours, the same for every Priority.
-- Walk-in Customers cannot have Tickets.
 - Staff's description when opening a Ticket becomes the first Message and is visible to the Customer.
 
 **Schema (owned by the ecommerce app; additive, defaulted, so existing Tickets keep working)**
@@ -150,7 +149,6 @@ Staff Claim Tickets, reply live, and mark them Resolved. The Customer confirms t
 
 - Messenger, Instagram and email channels, and any Channel field.
 - Compose, Convert to ticket, Create order (bulk quote), Add to segment, and the "Resolve with" actions (replacement order, refund, return).
-- Tickets for Walk-in Customers.
 - Reassigning or taking over a Claimed Ticket, and releasing a stuck Ticket after inactivity.
 - Search on the lists, per-Priority Overdue limits, and manager roles.
 - Migrating old Vercel Blob attachments to file-storage.

@@ -9,7 +9,7 @@ export interface CustomersByStage {
   counts: Record<Stage, number>;
 }
 
-/** Verified storefront Customers only; Walk-in Customers live in CREOMS and are never read here. */
+/** Verified storefront Customers only. */
 export async function customersByStageAt(sql: postgres.Sql, now: Date): Promise<CustomersByStage> {
   const rows = await sql<{ orders: number; last_order: Date | null }[]>`
     select count(o.id)::int as orders, max(o.created_at) as last_order

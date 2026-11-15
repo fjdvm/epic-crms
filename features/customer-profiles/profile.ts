@@ -3,7 +3,7 @@ import { listCustomerNotes, type CustomerNote } from "./notes";
 import { readCustomerTasks, type CustomerTask } from "./tasks";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
-import type { CustomerAudit } from "./walk-ins";
+import type { CustomerAudit } from "./audit";
 
 import { getCustomerCart, type Cart } from "./cart";
 import { getCustomerOrders, type CustomerOrder } from "./orders";
@@ -13,7 +13,6 @@ import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "./rules";
 import { notReplacement } from "@/lib/replacement-order";
-import { getMergedWalkIn, getWalkIn, isWalkInId, type MergedWalkIn, type WalkInProfileData } from "./walk-ins";
 
 export interface CustomerAddress {
   id: number;
@@ -53,14 +52,10 @@ export interface CustomerProfile {
   /** Newest first. */
   orderHistory: CustomerOrder[];
   cart: Cart;
-  /** Set for a Walk-in Customer: the fields Staff entered. Such a profile has no storefront Orders or Cart. */
-  walkIn: WalkInProfileData | null;
   /** Marketing Emails this Customer was sent, newest first. Null when CREOMS could not read them. */
   emailsReceived: EmailReceived[] | null;
   /** The Customer's Returns, Requested ones first, as the Returns page orders them. Empty unless loaded for Staff with the Returns Module; null when CREOMS could not read them. */
   returns: ReturnRow[] | null;
-  /** Tags and internal notes carried over from the Walk-in Customer this Customer used to be. */
-  mergedWalkIn: MergedWalkIn | null;
   /** Open first; null means the Task store is unavailable. */
   tasks?: CustomerTask[] | null;
   /** Preloaded with the Profile so the tab opens without a network round trip. */
@@ -147,40 +142,8 @@ export async function getCustomerProfile(
     addresses: mapped,
     orderHistory,
     cart,
-    walkIn: null,
     emailsReceived: [],
     returns: [],
-    mergedWalkIn: null,
-  };
-}
-
-/** A Walk-in Customer's profile: the entered fields, a New Stage, and empty Orders, Cart and Feedback. */
-export function walkInProfile(w: WalkInProfileData): CustomerProfile {
-  return {
-    id: w.id,
-    name: w.name,
-    firstName: w.firstName,
-    middleName: null,
-    lastName: w.lastName,
-    email: w.email ?? "No email",
-    contactNumber: w.mobile,
-    marketingOptIn: w.emailConsent,
-    customerSince: w.createdAt,
-    stage: stageOf({ orders: 0, lastOrder: null }, new Date()),
-    defaultCity: w.address?.city || null,
-    orders: 0,
-    totalSpent: 0,
-    averageOrder: null,
-    lastOrder: null,
-    feedbackCount: 0,
-    averageRating: null,
-    addresses: [],
-    orderHistory: [],
-    cart: { lines: [], total: 0 },
-    walkIn: w,
-    emailsReceived: [],
-    returns: [],
-    mergedWalkIn: null,
   };
 }
 
@@ -196,12 +159,6 @@ export async function loadCustomerProfile(
   withReturns = false,
 ): Promise<CustomerProfileResult> {
   try {
-    if (isWalkInId(id)) {
-      const walkIn = await getWalkIn(connectCrms(), id);
-
-      return { ok: true, profile: walkIn ? walkInProfile(walkIn) : null };
-    }
-
     const profile = await getCustomerProfile(connect(), id);
     if (profile) {
       try {
@@ -216,7 +173,6 @@ export async function loadCustomerProfile(
         console.error("Customer Profile could not read Customer notes", error);
         profile.notes = null;
       }
-      profile.mergedWalkIn = await readMergedWalkIn(connectCrms, profile.email);
       profile.emailsReceived = await readEmailsReceived(connectCrms, profile.id);
       if (withReturns) profile.returns = await loadEmbeddedReturns(connect, { customerId: profile.id });
     }
@@ -225,16 +181,6 @@ export async function loadCustomerProfile(
   } catch (error) {
     console.error("Customer Profile could not read the ecommerce database", error);
     return { ok: false };
-  }
-}
-
-/** Walk-in data is CREOMS's own: if it cannot be read, the Customer's profile still opens without it. */
-async function readMergedWalkIn(connectCrms: () => postgres.Sql, email: string): Promise<MergedWalkIn | null> {
-  try {
-    return await getMergedWalkIn(connectCrms(), email);
-  } catch (error) {
-    console.error("Customer Profile could not read the merged Walk-in Customer", error);
-    return null;
   }
 }
 
@@ -254,22 +200,14 @@ export async function recordCustomerProfileView(
   connect: () => postgres.Sql,
   id: string,
   audit: CustomerAudit & { operationId: string },
-  connectCrms: () => postgres.Sql = crmsDatabase,
 ): Promise<void> {
   try {
-    let name: string;
-    if (isWalkInId(id)) {
-      const walkIn = await getWalkIn(connectCrms(), id);
-      if (!walkIn) return;
-      name = walkIn.name;
-    } else {
-      const [customer] = await connect()<{ name: string }[]>`
-        select c.full_name as name from public.customers c
-        join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
-        where c.id = ${id}`;
-      if (!customer) return;
-      name = customer.name;
-    }
+    const [customer] = await connect()<{ name: string }[]>`
+      select c.full_name as name from public.customers c
+      join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
+      where c.id = ${id}`;
+    if (!customer) return;
+    const name = customer.name;
     await recordAudit(audit.trail, {
       module: CUSTOMER_PROFILES_MODULE, action: "customer_profile.viewed", outcome: "success",
       actor: staffAuditActor(audit.staff),

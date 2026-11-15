@@ -19,7 +19,7 @@ beforeEach(async () => {
   vi.spyOn(Date, "now").mockImplementation(() => clock);
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values
-    ('c1', 'Maria', 'maria@example.com'), ('c2', 'Jose', 'jose@example.com'), ('walk', 'Walk-in', 'walk@example.com')`;
+    ('c1', 'Maria', 'maria@example.com'), ('c2', 'Jose', 'jose@example.com'), ('walk', 'Unverified', 'walk@example.com')`;
   connect = () => db.sql;
 });
 

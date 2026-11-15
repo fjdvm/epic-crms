@@ -24,10 +24,6 @@ _Avoid_: User, account, contact
 A person who signed up but has not yet verified their email. Becomes a Customer on verification. Leads belong to a separate module, not Customer Profiles.
 _Avoid_: Unverified customer, prospect
 
-**Walk-in Customer**:
-A person Staff add by hand in CREOMS, for people who deal with the shop by chat, phone or in person and have no storefront account. Staff cannot place an Order for them; to buy, they sign up on the storefront. They are not a Customer: they never signed up or verified an email, and have no storefront Orders or Cart, and no Tickets: Staff cannot open one for them. They appear in the Customer Profiles list marked "Walk-in". If the same email later becomes a Customer, the two merge into that Customer's Customer Profile.
-_Avoid_: Manual customer, offline customer, Lead
-
 **Customer Profile**:
 Everything staff can see about one Customer in one place: their details, orders, cart, and marketing emails received.
 _Avoid_: Contact, account, user
@@ -100,7 +96,7 @@ A promotional email the store sends to a Customer, produced by the automated ema
 _Avoid_: Inbox, support message
 
 **Subscriber**:
-A Customer whose Marketing opt-in is yes. Marketing Emails go only to Subscribers. Leads and Walk-in Customers are never Subscribers, even if they said yes to marketing.
+A Customer whose Marketing opt-in is yes. Marketing Emails go only to Subscribers. Leads are never Subscribers, even if they said yes to marketing.
 _Avoid_: Recipient, mailing list member
 
 **Unsubscribe**:

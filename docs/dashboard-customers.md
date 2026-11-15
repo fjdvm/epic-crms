@@ -17,8 +17,7 @@ sign-up (`Customer since`), rather than verification. The spans are half-open
 Philippine Time boundaries supplied by the period model.
 
 `unverifiedLeads.count` counts unverified storefront profiles across all dates,
-separately from every Customers count. Walk-in Customers have no storefront auth
-identity and appear in none of these figures. CREOMS Walk-in storage is not read.
+separately from every Customers count.
 
 These figures share the existing five-minute analytics cache. Its key includes
 the Philippine date, so a previous-day Stage snapshot is not reused after

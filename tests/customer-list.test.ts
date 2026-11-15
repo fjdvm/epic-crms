@@ -58,7 +58,6 @@ async function expected() {
         stage: stageFor(counted.length, lastOrder),
         cartHasItems: carts.some((x) => x.customer_id === c.id),
         customerSince: user.created.getTime(),
-        walkIn: false,
       };
     });
 }

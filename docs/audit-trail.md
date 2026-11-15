@@ -82,20 +82,11 @@ Tickets. Messages remain solely in the Conversation. The Portal User id is used
 for the Audit Actor; Ticket ownership continues to use the Portal username.
 The Priority endpoint rejects unknown priorities and changes to Completed Tickets.
 
-Walk-in creation and editing record `walk_in_customer.created` and
-`walk_in_customer.updated` under Customer Profiles. Editing validates the same
-fields and duplicate contacts as creation, excludes the current Walk-in from the
-duplicate lookup, and preserves its id and creation time. Unchanged submissions,
-refused writes and missing Targets emit no event. The new Priority and Walk-in
-editing endpoints are backend actions; this ticket adds no editing controls.
-
 Mutation events retain a submission token in serialized Server Action arguments,
 matching Announcements. Event identities include the Actor and token; the gateway
 also hashes the action and Target. Interleaved replays therefore keep the same
 key even when another action changed the row in between. Conditional updates
-suppress unchanged retries. Walk-in creation derives its UUID from the Actor and
-submission token and inserts at most once, preserving its Target even if contact
-details were subsequently edited. Each later submission gets a fresh token.
+suppress unchanged retries. Each later submission gets a fresh token.
 There is no outbox or replay after an uncertain database result.
 
 Customer Profile access is recorded as `customer_profile.viewed` when its client
