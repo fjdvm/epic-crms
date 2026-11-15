@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ORDERS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
+import type { ShopRole } from "@/lib/portal/roles";
 import { orderLabel } from "@/features/customer-profiles/rules";
 import type { ReturnRow } from "@/features/returns/returns";
 import { ReturnsTable } from "@/features/returns/returns-table";
@@ -10,6 +11,7 @@ import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 import type { OrderDetail } from "./orders";
 import type { LineReservation } from "./stock";
 import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
+import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PaymentPill } from "./status-pill";
 
@@ -78,40 +80,40 @@ function QuoteAgainNote({ order }: { order: OrderDetail }) {
   );
 }
 
-function PaymentProof({ order }: { order: OrderDetail }) {
-  const proof = order.paymentProof;
+function Screenshot({ source, alt }: { source: string | null; alt: string }) {
+  if (!source) return null;
+  // eslint-disable-next-line @next/next/no-img-element
+  return isViewableScreenshot(source) ? <img src={source} alt={alt} className="max-h-64 rounded-md border border-[#e6e1ee]" /> : <p className="text-xs text-[#6e6680]">Screenshot: {source}</p>;
+}
 
-  if (order.paymentMethod !== "gcash")
-    return (
-      <p className="text-sm text-[#6e6680]">
-        Cash on delivery: no proof needed.
-      </p>
-    );
-  if (!proof)
-    return (
-      <p className="text-sm text-[#6e6680]">No Payment proof submitted yet.</p>
-    );
+/** Every proof the Customer sent, oldest first, with who rejected each and why. */
+function PaymentProof({ order }: { order: OrderDetail }) {
+  const method = orderLabel(order.paymentMethod);
+  if (!isPrepaid(order.paymentMethod)) return <p className="text-sm text-[#6e6680]">Cash on delivery: no proof needed.</p>;
+  const history = order.paymentProofs;
+  if (history.length === 0) return <p className="text-sm text-[#6e6680]">No Payment proof submitted yet.</p>;
 
   return (
-    <div className="space-y-2 text-sm text-[#1f1a2e]">
-      <p>
-        GCash reference: {proof.reference ?? "—"}
-        {proof.submittedAt && ` · submitted ${formatDate(proof.submittedAt)}`}
-      </p>
-      {proof.screenshot &&
-        (isViewableScreenshot(proof.screenshot) ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={proof.screenshot}
-            alt={`Payment proof for order ${order.id}`}
-            className="max-h-64 rounded-md border border-[#e6e1ee]"
-          />
-        ) : (
-          <p className="text-xs text-[#6e6680]">
-            Screenshot: {proof.screenshot}
+    <ol className="space-y-3 text-sm text-[#1f1a2e]">
+      {history.map((proof, index) => (
+        <li key={proof.id} className="space-y-2 rounded-lg border border-[#efebf4] p-3">
+          <p className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">Proof {index + 1}</span>
+            <span>{method} reference: {proof.reference ?? "—"} · submitted {formatDate(proof.submittedAt)}</span>
+            {proof.rejection && <span className="rounded-full bg-[#fee2e2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">Rejected</span>}
           </p>
-        ))}
-    </div>
+          <Screenshot source={proof.screenshot} alt={`Payment proof ${index + 1} for order ${order.id}`} />
+          {proof.rejection && (
+            <p className="text-xs text-[#6e6680]">
+              Rejected by {proof.rejection.by.name || "Staff"} on {formatDate(proof.rejection.at)}: {proof.rejection.reason}
+            </p>
+          )}
+        </li>
+      ))}
+      {order.proofRejections >= MANAGER_AFTER_REJECTIONS && order.status === "awaiting payment" && (
+        <li className="rounded-lg bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">{order.proofRejections} receipts rejected: only a Manager can approve this Order now.</li>
+      )}
+    </ol>
   );
 }
 
@@ -141,7 +143,16 @@ export function OrderDetailView({
   deliveryPhotoUrl,
   returns = [],
   reservations = new Map(),
+  role,
+  approvalId,
+  waitingApproval,
 }: {
+  /** The viewer's role; omitted means Staff, so the buttons that need a Manager read "Request approval". */
+  role?: ShopRole | null;
+  /** An approved "approve anyway" request Staff can now carry out. */
+  approvalId?: string;
+  /** Staff asked and a Manager has not decided yet. */
+  waitingApproval?: boolean;
   order: OrderDetail;
   /** What this Order set aside per line, by Order line id. Empty for Orders placed before Reservations. */
   reservations?: ReadonlyMap<number, LineReservation>;
@@ -178,7 +189,7 @@ export function OrderDetailView({
               {orderLabel(order.paymentMethod)}
             </p>
           </div>
-          <LiveActions order={order} modules={modules} />
+          <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} />
         </div>
       </div>
 

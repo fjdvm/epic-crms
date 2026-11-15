@@ -7,12 +7,15 @@ import { loadOrder } from "@/features/orders/orders";
 import { loadLineReservations } from "@/features/orders/stock";
 import { loadEmbeddedReturns } from "@/features/returns/returns";
 import { gatewayFileStorage } from "@/lib/gateway";
-import { ORDER_DETAIL_MODULES, RETURNS_MODULE } from "@/lib/portal/config";
+import { ORDER_DETAIL_MODULES, PAYMENTS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
+import { approvals } from "@/features/approvals/server";
+import { toView, WAITING } from "@/features/approvals/view";
+import { shopRole } from "@/lib/portal/roles";
 import { heldModules, requireAnyModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAnyModule(ORDER_DETAIL_MODULES);
+  const staff = await requireAnyModule(ORDER_DETAIL_MODULES);
 
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
@@ -56,10 +59,22 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     loadLineReservations(ticketsDatabase, order.id),
   ]);
 
+  const role = shopRole(staff.role);
+  const requests = modules.includes(PAYMENTS_MODULE)
+    ? (await approvals().list(staff, PAYMENTS_MODULE).catch(() => []))
+        .map((row) => toView(row as unknown as Record<string, unknown>))
+        .filter((r) => r.action === "payment.approve-anyway" && r.targetId === String(order.id))
+    : [];
+  const approvalId = requests.find((r) => r.status === "approved")?.id;
+  const waitingApproval = requests.some((r) => WAITING.includes(r.status));
+
   return (
     <>
       <BackgroundRefresh />
       <OrderDetailView
+        role={role}
+        approvalId={approvalId}
+        waitingApproval={waitingApproval}
         order={order}
         modules={modules}
         deliveryPhotoUrl={deliveryPhotoUrl}
