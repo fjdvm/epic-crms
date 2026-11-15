@@ -6,9 +6,10 @@ import { createCustomerTask, markCustomerTaskDone, reopenCustomerTask, reassignC
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 const actor = vi.hoisted(() => ({ id: "ana", name: "Ana", username: "ana", email: "ana@example.com", role: "Staff" }));
-const requireModule = vi.hoisted(() => vi.fn(async (_module: string) => actor));
+const requireModule = vi.hoisted(() => vi.fn(async (module: string) => { void module; return actor; }));
+vi.mock("@/features/notifications/portal-gateway", () => ({ portalGateway: () => ({ recipients: async () => [{ id: "bea", name: "Bea", role: "Staff", modules: ["Customer Profiles"] }] }) }));
 vi.mock("@/lib/portal/staff", () => ({ requireModule }));
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn() }));
+vi.mock("@/lib/gateway", () => ({ deliverGatewayAuditEvent: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
