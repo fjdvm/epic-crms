@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ORDERS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
+import { FULFILMENT_MODULE, ORDERS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import type { ShopRole } from "@/lib/portal/roles";
@@ -200,7 +200,14 @@ export function OrderDetailView({
               {orderLabel(order.paymentMethod)}
             </p>
           </div>
-          <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} />
+          <div className="flex flex-wrap items-center gap-2">
+            {order.status === "dispatched" && order.fulfillmentMethod === "delivery" && modules.includes(FULFILMENT_MODULE) && (
+              <Link href={`/orders/${order.id}/failed-delivery`} className="rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
+                Failed delivery
+              </Link>
+            )}
+            <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} />
+          </div>
         </div>
       </div>
 
