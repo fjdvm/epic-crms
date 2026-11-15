@@ -130,6 +130,7 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
         values (${id}, ${input.module}, ${input.action}, ${input.targetId}, ${tx.json(input.payload as postgres.JSONValue)}, ${input.amountInCentavos}, ${settings.limit_in_centavos}, ${reason}, ${staff.id}, ${staff.name},
           ${role === "manager" ? "waiting-ceo" : "waiting-manager"}, ${role === "manager" ? staff.id : null}, ${role === "manager" ? staff.name : null}, ${role === "manager" ? new Date() : null}) returning *`;
       const events = [await event(tx, staff, "approval.requested", id, { action: input.action, reason })];
+      if (input.action === "write-off") events.push(await event(tx, staff, "writeoff.requested", id, { targetId: input.targetId, reason }));
       if (role === "manager") events.push(await event(tx, staff, "approval.granted", id, { step: "manager" }));
       await queueNotice(tx, request, role === "manager" ? "ceo" : "manager", `${staff.name} requested approval: ${reason}`);
       return { request, events };
