@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { readCustomerTasks, type CustomerTask } from "./tasks";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
 import type { CustomerAudit } from "./walk-ins";
@@ -59,6 +60,8 @@ export interface CustomerProfile {
   returns: ReturnRow[] | null;
   /** Tags and internal notes carried over from the Walk-in Customer this Customer used to be. */
   mergedWalkIn: MergedWalkIn | null;
+  /** Open first; null means the Task store is unavailable. */
+  tasks?: CustomerTask[] | null;
 }
 
 /** One verified Customer's Profile, or null for a Lead or an id that does not exist. */
@@ -198,6 +201,12 @@ export async function loadCustomerProfile(
 
     const profile = await getCustomerProfile(connect(), id);
     if (profile) {
+      try {
+        profile.tasks = await readCustomerTasks(connectCrms(), profile.id);
+      } catch (error) {
+        console.error("Customer Profile could not read Tasks", error);
+        profile.tasks = null;
+      }
       profile.mergedWalkIn = await readMergedWalkIn(connectCrms, profile.email);
       profile.emailsReceived = await readEmailsReceived(connectCrms, profile.id);
       if (withReturns) profile.returns = await loadEmbeddedReturns(connect, { customerId: profile.id });
