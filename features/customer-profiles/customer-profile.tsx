@@ -15,6 +15,7 @@ import { FeedbackTab } from "./feedback-tab";
 import { Field } from "./field";
 import { formatAgo, formatDate, formatMonthYear, formatPesos } from "./format";
 import { orderAnchor } from "./orders";
+import { NotesTab, type VisibleCustomerNote } from "./notes-tab";
 import { OrdersTab } from "./orders-tab";
 import { ReturnsTab } from "./returns-tab";
 import type { CustomerProfile } from "./profile";
@@ -50,14 +51,23 @@ export function CustomerProfileView({
   now = new Date(),
   canOpenOrder = false,
   canViewReturns = false,
+  noteAuthor,
 }: {
   profile: CustomerProfile;
   now?: Date;
   canOpenOrder?: boolean;
   /** Staff with the Returns Module get the Returns tab. */
   canViewReturns?: boolean;
+  noteAuthor?: { id: string; name: string };
 }) {
   const p = profile;
+  const [addedNotes, setAddedNotes] = useState<VisibleCustomerNote[]>([]);
+  const notes = p.notes == null && addedNotes.length === 0 ? p.notes : [
+    ...(p.notes ?? []).filter(note => !addedNotes.some(added => added.id === note.id)), ...addedNotes,
+  ];
+  function changeNote(id: string, note: VisibleCustomerNote | null) {
+    setAddedNotes(old => [...old.filter(item => item.id !== id && item.id !== note?.id), ...(note ? [note] : [])]);
+  }
   const [tab, setTab] = useState("orders");
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
 
@@ -80,8 +90,10 @@ export function CustomerProfileView({
   }
 
   return (
-    <div className="space-y-5">
-      <BackButton fallbackHref="/customer-profiles" label="Customer Profiles" />
+    <div className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
+      <div className="shrink-0 self-start"><BackButton fallbackHref="/customer-profiles" label="Customer Profiles" /></div>
+
+      <div className="max-h-[35dvh] shrink-0 space-y-5 overflow-y-auto xl:max-h-none">
 
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2.5">
@@ -127,8 +139,10 @@ export function CustomerProfileView({
         />
       </div>
 
-      <Tabs value={tab} onValueChange={setTab} className="space-y-5">
-        <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+      </div>
+
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-5">
+        <TabsList className="h-auto shrink-0 flex-wrap justify-start gap-1 bg-transparent p-0">
           <TabsTrigger className={TAB_TRIGGER} value="orders">
             Orders ({p.orders})
           </TabsTrigger>
@@ -146,13 +160,16 @@ export function CustomerProfileView({
           <TabsTrigger className={TAB_TRIGGER} value="emails">
             Emails
           </TabsTrigger>
+          {!p.walkIn && <TabsTrigger className={TAB_TRIGGER} value="notes">
+            Notes &amp; tasks
+          </TabsTrigger>}
           <TabsTrigger className={TAB_TRIGGER} value="details">
             Details
           </TabsTrigger>
         </TabsList>
 
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
-          <div className="min-w-0 w-full flex-1 [&>[role=tabpanel]>div]:h-full [&>[role=tabpanel]]:h-full">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto xl:flex-row xl:items-stretch xl:overflow-hidden">
+          <div className="h-[min(420px,60dvh)] min-h-[320px] min-w-0 w-full shrink-0 overflow-y-auto xl:h-auto xl:min-h-0 xl:flex-1 [&>[role=tabpanel]>div]:h-full [&>[role=tabpanel]]:h-full">
             <TabsContent value="orders" className="mt-0">
               <OrdersTab
                 orders={p.orderHistory}
@@ -178,6 +195,10 @@ export function CustomerProfileView({
 
             <TabsContent value="emails" className="mt-0">
               <EmailsTab marketingOptIn={p.marketingOptIn} emails={p.emailsReceived} />
+            </TabsContent>
+
+            <TabsContent forceMount value="notes" className="mt-0 data-[state=inactive]:hidden [&>div]:flex [&>div]:min-h-0 [&>div]:flex-col">
+              <NotesTab customerId={p.id} notes={notes} readFailed={p.notes === null} author={noteAuthor} onNoteChange={changeNote} />
             </TabsContent>
 
             <TabsContent value="details" className="mt-0 space-y-5">
@@ -254,8 +275,8 @@ export function CustomerProfileView({
             </TabsContent>
           </div>
 
-          <aside className="w-full shrink-0 xl:w-[380px] [&>div]:h-full">
-            <ActivityTimeline orders={p.orderHistory} onOpenOrder={openOrder} />
+          <aside className="min-h-0 w-full shrink-0 xl:w-[380px] xl:overflow-y-auto [&>div]:h-full">
+            <ActivityTimeline notes={notes ?? []} orders={p.orderHistory} onOpenOrder={openOrder} />
           </aside>
         </div>
       </Tabs>

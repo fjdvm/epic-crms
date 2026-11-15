@@ -1,3 +1,4 @@
+import type { VisibleCustomerNote } from "./notes-tab";
 import { formatDate } from "./format";
 import { orderAnchor, type CustomerOrder } from "./orders";
 import { TabCard } from "./tab-card";
@@ -23,12 +24,17 @@ function lead(entry: ActivityEntry): string {
 
 export function ActivityTimeline({
   orders,
+  notes = [],
   onOpenOrder,
 }: {
   orders: CustomerOrder[];
+  notes?: VisibleCustomerNote[];
   onOpenOrder: (orderId: number) => void;
 }) {
-  const entries = activityOf(orders);
+  const entries = [
+    ...activityOf(orders),
+    ...notes.map(note => ({ kind: "customer-note" as const, at: new Date(note.createdAt), note })),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime());
 
   return (
     <TabCard title="Activity timeline">
@@ -36,7 +42,16 @@ export function ActivityTimeline({
         <p className="text-sm text-muted-foreground">No activity yet.</p>
       ) : (
         <ol className="space-y-[14px]">
-          {entries.map((e) => (
+          {entries.map((e) => e.kind === "customer-note" ? (
+            <li key={`customer-note-${e.note.id}`} className="flex items-start gap-3">
+              <span aria-hidden className="mt-1 size-2.5 shrink-0 rounded-full bg-primary" />
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-sm font-medium text-foreground">{e.note.authorName} added a Customer note{e.note.saving && " · saving…"}</p>
+                <p className="whitespace-pre-wrap break-words text-sm text-foreground">{e.note.text}</p>
+                <p className="text-xs text-muted-foreground">{formatDate(e.at)}</p>
+              </div>
+            </li>
+          ) : (
             <li key={`${e.kind}-${e.orderId}`} className="flex items-start gap-3">
               <span aria-hidden className={`mt-1 size-2.5 shrink-0 rounded-full ${DOT[e.kind]}`} />
               <div className="min-w-0 space-y-0.5">
