@@ -133,7 +133,7 @@ describe("the Return detail", () => {
 
   it("offers Mark replaced, not Mark refunded, once Staff chose a replacement", () => {
     view(detail({ status: "approved", goodsRequired: false, finalResolution: "replacement" }));
-    expect(buttons()).toEqual(["Mark replaced", "Save inspection"]);
+    expect(buttons()).toEqual(["Mark replaced"]);
     cleanup();
 
     view(detail({ status: "goods received", goodsRequired: true, finalResolution: "replacement" }));
