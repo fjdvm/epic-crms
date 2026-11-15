@@ -32,6 +32,14 @@ _Avoid_: Manual customer, offline customer, Lead
 Everything staff can see about one Customer in one place: their details, orders, cart, and marketing emails received.
 _Avoid_: Contact, account, user
 
+**Customer note**:
+A piece of free text a Staff member writes about a Customer on their Customer Profile, with the Staff member's name and the date. Permanent once written: never edited or deleted; a mistake is corrected with a new Customer note. Always called a Customer note, never just "note". A phone call is written up as a Customer note. Not a Message (which belongs to a Conversation and is sent to the Customer) and not a Ticket's internal note.
+_Avoid_: Note, Message, comment, Profile note
+
+**Task**:
+A follow-up a Staff member must do for a Customer, written on their Customer Profile. It has an owner, a required due date and a done state, which is what separates it from a Customer note. The owner is the Staff member who created it; only a Manager can assign or reassign it to someone else. The due date is a date only, in Philippine Time. The owner or a Manager can change the due date, mark it done and reopen it. Its description is fixed and it is never deleted; a Task no longer needed is marked done. It is overdue once its due date has passed and it is not done.
+_Avoid_: Reminder, to-do, follow-up
+
 **Customer since**:
 The date a Customer first signed up. It is the sign-up date, not the date they verified their email.
 
