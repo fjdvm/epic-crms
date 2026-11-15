@@ -128,14 +128,14 @@ export function FulfilmentMove({
   if (readyToPrepare(order)) {
     return (
       <OrderActionDialog
-        trigger="Start preparing"
+        trigger="Pack order"
         triggerClassName={triggerClassName}
-        title={`Start preparing Order #${id}?`}
-        description="The Order moves to Preparing. Staff with the Orders Module can still cancel it until it is dispatched."
-        confirm="Start preparing"
-        busy="Starting…"
+        title={`Pack Order #${id}?`}
+        description="Your name is recorded as the packer and the stock is deducted. The Order moves to Preparing; Staff with the Orders Module can still cancel it until it is dispatched."
+        confirm="Pack order"
+        busy="Packing…"
         run={() => startPreparing(id)}
-        successMessage={`Order #${id} is now preparing.`}
+        successMessage={`Order #${id} packed.`}
       />
     );
   }

@@ -7,6 +7,8 @@ export interface FulfilmentOrder extends OrderRow {
   fulfillmentMethod: string;
   paymentMethod: string;
   deliveredAt: Date | null;
+  /** Null until the storefront records a pack, and for legacy Orders. */
+  packedBy: { name: string } | null;
 }
 
 export type FulfilmentBoard = Record<"ready" | "preparing" | "dispatched" | "delivered", FulfilmentOrder[]>;
@@ -28,9 +30,10 @@ export async function loadFulfilmentBoard(
     const sql = connect();
     const rows = await sql<{
       id: number; status: string; fulfillment_method: string; payment_method: string;
-      delivered_at: Date | null; created_at: Date; customer_id: string; full_name: string; total: number;
+      delivered_at: Date | null; packed_by_name: string | null; created_at: Date; customer_id: string; full_name: string; total: number;
     }[]>`
       select o.id, o.status, o.fulfillment_method, o.payment_method, o.delivered_at,
+        to_jsonb(o)->>'packed_by_name' as packed_by_name,
         o.created_at, o.customer_id, c.full_name,
         o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total
       from public.orders o join public.customers c on c.id = o.customer_id
@@ -42,7 +45,7 @@ export async function loadFulfilmentBoard(
       where order_id in ${sql(rows.map(row => row.id))} order by id`;
     const orders: FulfilmentOrder[] = rows.map(row => ({
       id: row.id, status: row.status, fulfillmentMethod: row.fulfillment_method,
-      paymentMethod: row.payment_method, deliveredAt: row.delivered_at, createdAt: row.created_at,
+      paymentMethod: row.payment_method, deliveredAt: row.delivered_at, packedBy: row.packed_by_name ? { name: row.packed_by_name } : null, createdAt: row.created_at,
       customerId: row.customer_id, customerName: row.full_name, total: row.total,
       paymentLabel: paymentStatusOf(row.status),
       lines: lines.filter(line => line.order_id === row.id).map(line => ({ product: line.product_name, quantity: line.quantity })),

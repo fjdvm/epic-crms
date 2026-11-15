@@ -38,6 +38,7 @@ function FulfilmentCard({
           ? `Delivered ${formatDate(order.deliveredAt)}`
           : `${orderLabel(order.fulfillmentMethod)} · ${orderLabel(order.paymentMethod)}`}
       </p>
+      {order.packedBy && <p className="truncate text-xs text-[#6e6680]">Packed by {order.packedBy.name}</p>}
       <div className="mt-1 empty:hidden">
         <FulfilmentMove
           order={order}

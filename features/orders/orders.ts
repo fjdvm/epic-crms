@@ -131,6 +131,8 @@ export interface OrderDetail extends CustomerOrder {
   customer: { id: string; name: string };
   /** Null for legacy Orders and Orders never marked paid. */
   paidBy: { id: string; name: string; at: Date } | null;
+  /** Who packed the Order and when; null for legacy Orders and Orders not yet packed. */
+  packedBy: { id: string; name: string; at: Date } | null;
   /** Null means No photo, including legacy delivered Orders. */
   deliveryPhotoFileId: string | null;
   /** When the retention job removed the photo; null if it never did, so No photo means it never had one. */
@@ -147,8 +149,10 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number): P
 
     if (!order) return { ok: true, order: null };
 
-    const [customer] = await sql<{ id: string; full_name: string; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null }[]>`
+    const [customer] = await sql<{ id: string; full_name: string; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null; packed_by_id: string | null; packed_by_name: string | null; packed_at: string | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null }[]>`
       select c.id, c.full_name, o.paid_by_id, o.paid_by_name, o.paid_at,
+        to_jsonb(o)->>'packed_by_id' as packed_by_id, to_jsonb(o)->>'packed_by_name' as packed_by_name,
+        to_jsonb(o)->>'packed_at' as packed_at,
         to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,
         to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at from public.orders o
       join public.customers c on c.id = o.customer_id
@@ -159,6 +163,9 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number): P
       order: {
         ...order,
         paymentLabel: paymentStatusOf(order.status),
+        packedBy: customer.packed_by_id && customer.packed_by_name && customer.packed_at
+          ? { id: customer.packed_by_id, name: customer.packed_by_name, at: new Date(customer.packed_at) }
+          : null,
         deliveryPhotoFileId: customer.delivery_photo_file_id,
         deliveryPhotoRemovedAt: customer.delivery_photo_removed_at ? new Date(customer.delivery_photo_removed_at) : null,
         customer: { id: customer.id, name: customer.full_name },

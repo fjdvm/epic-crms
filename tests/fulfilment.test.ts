@@ -41,10 +41,15 @@ describe("Fulfilment board data", () => {
       created_at = ${createdAt} where id = ${id}`;
     await db.sql`insert into order_lines (order_id, product_name, quantity) values (${id}, 'Halaya', 2)`;
     expect((await board()).ready).toEqual([{
-      id, customerId: "c1", customerName: "Maria Santos", createdAt, deliveredAt: null,
+      id, customerId: "c1", customerName: "Maria Santos", createdAt, deliveredAt: null, packedBy: null,
       status: "confirmed", fulfillmentMethod: "delivery", paymentMethod: "cash-on-delivery",
       paymentLabel: "Unpaid", total: 115000, lines: [{ product: "Halaya", quantity: 2 }],
     }]);
+  });
+  it("returns who packed a Preparing Order", async () => {
+    const id = await order("preparing");
+    await db.sql`update orders set packed_by_id = 'u1', packed_by_name = 'Liza B.', packed_at = now() where id = ${id}`;
+    expect((await board()).preparing[0].packedBy).toEqual({ name: "Liza B." });
   });
   it("groups preparing, dispatched and recently delivered Orders by their actual stage", async () => {
     const preparing = await order("preparing");

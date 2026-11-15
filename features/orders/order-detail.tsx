@@ -285,6 +285,15 @@ export function OrderDetailView({
             <DeliveryPhoto order={order} url={deliveryPhotoUrl} />
           )}
 
+          {order.packedBy && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Packing</h2>
+              <p className="text-sm text-[#1f1a2e]">
+                Packed by {order.packedBy.name} · {formatDate(order.packedBy.at)}
+              </p>
+            </section>
+          )}
+
           <QuoteAgainNote order={order} />
 
           <section className={CARD}>
