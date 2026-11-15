@@ -35,7 +35,7 @@ export async function loadVerifications(): Promise<{ ok: true; list: Verificatio
 }
 
 /** A short-lived private address for the photo, only while the photo exists and is still waiting for review. */
-export async function loadVerificationPhoto(id: number): Promise<{ ok: true; url: string } | { ok: false; reason: string }> {
+export async function loadVerificationPhoto(id: number): Promise<{ ok: true; url: string; backUrl: string | null } | { ok: false; reason: string }> {
   await requireModule(ORDERS_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid verification number." };
   try {
@@ -44,7 +44,8 @@ export async function loadVerificationPhoto(id: number): Promise<{ ok: true; url
     if (v.status !== "pending" || !v.photoFileId || currentStatus(v, new Date()) !== "pending") {
       return { ok: false, reason: "The ID photo has been removed. The Customer uploads it again if needed." };
     }
-    return { ok: true, url: await gatewayFileStorage.viewUrl(v.photoFileId) };
+    const backUrl = v.photoBackFileId ? await gatewayFileStorage.viewUrl(v.photoBackFileId).catch(() => null) : null;
+    return { ok: true, url: await gatewayFileStorage.viewUrl(v.photoFileId), backUrl };
   } catch { return { ok: false, reason: "The ID photo could not be opened." }; }
 }
 
@@ -74,6 +75,9 @@ async function decide(
   let photoRemoved = verification.photoFileId === null;
   if (verification.photoFileId) {
     try { await gatewayFileStorage.remove(verification.photoFileId); photoRemoved = true; } catch { /* expiry removes it */ }
+  }
+  if (verification.photoBackFileId) {
+    try { await gatewayFileStorage.remove(verification.photoBackFileId); } catch { /* expiry removes it */ }
   }
   // No ID number, photo or hash ever enters an audit event.
   await recordAudit(gatewayAuditTrail, {

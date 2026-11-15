@@ -154,7 +154,7 @@ it("removes a photo nobody reviewed in 7 days; Staff can no longer decide and th
 it("shows the photo only while it waits for review", async () => {
   const { id, photo } = await upload();
   await signIn("ana");
-  expect(await loadVerificationPhoto(id)).toEqual({ ok: true, url: expect.stringContaining(photo) });
+  expect(await loadVerificationPhoto(id)).toEqual({ ok: true, url: expect.stringContaining(photo), backUrl: null });
   await approveVerification(id, future(30));
   expect(await loadVerificationPhoto(id)).toMatchObject({ ok: false });
 });

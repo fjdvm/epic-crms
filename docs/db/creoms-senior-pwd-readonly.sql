@@ -5,7 +5,7 @@
 -- Fails transactionally if the existing role or the source table is missing; rerunning is safe.
 BEGIN;
 GRANT USAGE ON SCHEMA public TO creoms_readonly;
-GRANT SELECT (id, customer_id, id_type, status, photo_file_id, submitted_at, decided_at, decided_by_id,
+GRANT SELECT (id, customer_id, id_type, status, photo_file_id, photo_back_file_id, submitted_at, decided_at, decided_by_id,
   decided_by_name, decline_reason, expires_on) ON public.senior_pwd_verifications TO creoms_readonly;
 GRANT SELECT (senior_pwd_verification_id) ON public.orders TO creoms_readonly;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.senior_pwd_verifications FROM creoms_readonly;
