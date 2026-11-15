@@ -4,6 +4,8 @@ import { paymentScreenshotSource } from "@/features/orders/payment-screenshot";
 import type { Sentiment } from "@/features/feedback/analysis";
 
 export interface OrderLine {
+  /** The Order line's id; absent only in fixtures. */
+  id?: number;
   product: string;
   size: string;
   quantity: number;
@@ -96,6 +98,7 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
       lines: lines
         .filter((l) => l.order_id === o.id)
         .map((l) => ({
+          id: l.id as number,
           product: l.product_name as string,
           size: l.size_label as string,
           quantity: l.quantity as number,

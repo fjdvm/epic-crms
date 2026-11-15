@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadOrder } from "@/features/orders/orders";
+import { loadLineReservations } from "@/features/orders/stock";
 import { loadEmbeddedReturns } from "@/features/returns/returns";
 import { gatewayFileStorage } from "@/lib/gateway";
 import { ORDER_DETAIL_MODULES, RETURNS_MODULE } from "@/lib/portal/config";
@@ -50,7 +51,10 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   }
 
   // Returns reads belong to the Returns Module, so nobody else's page even loads them.
-  const returns = modules.includes(RETURNS_MODULE) ? await loadEmbeddedReturns(ticketsDatabase, { orderId: order.id }) : [];
+  const [returns, reservations] = await Promise.all([
+    modules.includes(RETURNS_MODULE) ? loadEmbeddedReturns(ticketsDatabase, { orderId: order.id }) : [],
+    loadLineReservations(ticketsDatabase, order.id),
+  ]);
 
   return (
     <>
@@ -60,6 +64,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         modules={modules}
         deliveryPhotoUrl={deliveryPhotoUrl}
         returns={returns}
+        reservations={reservations}
       />
     </>
   );

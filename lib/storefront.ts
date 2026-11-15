@@ -19,11 +19,11 @@ export type OrderChangeResult =
   | { ok: false; reason: string };
 
 /** Mint the storefront's scoped, five-minute HS256 credential for this request. Never sent to a browser. */
-function credential(secret: string, resource: "orders" | "returns" = "orders"): string {
+function credential(secret: string, resource: "orders" | "returns" | "stock" = "orders"): string {
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
   const iat = Math.floor(Date.now() / 1000);
   const input = `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
-    iss: "creoms", aud: `brenraphaels-${resource}`, scope: `${resource}:status`, iat, exp: iat + 300,
+    iss: "creoms", aud: `brenraphaels-${resource}`, scope: resource === "stock" ? "stock:read" : `${resource}:status`, iat, exp: iat + 300,
   })}`;
   return `${input}.${createHmac("sha256", secret).update(input).digest("base64url")}`;
 }
@@ -97,5 +97,37 @@ export async function changeReturnStatus(id: number, update: ReturnStatusUpdate)
     return { ok: true, return: { id, status: update.status } };
   } catch {
     return { ok: false, reason: uncertain };
+  }
+}
+
+/** What the IMS holds for one Size, or nulls when the IMS could not answer for it. */
+export interface ImsSizeStock { sizeId: number; quantity: number | null; reserved: number | null; available: number | null }
+
+/**
+ * Reads IMS stock through the storefront, which holds the IMS credential and the Size mapping.
+ * Called when Staff open a page, never on a timer. Null means the storefront could not be reached.
+ */
+export async function readStock(sizeIds: number[]): Promise<Map<number, ImsSizeStock> | null> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32 || sizeIds.length === 0) return null;
+  try {
+    const sizes = new Map<number, ImsSizeStock>();
+    // The storefront answers at most 200 Sizes per request.
+    for (let start = 0; start < sizeIds.length; start += 200) {
+      const url = new URL("/api/internal/stock", origin);
+      url.searchParams.set("sizeIds", sizeIds.slice(start, start + 200).join(","));
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${credential(secret, "stock")}` },
+        cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) return null;
+      const body = await response.json();
+      if (!Array.isArray(body.sizes)) return null;
+      for (const size of body.sizes as ImsSizeStock[]) sizes.set(size.sizeId, size);
+    }
+    return sizes;
+  } catch {
+    return null;
   }
 }
