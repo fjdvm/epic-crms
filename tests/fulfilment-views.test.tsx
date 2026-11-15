@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { deliverOrder, dispatchOrder, startPreparing } from "@/features/orders/actions";
+import { deliverOrder, dispatchOrder, loadPackingSlip, startPreparing } from "@/features/orders/actions";
 import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
 import type { FulfilmentBoard, FulfilmentOrder } from "@/features/orders/fulfilment";
 import { OrderDetailView } from "@/features/orders/order-detail";
@@ -16,6 +16,7 @@ vi.mock("@/features/orders/actions", () => ({
   confirmPickup: vi.fn(),
   cancelOrder: vi.fn(),
   startPreparing: vi.fn(),
+  loadPackingSlip: vi.fn(),
   dispatchOrder: vi.fn(),
   deliverOrder: vi.fn(),
 }));
@@ -44,6 +45,7 @@ const card = (overrides: Partial<FulfilmentOrder>): FulfilmentOrder => ({
   fulfillmentMethod: "delivery",
   paymentMethod: "gcash",
   deliveredAt: null,
+  packedBy: null,
   ...overrides,
 });
 
@@ -116,7 +118,7 @@ describe("the Fulfilment board", () => {
     });
 
     const buttons = (id: number) => within(cardFor(id)).queryAllByRole("button").map((b) => b.textContent);
-    expect(buttons(1)).toEqual(["Start preparing"]);
+    expect(buttons(1)).toEqual(["Pack order"]);
     expect(buttons(2)).toEqual(["Mark as dispatched"]);
     expect(buttons(3)).toEqual(["Mark as delivered"]);
     expect(buttons(4)).toEqual([]);
@@ -160,9 +162,9 @@ const moved = (id: number, status: string) => ({ ok: true as const, order: { id,
 describe("moving an Order on the board", () => {
   it("asks before starting preparation, and sends nothing if Staff cancel", () => {
     board({ ready: [card({})] });
-    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Start preparing" }));
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Pack order" }));
 
-    const dialog = screen.getByRole("alertdialog", { name: "Start preparing Order #1042?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Pack Order #1042?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -273,24 +275,29 @@ describe("moving an Order on the board", () => {
     vi.mocked(startPreparing).mockReturnValue(pending.promise);
     board({ ready: [card({})] });
     const readyCard = cardFor(1042);
-    fireEvent.click(within(readyCard).getByRole("button", { name: "Start preparing" }));
+    fireEvent.click(within(readyCard).getByRole("button", { name: "Pack order" }));
     const dialog = screen.getByRole("alertdialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Start preparing" }));
-    expect(within(dialog).getByRole("button", { name: "Starting…" }).getAttribute("aria-busy")).toBe("true");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Pack order" }));
+    expect(within(dialog).getByRole("button", { name: "Packing…" }).getAttribute("aria-busy")).toBe("true");
     expect(within(readyCard).queryByText("Mark as dispatched")).toBeNull();
     expect(toast.success).not.toHaveBeenCalled();
     await act(async () => pending.settle({ ok: false, reason: "IMS deduction could not be confirmed. Refresh before retrying." }));
     expect(toast.error).toHaveBeenCalledWith("IMS deduction could not be confirmed. Refresh before retrying.");
-    expect(within(cardFor(1042)).getByRole("button", { name: "Start preparing" })).toBeTruthy();
+    expect(within(cardFor(1042)).getByRole("button", { name: "Pack order" })).toBeTruthy();
   });
 
-  it("starts preparing once the server confirms", async () => {
+  it("shows who packed an Order on its board card", () => {
+    board({ preparing: [card({ status: "preparing", packedBy: { name: "Liza B." } })] });
+    expect(within(cardFor(1042)).getByText("Packed by Liza B.")).toBeTruthy();
+  });
+
+  it("packs once the server confirms", async () => {
     vi.mocked(startPreparing).mockResolvedValue(moved(1042, "preparing"));
     board({ ready: [card({})] });
-    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Start preparing" }));
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Start preparing" }));
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Pack order" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Pack order" }));
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 is now preparing."));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 packed."));
     expect(startPreparing).toHaveBeenCalledWith(1042);
   });
 
@@ -313,6 +320,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
+  packedBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),
   status: "paid",
@@ -331,19 +339,45 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
 });
 
 const FULFILMENT = ["Fulfilment"];
-const MOVES = ["Start preparing", "Mark as dispatched", "Mark as delivered"];
+
+describe("Order detail packing", () => {
+  it("shows the packer's name and offers the packing slip to Fulfilment", () => {
+    render(<OrderDetailView order={detail({ status: "preparing", packedBy: { id: "u1", name: "Liza B.", at: new Date("2026-10-21T01:00:00Z") } })} modules={FULFILMENT} />);
+    expect(screen.getByText(/Packed by Liza B\./)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Print packing slip" })).toBeTruthy();
+  });
+
+  it("loads the slip and prints it, and says why when it cannot", async () => {
+    const print = vi.fn();
+    window.print = print;
+    vi.mocked(loadPackingSlip).mockResolvedValueOnce({ ok: false, reason: "Order was not found." });
+    render(<OrderDetailView order={detail({ status: "paid" })} modules={FULFILMENT} />);
+    fireEvent.click(screen.getByRole("button", { name: "Print packing slip" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Order was not found."));
+    expect(print).not.toHaveBeenCalled();
+
+    vi.mocked(loadPackingSlip).mockResolvedValueOnce({ ok: true, slip: {
+      id: 1042, createdAt: new Date("2026-10-20T00:00:00Z"), customer: { id: "c1", name: "Maria Santos" },
+      fulfillmentMethod: "delivery", lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }], address: null, packedBy: null,
+    } } as never);
+    fireEvent.click(screen.getByRole("button", { name: "Print packing slip" }));
+    await waitFor(() => expect(print).toHaveBeenCalled());
+    expect(screen.getByLabelText("Packing slip").textContent).toContain("Halaya");
+  });
+});
+const MOVES = ["Pack order", "Mark as dispatched", "Mark as delivered"];
 
 describe("the Fulfilment Module's moves on an Order's detail", () => {
   it("offers the next move for each status", () => {
     const cases: [Partial<OrderDetail>, string[]][] = [
-      [{ status: "paid" }, ["Start preparing"]],
-      [{ status: "confirmed", paymentMethod: "cash-on-delivery", paymentLabel: "Unpaid" }, ["Start preparing"]],
+      [{ status: "paid" }, ["Pack order"]],
+      [{ status: "confirmed", paymentMethod: "cash-on-delivery", paymentLabel: "Unpaid" }, ["Pack order"]],
       [{ status: "preparing" }, ["Mark as dispatched"]],
       [{ status: "dispatched" }, ["Mark as delivered"]],
     ];
     for (const [overrides, expected] of cases) {
       const { unmount } = render(<OrderDetailView order={detail(overrides)} modules={FULFILMENT} />);
-      expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(expected);
+      expect(screen.getAllByRole("button").map((b) => b.textContent).filter((t) => t !== "Print packing slip")).toEqual(expected);
       unmount();
     }
   });
@@ -357,7 +391,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
       { status: "cancelled", paymentLabel: "Cancelled" as const },
     ]) {
       const { unmount } = render(<OrderDetailView order={detail(overrides)} modules={FULFILMENT} />);
-      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      expect(screen.queryAllByRole("button").filter((b) => b.textContent !== "Print packing slip")).toHaveLength(0);
       unmount();
     }
   });

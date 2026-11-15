@@ -12,6 +12,7 @@ import { PaymentsView } from "@/features/orders/payment-queue";
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/orders/actions", () => ({
+  loadPackingSlip: vi.fn(),
   quoteDeliveryFee: vi.fn(),
   confirmPickup: vi.fn(),
   cancelOrder: vi.fn(),
@@ -141,6 +142,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
+  packedBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),
   status: "confirmed",
@@ -741,6 +743,6 @@ describe("received Orders", () => {
     const progress = screen.getByRole("list", { name: "Order progress" });
     const current = within(progress).getAllByRole("listitem").find(item => item.getAttribute("aria-current") === "step");
     expect(current?.textContent).toBe("Received");
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryAllByRole("button").map(b => b.textContent)).toEqual(["Print packing slip"]);
   });
 });

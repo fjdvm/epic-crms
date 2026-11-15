@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 import { FulfilmentMove } from "./fulfilment-moves";
 import type { OrderDetail } from "./orders";
+import { PrintPackingSlip } from "./packing-slip";
 import { OrdersActions } from "./orders-actions";
 import { PaymentsActions } from "./payments-actions";
 import { StatusPill } from "./status-pill";
@@ -126,6 +127,7 @@ export function LiveActions({ order, modules }: { order: OrderDetail; modules: r
       {modules.includes(PAYMENTS_MODULE) && (
         <PaymentsActions order={live} withCancel={!modules.includes(ORDERS_MODULE)} />
       )}
+      {modules.includes(FULFILMENT_MODULE) && <PrintPackingSlip id={order.id} />}
       {modules.includes(FULFILMENT_MODULE) && <FulfilmentMove order={live} onMove={move} />}
     </div>
   );
