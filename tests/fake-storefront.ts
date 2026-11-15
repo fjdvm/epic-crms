@@ -457,6 +457,7 @@ export class FakeStorefront {
     const [changed] = await this.sql`
       update orders set status = ${mayConfirm && order.status !== "placed" ? order.status : update.status},
         delivery_photo_file_id = ${mayDeliver ? update.deliveryPhotoFileId : order.delivery_photo_file_id},
+        dispatched_at = ${mayDispatch ? new Date() : order.dispatched_at},
         delivered_at = ${mayDeliver ? new Date() : order.delivered_at},
         delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos},
         paid_by_id = ${mayMarkPaid ? update.staffId : order.paid_by_id},
