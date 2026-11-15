@@ -40,12 +40,12 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const evidence = [
   {
-    module: "Fulfilment", label: "Delivery photo", trigger: "Mark as delivered", field: "photo", id: 1042,
+    module: "Fulfilment", label: "Delivery photo", trigger: "Mark as delivered", confirmLabel: "Mark as delivered", field: "photo", id: 1042,
     render: () => render(<FulfilmentMove order={{ id: 1042, status: "dispatched", paymentMethod: "gcash", fulfillmentMethod: "delivery" }} />),
     submit: deliverOrder,
   },
   {
-    module: "Returns", label: "Refund proof", trigger: "Mark refunded", field: "proof", id: 15,
+    module: "Returns", label: "Refund proof", trigger: "Issue refund", confirmLabel: "Mark refunded", field: "proof", id: 15,
     render: () => render(<ReturnActions id={15} number="RMA-15" status="goods received" goodsRequired preferredResolution="refund" finalResolution="refund" />),
     submit: markReturnRefunded,
   },
@@ -69,7 +69,7 @@ for (const picker of evidence) {
       return screen.getByRole("alertdialog");
     }
     function confirm(dialog: HTMLElement) {
-      fireEvent.click(within(dialog).getByRole("button", { name: picker.trigger }));
+      fireEvent.click(within(dialog).getByRole("button", { name: picker.confirmLabel }));
     }
 
     it("previews locally, waits for confirmation, sends bytes to storage and submits only the confirmed reference", async () => {

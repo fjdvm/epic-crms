@@ -62,7 +62,7 @@ describe("Staff Request approval", () => {
   it("lets Staff finish an approved refund with that approval", async () => {
     vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true } as never);
     render(<ReturnActions id={15} number="RMA-15" status="approved" goodsRequired={false} preferredResolution="refund" finalResolution="refund" role="staff" requests={[request({ status: "approved" })]} />);
-    expect(screen.getByRole("button", { name: "Mark refunded" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Issue refund" })).toBeTruthy();
   });
 
   it("shows no actions to Admin or CEO", () => {

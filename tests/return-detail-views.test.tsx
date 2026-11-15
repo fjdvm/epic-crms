@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { ReturnActions } from "@/features/returns/return-actions";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ReturnDetailView } from "@/features/returns/return-detail";
@@ -118,8 +119,8 @@ describe("the Return detail", () => {
   it.each([
     ["requested", null, ["Decline", "Approve"]],
     ["approved", true, ["Mark goods received"]],
-    ["approved", false, ["Mark refunded"]],
-    ["goods received", true, ["Mark refunded"]],
+    ["approved", false, ["Issue refund"]],
+    ["goods received", true, ["Issue refund"]],
     ["refunded", true, []],
     ["replaced", true, []],
     ["declined", null, []],
@@ -286,13 +287,13 @@ describe("goods received and refunded", () => {
   const attach = (file: File) =>
     fireEvent.change(within(screen.getByRole("alertdialog")).getByLabelText("Refund proof"), { target: { files: [file] } });
   const confirmRefund = () =>
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark refunded" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }));
 
   it("cannot mark refunded until a refund proof is attached", () => {
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
-    const confirm = within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark refunded" }) as HTMLButtonElement;
+    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    const confirm = within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }) as HTMLButtonElement;
 
     expect(confirm.disabled).toBe(true);
     expect(markReturnRefunded).not.toHaveBeenCalled();
@@ -301,18 +302,18 @@ describe("goods received and refunded", () => {
   it("refuses a proof that is not a JPG or PNG", () => {
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
+    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
     attach(picture("proof.gif", "image/gif"));
 
     expect(within(screen.getByRole("alertdialog")).getByRole("alert")).toBeTruthy();
-    expect((within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark refunded" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("asks before marking refunded, and sends the proof", async () => {
     vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true, return: { id: 15, status: "refunded" } });
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
+    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
     attach(picture());
     expect(markReturnRefunded).not.toHaveBeenCalled();
     confirmRefund();
@@ -339,7 +340,7 @@ describe("goods received and refunded", () => {
     vi.mocked(markReturnRefunded).mockResolvedValue({ ok: false, reason: "Return already changed; refresh it before trying again." });
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
+    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
     attach(picture());
     confirmRefund();
 
@@ -351,11 +352,24 @@ describe("goods received and refunded", () => {
     vi.mocked(markReturnRefunded).mockRejectedValue(new Error("offline"));
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark refunded" }));
+    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
     attach(picture());
     confirmRefund();
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(toast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe("Issue refund dialog", () => {
+  it("shows the Figma dialog: items, where the money goes back, the amount and the proof", () => {
+    render(<ReturnActions id={15} number="RMA-15" status="goods received" goodsRequired preferredResolution="refund" finalResolution="refund"
+      refund={{ customerName: "Maria Santos", amount: 39_900, paymentMethod: "maya", items: [{ name: "Ube Halaya · Tub", quantity: 1 }] }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Issue refund" });
+    expect(within(dialog).getByText(/RMA-15 · Maria Santos · paid ₱399\.00 via Maya/)).toBeTruthy();
+    expect(within(dialog).getByText("Send back by Maya")).toBeTruthy();
+    expect(within(dialog).getByText("Refund amount")).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: "Refund ₱399.00" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
