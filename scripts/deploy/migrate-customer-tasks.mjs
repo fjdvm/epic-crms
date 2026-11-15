@@ -3,8 +3,11 @@ import postgres from "postgres";
 
 const url = process.env.CREOMS_WRITER_DATABASE_URL;
 if (!url) throw new Error("CREOMS_WRITER_DATABASE_URL is required.");
-if (new URL(url).hostname.includes("-pooler")) throw new Error("Use a direct connection for migrations.");
-const sql = postgres(url, { max: 1 });
+const connection = new URL(url);
+// Neon exposes the same branch directly by removing -pooler from its endpoint hostname.
+if (connection.hostname.endsWith(".neon.tech")) connection.hostname = connection.hostname.replace(/-pooler(?=\.)/, "");
+if (connection.hostname.includes("-pooler")) throw new Error("Use a direct connection for migrations.");
+const sql = postgres(connection.toString(), { max: 1 });
 try {
   await sql.begin(async tx => {
     await tx`set local role creoms_writer`;

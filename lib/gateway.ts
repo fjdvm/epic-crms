@@ -23,7 +23,10 @@ export const sendAppEmail: SendAppEmail = async (email) => {
 };
 
 /** Delivers every CREOMS Audit Event through the gateway, with a bounded, best-effort write. */
-export const gatewayAuditTrail: AuditTrail = (event) => recordAudit(async () => {
+export const gatewayAuditTrail: AuditTrail = (event) => recordAudit(deliverGatewayAuditEvent, event);
+
+/** Acknowledged delivery for callers with a persisted audit receipt. Failures remain retryable. */
+export const deliverGatewayAuditEvent: AuditTrail = async (event) => {
   const { base, key } = gateway();
   const { operationId, ...fields } = event;
   const idempotencyKey = createHash("sha256")
@@ -36,7 +39,7 @@ export const gatewayAuditTrail: AuditTrail = (event) => recordAudit(async () => 
     signal: AbortSignal.timeout(5_000),
   });
   if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
-}, event);
+};
 
 /** Where the Customer reviews a Ticket in the storefront. */
 export function storefrontTicketUrl(id: number): string {
