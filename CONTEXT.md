@@ -5,7 +5,7 @@ A staff-facing CRM for an ecommerce store. Staff use it to see who their custome
 ## Language
 
 **Staff**:
-A person who signs in through the central portal and works in CREOMS. The portal calls the same person a User. Never a Customer.
+A person who signs in through the central portal and works in CREOMS. The portal calls the same person a User. Never a Customer. Each Staff member has one Role.
 _Avoid_: User, admin
 
 **Portal**:
@@ -25,7 +25,7 @@ A person who signed up but has not yet verified their email. Becomes a Customer 
 _Avoid_: Unverified customer, prospect
 
 **Walk-in Customer**:
-A person Staff add by hand in CREOMS, for people who order by chat, phone or in person and have no storefront account. They are not a Customer: they never signed up or verified an email, and have no storefront Orders or Cart, and no Tickets: Staff cannot open one for them. They appear in the Customer Profiles list marked "Walk-in". If the same email later becomes a Customer, the two merge into that Customer's Customer Profile.
+A person Staff add by hand in CREOMS, for people who deal with the shop by chat, phone or in person and have no storefront account. Staff cannot place an Order for them; to buy, they sign up on the storefront. They are not a Customer: they never signed up or verified an email, and have no storefront Orders or Cart, and no Tickets: Staff cannot open one for them. They appear in the Customer Profiles list marked "Walk-in". If the same email later becomes a Customer, the two merge into that Customer's Customer Profile.
 _Avoid_: Manual customer, offline customer, Lead
 
 **Customer Profile**:
@@ -52,11 +52,11 @@ The page of business figures Staff see at a glance: Sales, Orders, Average order
 _Avoid_: Analytics, report page, overview
 
 **Order**:
-A Customer's request to buy, placed on the storefront. CREOMS never creates an Order: it shows the storefront's Orders and lets Staff move them forward. The storefront owns the Order and its rules; CREOMS asks it to make each change so the rules and the Customer's emails stay in one place.
+A Customer's request to buy, placed on the storefront. CREOMS never creates an Order, apart from a Replacement Order a Manager approves: it shows the storefront's Orders and lets Staff move them forward. The storefront owns the Order and its rules; CREOMS asks it to make each change so the rules and the Customer's emails stay in one place.
 _Avoid_: Purchase, transaction
 
 **Order status**:
-Where an Order is in its life: `placed`, `confirmed`, `awaiting payment`, `paid`, `preparing`, `dispatched`, `delivered`, `received` or `cancelled`. Only the Customer marks an Order `received`; it acknowledges delivery without resetting the Refund window. Pickup and Cash on Delivery Orders skip the payment steps. These are the storefront's statuses; the design's "Pending", "Packed" and "Shipped" mean `placed`, `preparing` and `dispatched`. Payment is part of the status, not a separate field. Staff can cancel an Order up to `preparing`; nobody can cancel a `dispatched` Order yet.
+Where an Order is in its life: `placed`, `confirmed`, `awaiting payment`, `paid`, `preparing`, `dispatched`, `delivered`, `received` or `cancelled`. Only the Customer marks an Order `received`; it acknowledges delivery without resetting the Refund window. Pickup and Cash on Delivery Orders skip the payment steps. These are the storefront's statuses; the design's "Pending", "Packed" and "Shipped" mean `placed`, `preparing` and `dispatched`. Payment is part of the status, not a separate field. Staff can cancel an Order up to `preparing`; cancelling a `dispatched` Order needs a Manager's approval.
 _Avoid_: Order state, fulfillment status, payment status
 
 **Delivery fee**:
@@ -64,11 +64,11 @@ The courier cost of a Delivery Order, quoted by Staff by hand after the Order is
 _Avoid_: Shipping fee, shipping
 
 **Payment proof**:
-The GCash reference number, and optionally a screenshot, a Customer submits for an Order. Staff with the Payments Module check it and either mark the Order `paid` or cancel it. There is no rejecting a proof and asking for another: a Customer submits proof once.
+The reference number, and optionally a screenshot, a Customer submits for an Order paid by GCash, Maya or bank transfer. All three are manual: the Customer pays outside the shop and Staff check the proof by hand. Staff with the Payments Module check it and either mark the Order `paid`, reject it with a reason, or cancel the Order. A Customer whose proof is rejected may submit another; every proof and rejection is kept. After 3 rejected proofs only a Manager can approve the Order.
 _Avoid_: Receipt, payment confirmation
 
 **Stage**:
-A label derived from a Customer's Orders, never set by hand: New (no Orders), First order (one Order), Repeat (two or more), At risk (no Order in 60 days), Lost (no Order in 120 days). At risk and Lost take precedence over First order and Repeat.
+A label derived from a Customer's Orders (Replacement Orders do not count), never set by hand: New (no Orders), First order (one Order), Repeat (two or more), At risk (no Order in 60 days), Lost (no Order in 120 days). At risk and Lost take precedence over First order and Repeat.
 _Avoid_: Lifecycle, status, segment
 
 **New Customer notification**:
@@ -162,8 +162,51 @@ _Avoid_: Chat thread, inbox message, Messenger or Instagram chat
 A Customer's request to have one or more whole Order line items refunded or replaced. The storefront owns it; CREOMS reads it and asks the storefront to make Staff decisions. It has a Return number (`RMA-` followed by its number) and is Requested, Approved, Goods received, Refunded, Replaced, Declined or cancelled by the Customer while Requested. Refunded, Replaced and Declined are final. A Return never changes its Order's status.
 
 **Resolution**:
-What a Return ends in: a refund or a replacement. The Customer states a preference; Staff record the final Resolution on approval, and may differ from the preference. A replacement ends at Replaced once sent, creates no new Order and leaves Total spent unchanged.
+What a Return ends in: a refund or a replacement. The Customer states a preference; Staff record the final Resolution on approval, and may differ from the preference. A refund goes back the way the Customer paid (GCash, Maya or bank transfer) and Staff upload proof of it; a Cash on Delivery Order has nothing to refund. A replacement ends at Replaced once sent, and is sent as a Replacement Order. Only whole line items and a replacement of the same item are handled; part-quantity returns, exchanges for another size and store credit are not.
 _Avoid_: Outcome, remedy
 
+**Replacement Order**:
+A new ₱0 Order, linked to the original Order, that sends a Customer the same item again after an approved replacement. It reserves its own stock and is packed, dispatched with a Lalamove or Grab link and tracked like any Order. It leaves Total spent unchanged and does not count in the Customer's order count, their Stage, Buyers or Sales. The shop pays the courier fee; it is never quoted to the Customer.
+_Avoid_: Free order, resend
+
 **Refund window**:
-The 24 hours starting at the storefront's `delivered_at`, during which the Customer may request a Return. It limits the request, not Staff handling: an in-time Return remains valid. A Customer marking the Order `received` ends the window and gives up the right to a Return.
+The 24 hours starting at the storefront's `delivered_at`, during which the Customer may request a Return. It limits the request, not Staff handling: an in-time Return remains valid. A Customer marking the Order `received` ends the window and gives up the right to a Return. A Manager may extend the window once per Order by another 24 hours, with a reason; Staff see "Request approval".
+
+**Role**:
+What a Staff member is in CREOMS: Staff / Employee, Manager, Admin or CEO. The Admin assigns it in the Portal, and it ticks that Role's usual Modules; the Modules remain the gate to each page. Only the Role decides who approves. Staff do daily work that is easy to undo; a Manager also approves; the Admin runs the system and views every module; the CEO views everything and only gives final approval above the Approval limit.
+_Avoid_: Permission, level
+
+**Request approval**:
+What Staff see in place of a button for an action that needs a Manager: money, removing stock, overriding an AI warning, or moving someone else's work.
+_Avoid_: Escalate (a Ticket word)
+
+**Approval limit**:
+₱5,000, set by the Admin. A refund or write-off of more than the limit, measured by the selling price of the Return's items, also needs the CEO's final approval; exactly ₱5,000 or less stops at the Manager.
+_Avoid_: Threshold, cap
+
+**Warehouse**:
+The one place online Orders are reserved from, packed at and dispatched from; the IMS holds its stock. Commissary, factory and kitchen are the same place. Stock already distributed to POS branches is not sold online.
+_Avoid_: Commissary, factory, branch, location
+
+**Reservation**:
+Stock the IMS sets aside for an Order the moment it is placed, so no one else can buy it. It is released if the Order is cancelled, or if a GCash Order stays unpaid for 24 hours (the Customer is emailed and the Order is cancelled). The IMS takes it out of stock when the Order is packed. Checkout blocks when none is left.
+_Avoid_: Hold (a batch Hold is different)
+
+**Free delivery**:
+A Delivery Order whose subtotal, before any Senior/PWD discount, is strictly over ₱2,500 has a Delivery fee of ₱0 and is confirmed at placement. If cancelled items bring the subtotal to ₱2,500 or less, Staff must quote a Delivery fee.
+
+**Senior/PWD verified**:
+A Customer whose Senior Citizen or PWD ID Staff have checked and approved. They get 5% off one item per ID, for personal use. The ID photo is private and is deleted right after review; if nobody reviews it within 7 days it is removed anyway and the Customer uploads it again. Only the verified mark, a hash of the ID number, the approver's name and the ID's expiry date are kept: the ID number itself is never stored in plain text, shown in an email, or written to a log. Staff check the name against the one already on the account, and the Customer is never asked for a detail the system already holds. The same ID number cannot verify a second account. The discount stops on the expiry date and the Customer verifies again. For Pickup, Staff also see the original ID at collection.
+_Avoid_: Discount ID, senior account
+
+**Courier details**:
+What Staff record when a Delivery Order is dispatched: Lalamove or Grab, the booking's share link (`https`), and optionally the rider's name, plate number and phone. The Customer sees "Track your delivery". Pickup Orders have none.
+_Avoid_: Tracking, tracking number
+
+**Failed delivery**:
+An attempt where the rider could not deliver, recorded with a reason on the Order. The Order stays `dispatched`; Staff rebook the courier or ask a Manager to cancel it.
+_Avoid_: Returned to sender
+
+**COD flag**:
+A plain rule that marks a Cash on Delivery Order for Staff to double-check before confirming: a first order, a first order over ₱1,500 (an Admin setting), a phone number that refused an earlier Order, or an earlier failed delivery. Staff see which rule fired; nothing is blocked and no AI scores it.
+_Avoid_: Fraud score, risk percentage
