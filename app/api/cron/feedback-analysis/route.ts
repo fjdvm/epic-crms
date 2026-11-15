@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { runAnalysis } from "@/features/feedback/analysis";
 import { configuredClients } from "@/features/feedback/sentiment-clients";
 import { cronAuthorised } from "@/lib/cron-auth";
+import { reportLiveError } from "@/lib/error-monitor";
 import { feedbackWriterDatabase } from "@/lib/feedback-db";
 import { gatewayAuditTrail } from "@/lib/gateway";
 
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("Scheduled Feedback analysis failed", error);
+    await reportLiveError("cron:feedback-analysis", error);
 
     return NextResponse.json({ error: "analysis failed" }, { status: 500 });
   }

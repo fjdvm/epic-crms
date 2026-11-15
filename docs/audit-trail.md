@@ -148,3 +148,12 @@ Migration verification (2026-10-27): applied twice on a temporary branch of the
 configured ecommerce production database, verified table ownership and rolling
 cooldown behavior as `creoms_writer`, then applied to the configured production
 branch as that role. The temporary database branch was removed afterward.
+
+## Error monitoring (#357)
+
+`lib/error-monitor.ts` records every server error as a `system.error` Audit Event and emails the owner
+(`OWNER_ALERT_EMAIL`, through the notifications App email) at most once per kind per hour; the throttle is the
+`crms.error_alerts` table (`docs/db/crms-error-alerts.sql`), claimed by one atomic upsert. Sources: `onRequestError`
+in `instrumentation.ts` (kind = error name + route) and the two cron routes (`cron:feedback-analysis`,
+`cron:scheduled-announcements`). The stock auto-release job runs in the storefront, not CREOMS, so it reports from
+there. `/api/ready` checks both databases; `/api/health` stays liveness-only.

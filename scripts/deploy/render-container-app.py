@@ -18,7 +18,7 @@ fixed = {
     'CREOMS_GATEWAY_URL': 'https://api.buildwrite.me',
 }
 # Optional: left out of the container when no GitHub secret is set.
-optional = ['CREOMS_UPLOAD_SECRET']
+optional = ['CREOMS_UPLOAD_SECRET', 'OWNER_ALERT_EMAIL']
 # The Portal only stores a hash of this, so it is set from the Portal seed at cutover (#203/#204).
 # Until then a placeholder lets the app start; sign-in is refused by the Portal.
 PLACEHOLDER = 'pending-portal-seed-not-a-real-secret'
@@ -65,7 +65,7 @@ manifest = {
                         + [{'name': k, 'value': v} for k, v in fixed.items()]),
                 'probes': [{
                     'type': kind,
-                    'httpGet': {'path': '/api/health', 'port': 3000, 'scheme': 'HTTP'},
+                    'httpGet': {'path': '/api/ready' if kind == 'Readiness' else '/api/health', 'port': 3000, 'scheme': 'HTTP'},
                     'initialDelaySeconds': delay, 'periodSeconds': 10,
                     'timeoutSeconds': 5, 'failureThreshold': failures,
                 } for kind, delay, failures in [('Startup', 5, 30), ('Readiness', 5, 3), ('Liveness', 30, 3)]],
