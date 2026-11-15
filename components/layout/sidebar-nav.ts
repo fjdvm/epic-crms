@@ -14,6 +14,7 @@ import {
   Users2,
   Package,
   ClipboardCheck,
+  ListChecks,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -50,6 +51,13 @@ export const customerProfilesItem: NavItem = {
   name: "Customer Profiles",
   href: "/customer-profiles",
   icon: Users,
+};
+
+export const myTasksItem: NavItem = {
+  group: "CUSTOMERS",
+  name: "My tasks",
+  href: "/my-tasks",
+  icon: ListChecks,
 };
 
 export const ordersItem: NavItem = {
@@ -119,6 +127,7 @@ export const emailCampaignsItem: NavItem = {
 export const sidebarItems: NavItem[] = [
   dashboardItem,
   customerProfilesItem,
+  myTasksItem,
   ordersItem,
   paymentsItem,
   fulfilmentItem,

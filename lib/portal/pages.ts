@@ -14,6 +14,7 @@ import {
 export const pages = [
   { href: "/dashboard", module: DASHBOARD_MODULE },
   { href: "/customer-profiles", module: CUSTOMER_PROFILES_MODULE },
+  { href: "/my-tasks", module: CUSTOMER_PROFILES_MODULE },
   { href: "/orders", module: ORDERS_MODULE },
   { href: "/payments", module: PAYMENTS_MODULE },
   { href: "/fulfilment", module: FULFILMENT_MODULE },

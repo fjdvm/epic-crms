@@ -121,7 +121,7 @@ describe("which pages a Staff member may open", () => {
     expect(await access.overview()).toEqual({
       decision: "allowed",
       staff: ada,
-      pages: ["/customer-profiles"],
+      pages: ["/customer-profiles", "/my-tasks"],
     });
   });
 
@@ -145,7 +145,7 @@ describe("which pages a Staff member may open", () => {
     const access = accessFor(await signInAda([CUSTOMER_PROFILES, TICKETS]));
 
     expect(await access.overview()).toMatchObject({
-      pages: ["/customer-profiles", "/tickets", "/conversations"],
+      pages: ["/customer-profiles", "/my-tasks", "/tickets", "/conversations"],
     });
   });
 
@@ -248,13 +248,13 @@ describe("access to the Dashboard page", () => {
 
   it("is the first page `/` tries, so it lands there for Staff who hold it", async () => {
     expect(await accessFor(await signInAda([CUSTOMER_PROFILES, DASHBOARD])).overview()).toMatchObject({
-      pages: ["/dashboard", "/customer-profiles"],
+      pages: ["/dashboard", "/customer-profiles", "/my-tasks"],
     });
   });
 
   it("leaves the first permitted page first for Staff without it", async () => {
     expect(await accessFor(await signInAda([CUSTOMER_PROFILES, TICKETS])).overview()).toMatchObject({
-      pages: ["/customer-profiles", "/tickets", "/conversations"],
+      pages: ["/customer-profiles", "/my-tasks", "/tickets", "/conversations"],
     });
   });
 });

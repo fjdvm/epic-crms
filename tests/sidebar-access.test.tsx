@@ -46,6 +46,12 @@ describe("the sidebar", () => {
     expect(screen.queryByRole("link", { name: "Customer Profiles" })).toBeNull();
   });
 
+  it("lists My tasks beside Customer Profiles only with its page", async () => {
+    renderSidebar(["/customer-profiles", "/my-tasks"]);
+
+    expect(await screen.findByRole("link", { name: "My tasks" })).toBeTruthy();
+  });
+
   it("groups Customer Profiles under CUSTOMERS and shows the system name", async () => {
     renderSidebar(["/customer-profiles"]);
 
