@@ -612,7 +612,7 @@ export async function sendDue(sql: postgres.Sql, ports: SendPorts): Promise<DueR
   return run;
 }
 
-/** Every Subscriber now: verified Customers who said yes to marketing. Walk-in Customers and Leads have no verified account. */
+/** Every Subscriber now: verified Customers who said yes to marketing. Leads have no verified account. */
 export const storefrontSubscribers = (sql: postgres.Sql): SubscriberSource => ({
   async list() {
     const rows = await sql<{ id: string; email: string }[]>`

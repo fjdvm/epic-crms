@@ -195,7 +195,7 @@ describe("Dashboard Returning Buyers", () => {
   it("ignores Orders that do not count in Sales, and Customers with no Orders", async () => {
     await order("cancelled", "2026-10-20T02:00:00Z", 1, null, "c1");
     await order("paid", "2026-10-25T02:00:00Z", 1, null, "c1");
-    await db.sql`insert into customers (id, full_name, email) values ('w1', 'Walk In', 'walk@example.com')`;
+    await db.sql`insert into customers (id, full_name, email) values ('w1', 'No Account', 'walk@example.com')`;
 
     expect((await figures(ALL)).returningBuyers).toMatchObject({ current: { share: 0, buyers: 1 } });
   });

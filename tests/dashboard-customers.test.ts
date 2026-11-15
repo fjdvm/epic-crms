@@ -70,14 +70,14 @@ describe("Dashboard Customers", () => {
   });
 
 
-  it("keeps unverified Leads separate and excludes Walk-in Customers from every Customers figure", async () => {
+  it("keeps unverified Leads separate and excludes accounts with no storefront identity from every Customers figure", async () => {
     await customer("verified", true, "2026-10-25T01:00:00Z");
     await customer("lead-today", false, "2026-10-25T01:00:00Z");
     await customer("lead-old", false);
     // A Lead with an Order still is not a Customer.
     await order("lead-today", "2026-10-25T01:00:00Z");
-    // Walk-in Customers have no storefront auth identity.
-    await db.sql`insert into customers (id, full_name, email) values ('walk', 'Walk-in', 'walk@example.com')`;
+    // A customer row with no auth identity.
+    await db.sql`insert into customers (id, full_name, email) values ('walk', 'Unverified', 'walk@example.com')`;
     const result = await figures();
     expect(result.customersByStage).toEqual({ ok: true, counts: {
       new: 1, "first-order": 0, repeat: 0, "at-risk": 0, lost: 0,

@@ -1,11 +1,9 @@
 import type postgres from "postgres";
 
-import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageCutoffs, type Stage } from "./rules";
 import { notReplacement } from "@/lib/replacement-order";
-import { normaliseMobile } from "./walk-in-rules";
-import { listWalkIns, type WalkInSummary } from "./walk-ins";
+import { normaliseMobile } from "./mobile";
 
 export const PAGE_SIZE = 20;
 
@@ -37,8 +35,6 @@ export interface CustomerListQuery {
   direction?: "asc" | "desc";
   page?: number;
   pageSize?: number;
-  /** Walk-in Customers to list alongside the Customers; they are New, with no Orders. */
-  walkIns?: WalkInSummary[];
 }
 
 export interface CustomerRow {
@@ -54,8 +50,6 @@ export interface CustomerRow {
   stage: Stage;
   cartHasItems: boolean;
   customerSince: Date;
-  /** Added by Staff, with no storefront account. */
-  walkIn: boolean;
 }
 
 export interface CustomerList {
@@ -75,7 +69,7 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
-/** Verified Customers from the shared ecommerce database, plus Walk-in Customers; Leads never appear. */
+/** Verified Customers from the shared ecommerce database only; Leads never appear. */
 export async function listCustomers(
   sql: postgres.Sql,
   query: CustomerListQuery = {},
@@ -83,7 +77,6 @@ export async function listCustomers(
   const sortKey = query.sort && query.sort in SORT_COLUMNS ? query.sort : "customerSince";
   const direction = query.direction === "asc" ? "asc" : "desc";
   const pageSize = query.pageSize ?? PAGE_SIZE;
-  const walkIns = query.walkIns ?? [];
   const search = query.search?.trim() ?? "";
   const pattern = `%${escapeLike(search)}%`;
 
@@ -112,8 +105,7 @@ export async function listCustomers(
         coalesce(o.total_spent, 0)::bigint as total_spent,
         o.last_order,
         coalesce(o.stage_orders, 0) as stage_orders,
-        exists (select 1 from public.cart_lines cl where cl.customer_id = c.id) as cart_has_items,
-        false as walk_in
+        exists (select 1 from public.cart_lines cl where cl.customer_id = c.id) as cart_has_items
       from public.customers c
       join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
       left join lateral (
@@ -127,33 +119,6 @@ export async function listCustomers(
           count(*) filter (where status <> 'cancelled') as stage_orders
         from public.orders customer_order where customer_order.customer_id = c.id and ${notReplacement(sql, "customer_order")}
       ) o on true
-      union all
-      select
-        w.id,
-        w.name,
-        w.email,
-        w.contact_number,
-        w.created_at as customer_since,
-        0 as orders,
-        0::bigint as total_spent,
-        null::timestamptz as last_order,
-        0::bigint as stage_orders,
-        false as cart_has_items,
-        true as walk_in
-      from jsonb_to_recordset(${sql.json(walkIns.map((w) => ({
-        id: w.id,
-        name: w.name,
-        email: w.email,
-        contact_number: w.contactNumber,
-        created_at: w.createdAt.toISOString(),
-      })))}) as w(id text, name text, email text, contact_number text, created_at timestamptz)
-      -- A Walk-in whose email has verified is that Customer now: listed once, as the Customer.
-      where not exists (
-        select 1
-        from public.customers vc
-        join neon_auth."user" vu on vu.id::text = vc.id and vu."emailVerified"
-        where w.email <> '' and lower(vc.email) = lower(w.email)
-      )
     ),
     staged as (
       select agg.*,
@@ -201,7 +166,6 @@ export async function listCustomers(
       stage: r.stage as Stage,
       cartHasItems: r.cart_has_items as boolean,
       customerSince: r.customer_since as Date,
-      walkIn: r.walk_in as boolean,
     })),
     matching: counts.matching,
     profileCount: counts.profile_count,
@@ -228,24 +192,11 @@ export type CustomerListResult =
 export async function loadCustomers(
   connect: () => postgres.Sql,
   query: CustomerListQuery,
-  connectCrms: () => postgres.Sql = crmsDatabase,
 ): Promise<CustomerListResult> {
   try {
-    const walkIns = await readWalkIns(connectCrms);
-
-    return { ok: true, list: await listCustomers(connect(), { walkIns, ...query }) };
+    return { ok: true, list: await listCustomers(connect(), query) };
   } catch (error) {
     console.error("Customer Profiles could not read the ecommerce database", error);
     return { ok: false };
-  }
-}
-
-/** Walk-in Customers are CREOMS's own data: if they cannot be read, the list still shows Customers. */
-async function readWalkIns(connectCrms: () => postgres.Sql): Promise<WalkInSummary[]> {
-  try {
-    return await listWalkIns(connectCrms());
-  } catch (error) {
-    console.error("Customer Profiles could not read Walk-in Customers", error);
-    return [];
   }
 }

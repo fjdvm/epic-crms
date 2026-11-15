@@ -18,7 +18,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const profile: CustomerProfile = {
   id: "c", name: "Maria Santos", firstName: "Maria", middleName: null, lastName: "Santos", email: "maria@example.test", contactNumber: "09171234567", marketingOptIn: false,
   customerSince: new Date("2026-01-01"), stage: "new", defaultCity: null, orders: 0, totalSpent: 0, averageOrder: null, lastOrder: null, feedbackCount: 0, averageRating: null,
-  addresses: [], orderHistory: [], cart: { lines: [], total: 0 }, walkIn: null, mergedWalkIn: null, emailsReceived: [], returns: [], notes: [],
+  addresses: [], orderHistory: [], cart: { lines: [], total: 0 }, emailsReceived: [], returns: [], notes: [],
 };
 it("opens cached notes immediately and keeps a pending save across tab switches, including timeline rollback", async () => {
   let finish!: (result: AddCustomerNoteResult) => void;

@@ -6,8 +6,7 @@ a failed breakdown leaves the other figures available.
 
 Money is in centavos and shares are fractions (0–1). Every breakdown uses Orders
 counted in Sales (`paid`, `preparing`, `dispatched`, `delivered`, `received`),
-dated by when the Order was placed. Walk-in Customers have no storefront Orders
-and never count as Buyers.
+dated by when the Order was placed.
 
 Best sellers combine the stored product names across sizes, subtract Refunded
 whole line items from money and units, and return up to four products ranked by

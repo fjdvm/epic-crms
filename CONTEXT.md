@@ -24,10 +24,6 @@ _Avoid_: User, account, contact
 A person who signed up but has not yet verified their email. Becomes a Customer on verification. Leads belong to a separate module, not Customer Profiles.
 _Avoid_: Unverified customer, prospect
 
-**Walk-in Customer**:
-A person Staff add by hand in CREOMS, for people who deal with the shop by chat, phone or in person and have no storefront account. Staff cannot place an Order for them; to buy, they sign up on the storefront. They are not a Customer: they never signed up or verified an email, and have no storefront Orders or Cart, and no Tickets: Staff cannot open one for them. They appear in the Customer Profiles list marked "Walk-in". If the same email later becomes a Customer, the two merge into that Customer's Customer Profile.
-_Avoid_: Manual customer, offline customer, Lead
-
 **Customer Profile**:
 Everything staff can see about one Customer in one place: their details, orders, cart, and marketing emails received.
 _Avoid_: Contact, account, user
@@ -52,11 +48,11 @@ The Dashboard's money figure for a period: the sum of Order totals for Orders pl
 _Avoid_: Revenue
 
 **Buyer**:
-A Customer with at least one Order counted in Sales in a period. A Buyer is Returning if they had an Order counted in Sales before the period began, and New if their first such Order falls inside it. A Buyer who orders twice in the period is counted once, as New or Returning by their first. Walk-in Customers have no Orders, so they are never Buyers.
+A Customer with at least one Order counted in Sales in a period. A Buyer is Returning if they had an Order counted in Sales before the period began, and New if their first such Order falls inside it. A Buyer who orders twice in the period is counted once, as New or Returning by their first.
 _Avoid_: Shopper, repeat customer (Stage already uses Repeat)
 
 **Dashboard**:
-The page of business figures Staff see at a glance: Sales, Orders, Average order, Returning Buyers and Average rating for a chosen period, each compared with the previous period of equal length; the last six months of Sales; a Needs attention list of work waiting on Staff; and breakdowns of products, Buyers, payment and how Orders are received, and Customers. Figures are in Philippine Time. Customers by Stage and At risk Customers are always as of today and ignore the chosen period. Walk-in Customers appear nowhere on it. Staff can export what they are looking at as a PDF; it holds only what the Dashboard shows that Staff member.
+The page of business figures Staff see at a glance: Sales, Orders, Average order, Returning Buyers and Average rating for a chosen period, each compared with the previous period of equal length; the last six months of Sales; a Needs attention list of work waiting on Staff; and breakdowns of products, Buyers, payment and how Orders are received, and Customers. Figures are in Philippine Time. Customers by Stage and At risk Customers are always as of today and ignore the chosen period. Staff can export what they are looking at as a PDF; it holds only what the Dashboard shows that Staff member.
 _Avoid_: Analytics, report page, overview
 
 **Order**:
@@ -100,7 +96,7 @@ A promotional email the store sends to a Customer, produced by the automated ema
 _Avoid_: Inbox, support message
 
 **Subscriber**:
-A Customer whose Marketing opt-in is yes. Marketing Emails go only to Subscribers. Leads and Walk-in Customers are never Subscribers, even if they said yes to marketing.
+A Customer whose Marketing opt-in is yes. Marketing Emails go only to Subscribers. Leads are never Subscribers, even if they said yes to marketing.
 _Avoid_: Recipient, mailing list member
 
 **Unsubscribe**:
