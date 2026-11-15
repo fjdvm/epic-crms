@@ -8,6 +8,7 @@ import { ReturnsTable } from "@/features/returns/returns-table";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
 import type { OrderDetail } from "./orders";
+import type { LineReservation } from "./stock";
 import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PaymentPill } from "./status-pill";
@@ -17,6 +18,17 @@ export const FREE_DELIVERY_THRESHOLD = 250_000;
 
 export function hasFreeDelivery(order: OrderDetail): boolean {
   return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0 && order.subtotal > FREE_DELIVERY_THRESHOLD;
+}
+
+/** "Reserved 4 · 18 left": what this line set aside, and what is still available online. */
+function LineStock({ reservation }: { reservation: LineReservation | undefined }) {
+  if (!reservation) return <span className="text-[#6e6680]">–</span>;
+  return (
+    <span className="inline-flex rounded-full bg-[#e1f5ee] px-2.5 py-[3px] text-xs font-medium text-[#0f6e56]">
+      Reserved {reservation.reserved}
+      {reservation.left !== null && ` · ${reservation.left} left`}
+    </span>
+  );
 }
 
 function DeliveryFee({ order }: { order: OrderDetail }) {
@@ -128,8 +140,11 @@ export function OrderDetailView({
   modules = [],
   deliveryPhotoUrl,
   returns = [],
+  reservations = new Map(),
 }: {
   order: OrderDetail;
+  /** What this Order set aside per line, by Order line id. Empty for Orders placed before Reservations. */
+  reservations?: ReadonlyMap<number, LineReservation>;
   modules?: readonly string[];
   /** A short-lived address for the Delivery photo; null when it exists but could not be reached. */
   deliveryPhotoUrl?: string | null;
@@ -185,6 +200,7 @@ export function OrderDetailView({
                     <th className="py-1 font-medium">Product</th>
                     <th className="py-1 font-medium">Size</th>
                     <th className="py-1 text-right font-medium">Qty</th>
+                    <th className="py-1 pl-4 font-medium">Stock</th>
                     <th className="py-1 text-right font-medium">Price</th>
                   </tr>
                 </thead>
@@ -194,6 +210,9 @@ export function OrderDetailView({
                       <td className="py-2">{l.product}</td>
                       <td className="py-2">{l.size}</td>
                       <td className="py-2 text-right">{l.quantity}</td>
+                      <td className="py-2 pl-4">
+                        <LineStock reservation={l.id === undefined ? undefined : reservations.get(l.id)} />
+                      </td>
                       <td className="py-2 text-right">
                         {formatPesos(l.price)}
                       </td>
