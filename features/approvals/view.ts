@@ -35,6 +35,7 @@ export const ACTION_LABELS: Record<ApprovalAction, string> = {
   "return.decline": "Reject return",
   "return.refund": "Refund",
   "return.replace": "Replacement",
+  "return.extend-window": "Extend return window",
   "write-off": "Write-off",
 };
 

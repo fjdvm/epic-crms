@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageCutoffs, type Stage } from "./rules";
+import { notReplacement } from "@/lib/replacement-order";
 import { normaliseMobile } from "./walk-in-rules";
 import { listWalkIns, type WalkInSummary } from "./walk-ins";
 
@@ -124,7 +125,7 @@ export async function listCustomers(
                                 where r.order_id = customer_order.id and r.status = 'refunded'), 0) else 0 end) as total_spent,
           max(created_at) filter (where status <> 'cancelled') as last_order,
           count(*) filter (where status <> 'cancelled') as stage_orders
-        from public.orders customer_order where customer_order.customer_id = c.id
+        from public.orders customer_order where customer_order.customer_id = c.id and ${notReplacement(sql, "customer_order")}
       ) o on true
       union all
       select

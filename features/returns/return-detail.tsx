@@ -8,6 +8,7 @@ import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 import type { ApprovalView } from "@/features/approvals/view";
 import type { ShopRole } from "@/lib/portal/roles";
 import { InspectReturn } from "./inspect-return";
+import { RefundWindow } from "./refund-window";
 import { ReturnActions } from "./return-actions";
 import type { ReturnDetail } from "./returns";
 import { STATUS_PILLS } from "./returns-table";
@@ -40,6 +41,7 @@ export function ReturnDetailView({
   refundProofUrl,
   role,
   requests,
+  windowRequest,
 }: {
   detail: ReturnDetail;
   imageUrls: ImageUrls;
@@ -51,6 +53,8 @@ export function ReturnDetailView({
   refundProofUrl?: string | null;
   role?: ShopRole | null;
   requests?: ApprovalView[];
+  /** The Staff request to extend this Order's Refund window, if any. */
+  windowRequest?: ApprovalView;
 }) {
   const goods = goodsLine(detail);
 
@@ -201,6 +205,22 @@ export function ReturnDetailView({
               </div>
             </dl>
           </section>
+
+          <section className={CARD}>
+            <h2 className={CARD_TITLE}>Refund window</h2>
+            <RefundWindow orderId={detail.orderId} endsAt={detail.refundWindowEndsAt?.toISOString() ?? null}
+              extended={detail.refundWindowExtendedAt !== null} delivered={detail.orderStatus === "delivered"} role={role} request={windowRequest} />
+          </section>
+
+          {detail.replacementOrderId && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Replacement Order</h2>
+              <p className="text-sm text-[#1f1a2e]">
+                <Link href={`/orders/${detail.replacementOrderId}`} className="font-medium text-[#5b2a86]">Order #{detail.replacementOrderId}</Link>
+                {" "}· ₱0, packed and dispatched like any Order. The shop pays the courier.
+              </p>
+            </section>
+          )}
 
           {detail.refundProofFileId && (
             <section className={CARD}>

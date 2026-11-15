@@ -61,6 +61,10 @@ const SCHEMA = `
     paid_by_id text,
     paid_by_name text,
     paid_at timestamptz,
+    replacement_for_order_id integer references orders (id),
+    replacement_for_return_id integer,
+    refund_window_extended_at timestamptz,
+    refund_window_extension_reason text,
     created_at timestamptz not null default now()
   );
   create table order_payment_proofs (

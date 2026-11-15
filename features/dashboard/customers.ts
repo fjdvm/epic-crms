@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import { stageOf, type Stage } from "@/features/customer-profiles/rules";
 
 import type { Span } from "./period";
+import { notReplacement } from "@/lib/replacement-order";
 
 export interface CustomersByStage {
   counts: Record<Stage, number>;
@@ -14,7 +15,7 @@ export async function customersByStageAt(sql: postgres.Sql, now: Date): Promise<
     select count(o.id)::int as orders, max(o.created_at) as last_order
     from public.customers c
     join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
-    left join public.orders o on o.customer_id = c.id and o.status <> 'cancelled'
+    left join public.orders o on o.customer_id = c.id and o.status <> 'cancelled' and ${notReplacement(sql, "o")}
     group by c.id`;
   const counts: Record<Stage, number> = { new: 0, "first-order": 0, repeat: 0, "at-risk": 0, lost: 0 };
   for (const row of rows) counts[stageOf({ orders: row.orders, lastOrder: row.last_order }, now)]++;

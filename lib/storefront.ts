@@ -233,3 +233,46 @@ export async function inspectStorefrontReturn(id: number, update: ReturnInspecti
     return { ok: true, inspectionId: body.inspectionId };
   } catch { return { ok: false, reason: uncertain }; }
 }
+
+export type ReplacementOrderResult = { ok: true; replacementOrderId: number } | { ok: false; reason: string };
+
+/**
+ * The storefront makes the linked ₱0 Replacement Order for an approved replacement, reserves its stock, quotes no Delivery fee
+ * and emails the Customer once. The Return id is the idempotency key, so asking again returns the same Order.
+ */
+export async function createStorefrontReplacementOrder(returnId: number, staff: { id: string; name: string }): Promise<ReplacementOrderResult> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the Replacement Order. Refresh the Return before trying again.";
+  try {
+    const response = await fetch(new URL(`/api/internal/returns/${returnId}/replacement-order`, origin), {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret, "returns")}` },
+      body: JSON.stringify({ staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the Replacement Order." };
+    if (body?.returnId !== returnId || !Number.isSafeInteger(body.replacementOrderId)) return { ok: false, reason: uncertain };
+    return { ok: true, replacementOrderId: body.replacementOrderId };
+  } catch { return { ok: false, reason: uncertain }; }
+}
+
+export type RefundWindowResult = { ok: true; endsAt: Date } | { ok: false; reason: string };
+
+/** The storefront extends an Order's Refund window once by 24 hours and keeps the reason. It refuses a second extension. */
+export async function extendStorefrontRefundWindow(orderId: number, reason: string, staff: { id: string; name: string }): Promise<RefundWindowResult> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the extension. Refresh the Return before trying again.";
+  try {
+    const response = await fetch(new URL(`/api/internal/orders/${orderId}/refund-window/extend`, origin), {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret, "returns")}` },
+      body: JSON.stringify({ reason, staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the extension." };
+    if (body?.orderId !== orderId || typeof body.endsAt !== "string" || !Number.isFinite(Date.parse(body.endsAt))) return { ok: false, reason: uncertain };
+    return { ok: true, endsAt: new Date(body.endsAt) };
+  } catch { return { ok: false, reason: uncertain }; }
+}

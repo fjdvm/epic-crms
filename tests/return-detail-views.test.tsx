@@ -19,16 +19,17 @@ vi.mock("@/features/returns/actions", () => ({
   markReturnGoodsReceived: vi.fn(),
   markReturnRefunded: vi.fn(),
   markReturnReplaced: vi.fn(),
+  extendRefundWindow: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast }));
 
-import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
+import { approveReturn, declineReturn, extendRefundWindow, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
-  replacedAt: null, videoFileId: null, refundProofFileId: null,
+  replacedAt: null, videoFileId: null, refundProofFileId: null, refundWindowExtendedAt: null, replacementOrderId: null,
   preferredResolution: "refund", finalResolution: null,
   id: 15,
   number: "RMA-15",
@@ -371,5 +372,48 @@ describe("Issue refund dialog", () => {
     expect(within(dialog).getByText("Send back by Maya")).toBeTruthy();
     expect(within(dialog).getByText("Refund amount")).toBeTruthy();
     expect((within(dialog).getByRole("button", { name: "Refund ₱399.00" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("Refund window", () => {
+  const view = (role: "staff" | "manager" | "admin" | "ceo", overrides: Partial<ReturnDetail> = {}, windowRequest?: import("@/features/approvals/view").ApprovalView) =>
+    render(<ReturnDetailView detail={detail({ orderStatus: "delivered", refundWindowEndsAt: new Date("2026-11-16T10:00:00Z"), ...overrides })} imageUrls={[]} role={role} windowRequest={windowRequest} />);
+
+  it("lets a Manager extend with a reason, waiting for the server", async () => {
+    vi.mocked(extendRefundWindow).mockResolvedValue({ ok: true, endsAt: new Date() });
+    view("manager");
+    fireEvent.click(screen.getByRole("button", { name: "Extend by 24 hours…" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect((within(dialog).getByRole("button", { name: "Extend" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Travelling" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Extend" }));
+    await waitFor(() => expect(extendRefundWindow).toHaveBeenCalledWith(1042, "Travelling", {}));
+  });
+
+  it("shows Staff Request approval, and Waiting once asked", async () => {
+    vi.mocked(extendRefundWindow).mockResolvedValue({ ok: false, reason: "Waiting for approval" } as never);
+    view("staff");
+    expect(screen.queryByRole("button", { name: "Extend by 24 hours…" })).toBeNull();
+    fireEvent.click(within(screen.getByRole("heading", { name: "Refund window" }).closest("section")!).getByRole("button", { name: "Request approval…" }));
+    fireEvent.change(within(screen.getByRole("alertdialog")).getByLabelText(/Reason/), { target: { value: "Travelling" } });
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(toast.error).not.toHaveBeenCalled();
+    cleanup();
+    view("staff", {}, { id: "w1", action: "return.extend-window", targetId: "1042", status: "waiting-manager" } as never);
+    expect(screen.getByText("Waiting for approval")).toBeTruthy();
+  });
+
+  it("offers nothing to Admin or CEO, or once it was extended", () => {
+    view("admin"); expect(screen.queryByRole("button", { name: /Extend by|Request approval/ })).toBeNull(); cleanup();
+    view("ceo"); expect(screen.queryByRole("button", { name: /Extend by|Request approval/ })).toBeNull(); cleanup();
+    view("manager", { refundWindowExtendedAt: new Date() });
+    expect(screen.queryByRole("button", { name: /Extend by/ })).toBeNull();
+    expect(screen.getByText(/cannot be extended again/)).toBeTruthy();
+  });
+
+  it("links the Replacement Order", () => {
+    view("manager", { replacementOrderId: 77 });
+    expect(screen.getByRole("link", { name: "Order #77" }).getAttribute("href")).toBe("/orders/77");
   });
 });

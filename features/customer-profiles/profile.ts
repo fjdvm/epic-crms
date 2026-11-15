@@ -10,6 +10,7 @@ import { loadEmbeddedReturns, type ReturnRow } from "@/features/returns/returns"
 import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "./rules";
+import { notReplacement } from "@/lib/replacement-order";
 import { getMergedWalkIn, getWalkIn, isWalkInId, type MergedWalkIn, type WalkInProfileData } from "./walk-ins";
 
 export interface CustomerAddress {
@@ -84,7 +85,7 @@ export async function getCustomerProfile(
         (count(*) filter (where status = any(${PAID_OR_FULFILLED})))::int as paid_orders,
         (count(*) filter (where status <> 'cancelled'))::int as stage_orders,
         max(created_at) filter (where status <> 'cancelled') as last_order
-      from public.orders customer_order where customer_order.customer_id = c.id
+      from public.orders customer_order where customer_order.customer_id = c.id and ${notReplacement(sql, "customer_order")}
     ) o
     cross join lateral (
       select count(*)::int as feedback_count, avg(ff.rating)::float8 as average_rating

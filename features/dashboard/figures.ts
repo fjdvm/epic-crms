@@ -10,6 +10,7 @@ import {
 } from "./breakdowns";
 import { customersByStageAt, newCustomersIn, unverifiedLeads, type CustomersByStage } from "./customers";
 import { lastSixMonths, type Period, type SalesMonth, type Span } from "./period";
+import { notReplacement } from "@/lib/replacement-order";
 
 /** One widget's figure for the period and the one before it, or the fact that it could not be read. */
 export type Widget<T = number> = { ok: true; current: T; previous: T } | { ok: false };
@@ -67,14 +68,14 @@ export async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
             where r.order_id = o.id and r.status = 'refunded'), 0)
     ), 0)::bigint as sales
     from public.orders o
-    where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}`;
+    where o.status = any(${PAID_OR_FULFILLED}) and ${notReplacement(sql, "o")} and o.created_at >= ${span.start} and o.created_at < ${span.end}`;
   return Number(row.sales);
 }
 
 export async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
   const [row] = await sql<{ orders: number }[]>`
     select count(*)::int as orders from public.orders
-    where status <> 'cancelled' and created_at >= ${span.start} and created_at < ${span.end}`;
+    where status <> 'cancelled' and ${notReplacement(sql, "orders")} and created_at >= ${span.start} and created_at < ${span.end}`;
 
   return row.orders;
 }
@@ -83,7 +84,7 @@ export async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
 export async function averageOrderIn(sql: postgres.Sql, span: Span): Promise<number> {
   const [row] = await sql<{ counted: number }[]>`
     select count(*)::int as counted from public.orders
-    where status = any(${PAID_OR_FULFILLED}) and created_at >= ${span.start} and created_at < ${span.end}`;
+    where status = any(${PAID_OR_FULFILLED}) and ${notReplacement(sql, "orders")} and created_at >= ${span.start} and created_at < ${span.end}`;
   return row.counted === 0 ? 0 : Math.round((await salesIn(sql, span)) / row.counted);
 }
 
@@ -103,10 +104,10 @@ export async function returningBuyersIn(sql: postgres.Sql, span: Span): Promise<
     from (
       select o.customer_id, exists (
         select 1 from public.orders p
-        where p.customer_id = o.customer_id and p.status = any(${PAID_OR_FULFILLED}) and p.created_at < ${span.start}
+        where p.customer_id = o.customer_id and p.status = any(${PAID_OR_FULFILLED}) and ${notReplacement(sql, "p")} and p.created_at < ${span.start}
       ) as returning
       from public.orders o
-      where o.status = any(${PAID_OR_FULFILLED}) and o.created_at >= ${span.start} and o.created_at < ${span.end}
+      where o.status = any(${PAID_OR_FULFILLED}) and ${notReplacement(sql, "o")} and o.created_at >= ${span.start} and o.created_at < ${span.end}
       group by o.customer_id
     ) b`;
 
