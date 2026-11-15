@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { uploadFile } from "@/features/files/client";
 
@@ -10,6 +11,8 @@ import { DeliveryPhotoPicker } from "@/features/orders/delivery-photo-picker";
 
 import type { ApprovalView } from "@/features/approvals/view";
 import { waitingLabel, WAITING } from "@/features/approvals/view";
+import { formatPesos } from "@/features/customer-profiles/format";
+import { refundDestination } from "@/features/orders/payment-methods";
 import type { ShopRole } from "@/lib/portal/roles";
 import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "./actions";
 import { RequestApproval } from "./request-approval";
@@ -119,16 +122,23 @@ function Decline({ id, number, approvalId }: { id: number; number: string; appro
   );
 }
 
-function Refund({ id, number, approvalId }: { id: number; number: string; approvalId?: string }) {
+/** What the Figma "Issue refund" dialog shows about the Return being refunded. */
+export interface RefundContext { customerName: string; amount: number; paymentMethod: string; items: { name: string; quantity: number }[] }
+
+function Refund({ id, number, approvalId, context }: { id: number; number: string; approvalId?: string; context?: RefundContext }) {
   const [proof, setProof] = useState<File | null>(null);
   const [note, setNote] = useState("");
+  const destination = context ? refundDestination(context.paymentMethod) : null;
+  const amount = context ? formatPesos(context.amount) : null;
 
   return (
     <OrderActionDialog
-      trigger="Mark refunded"
-      title={`Mark ${number} refunded?`}
-      description="Only confirm once the money has been paid back to the Customer outside CREOMS. The Customer can see the proof."
-      confirm="Mark refunded"
+      trigger="Issue refund"
+      title="Issue refund"
+      description={context
+        ? `${number} · ${context.customerName} · paid ${amount}${destination ? ` via ${destination}` : ""}`
+        : "Only confirm once the money has been paid back to the Customer outside CREOMS. The Customer can see the proof."}
+      confirm={amount ? `Refund ${amount}` : "Mark refunded"}
       busy="Saving…"
       disabled={proof === null}
       run={async () => {
@@ -141,7 +151,35 @@ function Refund({ id, number, approvalId }: { id: number; number: string; approv
       }}
       successMessage={`${number} marked refunded.`}
     >
+      {context && (
+        <>
+          <div className="space-y-2">
+            <p className="text-[13px] font-medium text-[#27272a]">Items to refund</p>
+            {context.items.map((item) => (
+              <p key={item.name} className="flex items-center gap-2.5 text-sm text-[#18181b]">
+                <Check aria-hidden className="size-4 rounded bg-[#7c3aed] p-0.5 text-white" />
+                <span>{item.name} × {item.quantity}</span>
+              </p>
+            ))}
+          </div>
+          {destination && (
+            <div className="space-y-1">
+              <p className="text-[13px] font-medium text-[#27272a]">Refund to</p>
+              <div className="rounded-lg border-[1.5px] border-[#8b5cf6] bg-[#f5f0ff] px-3 py-2.5">
+                <p className="text-sm font-medium text-[#18181b]">Send back by {destination}</p>
+                <p className="text-xs text-[#71717a]">Send {amount} to the Customer, then upload proof below</p>
+              </div>
+            </div>
+          )}
+          <div className="space-y-1">
+            <p className="text-[13px] font-medium text-[#27272a]">Refund amount</p>
+            <p className="rounded-lg border border-[#e4e4e7] px-3 py-2.5 text-sm text-[#18181b]">{amount}</p>
+            <p className="text-xs text-[#71717a]">The amount paid for these items.</p>
+          </div>
+        </>
+      )}
       <DeliveryPhotoPicker photo={proof} onChange={setProof} label="Refund proof" />
+      {context && <p className="rounded-lg bg-[#fffbeb] px-3 py-2.5 text-[13px] text-[#92400e]">Recorded on the Return once proof is uploaded. The Order status does not change.</p>}
       {!approvalId && (
         <div className="space-y-1.5">
           <Label htmlFor={`refund-note-${id}`} className="text-[13px] font-medium text-foreground">Note for the CEO, if the amount needs their final approval</Label>
@@ -162,6 +200,7 @@ export function ReturnActions({
   finalResolution,
   role = "manager",
   requests = [],
+  refund,
 }: {
   id: number;
   number: string;
@@ -172,6 +211,8 @@ export function ReturnActions({
   role?: ShopRole | null;
   /** This Return's approval requests visible to the viewer. */
   requests?: ApprovalView[];
+  /** What the Issue refund dialog shows; without it the dialog is the plain confirmation. */
+  refund?: RefundContext;
 }) {
   const steps = availableSteps(status, goodsRequired, finalResolution);
   if (role === "admin" || role === "ceo" || role === null) return <p className="text-sm text-[#71717a]">View only</p>;
@@ -188,7 +229,7 @@ export function ReturnActions({
             <OrderActionDialog trigger="Mark goods received" title={`Mark goods received for ${number}?`} description="Confirm the returned goods have reached the store."
               confirm="Mark received" busy="Saving…" run={() => markReturnGoodsReceived(id)} successMessage={`${number} marked goods received.`} />
           )}
-          {finishable.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} />}
+          {finishable.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} />}
           {finishable.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} approvalId={ready("return.approve")} />}
           {finishable.includes("decline") && <Decline id={id} number={number} approvalId={ready("return.decline")} />}
           {finishable.includes("replace") && (
@@ -216,7 +257,7 @@ export function ReturnActions({
           successMessage={`${number} marked goods received.`}
         />
       )}
-      {steps.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} />}
+      {steps.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} />}
       {steps.includes("replace") && (
         <OrderActionDialog
           trigger="Mark replaced"

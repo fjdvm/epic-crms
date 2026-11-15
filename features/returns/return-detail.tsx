@@ -81,6 +81,7 @@ export function ReturnDetailView({
             finalResolution={detail.finalResolution}
             role={role}
             requests={requests}
+            refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
           />
         </div>
       </div>
