@@ -29,8 +29,11 @@ interface CurrentOrder {
   payment_proof_submitted_at: Date | null;
   payment_proof_rejected_at: Date | null;
   payment_proof_rejections: number;
+  /** A Senior/PWD ID is still waiting for Staff; the Order is not confirmed until it is reviewed. */
+  senior_pwd_pending: boolean;
 }
 
+const SENIOR_PWD_FIRST = "Review the Customer's Senior/PWD ID before confirming this Order.";
 const ALREADY_CHANGED = "Order already changed; refresh it before trying again.";
 
 /** Authorize every direct call before reading Orders or using the service credential. */
@@ -49,7 +52,9 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
   try {
     const [order] = await database()<CurrentOrder[]>`
       select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at,
-        payment_proof_rejected_at, payment_proof_rejections from public.orders where id = ${id}`;
+        payment_proof_rejected_at, payment_proof_rejections,
+        exists (select 1 from public.senior_pwd_verifications v where v.id = o.senior_pwd_verification_id and v.status = 'pending') as senior_pwd_pending
+      from public.orders o where o.id = ${id}`;
     if (!order) return { ok: false, reason: "Order was not found." };
     result = await run(order, staff);
   } catch {
@@ -88,6 +93,7 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     if (order.fulfillment_method !== "delivery") {
       return { ok: false, reason: "Only a placed Delivery Order can be quoted." };
     }
+    if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
     if (order.subtotal_in_centavos > 250_000) {
       return { ok: false, reason: "Free delivery applies to this Order. No Delivery fee quote is needed." };
     }
@@ -102,6 +108,7 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
 export async function confirmPickup(id: number): Promise<OrderChangeResult> {
   return act(id, async (order) => {
     if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
+    if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
     if (order.fulfillment_method !== "pickup") {
       return { ok: false, reason: "A Delivery Order needs a Delivery fee." };
     }

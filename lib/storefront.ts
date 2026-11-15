@@ -23,7 +23,7 @@ export type OrderChangeResult =
   | { ok: false; reason: string };
 
 /** Mint the storefront's scoped, five-minute HS256 credential for this request. Never sent to a browser. */
-function credential(secret: string, resource: "orders" | "returns" | "stock" = "orders"): string {
+function credential(secret: string, resource: "orders" | "returns" | "stock" | "senior-pwd" = "orders"): string {
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
   const iat = Math.floor(Date.now() / 1000);
   const input = `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
@@ -146,5 +146,39 @@ export async function readStock(sizeIds: number[]): Promise<Map<number, ImsSizeS
     return sizes;
   } catch {
     return null;
+  }
+}
+
+export type VerificationChange =
+  | { action: "approve"; expiresOn: string; override?: boolean }
+  | { action: "decline"; reason: string }
+  | { action: "revoke"; reason: string };
+export type VerificationResult =
+  | { ok: true; verification: { id: number; status: string; expiresOn: string | null } }
+  | { ok: false; reason: string };
+
+/**
+ * The storefront owns the verification: the keyed hash, the one-ID-one-account rule, the decision email
+ * (sent once, never with the ID number) and the Order hold. CREOMS only sends who decided and why.
+ */
+export async function changeVerification(id: number, change: VerificationChange & { staffId: string; staffName: string }): Promise<VerificationResult> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the change. Refresh the verification before trying again.";
+  try {
+    const response = await fetch(new URL(`/api/internal/senior-pwd/${id}/${change.action}`, origin), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret, "senior-pwd")}` },
+      body: JSON.stringify(change), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the change." };
+    const status = { approve: "approved", decline: "declined", revoke: "revoked" }[change.action];
+    if (body?.id !== id || body.status !== status ||
+      (change.action === "approve" && body.expiresOn !== change.expiresOn)) return { ok: false, reason: uncertain };
+    return { ok: true, verification: { id, status, expiresOn: body.expiresOn ?? null } };
+  } catch {
+    return { ok: false, reason: uncertain };
   }
 }
