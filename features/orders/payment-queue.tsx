@@ -13,7 +13,7 @@ import { CancelPaymentDialog, MarkPaidDialog } from "./payments-actions";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PAYMENTS_WINDOW_DAYS, summarize, type PaymentRow, type PaymentTab } from "./payments";
 
-const METHOD: Record<PaymentRow["method"], string> = { gcash: "GCash", "cash-on-delivery": "Cash on delivery" };
+const METHOD: Record<PaymentRow["method"], string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on delivery" };
 
 /** "10 min ago", "3 hrs ago", "2 days ago". */
 function ago(date: Date, now: Date): string {

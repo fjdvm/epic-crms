@@ -12,9 +12,9 @@ interface OrderEvent {
   customerName: string;
 }
 
-/** Read placement of every Order and submitted GCash proofs from the storefront.
- * Proofs remain events after the Order moves on, so a payment checked between polls is still seen.
- * A Customer submits proof once; each kind therefore has one stable key per Order.
+/** Read placement of every Order and submitted proofs (GCash, Maya or bank transfer) from the storefront.
+ * Proofs remain events after the Order moves on, so a payment checked between two syncs is still seen.
+ * The first proof has one stable key per Order; each resubmission after a rejection has its own.
  */
 export async function readOrderEvents(reader: postgres.Sql): Promise<OrderEvent[]> {
   const rows = await reader<{
@@ -34,7 +34,16 @@ export async function readOrderEvents(reader: postgres.Sql): Promise<OrderEvent[
     select 'order-payment-proof:' || o.id, 'order-payment-proof', o.id, o.customer_id, c.full_name
     from public.orders o
     join public.customers c on c.id = o.customer_id
-    where o.payment_method = 'gcash' and o.payment_proof_submitted_at is not null`;
+    where o.payment_method in ('gcash', 'maya', 'bank-transfer') and o.payment_proof_submitted_at is not null
+
+    union all
+
+    -- Every proof after the first is a new alert; the first keeps its original key so history is not re-announced.
+    select 'order-payment-proof:' || o.id || ':' || p.id, 'order-payment-proof', o.id, o.customer_id, c.full_name
+    from public.order_payment_proofs p
+    join public.orders o on o.id = p.order_id
+    join public.customers c on c.id = o.customer_id
+    where p.id > (select min(first.id) from public.order_payment_proofs first where first.order_id = p.order_id)`;
 
   return rows.map((r) => ({
     key: r.key, kind: r.kind, orderId: r.order_id, customerId: r.customer_id, customerName: r.customer_name,

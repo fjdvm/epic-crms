@@ -34,6 +34,8 @@ const SCHEMA = `
     payment_proof_screenshot_pathname text,
     payment_proof_file_id text,
     payment_proof_submitted_at timestamptz,
+    payment_proof_rejected_at timestamptz,
+    payment_proof_rejections integer not null default 0,
     delivered_at timestamptz,
     delivery_photo_file_id text,
     delivery_photo_removed_at timestamptz,
@@ -44,6 +46,18 @@ const SCHEMA = `
     paid_by_name text,
     paid_at timestamptz,
     created_at timestamptz not null default now()
+  );
+  create table order_payment_proofs (
+    id integer primary key generated always as identity,
+    order_id integer not null references orders (id) on delete cascade,
+    reference text,
+    screenshot_file_id text,
+    screenshot_pathname text,
+    submitted_at timestamptz not null default now(),
+    rejected_at timestamptz,
+    rejected_by_id text,
+    rejected_by_name text,
+    rejection_reason text
   );
   create table order_delivery_addresses (
     order_id integer primary key references orders (id) on delete cascade,

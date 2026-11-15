@@ -67,6 +67,8 @@ const ORDER_LABELS: Record<string, string> = {
   pickup: "Pickup",
   delivery: "Delivery",
   gcash: "GCash",
+  maya: "Maya",
+  "bank-transfer": "Bank transfer",
   "cash-on-delivery": "Cash on delivery",
 };
 

@@ -1,6 +1,9 @@
 import type postgres from "postgres";
 
 import { paymentScreenshotSource } from "./payment-screenshot";
+import { isPrepaid, PREPAID_METHODS, type PaymentMethod } from "./payment-methods";
+
+export type { PaymentMethod };
 
 export interface PaymentQueueOrder {
   id: number;
@@ -24,8 +27,8 @@ export async function paymentQueue(sql: postgres.Sql): Promise<PaymentQueueOrder
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total,
       o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at
     from public.orders o join public.customers c on c.id = o.customer_id
-    where o.payment_method = 'gcash' and o.status = 'awaiting payment'
-      and o.payment_proof_submitted_at is not null
+    where o.payment_method in ${sql(PREPAID_METHODS)} and o.status = 'awaiting payment'
+      and o.payment_proof_submitted_at is not null and o.payment_proof_rejected_at is null
     order by o.payment_proof_submitted_at asc, o.id asc`;
 
   return rows.map(o => ({
@@ -38,9 +41,7 @@ export async function paymentQueue(sql: postgres.Sql): Promise<PaymentQueueOrder
   }));
 }
 
-export type PaymentMethod = "gcash" | "cash-on-delivery";
-
-/** One GCash Order with proof, or one Cash on Delivery Order: everything the Payments page counts. */
+/** One prepaid Order with proof, or one Cash on Delivery Order: everything the Payments page counts. */
 export interface PaymentRow {
   id: number;
   customer: { id: string; name: string };
@@ -50,6 +51,10 @@ export interface PaymentRow {
   total: number;
   /** Null for Cash on Delivery, which has no proof. */
   proof: { reference: string | null; screenshot: string | null; submittedAt: Date } | null;
+  /** When the latest proof was rejected; null while it waits for a check or after a new one arrives. */
+  proofRejectedAt: Date | null;
+  /** Proofs rejected so far; at 3 only a Manager can approve. */
+  rejections: number;
 }
 
 export type PaymentsResult = { ok: true; rows: PaymentRow[]; now: Date } | { ok: false; reason: string };
@@ -65,13 +70,14 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date()): Pr
   const rows = await sql<{
     id: number; customer_id: string; full_name: string; payment_method: PaymentMethod; status: string; total: number;
     gcash_reference_number: string | null; payment_proof_screenshot_pathname: string | null; payment_proof_file_id: string | null;
-    payment_proof_submitted_at: Date | null;
+    payment_proof_submitted_at: Date | null; payment_proof_rejected_at: Date | null; payment_proof_rejections: number;
   }[]>`
     select o.id, o.customer_id, c.full_name, o.payment_method, o.status,
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total,
-      o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at
+      o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at,
+      o.payment_proof_rejected_at, o.payment_proof_rejections
     from public.orders o join public.customers c on c.id = o.customer_id
-    where ((o.payment_method = 'gcash' and o.payment_proof_submitted_at is not null)
+    where ((o.payment_method in ${sql(PREPAID_METHODS)} and o.payment_proof_submitted_at is not null)
         or o.payment_method = 'cash-on-delivery')
       and (o.status in ${sql(ACTIVE)} or o.created_at >= ${since})
     order by o.id`;
@@ -82,24 +88,26 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date()): Pr
     proof: o.payment_proof_submitted_at
       ? { reference: o.gcash_reference_number, screenshot: paymentScreenshotSource(o.id, o.payment_proof_file_id, o.payment_proof_screenshot_pathname), submittedAt: o.payment_proof_submitted_at }
       : null,
+    proofRejectedAt: o.payment_proof_rejected_at, rejections: o.payment_proof_rejections,
   }));
 }
 
 export type PaymentTab = "verify" | "cod" | "paid" | "rejected";
 
-const GCASH_PAID = ["paid", "preparing", "dispatched", "delivered", "received"];
+const PREPAID_PAID = ["paid", "preparing", "dispatched", "delivered", "received"];
 const COD_OPEN = ["confirmed", "preparing", "dispatched"];
 
-/** GCash proof waiting for a check. */
+/** A proof waiting for a check: submitted, not rejected. */
 export const awaitingCheck = (r: PaymentRow): boolean =>
-  r.method === "gcash" && r.status === "awaiting payment" && r.proof !== null;
+  isPrepaid(r.method) && r.status === "awaiting payment" && r.proof !== null && r.proofRejectedAt === null;
 /** Cash on Delivery the courier has not yet handed back as delivered. */
 export const codToCollect = (r: PaymentRow): boolean => r.method === "cash-on-delivery" && COD_OPEN.includes(r.status);
-/** Money in: GCash accepted, or Cash on Delivery collected on delivery. */
+/** Money in: a prepaid proof accepted, or Cash on Delivery collected on delivery. */
 export const settled = (r: PaymentRow): boolean =>
-  r.method === "gcash" ? GCASH_PAID.includes(r.status) : ["delivered", "received"].includes(r.status);
-/** A GCash Order Staff cancelled after the Customer sent proof. */
-export const rejected = (r: PaymentRow): boolean => r.method === "gcash" && r.status === "cancelled" && r.proof !== null;
+  isPrepaid(r.method) ? PREPAID_PAID.includes(r.status) : ["delivered", "received"].includes(r.status);
+/** A prepaid Order whose proof was rejected and is waiting for a new one, or that was cancelled after the Customer sent proof. */
+export const rejected = (r: PaymentRow): boolean =>
+  isPrepaid(r.method) && r.proof !== null && (r.status === "cancelled" || r.status === "awaiting payment" && r.proofRejectedAt !== null);
 
 /** The page's tabs and stat cards, all derived from the rows so an optimistic change moves both. */
 export function summarize(rows: PaymentRow[], now: Date) {

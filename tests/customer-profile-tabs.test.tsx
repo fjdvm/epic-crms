@@ -12,6 +12,7 @@ afterEach(cleanup);
 
 const order = (over: Partial<CustomerOrder>): CustomerOrder => ({
   id: 1,
+  proofRejections: 0,
   createdAt: new Date("2026-03-01T04:00:00Z"),
   status: "delivered",
   fulfillmentMethod: "delivery",

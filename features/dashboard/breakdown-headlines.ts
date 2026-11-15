@@ -12,6 +12,8 @@ const monthName = (label: string) =>
 
 export const METHOD_LABELS: Record<string, string> = {
   gcash: "GCash",
+  maya: "Maya",
+  "bank-transfer": "Bank transfer",
   "cash-on-delivery": "Cash on Delivery",
   pickup: "Pickup",
   delivery: "Delivery",

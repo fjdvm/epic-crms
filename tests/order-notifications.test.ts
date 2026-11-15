@@ -36,7 +36,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.sql`truncate order_feedback, orders, customers restart identity cascade`;
+  await db.sql`truncate order_feedback, order_payment_proofs, orders, customers restart identity cascade`;
   await db.sql`truncate crms.notifications, crms.seen_order_events, crms.order_sync_state restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Jane Doe', 'jane@example.com')`;
 });
@@ -94,6 +94,23 @@ describe("Order notifications", () => {
       expect(feed.notifications).toMatchObject([{ kind: "order-payment-proof", orderId: id }]);
     }
     expect((await listNotifications(db.sql, "crms", 20, ordersViewer())).notifications).toEqual([]);
+  });
+
+  it("alerts again when a Customer resubmits after a rejection, once per proof, for Maya too", async () => {
+    const id = await order();
+    await db.sql`update orders set payment_method = 'maya', status = 'confirmed' where id = ${id}`;
+    await sync();
+    const submit = async (reference: string) => {
+      await db.sql`insert into order_payment_proofs (order_id, reference) values (${id}, ${reference})`;
+      await db.sql`update orders set status = 'awaiting payment', gcash_reference_number = ${reference}, payment_proof_submitted_at = now() where id = ${id}`;
+    };
+    await submit("REF-1");
+    expect(await sync()).toEqual({ baselined: false, created: 1 });
+    await db.sql`update order_payment_proofs set rejected_at = now() where order_id = ${id}`;
+    await submit("REF-2");
+    await Promise.all([sync(), sync()]);
+    const feed = await listNotifications(db.sql, "crms", 20, viewerFor({ username: "ada" }, ["/payments"])!);
+    expect(feed.notifications.map((n) => n.kind)).toEqual(["order-payment-proof", "order-payment-proof"]);
   });
 
   it("says why Staff are needed and opens the Order detail", async () => {

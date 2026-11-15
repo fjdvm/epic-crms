@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 
 import { paymentScreenshotSource } from "@/features/orders/payment-screenshot";
+import { isPrepaid } from "@/features/orders/payment-methods";
 import type { Sentiment } from "@/features/feedback/analysis";
 
 export interface OrderLine {
@@ -39,8 +40,10 @@ export interface CustomerOrder {
   /** The Address as it was at checkout, not the Customer's current one. */
   address: OrderAddress | null;
   feedback: { rating: number; comment: string | null; createdAt: Date; sentiment: Sentiment | null } | null;
-  /** Only GCash Orders that have submitted proof. */
-  paymentProof: { reference: string | null; screenshot: string | null; submittedAt: Date | null } | null;
+  /** The latest proof, only for prepaid Orders that have submitted one. */
+  paymentProof: { reference: string | null; screenshot: string | null; submittedAt: Date | null; rejectedAt: Date | null } | null;
+  /** Proofs rejected so far; at 3 only a Manager can approve the Order. */
+  proofRejections: number;
 }
 
 /** The element id an Order card is rendered under, so other tabs can link to it. */
@@ -61,6 +64,7 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
     select o.id, o.created_at, o.status, o.fulfillment_method, o.payment_method,
       o.subtotal_in_centavos, o.delivery_fee_in_centavos,
       o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at,
+      o.payment_proof_rejected_at, o.payment_proof_rejections,
       a.label as a_label, a.street as a_street, a.barangay as a_barangay, a.city as a_city,
       a.province as a_province, a.postal_code as a_postal_code, a.country as a_country,
       f.rating as f_rating, f.comment as f_comment, f.created_at as f_created_at, f.sentiment as f_sentiment
@@ -128,9 +132,10 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
               sentiment: (o.f_sentiment as Sentiment | null) ?? null,
             },
       paymentProof:
-        o.payment_method === "gcash" && (reference || screenshot || submittedAt)
-          ? { reference, screenshot, submittedAt }
+        isPrepaid(o.payment_method as string) && (reference || screenshot || submittedAt)
+          ? { reference, screenshot, submittedAt, rejectedAt: (o.payment_proof_rejected_at as Date | null) ?? null }
           : null,
+      proofRejections: (o.payment_proof_rejections as number | null) ?? 0,
     };
   });
 }
