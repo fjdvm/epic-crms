@@ -133,7 +133,7 @@ export async function dashboardPdf(
 
   const payment = figures.paymentAndReceiving;
   if (section("How customers pay and receive Orders", payment) && payment?.ok) {
-    const labels: Record<string, string> = { gcash: "GCash", "cash-on-delivery": "Cash on Delivery", pickup: "Pickup", delivery: "Delivery" };
+    const labels: Record<string, string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on Delivery", pickup: "Pickup", delivery: "Delivery" };
     for (const rows of [payment.payment, payment.receiving]) {
       if (rows.length === 0) { line("No Orders in this period", true); continue; }
       const maximum = Math.max(0, ...rows.map((row) => row.orders));

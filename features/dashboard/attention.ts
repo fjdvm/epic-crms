@@ -29,7 +29,8 @@ const queues: { key: keyof Attention; module: string; read: Read<object> }[] = [
     key: "paymentProofs", module: PAYMENTS_MODULE,
     read: async (sql) => one(sql<Row[]>`
       select count(*)::int as count, min(payment_proof_submitted_at) as oldest from public.orders
-      where payment_method = 'gcash' and status = 'awaiting payment' and payment_proof_submitted_at is not null`),
+      where payment_method in ('gcash', 'maya', 'bank-transfer') and status = 'awaiting payment'
+        and payment_proof_submitted_at is not null and payment_proof_rejected_at is null`),
   },
   {
     key: "deliveryFees", module: ORDERS_MODULE,

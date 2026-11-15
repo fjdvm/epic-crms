@@ -660,7 +660,7 @@ describe("Payments refusals", () => {
     for (const method of ["cash-on-delivery", "gcash"]) {
       const id = await order("delivery", "awaiting payment");
       await db.sql`update orders set payment_method = ${method} where id = ${id}`;
-      expect(await markPaid(id)).toEqual({ ok: false, reason: "Only a GCash Order with submitted Payment proof can be marked paid." });
+      expect(await markPaid(id)).toEqual({ ok: false, reason: "Only an Order paid by GCash, Maya or bank transfer with submitted Payment proof can be marked paid." });
     }
   });
 
@@ -716,7 +716,7 @@ describe("Order and Payment Audit Events", () => {
     { action: "order.confirmed", module: "Orders", method: "pickup", status: "placed", run: confirmPickup, description: "Ana confirmed Order #" },
     { action: "order.cancelled", module: "Orders", method: "delivery", status: "confirmed", run: cancelOrder, description: "Ana cancelled Order #" },
     { action: "order.cancelled", module: "Payments", method: "delivery", status: "awaiting payment", run: cancelPaymentOrder, description: "Ana cancelled Order #" },
-    { action: "order.marked_paid", module: "Payments", method: "delivery", status: "awaiting payment", run: markPaid, description: "Ana marked Order #" },
+    { action: "payment.marked_paid", module: "Payments", method: "delivery", status: "awaiting payment", run: markPaid, description: "Ana marked Order #" },
   ];
   async function ready(test: typeof cases[number]) {
     const id = await order(test.method, test.status, "gcash");
@@ -731,7 +731,7 @@ describe("Order and Payment Audit Events", () => {
       action: test.action, module: test.module, outcome: "success",
       actor: { type: "user", id: "portal-user-123", display_name: "Ana" },
       target: { type: "order", id: String(id), display_name: `Order #${id}` },
-      description: `${test.description}${id}${test.action === "order.marked_paid" ? " paid" : ""}.`,
+      description: `${test.description}${id}${test.action === "payment.marked_paid" ? " paid" : ""}.`,
       occurred_at: expect.any(String), operationId: `order:${id}:${test.action}`,
     });
     expect((await test.run(id)).ok).toBe(false);
@@ -748,7 +748,7 @@ describe("Order and Payment Audit Events", () => {
     expect(audit).toHaveBeenCalledTimes(1);
     expect(revalidatePath).toHaveBeenCalledWith(`/orders/${id}`);
     const result = await loadOrder(() => db.sql, id);
-    expect(result).toMatchObject({ ok: true, order: { status: test.action === "order.marked_paid" ? "paid" : test.action === "order.cancelled" ? "cancelled" : "confirmed" } });
+    expect(result).toMatchObject({ ok: true, order: { status: test.action === "payment.marked_paid" ? "paid" : test.action === "order.cancelled" ? "cancelled" : "confirmed" } });
   });
   it.each(cases)("does not report a successful $action event after storefront refusal", async test => {
     const id = await ready(test);

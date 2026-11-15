@@ -38,6 +38,8 @@ const ret = (overrides: Partial<ReturnRow>): ReturnRow => ({
 const RETURNS = ["Returns"];
 
 const detail = (overrides: Partial<OrderDetail> = {}): OrderDetail => ({
+  paymentProofs: [],
+  proofRejections: 0,
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,

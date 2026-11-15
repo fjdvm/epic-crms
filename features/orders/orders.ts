@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { getOrderById, type CustomerOrder } from "@/features/customer-profiles/orders";
 import { paymentStatusOf } from "@/features/customer-profiles/rules";
+import { paymentScreenshotSource } from "./payment-screenshot";
 
 export const ORDERS_PAGE_SIZE = 25;
 
@@ -126,7 +127,31 @@ export async function loadOrders(connect: () => postgres.Sql, query: OrderQuery)
   }
 }
 
+/** One submitted proof, kept for good; a rejected one carries who rejected it and why. */
+export interface PaymentProofEntry {
+  id: number;
+  reference: string | null;
+  screenshot: string | null;
+  submittedAt: Date;
+  rejection: { at: Date; by: { id: string; name: string }; reason: string } | null;
+}
+
+/** Every proof the Customer submitted, oldest first, so the history reads in the order it happened. */
+export async function paymentProofHistory(sql: postgres.Sql, orderId: number): Promise<PaymentProofEntry[]> {
+  const rows = await sql<{
+    id: number; reference: string | null; screenshot_file_id: string | null; screenshot_pathname: string | null; submitted_at: Date;
+    rejected_at: Date | null; rejected_by_id: string | null; rejected_by_name: string | null; rejection_reason: string | null;
+  }[]>`select id, reference, screenshot_file_id, screenshot_pathname, submitted_at, rejected_at, rejected_by_id, rejected_by_name, rejection_reason
+    from public.order_payment_proofs where order_id = ${orderId} order by submitted_at, id`;
+  return rows.map(p => ({
+    id: p.id, reference: p.reference, screenshot: paymentScreenshotSource(orderId, p.screenshot_file_id, p.screenshot_pathname), submittedAt: p.submitted_at,
+    rejection: p.rejected_at ? { at: p.rejected_at, by: { id: p.rejected_by_id ?? "", name: p.rejected_by_name ?? "" }, reason: p.rejection_reason ?? "" } : null,
+  }));
+}
+
 export interface OrderDetail extends CustomerOrder {
+  /** Every proof and rejection, oldest first. */
+  paymentProofs: PaymentProofEntry[];
   paymentLabel: PaymentLabel;
   customer: { id: string; name: string };
   /** Null for legacy Orders and Orders never marked paid. */
@@ -162,6 +187,7 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number): P
       ok: true,
       order: {
         ...order,
+        paymentProofs: await paymentProofHistory(sql, orderId),
         paymentLabel: paymentStatusOf(order.status),
         packedBy: customer.packed_by_id && customer.packed_by_name && customer.packed_at
           ? { id: customer.packed_by_id, name: customer.packed_by_name, at: new Date(customer.packed_at) }

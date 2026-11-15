@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { database } from "@/lib/db";
+import { crmsDatabase } from "@/lib/crms-db";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
@@ -10,7 +11,10 @@ import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/
 import type { Staff } from "@/lib/portal/client";
 import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
-import { cancelStorefrontItems, changeOrderStatus, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { approvals } from "@/features/approvals/server";
+import type { ApprovalResult } from "@/features/approvals/workflow";
+import { cancelStorefrontItems, changeOrderStatus, rejectStorefrontProof, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
 import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
@@ -23,26 +27,29 @@ interface CurrentOrder {
   subtotal_in_centavos: number;
   delivery_fee_in_centavos: number | null;
   payment_proof_submitted_at: Date | null;
+  payment_proof_rejected_at: Date | null;
+  payment_proof_rejections: number;
 }
 
 const ALREADY_CHANGED = "Order already changed; refresh it before trying again.";
 
 /** Authorize every direct call before reading Orders or using the service credential. */
-async function act(
+async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeResult>(
   id: number,
-  run: (order: CurrentOrder, staff: Staff) => Promise<OrderChangeResult>,
+  run: (order: CurrentOrder, staff: Staff) => Promise<R>,
   requiredModule: string = ORDERS_MODULE,
   audit?: { action: string; description: (staff: Staff) => string; metadata?: Record<string, unknown> },
-): Promise<OrderChangeResult> {
+): Promise<R | OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
   const staff = await requireModule(requiredModule);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
 
-  let result: OrderChangeResult;
+  let result: R;
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
     const [order] = await database()<CurrentOrder[]>`
-      select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at from public.orders where id = ${id}`;
+      select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at,
+        payment_proof_rejected_at, payment_proof_rejections from public.orders where id = ${id}`;
     if (!order) return { ok: false, reason: "Order was not found." };
     result = await run(order, staff);
   } catch {
@@ -183,16 +190,64 @@ export async function loadPayments(): Promise<PaymentsResult> {
   }
 }
 
-/** Only the Portal may supply the identity; the storefront records the time. */
-export async function markPaid(id: number): Promise<OrderChangeResult> {
-  return act(id, async (order, staff) => {
+/** The Reason Staff or a Manager typed; blank counts as missing. */
+const clean = (text: string | undefined) => (typeof text === "string" ? text.trim() : "");
+
+/**
+ * Marks a prepaid Order paid. Only the Portal may supply the identity; the storefront records the time.
+ * After 3 rejected proofs this is "approve anyway": a Manager gives a reason, and Staff can only request approval.
+ */
+export async function markPaid(id: number, options: { reason?: string; approvalId?: string } = {}): Promise<OrderChangeResult | ApprovalResult> {
+  let approvedAnyway: string | null = null;
+  return act<OrderChangeResult | ApprovalResult>(id, async (order, staff) => {
     if (order.status !== "awaiting payment") return { ok: false, reason: ALREADY_CHANGED };
-    if (order.payment_method !== "gcash" || !order.payment_proof_submitted_at) {
-      return { ok: false, reason: "Only a GCash Order with submitted Payment proof can be marked paid." };
+    if (!isPrepaid(order.payment_method) || !order.payment_proof_submitted_at) {
+      return { ok: false, reason: "Only an Order paid by GCash, Maya or bank transfer with submitted Payment proof can be marked paid." };
     }
-    return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
+    const rejections = Number(order.payment_proof_rejections ?? 0);
+    if (rejections < MANAGER_AFTER_REJECTIONS) {
+      if (order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
+      return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
+    }
+    const reason = clean(options.reason);
+    // The reason is needed to request, to approve anyway, and is checked again against the approved request.
+    if (!options.approvalId && !reason) return { ok: false, reason: "Enter a reason to approve this payment anyway." };
+    return approvals().run(staff, { module: PAYMENTS_MODULE, action: "payment.approve-anyway", targetId: String(id),
+      payload: { rejections }, amountInCentavos: 0 },
+    { reason, approvalId: options.approvalId }, async () => {
+      // A Staff retry names only the approval; the reason is the one they gave when they asked.
+      if (!reason && options.approvalId) {
+        const [asked] = await crmsDatabase()<{ reason: string }[]>`select reason from crms.approval_requests where id = ${options.approvalId}`;
+        approvedAnyway = asked?.reason ?? "";
+      } else approvedAnyway = reason;
+      if (!approvedAnyway) return { ok: false, reason: "Enter a reason to approve this payment anyway." };
+      return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name, approvedAnyway: { reason: approvedAnyway } });
+    });
   }, PAYMENTS_MODULE, {
-    action: "order.marked_paid", description: staff => `${staff.name} marked Order #${id} paid.`,
+    get action() { return approvedAnyway ? "payment.approved_anyway" : "payment.marked_paid"; },
+    description: staff => approvedAnyway
+      ? `${staff.name} approved Order #${id} anyway: ${approvedAnyway}`
+      : `${staff.name} marked Order #${id} paid.`,
+    get metadata() { return approvedAnyway ? { reason: approvedAnyway } : undefined; },
+  });
+}
+
+/** Staff reject a proof with a reason. The storefront keeps the proof and reason, and emails the Customer a re-upload link once. */
+export async function rejectPaymentProof(id: number, reason: string): Promise<OrderChangeResult> {
+  const text = clean(reason);
+  let rejections = 0;
+  return act(id, async (order, staff) => {
+    if (!text) return { ok: false, reason: "Enter a reason for rejecting the proof." };
+    if (order.status !== "awaiting payment" || !isPrepaid(order.payment_method) || !order.payment_proof_submitted_at || order.payment_proof_rejected_at) {
+      return { ok: false, reason: ALREADY_CHANGED };
+    }
+    const result = await rejectStorefrontProof(id, { reason: text, staffId: staff.username, staffName: staff.name });
+    if (result.ok) rejections = result.rejections ?? 0;
+    return result;
+  }, PAYMENTS_MODULE, {
+    action: "payment_proof.rejected",
+    description: staff => `${staff.name} rejected the Payment proof on Order #${id}: ${text}`,
+    get metadata() { return { reason: text, rejections }; },
   });
 }
 

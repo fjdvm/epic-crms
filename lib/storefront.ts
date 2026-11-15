@@ -9,12 +9,15 @@ export interface CourierBooking {
   riderPhone?: string;
 }
 
+/** What Staff say when they reject a proof; the storefront keeps it, emails the Customer once and asks for another proof. */
+export interface ProofRejection { reason: string; staffId: string; staffName: string }
+
 export type OrderStatusUpdate =
   | { status: "preparing"; staffId: string; staffName: string; courier?: never }
   | { status: "confirmed" | "cancelled"; deliveryFeeInCentavos?: number; courier?: never }
   | { status: "dispatched"; courier?: CourierBooking; deliveryFeeInCentavos?: never }
   | { status: "delivered"; deliveryPhotoFileId: string; deliveryFeeInCentavos?: never; courier?: never }
-  | { status: "paid"; staffId: string; staffName: string; deliveryFeeInCentavos?: never; courier?: never };
+  | { status: "paid"; staffId: string; staffName: string; approvedAnyway?: { reason: string }; deliveryFeeInCentavos?: never; courier?: never };
 export type OrderChangeResult =
   | { ok: true; order: { id: number; status: string; deliveryFeeInCentavos: number | null } }
   | { ok: false; reason: string };
@@ -34,11 +37,15 @@ export async function changeOrderStatus(id: number, update: OrderStatusUpdate, r
   return orderRequest(id, update, "status", responseStatus);
 }
 
+export async function rejectStorefrontProof(id: number, rejection: ProofRejection): Promise<OrderChangeResult & { rejections?: number }> {
+  return orderRequest(id, rejection, "payment-proof/reject");
+}
+
 export async function cancelStorefrontItems(id: number, lineIds: number[], staff: { id: string; name: string }, expectedStatus: string): Promise<OrderChangeResult> {
   return orderRequest(id, { lineIds, staffId: staff.id, staffName: staff.name, expectedStatus }, "items/cancel");
 }
 
-async function orderRequest(id: number, update: OrderStatusUpdate | { lineIds: number[]; staffId: string; staffName: string; expectedStatus: string }, path = "status", responseStatus?: string): Promise<OrderChangeResult> {
+async function orderRequest(id: number, update: OrderStatusUpdate | ProofRejection | { lineIds: number[]; staffId: string; staffName: string; expectedStatus: string }, path = "status", responseStatus?: string): Promise<OrderChangeResult & { rejections?: number }> {
   const origin = process.env.CREOMS_STOREFRONT_URL;
   const secret = process.env.CREOMS_SERVICE_SECRET;
   if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
@@ -59,6 +66,12 @@ async function orderRequest(id: number, update: OrderStatusUpdate | { lineIds: n
       ("deliveryFeeInCentavos" in update && update.deliveryFeeInCentavos !== undefined && body.deliveryFeeInCentavos !== update.deliveryFeeInCentavos) ||
       !(body.deliveryFeeInCentavos === null || Number.isSafeInteger(body.deliveryFeeInCentavos))) {
       return { ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." };
+    }
+    if (path === "payment-proof/reject") {
+      if (body.status !== "awaiting payment" || !Number.isSafeInteger(body.rejections) || body.rejections < 1) {
+        return { ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." };
+      }
+      return { ok: true, order: { id: body.id, status: body.status, deliveryFeeInCentavos: body.deliveryFeeInCentavos }, rejections: body.rejections };
     }
     return { ok: true, order: { id: body.id, status: body.status, deliveryFeeInCentavos: body.deliveryFeeInCentavos } };
   } catch {

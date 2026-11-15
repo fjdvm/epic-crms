@@ -139,6 +139,8 @@ describe("the Orders list", () => {
 });
 
 const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
+  paymentProofs: [],
+  proofRejections: 0,
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
@@ -223,6 +225,7 @@ describe("an Order's detail", () => {
             reference: "1234567890",
             screenshot: "https://files.test/proof.png",
             submittedAt: new Date("2026-10-20T01:00:00Z"),
+            rejectedAt: null,
           },
         })}
       />,
@@ -507,6 +510,8 @@ const PAYMENTS = ["Payments"];
 const NOW = new Date("2026-10-19T13:02:00Z");
 
 const queued = (overrides: Partial<PaymentRow> = {}): PaymentRow => ({
+  proofRejectedAt: null,
+  rejections: 0,
   id: 1046,
   customer: { id: "c1", name: "Grace Lim" },
   method: "gcash",
@@ -662,7 +667,7 @@ describe("the Payments Module's actions on an Order's detail", () => {
   const awaiting = (overrides: Partial<OrderDetail> = {}) =>
     detail({
       status: "awaiting payment",
-      paymentProof: { reference: "1234567890", screenshot: null, submittedAt: new Date("2026-10-20T01:00:00Z") },
+      paymentProof: { reference: "1234567890", screenshot: null, submittedAt: new Date("2026-10-20T01:00:00Z"), rejectedAt: null },
       ...overrides,
     });
 

@@ -317,6 +317,8 @@ describe("moving an Order on the board", () => {
 });
 
 const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
+  paymentProofs: [],
+  proofRejections: 0,
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,

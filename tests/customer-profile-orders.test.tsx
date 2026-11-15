@@ -15,6 +15,7 @@ const address = {
 
 const order = (over: Partial<CustomerOrder>): CustomerOrder => ({
   id: 1,
+  proofRejections: 0,
   createdAt: new Date("2026-03-01T04:00:00Z"),
   status: "delivered",
   fulfillmentMethod: "delivery",
@@ -87,7 +88,7 @@ describe("OrdersTab", () => {
         orders={[
           order({
             paymentMethod: "gcash",
-            paymentProof: { reference: "REF123", screenshot: "proofs/a.png", submittedAt: null },
+            paymentProof: { reference: "REF123", screenshot: "proofs/a.png", submittedAt: null, rejectedAt: null },
           }),
         ]}
         expanded={open}
@@ -101,7 +102,7 @@ describe("OrdersTab", () => {
   it("shows a file-storage screenshot as an image through the Staff route, and a legacy pathname as text", () => {
     const { container, rerender } = render(
       <OrdersTab
-        orders={[order({ paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "/api/orders/1/payment-proof", submittedAt: null } })]}
+        orders={[order({ paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "/api/orders/1/payment-proof", submittedAt: null, rejectedAt: null } })]}
         expanded={open}
         onToggle={() => {}}
       />,
@@ -110,7 +111,7 @@ describe("OrdersTab", () => {
 
     rerender(
       <OrdersTab
-        orders={[order({ paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "proofs/a.png", submittedAt: null } })]}
+        orders={[order({ paymentMethod: "gcash", paymentProof: { reference: "R", screenshot: "proofs/a.png", submittedAt: null, rejectedAt: null } })]}
         expanded={open}
         onToggle={() => {}}
       />,

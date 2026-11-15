@@ -13,6 +13,8 @@ export class FakeStorefront {
   packedEvents: { action: string; actor: { id: string; name: string }; at: string }[] = [];
   /** Courier bookings the fake storefront has recorded, by Order id. */
   couriers = new Map<number, Record<string, string>>();
+  /** Re-upload emails the fake storefront sent, one per rejection. */
+  reuploadEmails: { orderId: number; reason: string; link: string }[] = [];
 
   constructor(private sql: postgres.Sql, private now: () => Date = () => new Date(), private files?: FakeFileStorage) {}
 
@@ -118,6 +120,39 @@ export class FakeStorefront {
     });
   }
 
+  /** The Customer submits a proof (the first, or another after a rejection); a new proof returns the Order to checking. */
+  async submitProof(orderId: number, reference: string, screenshotFileId: string | null = null): Promise<void> {
+    await this.sql.begin(async tx => {
+      const [order] = await tx`select status, payment_method from orders where id = ${orderId} for update`;
+      if (!order || order.status !== "awaiting payment" || order.payment_method === "cash-on-delivery") throw new Error("Order does not take a proof");
+      const at = this.now();
+      await tx`insert into order_payment_proofs (order_id, reference, screenshot_file_id, submitted_at) values (${orderId}, ${reference}, ${screenshotFileId}, ${at})`;
+      await tx`update orders set gcash_reference_number = ${reference}, payment_proof_file_id = ${screenshotFileId},
+        payment_proof_submitted_at = ${at}, payment_proof_rejected_at = null where id = ${orderId}`;
+    });
+  }
+
+  private async rejectProof(request: Request, id: number): Promise<Response> {
+    if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+    const { reason, staffId, staffName } = await request.json();
+    if (typeof reason !== "string" || !reason.trim()) return Response.json({ error: "Enter a reason for rejecting the proof." }, { status: 400 });
+    if (!staffId || !staffName) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    return this.sql.begin(async tx => {
+      const [order] = await tx`select * from orders where id = ${id} for update`;
+      if (!order) return Response.json({ error: "Order was not found." }, { status: 404 });
+      if (order.status !== "awaiting payment" || order.payment_proof_submitted_at === null || order.payment_proof_rejected_at !== null) {
+        return Response.json({ error: "Order already changed." }, { status: 409 });
+      }
+      const at = this.now();
+      await tx`update order_payment_proofs set rejected_at = ${at}, rejected_by_id = ${staffId}, rejected_by_name = ${staffName}, rejection_reason = ${reason.trim()}
+        where id = (select max(id) from order_payment_proofs where order_id = ${id})`;
+      const [changed] = await tx`update orders set payment_proof_rejected_at = ${at}, payment_proof_rejections = payment_proof_rejections + 1
+        where id = ${id} returning status, payment_proof_rejections, delivery_fee_in_centavos`;
+      this.reuploadEmails.push({ orderId: id, reason: reason.trim(), link: `${FAKE_STOREFRONT_URL}/orders/${id}/payment` });
+      return Response.json({ id, status: changed.status, rejections: changed.payment_proof_rejections, deliveryFeeInCentavos: changed.delivery_fee_in_centavos });
+    });
+  }
+
   handle = async (request: Request): Promise<Response> => {
     this.requests++;
     if (this.unavailable) throw new Error("Storefront unavailable");
@@ -161,6 +196,8 @@ export class FakeStorefront {
         return Response.json({ id, status: updated.status, deliveryFeeInCentavos: updated.delivery_fee_in_centavos });
       });
     }
+    const reject = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/payment-proof\/reject$/);
+    if (reject && request.method === "POST") return this.rejectProof(request, Number(reject[1]));
     const match = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/status$/);
     if (!match || request.method !== "POST") return new Response(null, { status: 404 });
     if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
@@ -182,6 +219,12 @@ export class FakeStorefront {
     if (mayDispatch && order.fulfillment_method === "delivery" &&
       (!["Lalamove", "Grab"].includes(update.courier?.name) || !/^https:\/\//.test(update.courier?.trackingUrl ?? ""))) {
       return Response.json({ error: "Dispatching a Delivery Order needs the courier and an https tracking link." }, { status: 400 });
+    }
+    if (mayMarkPaid && order.payment_proof_rejections >= 3 && !update.approvedAnyway?.reason?.trim()) {
+      return Response.json({ error: "After 3 rejected proofs a Manager must approve with a reason." }, { status: 400 });
+    }
+    if (mayMarkPaid && order.payment_proof_rejections < 3 && order.payment_proof_rejected_at !== null) {
+      return Response.json({ error: "The proof was rejected. Wait for another." }, { status: 409 });
     }
     if ((mayMarkPaid || mayPrepare) && (!update.staffId || !update.staffName)) {
       return Response.json({ error: "Staff attribution is required." }, { status: 400 });
