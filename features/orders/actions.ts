@@ -85,12 +85,12 @@ async function auditOrder(id: number, staff: Staff, module: string, action: stri
   });
 }
 
-/** Quote in integer centavos; the storefront confirms the Delivery Order in the same write. */
 /** What Staff chose on a flagged Cash on Delivery Order, worded for the log; nothing when there was none. */
 function choiceNote(choice?: CodChoice): string {
   return choice && COD_CHOICES.includes(choice) ? ` after choosing "${COD_CHOICE_LABELS[choice]}"` : "";
 }
 
+/** Quote in integer centavos; the storefront confirms the Delivery Order in the same write. */
 export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
   return act(id, async (order) => {
     if (!Number.isSafeInteger(deliveryFeeInCentavos) || deliveryFeeInCentavos < 0) {
