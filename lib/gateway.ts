@@ -94,6 +94,7 @@ async function storage<T>(path: string, init: RequestInit = {}): Promise<T> {
 /** Private images default to Permanent; delivery and refund evidence starts Temporary. */
 export const gatewayFileStorage: Omit<FileStorage, "upload"> & {
   linkRefundProof(fileId: string, returnId: number): Promise<void>;
+  linkOrderRefundProof(fileId: string, orderId: number): Promise<void>;
   promote(fileId: string): Promise<void>;
 } = {
   async promote(fileId) {
@@ -104,6 +105,11 @@ export const gatewayFileStorage: Omit<FileStorage, "upload"> & {
     if (file?.id !== fileId || file.retentionType !== "permanent" || file.expiresAt !== null) {
       throw new Error("file-storage did not confirm Permanent retention");
     }
+  },
+
+  async linkOrderRefundProof(fileId, orderId) {
+    await storage(`/${encodeURIComponent(fileId)}/links`, { method: "POST",
+      body: JSON.stringify({ system: "CRMS", entityType: "order", entityId: String(orderId), role: "cancellation-refund-proof" }) });
   },
 
   async linkRefundProof(fileId, returnId) {

@@ -4,7 +4,7 @@ import type { Staff } from "@/lib/portal/client";
 import { shopRole } from "@/lib/portal/roles";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 
-export type ApprovalAction = "payment.approve-anyway" | "return.approve" | "return.decline" | "return.refund" | "return.replace" | "write-off";
+export type ApprovalAction = "order.cancel-after-dispatch" | "order.cancel-settle" | "payment.approve-anyway" | "return.approve" | "return.decline" | "return.refund" | "return.replace" | "write-off";
 export type ApprovalInput = { module: string; action: ApprovalAction; targetId: string; payload: Record<string, unknown>; amountInCentavos: number };
 export type ApprovalOptions = { reason?: string; approvalId?: string };
 export type ApprovalResult = { ok: false; reason: string; approvalId?: string; status?: string };
@@ -12,15 +12,15 @@ export type ApprovalRequest = {
   id: string; module: string; action: ApprovalAction; target_id: string; payload: Record<string, unknown>;
   amount_in_centavos: string; limit_in_centavos: string; reason: string;
   requester_id: string; requester_name: string; status: string;
-  manager_name: string | null; manager_at: Date | null; ceo_name: string | null; ceo_at: Date | null;
+  manager_id: string | null; manager_name: string | null; manager_at: Date | null; ceo_name: string | null; ceo_at: Date | null;
 };
 export type ApprovalNotice = (input: { request: ApprovalRequest; audience: "manager" | "ceo" | "requester"; text: string; key: string }) => Promise<void>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const failure = (reason: string): ApprovalResult => ({ ok: false, reason });
 
 /** Money is integer centavos; a refund/write-off alone can enter the CEO step. */
-function needsCEO(request: Pick<ApprovalRequest, "action" | "amount_in_centavos" | "limit_in_centavos">): boolean {
-  return ["return.refund", "write-off"].includes(request.action) &&
+function needsCEO(request: Pick<ApprovalRequest, "action" | "amount_in_centavos" | "limit_in_centavos" | "payload">): boolean {
+  return (["return.refund", "write-off"].includes(request.action) || request.action === "order.cancel-settle" && request.payload.moneyDecision === true) &&
     BigInt(request.amount_in_centavos) > BigInt(request.limit_in_centavos);
 }
 
@@ -80,6 +80,8 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
       const manager = request.status === "waiting-manager" && role === "manager";
       const ceo = request.status === "waiting-ceo" && role === "ceo" && needsCEO(request);
       if (!manager && !ceo) return { error: failure("Your Role cannot decide this approval step.") };
+      if (request.action === "order.cancel-after-dispatch" && decision === "decline" &&
+          (typeof reason !== "string" || !reason.trim() || reason.length > 1000 || /[<>\p{C}\u034f\u17b4\u17b5\u3164\uffa0]/u.test(reason))) return { error: failure("Enter a single plain-text decline reason of up to 1,000 characters.") };
       if (decision === "decline" && !reason.trim()) return { error: failure("Enter a reason for declining.") };
       const status = decision === "decline" ? "declined" : manager && needsCEO(request) ? "waiting-ceo" : "approved";
       const [updated] = manager
@@ -119,7 +121,7 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
 
     const reason = options.reason?.trim();
     const [settings] = await sql`select limit_in_centavos from crms.approval_settings where singleton`;
-    const large = needsCEO({ action: input.action, amount_in_centavos: String(input.amountInCentavos), limit_in_centavos: String(settings.limit_in_centavos) });
+    const large = needsCEO({ action: input.action, payload: input.payload, amount_in_centavos: String(input.amountInCentavos), limit_in_centavos: String(settings.limit_in_centavos) });
     if (role === "manager" && !large) return execute();
     if (!reason) return failure("Request approval with a reason.");
     const result = await sql.begin(async tx => {
@@ -143,5 +145,5 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
     await defer(() => publish(e));
     return { ok: true };
   }
-  return { setLimit, list, decide, run, acceptAI };
+  return { setLimit, list, decide, run, acceptAI, deliverNotices };
 }

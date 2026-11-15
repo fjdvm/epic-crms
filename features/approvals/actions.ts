@@ -6,6 +6,10 @@ import { approvals } from "./server";
 
 export async function getApprovalRequests(module: string = RETURNS_MODULE) {
   const staff = await requireModule(module);
+  if (module === "Fulfilment") {
+    const { syncCancellationRequests } = await import("@/features/orders/cancellation-sync");
+    await syncCancellationRequests();
+  }
   return approvals().list(staff, module);
 }
 export async function decideApproval(module: string, id: string, decision: "approve" | "decline", reason = "") {
