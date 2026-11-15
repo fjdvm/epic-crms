@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { changeFailedDelivery, loadFailedDeliveryHistory } from "@/features/orders/failed-delivery-actions";
+import { requestDispatchedCancellation, settleDispatchedCancellation, loadDispatchedCancellations } from "@/features/orders/cancellation-actions";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -235,4 +236,114 @@ it("a changed Admin limit applies to failed-delivery requests, and module revoca
   const requests = storefront.requests;
   await expect(changeFailedDelivery(1, { action: "restock", attemptId })).rejects.toThrow();
   expect(storefront.requests).toBe(requests);
+});
+
+it("a Staff cancellation request waits for a Manager without cancelling or handling stock", async () => {
+  await db.sql`update orders set status = 'dispatched', payment_method = 'cash-on-delivery' where id = 1`;
+  await signIn("ana");
+  const pending = await requestDispatchedCancellation(1, "Customer asked to stop delivery");
+  expect(pending).toMatchObject({ ok: false, reason: "Waiting for approval", status: "waiting-manager" });
+  expect(await loadDispatchedCancellations()).toMatchObject({ ok: true, requests: [expect.objectContaining({ orderId: 1, status: "waiting-manager", reason: "Customer asked to stop delivery" })] });
+  expect(notices).toContainEqual(expect.objectContaining({ userIds: ["mario"], link: expect.stringContaining("fulfilment") }));
+  expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "approval.requested" }));
+});
+
+async function cancellation(amount = 10000, method = "cash-on-delivery") {
+  await db.sql`update orders set status = 'dispatched', payment_method = ${method} where id = 1`;
+  await db.sql`insert into order_lines (order_id, product_name, price_in_centavos, quantity) values (1,'Cake',${amount},1)`;
+  await signIn("ana");
+  const pending = await requestDispatchedCancellation(1, "Customer requested cancellation");
+  if (!("approvalId" in pending) || !pending.approvalId) throw new Error("Expected Manager approval");
+  return pending.approvalId;
+}
+function cancellationProof(staffId = "mario") { const form = new FormData(); form.set("proof", storage.readyEvidence("Fulfilment", PNG, staffId)); return form; }
+
+it("requires a Manager decision before COD cancellation and records stock without a refund", async () => {
+  const id = await cancellation();
+  await signIn("mario");
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: false, reason: "A Manager must approve this cancellation first." });
+  expect(await decideApproval("Fulfilment", id, "decline", "line one\nline two")).toMatchObject({ ok: false });
+  expect(await decideApproval("Fulfilment", id, "decline", "x".repeat(1001))).toMatchObject({ ok: false });
+  expect(await decideApproval("Fulfilment", id, "approve")).toMatchObject({ ok: true });
+  expect(await requestDispatchedCancellation(1, "Same request")).toMatchObject({ status: "approved", reason: "Cancellation approved; settlement pending" });
+  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof())).toMatchObject({ ok: false, reason: "Cash on Delivery has no refund." });
+  for (const actor of ["ana", "ada", "owner"]) {
+    await signIn(actor); expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: false });
+  }
+  await signIn("mario");
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: true, status: "cancelled" });
+  expect(await loadDispatchedCancellations()).toMatchObject({ ok: true, requests: [expect.objectContaining({ status: "cancelled", stockOutcome: "restock", refundMethod: null, refundProofFileId: null })] });
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: false });
+});
+
+it.each(["gcash", "maya", "bank-transfer"])("refunds a prepaid %s cancellation using its own method and confirmed proof", async method => {
+  const id = await cancellation(500000, method);
+  await signIn("mario"); await decideApproval("Fulfilment", id, "approve");
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: false, reason: "Choose exactly one refund proof screenshot." });
+  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof("ana"))).toMatchObject({ ok: false });
+  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof())).toMatchObject({ ok: true, status: "cancelled" });
+  expect(await loadDispatchedCancellations()).toMatchObject({ ok: true, requests: [expect.objectContaining({ refundMethod: method, refundProofFileId: expect.any(String), stockOutcome: "restock" })] });
+  expect([...storage.files.values()].some(file => file.orderId === 1 && file.retentionType === "permanent")).toBe(true);
+});
+
+it.each([["gcash", "restock"], ["cash-on-delivery", "write-off"]] as const)("requires CEO above the saved limit for %s/%s and binds the settlement", async (method, outcome) => {
+  const id = await cancellation(500001, method);
+  await signIn("mario"); await decideApproval("Fulfilment", id, "approve");
+  const pending = await settleDispatchedCancellation(1, id, outcome);
+  expect(pending).toMatchObject({ ok: false, status: "waiting-ceo" });
+  expect([...storage.files.values()].every(file => !file.orderId)).toBe(true);
+  if (!("approvalId" in pending) || !pending.approvalId) throw new Error("Expected CEO approval");
+  await signIn("owner"); expect(await decideApproval("Fulfilment", pending.approvalId, "approve")).toMatchObject({ ok: true });
+  await signIn("mario");
+  expect(await settleDispatchedCancellation(1, id, outcome === "restock" ? "write-off" : "restock", undefined, { approvalId: pending.approvalId })).toMatchObject({ ok: false });
+  expect(await settleDispatchedCancellation(1, id, outcome, method === "gcash" ? cancellationProof() : undefined, { approvalId: pending.approvalId })).toMatchObject({ ok: true });
+});
+
+it("preserves storefront refusals and does not consume the cancellation approval", async () => {
+  const id = await cancellation();
+  await signIn("mario"); await decideApproval("Fulfilment", id, "approve");
+  storefront.refusal = "Reconcile stock before cancellation.";
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: false, reason: storefront.refusal });
+  expect(await loadDispatchedCancellations()).toMatchObject({ ok: true, requests: [expect.objectContaining({ status: "approved" })] });
+  storefront.refusal = null;
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: true });
+});
+
+it("discovers a Customer's own cancellation request as a Manager approval, without granting Customer approval authority", async () => {
+  await db.sql`update orders set status = 'dispatched' where id = 1`;
+  const send = (customer: string) => storefront.handle(new Request(`${FAKE_STOREFRONT_URL}/api/orders/1/cancellation`, { method: "POST", headers: { "X-Test-Customer": customer }, body: JSON.stringify({ reason: "Wrong delivery address" }) }));
+  expect((await send("other-customer")).status).toBe(409);
+  const response = await send("c1"); expect(response.status).toBe(202);
+  const request = await response.json();
+  await signIn("mario");
+  expect(await loadDispatchedCancellations()).toMatchObject({ ok: true, requests: [expect.objectContaining({ requestId: request.requestId, status: "waiting-manager" })] });
+  expect(await getApprovalRequests("Fulfilment")).toMatchObject([expect.objectContaining({ requester_id: "customer:c1", status: "waiting-manager" })]);
+  expect(notices).toContainEqual(expect.objectContaining({ userIds: ["mario"] }));
+  await decideApproval("Fulfilment", request.requestId, "decline", "Courier can still deliver");
+  expect(await (await send("c1")).json()).toMatchObject({ status: "declined" });
+  expect(await settleDispatchedCancellation(1, request.requestId, "restock")).toMatchObject({ ok: false });
+});
+
+it("resumes an interrupted prepaid settlement from stored proof after the browser reference is gone", async () => {
+  const id = await cancellation(500000, "maya");
+  await signIn("mario"); await decideApproval("Fulfilment", id, "approve");
+  storefront.interruptCancellation = true;
+  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof())).toMatchObject({ ok: false, reason: expect.stringContaining("IMS did not confirm") });
+  expect(await loadDispatchedCancellations()).toMatchObject({ ok: true, requests: [expect.objectContaining({ refundProofFileId: expect.any(String), stockOutcome: "restock" })] });
+  expect([...storage.files.values()].some(file => file.orderId === 1 && file.retentionType === "permanent")).toBe(true);
+  storefront.interruptCancellation = false;
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: true, status: "cancelled" });
+  expect(await loadDispatchedCancellations()).toMatchObject({ ok: true, requests: [expect.objectContaining({ status: "cancelled", refundMethod: "maya" })] });
+});
+
+it("releases a CEO-approved settlement claim when proof preparation fails before any cancellation", async () => {
+  const id = await cancellation(500001, "gcash");
+  await signIn("mario"); await decideApproval("Fulfilment", id, "approve");
+  const pending = await settleDispatchedCancellation(1, id, "restock");
+  if (!("approvalId" in pending) || !pending.approvalId) throw new Error("Expected CEO approval");
+  await signIn("owner"); await decideApproval("Fulfilment", pending.approvalId, "approve");
+  await signIn("mario"); storage.failPromote = true;
+  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof(), { approvalId: pending.approvalId })).toMatchObject({ ok: false, reason: expect.stringContaining("No cancellation was sent") });
+  storage.failPromote = false;
+  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof(), { approvalId: pending.approvalId })).toMatchObject({ ok: true, status: "cancelled" });
 });
