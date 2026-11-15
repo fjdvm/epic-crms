@@ -55,6 +55,7 @@ function list(rows: OrderRow[]) {
       delivered: 1,
       received: 0,
       cancelled: 1,
+      returned: 2,
     },
     page: 1,
     pageSize: 25,
@@ -78,6 +79,7 @@ describe("the Orders list", () => {
       "Dispatched 1",
       "Delivered 1",
       "Cancelled 1",
+      "Returned 2",
     ]) {
       expect(screen.getByRole("link", { name })).toBeTruthy();
     }
@@ -92,6 +94,7 @@ describe("the Orders list", () => {
     expect(screen.getByRole("link", { name: "Awaiting payment 1" }).getAttribute("href")).toBe(
       "/orders?tab=awaiting+payment",
     );
+    expect(screen.getByRole("link", { name: "Returned 2" }).getAttribute("href")).toBe("/orders?tab=returned");
     expect(screen.getByRole("link", { name: "All 12" }).getAttribute("href")).toBe("/orders");
     expect(screen.getByRole("link", { name: "All 12" }).getAttribute("aria-current")).toBe("page");
   });

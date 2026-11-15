@@ -15,7 +15,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.sql`truncate order_delivery_addresses, order_lines, orders, customers restart identity cascade`;
+  await db.sql`truncate order_returns, order_delivery_addresses, order_lines, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, first_name, email) values
     ('c1', 'Maria Santos', 'Maria', 'maria@example.com'),
     ('c2', 'Jose Reyes', 'Jose', 'jose@example.com')`;
@@ -69,7 +69,25 @@ describe("the Orders list", () => {
       "delivered",
       "received",
       "cancelled",
+      "returned",
     ]);
+  });
+
+  it("filters Returned by Orders that have a Return, whatever their status, and counts each Order once", async () => {
+    const delivered = await order({ status: "delivered" });
+    const received = await order({ status: "received" });
+    await order({ status: "delivered" });
+    for (const id of [delivered, delivered, received]) {
+      await db.sql`insert into order_returns (order_id, reason, amount_in_centavos) values (${id}, 'damaged', 1000)`;
+    }
+
+    const returned = await list({ tab: "returned" });
+
+    expect(returned.rows.map((r) => r.id).sort()).toEqual([delivered, received].sort());
+    expect(returned.rows.every((r) => r.status !== "returned")).toBe(true);
+    expect(returned.counts.returned).toBe(2);
+    expect(returned.counts.all).toBe(3);
+    expect(returned.counts.delivered).toBe(2);
   });
 
   it("counts every status, and All is the sum", async () => {
@@ -92,6 +110,7 @@ describe("the Orders list", () => {
       delivered: 1,
       received: 0,
       cancelled: 1,
+      returned: 0,
     });
   });
 

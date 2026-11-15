@@ -25,9 +25,13 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 /** Staff may cancel an Order up to `preparing`; nobody can cancel a `dispatched` Order. */
 export const CANCELLABLE_STATUSES: readonly string[] = ["placed", "confirmed", "awaiting payment", "paid", "preparing"];
 
-export type OrderTab = "all" | OrderStatus;
+/**
+ * "returned" is a filter, not an Order status: it shows the Orders that have a Return, whatever
+ * their status. The status tabs are the storefront's own.
+ */
+export type OrderTab = "all" | OrderStatus | "returned";
 
-export const ORDER_TABS: OrderTab[] = ["all", ...ORDER_STATUSES];
+export const ORDER_TABS: OrderTab[] = ["all", ...ORDER_STATUSES, "returned"];
 
 export type PaymentLabel = ReturnType<typeof paymentStatusOf>;
 
@@ -75,6 +79,10 @@ export async function listOrders(sql: postgres.Sql, query: OrderQuery = {}): Pro
     counts.all += count;
   }
 
+  const [{ returned }] = await sql<{ returned: number }[]>`
+    select count(distinct order_id)::int as returned from public.order_returns`;
+  counts.returned = returned;
+
   const totalPages = Math.max(1, Math.ceil(counts[tab] / pageSize));
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);
 
@@ -83,7 +91,13 @@ export async function listOrders(sql: postgres.Sql, query: OrderQuery = {}): Pro
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total
     from public.orders o
     join public.customers c on c.id = o.customer_id
-    ${tab === "all" ? sql`` : sql`where o.status = ${tab}`}
+    ${
+      tab === "all"
+        ? sql``
+        : tab === "returned"
+          ? sql`where exists (select 1 from public.order_returns r where r.order_id = o.id)`
+          : sql`where o.status = ${tab}`
+    }
     order by o.created_at desc, o.id desc
     limit ${pageSize} offset ${(page - 1) * pageSize}`;
 
