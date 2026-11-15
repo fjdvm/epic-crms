@@ -19,3 +19,11 @@ The environment file must supply `CREOMS_WRITER_DATABASE_URL`. Production execut
 ## Verification
 
 `tests/customer-tasks.test.ts` calls the server actions against PostgreSQL through PGlite and a real postgres.js connection, loading the migration twice. It covers all four Roles, ownership, fixed description and input limits, all five actions, replay and concurrent retries, old/new audit metadata, failed audit-adapter delivery, Profile integration and Task-store failure, and the Philippine midnight boundary. Production migration and live checks are tracked separately.
+
+## My tasks read (#424)
+
+`loadMyTasks()` in `features/customer-profiles/my-tasks.ts` proves the Customer Profiles Module and derives the owner from the signed-in viewer. All four Roles can read their own list, including Managers; there is no owner argument or team view. It returns open Tasks across Customers, ordered by due date, creation time and id, with Customer id/name and an overdue flag. Customer names are loaded through the storefront read-only connection. A missing Customer retains the Task with `Customer unavailable`; a failed read returns an unavailable result rather than zero counts.
+
+The list and three counts share one SQL snapshot and one captured clock value. Due today and overdue use the Asia/Manila calendar date. Done this week counts currently completed Tasks owned by the viewer (regardless of who marked them done), within the Monday 00:00 inclusive to following Monday 00:00 exclusive Manila week. Reopening removes the Task from that count and restores it to the open list. Existing Task actions revalidate `/my-tasks`; no timer or polling is introduced.
+
+`tests/my-tasks.test.ts` exercises the public read and existing actions against the real PostgreSQL test engine and postgres.js connection, including every viewing Role, Customer identity, ownership, done/reopen/reassign, database timezone independence, Manila midnight, Monday/year boundaries, authorization and store failure. This slice reuses #420's schema and migration; it adds no migration or production command.
