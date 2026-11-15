@@ -342,6 +342,19 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
 
 const FULFILMENT = ["Fulfilment"];
 
+describe("Order detail COD flags", () => {
+  it("lists which rules fired, with no score, and shows nothing when none did", () => {
+    const { unmount } = render(<OrderDetailView order={detail({ paymentMethod: "cash-on-delivery" })} modules={FULFILMENT} codFlags={[{ rule: "first-order", label: "First order" }, { rule: "earlier-failed-delivery", label: "Earlier failed delivery" }]} />);
+    const card = screen.getByTestId("cod-flags");
+    expect(card.textContent).toContain("First order");
+    expect(card.textContent).toContain("Earlier failed delivery");
+    expect(card.textContent).not.toMatch(/%|score|risk/i);
+    unmount();
+    render(<OrderDetailView order={detail({ paymentMethod: "cash-on-delivery" })} modules={FULFILMENT} />);
+    expect(screen.queryByTestId("cod-flags")).toBeNull();
+  });
+});
+
 describe("Order detail packing", () => {
   it("shows the packer's name and offers the packing slip to Fulfilment", () => {
     render(<OrderDetailView order={detail({ status: "preparing", packedBy: { id: "u1", name: "Liza B.", at: new Date("2026-10-21T01:00:00Z") } })} modules={FULFILMENT} />);

@@ -3,12 +3,13 @@ import { notFound } from "next/navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
+import { loadCodFlags } from "@/features/orders/cod-actions";
 import { loadOrder } from "@/features/orders/orders";
 import { loadCancellationState } from "@/features/orders/cancellation-state";
 import { loadLineReservations } from "@/features/orders/stock";
 import { loadEmbeddedReturns } from "@/features/returns/returns";
 import { gatewayFileStorage } from "@/lib/gateway";
-import { FULFILMENT_MODULE, ORDER_DETAIL_MODULES, PAYMENTS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
+import { FULFILMENT_MODULE, ORDERS_MODULE, ORDER_DETAIL_MODULES, PAYMENTS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 import { approvals } from "@/features/approvals/server";
 import { toView, WAITING } from "@/features/approvals/view";
 import { shopRole } from "@/lib/portal/roles";
@@ -62,6 +63,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
 
   const cancellation = order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) ? await loadCancellationState(order.id) : null;
   const role = shopRole(staff.role);
+  // Flags are for Staff and Managers who hold Orders; Admin and CEO see none, and a Customer never reaches this page.
+  const codResult = modules.includes(ORDERS_MODULE) && (role === "staff" || role === "manager") ? await loadCodFlags(order.id) : null;
+  const codFlags = codResult?.ok ? codResult.flags[order.id] ?? [] : [];
   const requests = modules.includes(PAYMENTS_MODULE)
     ? (await approvals().list(staff, PAYMENTS_MODULE).catch(() => []))
         .map((row) => toView(row as unknown as Record<string, unknown>))
@@ -79,6 +83,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         waitingApproval={waitingApproval}
         cancellation={cancellation}
         order={order}
+        codFlags={codFlags}
         modules={modules}
         deliveryPhotoUrl={deliveryPhotoUrl}
         returns={returns}

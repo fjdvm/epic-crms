@@ -160,6 +160,7 @@ export function OrderDetailView({
   approvalId,
   waitingApproval,
   cancellation = null,
+  codFlags = [],
 }: {
   /** The viewer's role; omitted means Staff, so the buttons that need a Manager read "Request approval". */
   role?: ShopRole | null;
@@ -169,6 +170,8 @@ export function OrderDetailView({
   waitingApproval?: boolean;
   /** The cancel-after-dispatch request on this Order, if any. */
   cancellation?: CancellationState | null;
+  /** Which Cash on Delivery rules fired, for Staff to double-check; empty for everyone else. Never shown to the Customer. */
+  codFlags?: readonly { rule: string; label: string }[];
   order: OrderDetail;
   /** What this Order set aside per line, by Order line id. Empty for Orders placed before Reservations. */
   reservations?: ReadonlyMap<number, LineReservation>;
@@ -317,6 +320,12 @@ export function OrderDetailView({
               )}
             </dl>
             <PaymentProof order={order} />
+            {codFlags.length > 0 && (
+              <div data-testid="cod-flags" className="space-y-1 rounded-lg bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">
+                <p className="font-medium">Double-check before confirming</p>
+                <ul className="list-disc pl-4">{codFlags.map(f => <li key={f.rule}>{f.label}</li>)}</ul>
+              </div>
+            )}
           </section>
 
           {(order.status === "delivered" || order.status === "received") && (
