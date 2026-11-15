@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { recordFailedDelivery, loadFailedDeliveryHistory } from "@/features/orders/failed-delivery-actions";
+import { changeFailedDelivery, loadFailedDeliveryHistory } from "@/features/orders/failed-delivery-actions";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -184,9 +184,9 @@ it.each([500000, 500001])("failed-delivery write-off at %i uses the Manager and 
   await db.sql`insert into order_lines (order_id, product_name, price_in_centavos, quantity) values (1,'Cake',${amount},1)`;
   const attemptId = randomUUID();
   await signIn("ana");
-  expect(await recordFailedDelivery(1, { action: "record", attemptId, reason: "Damaged in transit", nextStep: "request-cancellation", customerMessage: "We requested cancellation from the Manager." })).toMatchObject({ ok: true, attemptId });
+  expect(await changeFailedDelivery(1, { action: "record", attemptId, reason: "Damaged in transit", nextStep: "request-cancellation", customerMessage: "We requested cancellation from the Manager." })).toMatchObject({ ok: true, attemptId });
   expect(await loadFailedDeliveryHistory(1)).toMatchObject({ ok: true, history: [expect.objectContaining({ reason: "Damaged in transit" })] });
-  const pending = await recordFailedDelivery(1, { action: "write-off", attemptId }, { reason: "Goods damaged" });
+  const pending = await changeFailedDelivery(1, { action: "write-off", attemptId }, { reason: "Goods damaged" });
   expect(pending).toMatchObject({ ok: false, status: "waiting-manager" });
   if (!("approvalId" in pending) || !pending.approvalId) throw new Error("Expected approval");
   expect((await db.sql`select disposition from failed_deliveries`)[0].disposition).toBeNull();
@@ -194,9 +194,9 @@ it.each([500000, 500001])("failed-delivery write-off at %i uses the Manager and 
   expect(await decideApproval("Fulfilment", pending.approvalId, "approve")).toMatchObject({ ok: true, request: { status: amount > 500000 ? "waiting-ceo" : "approved" } });
   await signIn("owner");
   expect(await decideApproval("Fulfilment", pending.approvalId, "approve")).toMatchObject({ ok: amount > 500000 });
-  expect(await recordFailedDelivery(1, { action: "restock", attemptId })).toMatchObject({ ok: false });
+  expect(await changeFailedDelivery(1, { action: "restock", attemptId })).toMatchObject({ ok: false });
   await signIn("ana");
-  expect(await recordFailedDelivery(1, { action: "write-off", attemptId }, { approvalId: pending.approvalId })).toMatchObject({ ok: true });
+  expect(await changeFailedDelivery(1, { action: "write-off", attemptId }, { approvalId: pending.approvalId })).toMatchObject({ ok: true });
   expect((await db.sql`select status from orders where id = 1`)[0].status).toBe("dispatched");
   expect((await db.sql`select disposition from failed_deliveries`)[0].disposition).toBe("write-off");
   expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "writeoff.requested" }));
@@ -206,15 +206,33 @@ it("failed delivery actions preserve refusals, rebook courier details and enforc
   await db.sql`update orders set status = 'dispatched', fulfillment_method = 'delivery' where id = 1`;
   const attemptId = randomUUID();
   await signIn("ana");
-  expect(await recordFailedDelivery(1, { action: "record", attemptId, reason: "Not home", nextStep: "rebook", customerMessage: "Staff will rebook." })).toMatchObject({ ok: true });
+  expect(await changeFailedDelivery(1, { action: "record", attemptId, reason: "Not home", nextStep: "rebook", customerMessage: "Staff will rebook." })).toMatchObject({ ok: true });
   storefront.refusal = "Courier booking changed. Refresh first.";
-  expect(await recordFailedDelivery(1, { action: "rebook", attemptId, courier: { name: "Grab", trackingUrl: "https://grab.test/new" } })).toMatchObject({ ok: false, reason: storefront.refusal });
+  expect(await changeFailedDelivery(1, { action: "rebook", attemptId, courier: { name: "Grab", trackingUrl: "https://grab.test/new" } })).toMatchObject({ ok: false, reason: storefront.refusal });
   storefront.refusal = null;
-  expect(await recordFailedDelivery(1, { action: "rebook", attemptId, courier: { name: "Grab", trackingUrl: "https://grab.test/new" } })).toMatchObject({ ok: true });
+  expect(await changeFailedDelivery(1, { action: "rebook", attemptId, courier: { name: "Grab", trackingUrl: "https://grab.test/new" } })).toMatchObject({ ok: true });
   expect(storefront.couriers.get(1)).toEqual({ name: "Grab", trackingUrl: "https://grab.test/new" });
   for (const actor of ["ada", "owner"]) {
     await signIn(actor);
-    expect(await recordFailedDelivery(1, { action: "restock", attemptId })).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
+    expect(await changeFailedDelivery(1, { action: "restock", attemptId })).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
     expect(await loadFailedDeliveryHistory(1)).toMatchObject({ ok: true });
   }
+});
+
+it("a changed Admin limit applies to failed-delivery requests, and module revocation stops direct actions", async () => {
+  await db.sql`update orders set status = 'dispatched', fulfillment_method = 'delivery' where id = 1`;
+  await db.sql`insert into order_lines (order_id, product_name, price_in_centavos, quantity) values (1,'Cake',500001,1)`;
+  const attemptId = randomUUID();
+  await signIn("ana");
+  expect(await changeFailedDelivery(1, { action: "record", attemptId, reason: "Damaged", nextStep: "request-cancellation", customerMessage: "Staff requested cancellation." })).toMatchObject({ ok: true });
+  const { approvals } = await import("@/features/approvals/server");
+  // The same Admin setting entry point used by Portal Settings.
+  expect(await approvals().setLimit({ id: "ada", username: "ada", name: "Ada", email: "ada@example.com", role: "Admin" }, 600000)).toMatchObject({ ok: true });
+  await signIn("mario");
+  expect(await changeFailedDelivery(1, { action: "write-off", attemptId })).toMatchObject({ ok: true });
+  portal.addStaff("no-fulfilment", { id: "no-fulfilment", username: "no-fulfilment", name: "Other Person", email: "other@example.com", role: "Staff" }, ["Orders"]);
+  await signIn("no-fulfilment");
+  const requests = storefront.requests;
+  await expect(changeFailedDelivery(1, { action: "restock", attemptId })).rejects.toThrow();
+  expect(storefront.requests).toBe(requests);
 });
