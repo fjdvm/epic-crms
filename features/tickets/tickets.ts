@@ -1,9 +1,9 @@
 import type postgres from "postgres";
 
-export const TICKETS_PAGE_SIZE = 25;
+import { DEFAULT_HISTORY, firstReplyHoursSql, type ServiceLevel } from "./service-level";
+import { withServiceLevels, type ServiceLevels } from "./service-level-store";
 
-/** A Ticket the Customer has gone this long without a Staff reply to is Overdue. */
-export const OVERDUE_AFTER_HOURS = 24;
+export const TICKETS_PAGE_SIZE = 25;
 
 export type TicketTab = "open" | "waiting" | "resolved";
 
@@ -41,6 +41,8 @@ export interface TicketQuery {
   pageSize?: number;
   /** The moment Overdue is measured at; defaults to now. */
   now?: Date;
+  /** The saved Service levels; the defaults when not given. */
+  levels?: ServiceLevels;
 }
 
 export interface TicketRow {
@@ -56,6 +58,8 @@ export interface TicketRow {
   waiting: boolean;
   overdue: boolean;
   lastActivity: Date;
+  /** The countdown to the first reply or resolve target. */
+  serviceLevel: ServiceLevel;
 }
 
 export interface TicketList {
@@ -81,9 +85,8 @@ export async function listTickets(
 ): Promise<TicketList> {
   const tab = query.tab ?? "open";
   const pageSize = query.pageSize ?? TICKETS_PAGE_SIZE;
-  const overdueBefore = new Date(
-    (query.now ?? new Date()).getTime() - OVERDUE_AFTER_HOURS * 60 * 60 * 1000,
-  );
+  const now = query.now ?? new Date();
+  const levels = query.levels ?? { history: DEFAULT_HISTORY };
 
   const derived = sql`
     with derived as (
@@ -94,10 +97,14 @@ export async function listTickets(
         t.order_id,
         t.priority,
         t.status,
+        t.created_at,
+        t.resolved_at,
+        t.held_seconds,
+        t.hold_started_at,
         coalesce(m.created_at, t.created_at) as last_activity,
         t.status = 'open' and coalesce(m.sender, 'customer') = 'staff' as waiting,
         t.status = 'open' and coalesce(m.sender, 'customer') = 'customer'
-          and coalesce(m.created_at, t.created_at) < ${overdueBefore} as overdue
+          and coalesce(m.created_at, t.created_at) + ${firstReplyHoursSql(sql, levels.history)} * interval '1 hour' < ${now} as overdue
       from tickets t
       join customers c on c.id = t.customer_id
       left join lateral (
@@ -136,6 +143,30 @@ export async function listTickets(
     order by last_activity desc, id desc
     limit ${pageSize} offset ${(page - 1) * pageSize}`;
 
+  const ids = rows.map((r) => r.id as number);
+  const messageRows = ids.length
+    ? await sql<{ ticket_id: number; sender: "customer" | "staff"; created_at: Date }[]>`
+        select ticket_id, sender, created_at from ticket_messages
+        where ticket_id = any(${ids}::int[]) order by ticket_id, created_at, id`
+    : [];
+  const levelsById = await withServiceLevels(
+    levels,
+    rows.map((r) => ({
+      id: r.id as number,
+      createdAt: r.created_at as Date,
+      input: {
+        status: r.status as TicketStatus,
+        resolvedAt: (r.resolved_at as Date | null) ?? null,
+        heldSeconds: r.held_seconds as number,
+        holdStartedAt: (r.hold_started_at as Date | null) ?? null,
+        messages: messageRows
+          .filter((m) => m.ticket_id === r.id)
+          .map((m) => ({ sender: m.sender, at: m.created_at })),
+      },
+    })),
+    now,
+  );
+
   return {
     rows: rows.map((r) => ({
       id: r.id as number,
@@ -147,6 +178,7 @@ export async function listTickets(
       waiting: r.waiting as boolean,
       overdue: r.overdue as boolean,
       lastActivity: r.last_activity as Date,
+      serviceLevel: levelsById.get(r.id as number)!,
     })),
     counts: { open: counts.open, waiting: counts.waiting, resolved: counts.resolved },
     overdue: counts.overdue,

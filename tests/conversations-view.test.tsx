@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { someServiceLevel } from "./service-level-fixture";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -28,6 +29,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   claimerName: "Bernice",
   claimerId: "bernice",
   hold: null,
+  serviceLevel: someServiceLevel(),
   messages: [
     {
       id: 1,

@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import { PAID_OR_FULFILLED } from "@/features/customer-profiles/rules";
 import { CUSTOMER_PROFILES_MODULE, FEEDBACK_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 
+import type { TargetHistory } from "@/features/tickets/service-level";
 import { loadAttention, type Attention } from "./attention";
 import {
   bestSellersIn, cachedAnalytics, forgetAnalytics, loadBreakdown, paymentAndReceivingIn,
@@ -57,7 +58,11 @@ export interface DashboardFigures {
 /** Each permitted widget can stream without waiting for another widget or live queue. */
 export type DashboardWidgets = { [K in keyof DashboardFigures]: Promise<NonNullable<DashboardFigures[K]>> };
 
-interface FigureOptions { period: Period; modules: readonly string[]; now?: Date }
+interface FigureOptions {
+  period: Period; modules: readonly string[]; now?: Date;
+  /** The saved Service levels for Overdue; null when they could not be read; the defaults when not given. */
+  targets?: TargetHistory | null;
+}
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
 export async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
@@ -207,7 +212,7 @@ export function loadDashboardFigures(connect: () => postgres.Sql, options: Figur
 export function loadDashboardFigures(connect: () => postgres.Sql, options: FigureOptions): Promise<DashboardFigures>;
 export async function loadDashboardFigures(
   connect: () => postgres.Sql,
-  { period, modules, now = new Date(), stream = false }: FigureOptions & { stream?: boolean },
+  { period, modules, now = new Date(), stream = false, targets }: FigureOptions & { stream?: boolean },
 ): Promise<DashboardFigures | DashboardWidgets> {
   const options = { period, modules, now };
   const analytics = async (): Promise<DashboardWidgets> => {
@@ -226,7 +231,7 @@ export async function loadDashboardFigures(
     return result;
   };
   const pendingAnalytics = analytics();
-  const attention = loadAttention(connect, { modules, now });
+  const attention = loadAttention(connect, { modules, now, targets });
   const widgets: DashboardWidgets = { ...await pendingAnalytics, attention };
   if (stream) return widgets;
   return Object.fromEntries(await Promise.all(Object.entries(widgets).map(async ([key, widget]) => [key, await widget])));

@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { describeClock, type Clock } from "./service-level";
 import { ClaimButton } from "./ticket-controls";
 import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
 import {
@@ -32,6 +33,7 @@ export const COLUMNS: { header: string; className: string }[] = [
   { header: "Linked order", className: "flex-[1_1_120px]" },
   { header: "Priority", className: "flex-[1_1_100px]" },
   { header: "Status", className: "flex-[1_1_110px]" },
+  { header: "Service level", className: "flex-[1_1_130px]" },
   { header: "", className: "flex-[0_0_90px] justify-end" },
 ];
 
@@ -55,6 +57,13 @@ function StatusPill({ row }: { row: TicketRow }) {
   if (row.waiting) return <Pill className={PILL.amber}>Waiting</Pill>;
 
   return <Pill className={PILL.red}>Open</Pill>;
+}
+
+function ServiceCell({ clock }: { clock: Clock }) {
+  const tone =
+    clock.state === "missed" ? "text-[#b91c1c]" : clock.state === "breaching" ? "text-[#b45309]" : clock.state === "met" ? "text-[#15803d]" : "text-[#6e6680]";
+
+  return <span className={cn("font-medium", tone)}>{describeClock(clock)}</span>;
 }
 
 export const HEAD = "flex items-start overflow-clip";
@@ -88,7 +97,7 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
           <div className="p-8 text-center text-sm text-[#6e6680]">No Tickets here.</div>
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
-            <div className="min-w-[740px]">
+            <div className="min-w-[870px]">
               <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
                 {COLUMNS.map((col) => (
                   <div key={col.header} className={cn(HEAD, col.className)}>
@@ -117,6 +126,9 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
                     <StatusPill row={row} />
                   </div>
                   <div className={cn(CELL, COLUMNS[6].className)}>
+                    <ServiceCell clock={row.serviceLevel.current} />
+                  </div>
+                  <div className={cn(CELL, COLUMNS[7].className)}>
                     {row.status !== "completed" && <ClaimButton ticketId={row.id} />}
                   </div>
                 </div>

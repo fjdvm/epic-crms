@@ -3,7 +3,9 @@ import { Suspense } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { NewTicketDialog } from "@/features/tickets/new-ticket-dialog";
 import { TicketListView } from "@/features/tickets/ticket-list";
-import { loadTickets, TICKET_TABS } from "@/features/tickets/tickets";
+import { readServiceLevels } from "@/features/tickets/service-level-store";
+import { crmsDatabase } from "@/lib/crms-db";
+import { loadTickets, TICKET_TABS, type TicketListResult } from "@/features/tickets/tickets";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -34,7 +36,8 @@ async function TicketsData({ raw }: { raw: Awaited<SearchParams> }) {
   const tab = TICKET_TABS.find((t) => t === first(raw.tab)) ?? "open";
   const page = Math.max(1, Number.parseInt(first(raw.page), 10) || 1);
 
-  const result = await loadTickets(ticketsDatabase, { tab, page });
+  const levels = await readServiceLevels(crmsDatabase);
+  const result: TicketListResult = levels ? await loadTickets(ticketsDatabase, { tab, page, levels }) : { ok: false };
 
   if (!result.ok) {
     return (

@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { readServiceLevels } from "@/features/tickets/service-level-store";
+import { crmsDatabase } from "@/lib/crms-db";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CustomersByStageCard, CustomersByStageSkeleton, NewCustomersCard, NewCustomersSkeleton } from "@/features/dashboard/customer-cards";
 import {
@@ -119,7 +121,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const now = new Date();
   const period = resolvePeriod(preset, now);
   const modules = await heldModules(DASHBOARD_DATA_MODULES);
-  const figures = loadDashboardFigures(ticketsDatabase, { period, modules, now, stream: true });
+  const targets = (await readServiceLevels(crmsDatabase))?.history ?? null;
+  const figures = loadDashboardFigures(ticketsDatabase, { period, modules, now, stream: true, targets });
   const show = visibleWidgets(modules);
   const attention = hasAttentionQueue(modules);
 

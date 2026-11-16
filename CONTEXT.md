@@ -121,8 +121,11 @@ _Avoid_: Closed, claimed, cancelled
 The Customer's Order a Ticket is about. Optional: a Ticket can have none, and must be one of that Customer's own Orders. The Ticket list shows "None yet" when there is no Linked order.
 _Avoid_: Related order, attached order
 
+**Service level**:
+Two targets the Admin sets in Portal Settings: the first reply target (default 24 hours) and the resolve target (default 3 days). They are the same for every Priority and every hour counts. A Ticket takes the pair in force when it was opened and keeps it; a change affects only Tickets opened afterwards. Each Ticket shows time left, Breaching soon (under 1 hour left) or Missed. The clock stops while the Ticket is On hold, and the resolve clock also stops while it is waiting on the Customer. A missed target is stamped once and never cleared. Manager and CEO see the targets read-only; Staff do not see the screen.
+
 **Overdue**:
-An Open Ticket whose last Message came from the Customer and has gone more than 24 hours without a Staff reply. A new Ticket nobody has answered counts. A Ticket waiting on the Customer, or On hold, is never Overdue. The limit is the same for every Priority.
+An Open Ticket whose last Message came from the Customer and has gone longer than its first reply target without a Staff reply. A new Ticket nobody has answered counts. A Ticket waiting on the Customer, or On hold, is never Overdue. The Dashboard's Needs attention uses the same rule.
 _Avoid_: Late, breached
 
 **Priority**:

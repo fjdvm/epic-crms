@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { someServiceLevel } from "./service-level-fixture";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -25,6 +26,7 @@ const row = (overrides: Partial<TicketRow>): TicketRow => ({
   waiting: false,
   overdue: false,
   lastActivity: new Date("2026-10-20T00:00:00Z"),
+  serviceLevel: someServiceLevel(),
   ...overrides,
 });
 
