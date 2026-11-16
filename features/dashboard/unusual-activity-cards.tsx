@@ -41,6 +41,13 @@ function Card({ card, canDismiss, onDismiss }: { card: UnusualActivityCard; canD
           </button>
         )}
       </div>
+      {(card.explanation?.why || card.explanation?.whatToDo) && (
+        <div className="flex flex-col gap-1 text-xs text-[#3f3f46]">
+          {card.explanation.why && <p><span className="font-medium">Why:</span> {card.explanation.why}</p>}
+          {card.explanation.whatToDo && <p><span className="font-medium">What to do:</span> {card.explanation.whatToDo}</p>}
+          <p className="text-[11px] text-[#a1a1aa]">AI suggestion. Nothing has been changed.</p>
+        </div>
+      )}
       <p className="text-xs text-[#71717a]">{numbers.map(([k, v]) => `${k.replace(/([A-Z])/g, " $1").toLowerCase()}: ${v}`).join(" · ")}</p>
       <ul className="flex flex-wrap gap-2">
         {card.links.slice(0, MAX_LINKS).map(link => (
@@ -58,10 +65,19 @@ function Card({ card, canDismiss, onDismiss }: { card: UnusualActivityCard; canD
  * Up to five cards, most urgent first, chosen by the server from the Modules the Staff member holds.
  * Read once when the Dashboard opens and again only on a user action; never on a timer.
  */
-export function UnusualActivityCards({ canDismiss, initial }: { canDismiss: boolean; initial?: UnusualActivity }) {
+export function UnusualActivityCards({ canDismiss, canExplain = canDismiss, initial }: { canDismiss: boolean; canExplain?: boolean; initial?: UnusualActivity }) {
   const [cards, setCards] = useState<UnusualActivityCard[] | null>(initial?.cards ?? null);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function explain(key: string) {
+    fetch(`${ENDPOINT}/explain`, { method: "POST", headers: { "content-type": "application/json", "x-creoms-alert-explain": "1" }, body: JSON.stringify({ key }) })
+      .then(res => res.json())
+      .then((body: { explanation?: UnusualActivityCard["explanation"] }) => {
+        if (body.explanation) setCards(now => now && now.map(c => c.key === key ? { ...c, explanation: body.explanation! } : c));
+      })
+      .catch(() => {}); // The card stays as it is without the explanation.
+  }
 
   useEffect(() => {
     if (initial) return;
@@ -72,9 +88,12 @@ export function UnusualActivityCards({ canDismiss, initial }: { canDismiss: bool
         if (!live) return;
         setCards(body.cards ?? []);
         setFailed(!res.ok);
+        // Ask for a missing explanation once per card on this open; the server keeps it, so reopening makes no call.
+        if (canExplain) for (const card of body.cards ?? []) if (!card.explanation) explain(card.key);
       })
       .catch(() => live && (setCards([]), setFailed(true)));
     return () => { live = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial]);
 
   async function dismiss(card: UnusualActivityCard) {

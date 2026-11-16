@@ -23,6 +23,8 @@ export interface UnusualActivityCard {
   /** Ratio to the rule boundary; larger means more urgent. Ties use the stable key. */
   urgency: number;
   links: { label: string; href: string }[];
+  /** Kept AI "why" and "what to do" (#484); absent until made, or when the model was unavailable. */
+  explanation?: { why: string | null; whatToDo: string | null };
 }
 type Dependencies = { source: postgres.Sql; crms: postgres.Sql };
 export interface UnusualActivity { cards: UnusualActivityCard[]; unavailable: string[] }

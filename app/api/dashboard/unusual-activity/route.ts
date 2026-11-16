@@ -1,4 +1,5 @@
 import { loadUnusualActivity, dismissUnusualActivity, UNUSUAL_ACTIVITY_MODULES } from "@/features/dashboard/unusual-activity";
+import { keptExplanations } from "@/features/dashboard/unusual-activity-explain";
 import { database } from "@/lib/db";
 import { crmsDatabase } from "@/lib/crms-db";
 import { DASHBOARD_MODULE } from "@/lib/portal/config";
@@ -11,7 +12,11 @@ export async function GET() {
   const staff = await requireModule(DASHBOARD_MODULE);
   const modules = await heldModules(UNUSUAL_ACTIVITY_MODULES);
   try {
-    return Response.json(await loadUnusualActivity({ source: database(), crms: crmsDatabase() }, staff, modules), { headers });
+    const crms = crmsDatabase();
+    const activity = await loadUnusualActivity({ source: database(), crms }, staff, modules);
+    // Kept explanations only: reading never calls a model. A failure leaves the cards without them.
+    const kept = await keptExplanations(crms, activity.cards).catch(() => new Map());
+    return Response.json({ ...activity, cards: activity.cards.map(c => kept.has(c.key) ? { ...c, explanation: kept.get(c.key) } : c) }, { headers });
   } catch {
     return Response.json({ cards: [], unavailable: modules }, { status: 503, headers });
   }
