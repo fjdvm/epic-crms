@@ -8,8 +8,8 @@ import { DashboardExportButton } from "./export-button";
 import { PERIOD_LABELS, PERIOD_PRESETS, type PeriodPreset } from "./period";
 
 interface PeriodState {
-  preset: PeriodPreset;
-  select: (preset: PeriodPreset) => void;
+  preset: string;
+  select: (preset: string) => void;
   basePath: string;
 }
 
@@ -25,12 +25,12 @@ function usePeriod() {
 /** Highlight the chosen period immediately; let navigation reuse cached figures without forcing skeletons. */
 export function PeriodNavigation({
   preset, basePath = "/dashboard", children,
-}: { preset: PeriodPreset; basePath?: string; children: React.ReactNode }) {
+}: { preset: string; basePath?: string; children: React.ReactNode }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(preset);
 
-  const select = (next: PeriodPreset) => {
+  const select = (next: string) => {
     startTransition(async () => {
       setOptimistic(next);
       await router.push(`${basePath}?period=${next}`);
@@ -40,13 +40,16 @@ export function PeriodNavigation({
   return <PeriodContext.Provider value={{ preset: optimistic, select, basePath }}>{children}</PeriodContext.Provider>;
 }
 
-export function PeriodPicker({ exportable = true }: { exportable?: boolean } = {}) {
+/** Defaults to the Dashboard's periods; a page with its own set passes `presets` and `labels`. */
+export function PeriodPicker({
+  exportable = true, presets = PERIOD_PRESETS, labels = PERIOD_LABELS,
+}: { exportable?: boolean; presets?: readonly string[]; labels?: Record<string, string> } = {}) {
   const { preset, select, basePath } = usePeriod();
 
   return (
     <>
       <nav aria-label="Period" className="flex flex-wrap gap-2">
-        {PERIOD_PRESETS.map((p) => (
+        {presets.map((p) => (
           <Link
             key={p}
             href={`${basePath}?period=${p}`}
@@ -59,11 +62,11 @@ export function PeriodPicker({ exportable = true }: { exportable?: boolean } = {
             }}
             className="rounded-lg border border-[#e4e4e7] bg-white px-3 py-2 text-sm font-medium text-[#18181b] aria-[current=true]:border-[#5b2a86] aria-[current=true]:bg-[#5b2a86] aria-[current=true]:text-white"
           >
-            {PERIOD_LABELS[p]}
+            {labels[p]}
           </Link>
         ))}
       </nav>
-      {exportable && <DashboardExportButton period={preset} />}
+      {exportable && <DashboardExportButton period={preset as PeriodPreset} />}
     </>
   );
 }

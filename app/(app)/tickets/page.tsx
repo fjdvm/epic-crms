@@ -2,6 +2,9 @@ import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ReassignAllDialog } from "@/features/tickets/reassign-dialog";
+import Link from "next/link";
+
+import { mayReadTicketReport } from "@/features/reports/ticket-report";
 import { shopRole } from "@/lib/portal/roles";
 import { NewTicketDialog } from "@/features/tickets/new-ticket-dialog";
 import {
@@ -19,8 +22,8 @@ import {
 import { openEscalatedIds } from "@/features/tickets/escalate";
 import { readServiceLevels } from "@/features/tickets/service-level-store";
 import { crmsDatabase } from "@/lib/crms-db";
-import { TICKETS_MODULE } from "@/lib/portal/config";
-import { requireModule } from "@/lib/portal/staff";
+import { REPORTS_MODULE, TICKETS_MODULE } from "@/lib/portal/config";
+import { heldModules, requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 import { searchParamsKey } from "@/lib/search-params-key";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,6 +55,9 @@ export default async function TicketsPage({
         <Suspense fallback={null}>
           <ReassignAllEntry />
         </Suspense>
+        <Suspense fallback={null}>
+          <ReportsEntry />
+        </Suspense>
         <NewTicketDialog />
       </div>
       <Suspense
@@ -71,6 +77,18 @@ async function ReassignAllEntry() {
   const staff = await requireModule(TICKETS_MODULE);
 
   return shopRole(staff.role) === "manager" ? <ReassignAllDialog /> : null;
+}
+
+/** Manager, Admin and CEO who hold the Reports Module are offered the Ticket reports; Staff see no link. */
+async function ReportsEntry() {
+  const staff = await requireModule(TICKETS_MODULE);
+  if (!mayReadTicketReport(staff.role) || !(await heldModules([REPORTS_MODULE])).includes(REPORTS_MODULE)) return null;
+
+  return (
+    <Link href="/tickets/reports" prefetch className="shrink-0 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-2 text-sm font-medium text-[#18181b]">
+      Reports
+    </Link>
+  );
 }
 
 async function TicketToolbarData() {
