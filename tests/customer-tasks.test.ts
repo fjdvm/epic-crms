@@ -32,7 +32,6 @@ beforeAll(async () => {
   await db.sql`create schema crms`;
   const schema = readFileSync("docs/db/crms-schema.sql", "utf8");
   for (const statement of schema.replace(/^--.*$/gm, "").split(";").filter(s => /CREATE TABLE crms.walk_in_customers/.test(s))) await db.sql.unsafe(statement);
-  await db.sql.unsafe(readFileSync("docs/db/crms-announcements.sql", "utf8"));
   await db.sql.unsafe(readFileSync("docs/db/crms-customer-tasks.sql", "utf8"));
   await db.sql.unsafe(readFileSync("docs/db/crms-customer-tasks.sql", "utf8"));
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria', 'maria@example.com'), ('lead', 'Lead', 'lead@example.com')`;
