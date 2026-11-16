@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 
 import { formatDate, formatWholePesos } from "@/features/customer-profiles/format";
@@ -60,8 +61,10 @@ export function TicketDetailView({
   reassignments = [],
   escalations = [],
   suggestion = null,
+  assistantChat,
 }: {
   ticket: TicketDetail;
+  assistantChat?: ReactNode;
   viewerId: string;
   viewerName?: string;
   /** Staff who hold the Orders, Payments or Fulfilment Module open the Order detail page from the Linked order. */
@@ -138,6 +141,7 @@ export function TicketDetailView({
           <SummaryCard key={ticket.id} ticketId={ticket.id} />
           <h2 className={CARD_TITLE}>Conversation</h2>
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+            {assistantChat}
             {ticket.messages.length === 0 && !canNote ? (
               <p className="text-sm leading-[normal] text-[#6e6680]">No Messages yet.</p>
             ) : hasExchange ? (

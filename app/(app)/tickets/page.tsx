@@ -58,6 +58,7 @@ export default async function TicketsPage({
         <Suspense fallback={null}>
           <ReportsEntry />
         </Suspense>
+        <Link href="/tickets/assistant" prefetch className="rounded-lg border bg-white px-3.5 py-2 text-sm font-medium">From order assistant</Link>
         <NewTicketDialog />
       </div>
       <Suspense
