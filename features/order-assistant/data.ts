@@ -105,3 +105,18 @@ export async function loadResults(
     select * from crms.assistant_answer_flags where created_at >= ${weekStart(now)} and created_at <= ${now} order by created_at desc`;
   return { ...resultsOf(messages, now), handedOff: handoff.total, flags };
 }
+/** Today's counts for the tab's stat cards, from stored chats only (Manila day). */
+export function dayStart(now: Date) {
+  const local = new Date(now.getTime() + 8 * 3600000);
+  local.setUTCHours(0, 0, 0, 0);
+  return new Date(local.getTime() - 8 * 3600000);
+}
+export async function todaysCounts(db: postgres.Sql, now = new Date()) {
+  const since = dayStart(now);
+  const [row] = await db<{ questions: number; answered: number }[]>`
+    select count(*) filter (where m.sender = 'customer')::int as questions,
+      count(*) filter (where m.sender = 'assistant' and m.outcome = 'answered' and c.ticket_id is null)::int as answered
+    from assistant_messages m join assistant_chats c on c.id = m.chat_id
+    where m.created_at >= ${since} and m.created_at <= ${now}`;
+  return row;
+}

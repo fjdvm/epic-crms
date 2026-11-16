@@ -5,6 +5,7 @@ import {
   chatForTicket,
   handoffs,
   loadResults,
+  todaysCounts,
   mayReadResults,
   weekStart,
 } from "@/features/order-assistant/data";
@@ -105,4 +106,10 @@ it("limits Results to Managers, Admin and CEO", () => {
     expect(mayReadResults(role)).toBe(true);
   for (const role of ["Staff", "unknown"])
     expect(mayReadResults(role)).toBe(false);
+});
+it("counts today's questions and answers without a Ticket for the tab cards", async () => {
+  expect(await todaysCounts(db.sql, new Date("2026-11-16T10:00:00Z"))).toEqual({
+    questions: 2,
+    answered: 1,
+  });
 });
