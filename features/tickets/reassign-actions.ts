@@ -48,7 +48,7 @@ async function directory(): Promise<Teammate[]> {
 
   return staff.flatMap((p) => {
     const role = shopRole(p.role ?? "");
-    if (!p.username || !p.name?.trim() || !p.modules.includes("Tickets") || (role !== "staff" && role !== "manager")) return [];
+    if (!p.username || !p.name?.trim() || !p.modules.includes(TICKETS_MODULE) || (role !== "staff" && role !== "manager")) return [];
 
     return [{ id: p.username, name: p.name, role }];
   });

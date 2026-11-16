@@ -11,4 +11,8 @@ Claimer stays on `tickets.claimed_by_id` / `claimed_by_name`, already updated by
 - The Claimer update is guarded (`claimed_by_id = <who the Manager saw>`), so a lost race moves nothing.
 - Recipients are checked against the Portal staff directory (Tickets Module, Staff or Manager).
 - The Claimer change and the history/alert write use two databases and are not one transaction; if the
-  second fails the move stands, the failure is logged, and repeating the same operation id writes it.
+  second fails the move stands and the failure is logged. A retry does not rewrite the history (the Claimer
+  already changed, so it reports that someone else changed the Ticket first); the audit event is separate and
+  is also best effort. Known gap, left for a follow-up if it shows up in practice.
+- The single move is optimistic with rollback. "Reassign all" shows a toast at once and updates the list when
+  the server answers, because it changes many rows of a server-rendered list.

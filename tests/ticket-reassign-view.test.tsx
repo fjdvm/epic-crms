@@ -78,6 +78,30 @@ describe("Reassign on the Ticket page", () => {
     expect(toast.error).toHaveBeenCalledWith("Someone else changed who holds this Ticket first. Reload to see who has it now.");
   });
 
+  it("rolls back with a plain message when the server never answers", async () => {
+    vi.mocked(reassignOptions).mockResolvedValue({ ok: true, teammates });
+    vi.mocked(reassignOne).mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    render(<TicketDetailView ticket={ticket} viewerId="mara" canReassign />);
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+    await user.click(await screen.findByLabelText(/Rhea/));
+    await user.type(screen.getByLabelText(/^Reason/), "Busy");
+    await user.click(screen.getByRole("button", { name: "Reassign to Rhea" }));
+
+    await waitFor(() => expect(screen.getByText(/Claimed by Liza/)).toBeTruthy());
+    expect(toast.error).toHaveBeenCalledWith("CREOMS could not save that. Try again in a moment.");
+  });
+
+  it("shows a loading skeleton the moment the dialog opens", async () => {
+    vi.mocked(reassignOptions).mockReturnValue(new Promise(() => {}));
+    const user = userEvent.setup();
+    render(<TicketDetailView ticket={ticket} viewerId="mara" canReassign />);
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+    expect(screen.getByLabelText("Loading Staff")).toBeTruthy();
+  });
+
   it("lists every move in the activity, with the reason, for anyone who can open the Ticket", () => {
     render(
       <TicketDetailView ticket={ticket} viewerId="ceo" reassignments={[
