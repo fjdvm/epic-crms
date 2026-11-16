@@ -71,7 +71,7 @@ const queues: { key: keyof Attention; module: string; read: Read<object> }[] = [
           from public.tickets t
           left join lateral (
             select sender, created_at from public.ticket_messages
-            where ticket_id = t.id order by created_at desc, id desc limit 1
+            where ticket_id = t.id and not internal order by created_at desc, id desc limit 1
           ) m on true
           where t.status = 'open' and t.claimed_by_id is null
         ) open_tickets`;

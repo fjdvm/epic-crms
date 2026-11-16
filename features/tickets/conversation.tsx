@@ -10,6 +10,7 @@ import type { ConnectLive, LiveConnection, LiveEvent } from "./live";
 import { connectLive } from "./live-socket";
 import { MessageAttachment } from "./message-attachment";
 import type { TicketMessage } from "./ticket";
+import { NoteBox, Sending, useMessagesWithNotes } from "./notes";
 import { Composer } from "./ticket-controls";
 
 const TIME = new Intl.DateTimeFormat("en-US", {
@@ -34,11 +35,37 @@ function byline(message: TicketMessage, previous: TicketMessage | undefined): st
 }
 
 /** Messages as chat bubbles, Customer on the left and Staff on the right. */
-export function Bubbles({ messages }: { messages: TicketMessage[] }) {
+export function Bubbles({ messages: saved }: { messages: TicketMessage[] }) {
+  const messages = useMessagesWithNotes(saved);
+
   return (
     <>
       {messages.map((message, i) => {
         const fromStaff = message.sender === "staff";
+
+        if (message.internal)
+          return (
+            <div key={message.id} className="flex justify-end">
+              <div
+                data-internal-note
+                className="flex w-[460px] max-w-full flex-col gap-1 rounded-xl border border-dashed border-[#e0c97a] bg-[#fff8e1] px-[14px] py-[10px]"
+              >
+                <p className="text-[11px] leading-[normal] font-semibold tracking-wide text-[#7a5b00] uppercase">
+                  Internal note · only Staff see this
+                </p>
+                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">{message.body}</p>
+                <p className="text-[11px] leading-[normal] text-[#7a5b00]">
+                  {message.sending ? (
+                    <>
+                      {message.senderName} · <Sending />
+                    </>
+                  ) : (
+                    byline(message, messages[i - 1])
+                  )}
+                </p>
+              </div>
+            </div>
+          );
 
         return (
           <div key={message.id} className={cn("flex", fromStaff && "justify-end")}>
@@ -75,6 +102,7 @@ export function Conversation({
   customerName,
   note,
   canReply,
+  canNote = false,
   scrollable = false,
   connect = connectLive,
 }: {
@@ -85,6 +113,8 @@ export function Conversation({
   /** Why the Staff member cannot reply, when they cannot. */
   note: string | null;
   canReply: boolean;
+  /** Any Staff member may add an Internal note, claimer or not; the page must hold a NotesProvider. */
+  canNote?: boolean;
   /** Fill the parent's height: the Messages scroll inside it and the reply box stays in view. */
   scrollable?: boolean;
   connect?: ConnectLive;
@@ -184,10 +214,15 @@ export function Conversation({
 
   const bubbles = <Bubbles messages={shown} />;
 
-  const footer = canReply ? (
-    <Composer ticketId={ticketId} onSent={sent} />
-  ) : (
-    <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
+  const footer = (
+    <>
+      {canReply ? (
+        <Composer ticketId={ticketId} onSent={sent} />
+      ) : (
+        <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
+      )}
+      {canNote && <NoteBox />}
+    </>
   );
 
   if (!scrollable) {

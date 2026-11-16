@@ -15,6 +15,10 @@ export interface TicketMessage {
   body: string;
   /** The Message carries an image, PDF or video. */
   hasAttachment: boolean;
+  /** An Internal note: Staff-only, written by `senderName`, never a Staff reply. */
+  internal?: boolean;
+  /** A note shown before the server has confirmed it. */
+  sending?: boolean;
   /** The file-storage id of the image, when it was stored there; old storefront images have none. */
   fileId?: string | null;
   /** A short-lived address to show the image from; null when there is none to show. */
@@ -87,7 +91,7 @@ export async function getTicket(
   const customerFirstName = (t.first_name as string) || (t.full_name as string);
 
   const messages = await sql<Record<string, unknown>[]>`
-    select id, sender, body, file_id, attachment_pathname, created_at
+    select id, sender, body, file_id, attachment_pathname, internal, author_name, created_at
     from ticket_messages
     where ticket_id = ${id}
     order by created_at, id`;
@@ -132,7 +136,10 @@ export async function getTicket(
             resolvedAt: (t.resolved_at as Date | null) ?? null,
             heldSeconds: t.held_seconds as number,
             holdStartedAt: (t.hold_started_at as Date | null) ?? null,
-            messages: messages.map((m) => ({ sender: m.sender as "customer" | "staff", at: m.created_at as Date })),
+            // An Internal note is not a Message to the Customer, so it never starts, stops or restarts a clock.
+            messages: messages
+              .filter((m) => !m.internal)
+              .map((m) => ({ sender: m.sender as "customer" | "staff", at: m.created_at as Date })),
           },
         },
       ],
@@ -160,7 +167,9 @@ export async function getTicket(
     messages: messages.map((m) => ({
       id: m.id as number,
       sender: m.sender as "customer" | "staff",
-      senderName: m.sender === "customer" ? customerFirstName : (claimerName ?? "Staff"),
+      internal: m.internal === true,
+      senderName:
+        m.sender === "customer" ? customerFirstName : m.internal ? ((m.author_name as string | null) ?? "Staff") : (claimerName ?? "Staff"),
       body: m.body as string,
       hasAttachment: m.file_id !== null || m.attachment_pathname !== null,
       fileId: (m.file_id as string | null) ?? null,

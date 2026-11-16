@@ -8,7 +8,7 @@ import { crmsDatabase } from "@/lib/crms-db";
 import { ticketFileStorage } from "@/features/files/server";
 import { listEscalations } from "@/features/tickets/escalate";
 import { listReassignments } from "@/features/tickets/reassign";
-import { shopRole } from "@/lib/portal/roles";
+import { canWork, shopRole } from "@/lib/portal/roles";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { canOpenOrders, requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -59,6 +59,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
       viewerId={staff.username}
       viewerName={staff.name}
       canOpenOrder={await canOpenOrders()}
+      canNote={canWork(staff)}
       canReassign={shopRole(staff.role) === "manager"}
       reassignments={reassignments}
       escalations={escalations}

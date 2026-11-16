@@ -6,7 +6,7 @@ import postgres from "postgres";
 
 /**
  * The slice of the ecommerce schema the Tickets pages read, as the ecommerce migrations leave it
- * (drizzle 0014 and 0015). CREOMS never migrates these tables; this mirrors them for tests only.
+ * (drizzle 0014, 0015 and 0039). CREOMS never migrates these tables; this mirrors them for tests only.
  */
 const SCHEMA = `
   create schema neon_auth;
@@ -169,6 +169,8 @@ const SCHEMA = `
     body text not null,
     attachment_pathname text,
     file_id text,
+    internal boolean not null default false,
+    author_name text,
     created_at timestamptz not null default now()
   );
 `;

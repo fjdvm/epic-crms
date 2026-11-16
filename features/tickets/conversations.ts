@@ -36,7 +36,7 @@ export async function listConversations(
     join customers c on c.id = t.customer_id
     left join lateral (
       select body, file_id, attachment_pathname, created_at from ticket_messages
-      where ticket_id = t.id
+      where ticket_id = t.id and not internal
       order by created_at desc, id desc
       limit 1
     ) m on true

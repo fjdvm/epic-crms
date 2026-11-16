@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { PILL, Pill, PRIORITY_LABELS } from "./pill";
 import { Bubbles } from "./conversation";
+import { NoteBox, NotesProvider } from "./notes";
 import { MessageAttachment } from "./message-attachment";
 import { ByClaimer, ClaimerName, ClaimProvider } from "./claim";
 import { EscalatedPill, EscalationSummary } from "./escalate-ui";
@@ -52,6 +53,7 @@ export function TicketDetailView({
   viewerName = viewerId,
   canOpenOrder = false,
   canReassign = false,
+  canNote = false,
   reassignments = [],
   escalations = [],
 }: {
@@ -62,6 +64,8 @@ export function TicketDetailView({
   canOpenOrder?: boolean;
   /** Only a CREOMS Manager can move the Ticket; Admin and CEO read the history below. */
   canReassign?: boolean;
+  /** Staff and Managers may add Internal notes on any Ticket; Admin and CEO only read them. */
+  canNote?: boolean;
   /** Every move of this Ticket, newest first. */
   reassignments?: ReassignmentRecord[];
   /** Every escalation of this Ticket, newest first; the one with no resolution is open. */
@@ -70,7 +74,11 @@ export function TicketDetailView({
   const { order, customer } = ticket;
   // Until both sides have spoken there is no chat history to read, only what the Ticket was opened with.
   const activity = activityOf(reassignments, escalations);
-  const hasExchange = new Set(ticket.messages.map((m) => m.sender)).size > 1;
+  // A note is not an exchange with the Customer, but it still needs the chat layout to show up in.
+  const hasExchange =
+    new Set(ticket.messages.filter((m) => !m.internal).map((m) => m.sender)).size > 1 ||
+    canNote ||
+    ticket.messages.some((m) => m.internal);
 
   return (
     <ClaimProvider
@@ -84,6 +92,7 @@ export function TicketDetailView({
       })()}
     >
     <HoldProvider ticketId={ticket.id} status={ticket.status} hold={ticket.hold}>
+    <NotesProvider ticketId={ticket.id} viewerName={viewerName}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1">
@@ -122,7 +131,7 @@ export function TicketDetailView({
         >
           <h2 className={CARD_TITLE}>Conversation</h2>
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-            {ticket.messages.length === 0 ? (
+            {ticket.messages.length === 0 && !canNote ? (
               <p className="text-sm leading-[normal] text-[#6e6680]">No Messages yet.</p>
             ) : hasExchange ? (
               <Bubbles messages={ticket.messages} />
@@ -130,6 +139,7 @@ export function TicketDetailView({
               <Attachments messages={ticket.messages} />
             )}
           </div>
+          {canNote && <NoteBox />}
           {ticket.status !== "completed" && (
             <ByClaimer
               mine={
@@ -203,6 +213,7 @@ export function TicketDetailView({
         </div>
       </div>
     </div>
+    </NotesProvider>
     </HoldProvider>
     </ClaimProvider>
   );
