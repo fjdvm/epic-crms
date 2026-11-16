@@ -33,7 +33,7 @@ Every screen in the CRM prototype has a dark note card beside it stating who can
 Handle the shop's daily work and can do anything that is easy to undo. Dashboard shows only their own work for the day.
 - **Customer Profiles:** add and edit customers; write notes and tasks.
 - **Orders:** confirm orders, quote the delivery fee, check the cash-on-delivery flags. Orders are placed by Customers on the storefront; Staff never create them (the one exception is the Replacement Order, made when a Manager approves a replacement).
-- **Payments:** check payment proofs (GCash, Maya or bank transfer, all manual), mark orders paid, ask a customer for a new proof.
+- **Payments:** check payment proofs (GCash, Maya or bank transfer, all manual), mark orders paid, ask a customer for a new proof. When a payment reference was already used on another Order, "Mark paid" is stopped for Staff (they see "Request approval"); a Manager can approve it anyway, with a reason.
 - **Fulfilment:** pack, dispatch with the Lalamove or Grab link, handle pickups, mark orders delivered, record failed deliveries.
 - **Returns:** inspect what came back, record whether it goes back to stock or gets written off, request a replacement or refund.
 - **Tickets and Conversations:** claim, reply, put tickets on hold, escalate, resolve, write internal notes, use AI assist.
@@ -53,7 +53,7 @@ Everything Staff can do, plus approvals and reports. Dashboard shows the whole t
 ### Admin
 
 Runs the system, not the shop.
-- **Portal:** full control of User management and user account requests (every account and role is created by an Admin); full control of Settings (general, automatic checks, AI, service levels, loyalty and referrals, notifications); full control of Activity logs, System logs and System health.
+- **Portal:** full control of User management and user account requests (every account and role is created by an Admin); full control of Settings (general, automatic checks, service levels, loyalty and referrals, notifications); full control of Activity logs, System logs and System health.
 - **CREOMS:** can view every module, including reports. Does not approve business decisions such as refunds or write-offs.
 
 ### CEO
@@ -64,6 +64,10 @@ The owner. Read-only everywhere: their own owner dashboard, every CREOMS module,
 ### For everyone
 
 AI never acts on its own. Anything sent to a customer, or that changes an order, ticket or payment, needs a person, and every accepted AI suggestion is logged with that person's name.
+
+**One exception, the Order assistant.** It may answer a signed-in Customer about their own Orders and the shop, read-only, and may show a Handoff summary that the Customer approves before it goes to the team. This is the one place AI words reach a Customer without a person reviewing them. Its limits: read-only (it never changes, cancels or refunds anything), own data only (never another Customer's Order), and no promises about refunds, discounts or replacements; those go to a person as a Ticket.
+
+**AI features have fixed defaults.** Their numbers, caps and lists are fixed in code. There are no Admin AI settings and no kill switch, and Admin and CEO view AI results but never cause a model call.
 
 ## Checks and PR completion
 
