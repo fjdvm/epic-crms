@@ -32,6 +32,7 @@ export function SummaryCard({ ticketId }: { ticketId: number }) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icons/ai-spark.svg" alt="" /> AI-written
         </span>
+        <span className="text-xs text-muted-foreground">made when you opened this ticket</span>
       </div>
       {!result ? (
         <div role="status" aria-label="Loading Ticket summary" className="space-y-2">
