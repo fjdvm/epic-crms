@@ -16,6 +16,8 @@ export const SENIOR_PWD_MODULE = "Senior/PWD";
 export const PAYMENTS_MODULE = "Payments";
 export const FULFILMENT_MODULE = "Fulfilment";
 export const RETURNS_MODULE = "Returns";
+/** The Ticket reports page. Manager, Admin and CEO; the Portal seeds no Staff default. */
+export const REPORTS_MODULE = "Reports";
 /** The Order detail page opens for Staff with any of these. */
 export const ORDER_DETAIL_MODULES = [ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, RETURNS_MODULE];
 /** Data Modules checked by both the Dashboard page and its PDF export. */
