@@ -4,6 +4,7 @@ import { AlertTriangle, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import type { UnusualActivity, UnusualActivityCard } from "./unusual-activity";
@@ -27,13 +28,75 @@ export function UnusualActivitySkeleton() {
   );
 }
 
-function Card({ card, canDismiss, onDismiss }: { card: UnusualActivityCard; canDismiss: boolean; onDismiss: () => void }) {
+const label = (k: string) => k.replace(/([A-Z])/g, " $1").toLowerCase();
+
+/**
+ * Opens from the card with what the card already holds, so it appears at once. Read-only for Admin and CEO (no Dismiss).
+ * Without an AI explanation the rule, numbers and links still show.
+ */
+function AlertDrawer({ card, pending, canDismiss, onClose, onDismiss }: {
+  card: UnusualActivityCard | null; pending: boolean; canDismiss: boolean; onClose: () => void; onDismiss: (card: UnusualActivityCard) => void;
+}) {
+  const why = card?.explanation?.why;
+  const whatToDo = card?.explanation?.whatToDo;
+  return (
+    <Sheet open={card !== null} onOpenChange={open => { if (!open) onClose(); }}>
+      <SheetContent side="right" className="flex w-[440px] flex-col gap-4 overflow-y-auto bg-white">
+        {card && (
+          <>
+            <div className="flex flex-col gap-1 pr-8">
+              <span className="w-fit rounded-full bg-[#fee2e2] px-2 py-0.5 text-[11px] font-medium text-[#b91c1c]">Alert</span>
+              <SheetTitle className="text-base">{card.rule}</SheetTitle>
+              <SheetDescription>{card.module}</SheetDescription>
+            </div>
+            <section aria-label="Numbers" className="rounded-xl border border-[#e6e1ee] px-4 py-3">
+              <h3 className="mb-2 text-[13px] font-medium text-[#18181b]">The numbers</h3>
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                {Object.entries(card.numbers).map(([k, v]) => (
+                  <div key={k}><dt className="text-xs capitalize text-[#71717a]">{label(k)}</dt><dd className="font-medium text-[#18181b]">{v}</dd></div>
+                ))}
+              </dl>
+            </section>
+            <section aria-label="Why" className="rounded-xl border border-[#e6e1ee] px-4 py-3">
+              <h3 className="mb-2 text-[13px] font-medium text-[#18181b]">Why (AI-written, check before acting)</h3>
+              {why ? <p className="text-sm text-[#3f3f46]">{why}</p>
+                : pending ? <Skeleton role="status" aria-label="Loading explanation" className="h-10 w-full" />
+                : <p className="text-sm text-[#71717a]">No explanation yet. The rule and numbers above still apply.</p>}
+            </section>
+            <section aria-label="What to do" className="rounded-xl border border-[#e6e1ee] px-4 py-3">
+              <h3 className="mb-2 text-[13px] font-medium text-[#18181b]">What to do (AI-written, check before acting)</h3>
+              {whatToDo ? <p className="text-sm text-[#3f3f46]">{whatToDo}</p>
+                : pending && !why ? <Skeleton className="h-10 w-full" />
+                : <p className="text-sm text-[#71717a]">No suggestion yet. Use the links below.</p>}
+              {(why || whatToDo) && <p className="mt-2 text-[11px] text-[#a1a1aa]">AI suggestion. Nothing has been changed.</p>}
+              <ul className="mt-3 flex flex-wrap gap-2">
+                {card.links.slice(0, MAX_LINKS).map(link => (
+                  <li key={link.href}>
+                    <Link href={link.href} prefetch className="inline-block rounded-lg bg-[#5b2a86] px-3 py-1.5 text-xs font-medium text-white">{link.label}</Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+            {canDismiss && (
+              <button type="button" onClick={() => onDismiss(card)} className="w-fit rounded-lg border border-[#e6e1ee] px-3 py-1.5 text-sm font-medium text-[#18181b] hover:bg-[#f4f4f5]">
+                Dismiss alert
+              </button>
+            )}
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function Card({ card, canDismiss, onDismiss, onOpen }: { card: UnusualActivityCard; canDismiss: boolean; onDismiss: () => void; onOpen: () => void }) {
   const numbers = Object.entries(card.numbers);
   return (
     <li className="flex flex-col gap-2 rounded-xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3">
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#b45309]" aria-hidden />
-        <p className="min-w-0 flex-1 text-sm font-medium text-[#18181b]">{card.rule}</p>
+        <button type="button" onClick={onOpen} aria-label={`Open details: ${card.rule}`}
+          className="min-w-0 flex-1 text-left text-sm font-medium text-[#18181b] hover:underline">{card.rule}</button>
         {canDismiss && (
           <button type="button" onClick={onDismiss} aria-label={`Dismiss: ${card.rule}`}
             className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-[#52525b] hover:bg-[#fef3c7]">
@@ -69,14 +132,18 @@ export function UnusualActivityCards({ canDismiss, canExplain = canDismiss, init
   const [cards, setCards] = useState<UnusualActivityCard[] | null>(initial?.cards ?? null);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [asking, setAsking] = useState<Set<string>>(new Set());
 
   function explain(key: string) {
+    setAsking(now => new Set(now).add(key));
     fetch(`${ENDPOINT}/explain`, { method: "POST", headers: { "content-type": "application/json", "x-creoms-alert-explain": "1" }, body: JSON.stringify({ key }) })
       .then(res => res.json())
       .then((body: { explanation?: UnusualActivityCard["explanation"] }) => {
         if (body.explanation) setCards(now => now && now.map(c => c.key === key ? { ...c, explanation: body.explanation! } : c));
       })
-      .catch(() => {}); // The card stays as it is without the explanation.
+      .catch(() => {}) // The card stays as it is without the explanation.
+      .finally(() => setAsking(now => { const next = new Set(now); next.delete(key); return next; }));
   }
 
   useEffect(() => {
@@ -114,6 +181,7 @@ export function UnusualActivityCards({ canDismiss, canExplain = canDismiss, init
     }
   }
 
+  const open = cards?.find(c => c.key === openKey) ?? null;
   if (cards === null) return <UnusualActivitySkeleton />;
   if (cards.length === 0 && !failed && !error) return null;
   return (
@@ -122,8 +190,10 @@ export function UnusualActivityCards({ canDismiss, canExplain = canDismiss, init
       {error && <p role="alert" className="text-sm text-[#b91c1c]">{error}</p>}
       {failed && cards.length === 0 && <p className="text-sm text-[#71717a]">Couldn&apos;t load</p>}
       <ul className="flex flex-col gap-2">
-        {cards.map(card => <Card key={card.key} card={card} canDismiss={canDismiss} onDismiss={() => dismiss(card)} />)}
+        {cards.map(card => <Card key={card.key} card={card} canDismiss={canDismiss} onDismiss={() => dismiss(card)} onOpen={() => setOpenKey(card.key)} />)}
       </ul>
+      <AlertDrawer card={open} pending={open ? asking.has(open.key) : false} canDismiss={canDismiss}
+        onClose={() => setOpenKey(null)} onDismiss={c => { setOpenKey(null); void dismiss(c); }} />
     </section>
   );
 }
