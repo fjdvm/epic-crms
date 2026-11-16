@@ -788,6 +788,23 @@ describe("payment proof history, reject, ask for a new proof and approve anyway"
     paymentProofs: [1, 2, 3].map((n) => proof(n, { at: new Date("2026-10-21T01:00:00Z"), by: { id: "a", name: "Ana" }, reason: `Blurry ${n}` })),
   });
 
+  const reused = () => awaiting({
+    paymentProofs: [{ ...proof(1, null), checks: { reference: { pass: false, reason: "Reference also used on Order #7.", otherOrderIds: [7] } } } as never],
+  });
+
+  it("a reused reference swaps Mark paid for Request approval (Staff) or Approve anyway (Manager)", () => {
+    const staff = render(<OrderDetailView order={reused()} modules={PAYMENTS} role="staff" />);
+    expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Request approval…" })).toBeTruthy();
+    staff.unmount();
+    const manager = render(<OrderDetailView order={reused()} modules={PAYMENTS} role="manager" />);
+    expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Approve anyway" })).toBeTruthy();
+    manager.unmount();
+    render(<OrderDetailView order={reused()} modules={PAYMENTS} role="ceo" />);
+    expect(screen.queryByRole("button", { name: "Approve anyway" })).toBeNull();
+  });
+
   it("lists every proof with who rejected it and why", () => {
     render(<OrderDetailView order={capped()} modules={PAYMENTS} role="manager" />);
 

@@ -48,6 +48,7 @@ function Receipt({ order, size }: { order: PaymentRow; size: "thumb" | "full" })
 
 function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: () => void }) {
   const { reference, submittedAt } = order.proof!;
+  const reusedOn = order.proofChecks?.checks.reference.otherOrderIds ?? [];
 
   return (
     <Dialog>
@@ -76,6 +77,12 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
               <dt className="text-[13px] font-medium text-[#27272a]">Reference no.</dt>
               <dd className="rounded-lg border border-[#e4e4e7] px-3 py-2.5">{reference ?? "—"}</dd>
             </div>
+            {reusedOn.length > 0 && (
+              <p role="alert" className="rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
+                Reference already used on {reusedOn.map((n, i) => <span key={n}>{i > 0 && ", "}<Link href={`/orders/${n}`} className="font-medium underline">Order #{n}</Link></span>)}.
+                Only a Manager can mark this paid; Staff request approval.
+              </p>
+            )}
             {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} />}
             <p className="rounded-lg bg-[#eff6ff] px-3 py-2.5 text-[13px] text-[#1d4ed8]">
               Marking paid tells the Customer their payment was received. Reject the receipt or ask for a new proof
@@ -87,8 +94,10 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
           <CancelPaymentDialog id={order.id} />
           <RejectProofDialog id={order.id} />
           <AskNewProofDialog id={order.id} />
-          {order.rejections >= MANAGER_AFTER_REJECTIONS ? (
-            <Link href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">Open the Order to approve anyway</Link>
+          {order.rejections >= MANAGER_AFTER_REJECTIONS || reusedOn.length > 0 ? (
+            <Link href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">
+              Open the Order for approval
+            </Link>
           ) : (
             <MarkPaidDialog id={order.id} onMarkPaid={onMarkPaid} />
           )}

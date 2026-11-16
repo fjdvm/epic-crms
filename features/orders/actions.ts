@@ -18,6 +18,7 @@ import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
 import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
+import { reusedReferenceOrderIds } from "./payment-proof-checks";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
 
@@ -212,21 +213,25 @@ const clean = (text: string | undefined) => (typeof text === "string" ? text.tri
  */
 export async function markPaid(id: number, options: { reason?: string; approvalId?: string } = {}): Promise<OrderChangeResult | ApprovalResult> {
   let approvedAnyway: string | null = null;
+  let reusedOn: number[] = [];
   return act<OrderChangeResult | ApprovalResult>(id, async (order, staff) => {
     if (order.status !== "awaiting payment") return { ok: false, reason: ALREADY_CHANGED };
     if (!isPrepaid(order.payment_method) || !order.payment_proof_submitted_at) {
       return { ok: false, reason: "Only an Order paid by GCash, Maya or bank transfer with submitted Payment proof can be marked paid." };
     }
     const rejections = Number(order.payment_proof_rejections ?? 0);
-    if (rejections < MANAGER_AFTER_REJECTIONS) {
+    // A reference already used on another Order stops Mark paid for everyone but a Manager, read on the server each time.
+    reusedOn = await reusedReferenceOrderIds(database(), id);
+    if (rejections < MANAGER_AFTER_REJECTIONS && reusedOn.length === 0) {
       if (order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
       return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
     }
+    if (rejections < MANAGER_AFTER_REJECTIONS && order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
     const reason = clean(options.reason);
     // The reason is needed to request, to approve anyway, and is checked again against the approved request.
     if (!options.approvalId && !reason) return { ok: false, reason: "Enter a reason to approve this payment anyway." };
     return approvals().run(staff, { module: PAYMENTS_MODULE, action: "payment.approve-anyway", targetId: String(id),
-      payload: { rejections }, amountInCentavos: 0 },
+      payload: { rejections, reusedReferenceOrderIds: reusedOn }, amountInCentavos: 0 },
     { reason, approvalId: options.approvalId }, async () => {
       // A Staff retry names only the approval; the reason is the one they gave when they asked.
       if (!reason && options.approvalId) {
@@ -241,7 +246,7 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
     description: staff => approvedAnyway
       ? `${staff.name} approved Order #${id} anyway: ${approvedAnyway}`
       : `${staff.name} marked Order #${id} paid.`,
-    get metadata() { return approvedAnyway ? { reason: approvedAnyway } : undefined; },
+    get metadata() { return approvedAnyway ? { reason: approvedAnyway, ...(reusedOn.length ? { reusedReferenceOrderIds: reusedOn } : {}) } : undefined; },
   });
 }
 
