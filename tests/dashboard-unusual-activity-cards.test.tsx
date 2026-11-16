@@ -93,3 +93,40 @@ it("leaves the card showing when the explanation fails, and never asks for a vie
   await screen.findAllByText("Rule A");
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+
+it("opens a drawer at once with the rule, numbers, AI-written labels and links", async () => {
+  fetchMock.mockReturnValueOnce(json({ cards: [{ ...card("a", "Rule A"), explanation: { why: "Because 7 wait.", whatToDo: "Check them." } }], unavailable: [] }));
+  render(<UnusualActivityCards canDismiss />);
+  await userEvent.click(await screen.findByRole("button", { name: /open details: rule a/i }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toMatch(/Why \(AI-written, check before acting\)/);
+  expect(dialog.textContent).toMatch(/Because 7 wait/);
+  expect(dialog.textContent).toMatch(/Check them/);
+  expect(dialog.textContent).toMatch(/oldest hours/i);
+  expect(dialog.querySelector('a[href="/orders/12"]')).toBeTruthy();
+});
+
+it("still shows the rule and links in the drawer when no explanation was made", async () => {
+  fetchMock.mockReturnValueOnce(json({ cards: [card("a", "Rule A")], unavailable: [] }));
+  render(<UnusualActivityCards canDismiss canExplain={false} />);
+  await userEvent.click(await screen.findByRole("button", { name: /open details: rule a/i }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toMatch(/No explanation yet/);
+  expect(dialog.querySelector('a[href="/orders/13"]')).toBeTruthy();
+});
+
+it("shows a loading state in the drawer while the explanation is being made", async () => {
+  fetchMock.mockReturnValueOnce(json({ cards: [card("a", "Rule A")], unavailable: [] }));
+  fetchMock.mockReturnValueOnce(new Promise(() => {}));
+  render(<UnusualActivityCards canDismiss />);
+  await userEvent.click(await screen.findByRole("button", { name: /open details: rule a/i }));
+  expect(await screen.findByRole("status", { name: /loading explanation/i })).toBeTruthy();
+});
+
+it("is read-only for a Role that cannot dismiss", async () => {
+  fetchMock.mockReturnValueOnce(json({ cards: [card("a", "Rule A")], unavailable: [] }));
+  render(<UnusualActivityCards canDismiss={false} />);
+  await userEvent.click(await screen.findByRole("button", { name: /open details: rule a/i }));
+  await screen.findByRole("dialog");
+  expect(screen.queryByRole("button", { name: /dismiss alert/i })).toBeNull();
+});
