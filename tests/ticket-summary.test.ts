@@ -83,12 +83,13 @@ describe("Ticket summary on open", () => {
     const [order] = await db.sql`insert into orders (customer_id, subtotal_in_centavos) values ('c1', 987654) returning id`;
     await db.sql`insert into order_delivery_addresses (order_id, street, barangay, city, province, postal_code)
       values (${order.id}, '123 Private Street', 'Secret Barangay', 'Antipolo', 'Rizal', '1870')`;
-    await db.sql`update tickets set order_id = ${order.id} where id = ${id}`;
+    await db.sql`update tickets set order_id = ${order.id}, claimed_by_name = 'Ralph Perez' where id = ${id}`;
+    await db.sql`insert into ticket_messages (ticket_id, sender, body) values (${id}, 'staff', 'Ralph here. Hello Santos.')`;
     await db.sql`insert into ticket_messages (ticket_id, sender, author_name, body)
       values (${id}, 'staff', 'Bernice Cruz', 'Hi Maria, Bernice Cruz here. Is your address 123 Private Street, Secret Barangay, Antipolo, Rizal 1870?')`;
     const result = await openTicketSummary(deps(), staff, id, () => [{ name: "fake", model: fake() }]);
     expect(result.summary?.sentText).toContain("Is your address");
-    expect(result.summary?.sentText).not.toMatch(/Maria|Bernice|Cruz|123 Private|Secret Barangay|Antipolo|Rizal|1870|987654/);
+    expect(result.summary?.sentText).not.toMatch(/Maria|Santos|Bernice|Cruz|Ralph|Perez|123 Private|Secret Barangay|Antipolo|Rizal|1870|987654/);
   });
   it("two simultaneous opens reuse the kept result and make only one summary", async () => {
     const id = await ticket();

@@ -3,10 +3,10 @@ import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SummaryCard } from "@/features/tickets/summary-card";
-import { loadTicketSummary } from "@/features/tickets/summary-action";
+import { loadTicketSummary } from "@/features/tickets/summary-client";
 import type { SummaryResult } from "@/features/tickets/summary-view";
 
-vi.mock("@/features/tickets/summary-action", () => ({ loadTicketSummary: vi.fn() }));
+vi.mock("@/features/tickets/summary-client", () => ({ loadTicketSummary: vi.fn() }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const kept: SummaryResult = { unavailable: false, summary: {
   text: "The Customer reports a leaking pouch.", model: "fake", sentText: "Subject: Leaking pouch\nCustomer: It leaks.",

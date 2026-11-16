@@ -30,16 +30,18 @@ export async function openTicketSummary(
       return { summary: kept ? summary(kept) : null, unavailable: !kept };
     }
     const [ticket] = await deps.tickets<Row[]>`
-      select t.subject, c.full_name, c.first_name from tickets t join customers c on c.id = t.customer_id where t.id = ${ticketId}`;
+      select t.subject, t.claimed_by_name, c.full_name, c.first_name from tickets t join customers c on c.id = t.customer_id where t.id = ${ticketId}`;
     if (!ticket) return { summary: null, unavailable: true };
     const messages = await deps.tickets<Row[]>`
       select id, sender, body, author_name from ticket_messages where ticket_id = ${ticketId} and internal is not true order by created_at, id`;
-    const lastMessageId = Math.max(0, ...messages.map((m) => Number(m.id)));
+    const lastMessageId = messages.reduce((last, m) => Math.max(last, Number(m.id)), 0);
     // Read the address solely to remove it if someone pasted it in a Message; never send the Order record.
     const addresses = await deps.tickets<Row[]>`
       select a.street, a.barangay, a.city, a.province, a.postal_code
       from order_delivery_addresses a join tickets t on t.order_id = a.order_id where t.id = ${ticketId}`;
-    const privateValues = [ticket.full_name, ticket.first_name, ...messages.map((m) => m.author_name),
+    const names = [ticket.full_name, ticket.first_name, ticket.claimed_by_name, ...messages.map((m) => m.author_name)]
+      .filter((v): v is string => typeof v === "string");
+    const privateValues = [...names, ...names.flatMap((name) => name.split(/\s+/)),
       ...addresses.flatMap((a) => Object.values(a))].filter((v): v is string => typeof v === "string");
     const sentText = ticketText(String(ticket.subject), messages.map((m) => ({
       sender: m.sender as "customer" | "staff", body: String(m.body ?? ""),
