@@ -31,6 +31,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   id: 208,
   subject: "Halaya pouch arrived leaking",
   status: "open",
+  category: "Order Issue",
   priority: "high",
   openedAt: new Date("2026-10-19T02:00:00Z"),
   claimerName: "Bernice",

@@ -77,9 +77,11 @@ function modelClient(model: string, complete: (system: string, user: string) => 
   };
 }
 
+export type Completer = (system: string, user: string) => Promise<unknown>;
+
 /** Groq, through Groq's OpenAI-compatible chat API. */
-export function groqClient({ apiKey, model, fetcher = fetch }: ClientOptions): ModelClient {
-  return modelClient(model, async (system, user) => {
+export function groqCompleter({ apiKey, model, fetcher = fetch }: ClientOptions): Completer {
+  return async (system, user) => {
     const response = await fetcher("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -99,12 +101,16 @@ export function groqClient({ apiKey, model, fetcher = fetch }: ClientOptions): M
     const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
 
     return body.choices?.[0]?.message?.content;
-  });
+  };
+}
+
+export function groqClient(options: ClientOptions): ModelClient {
+  return modelClient(options.model, groqCompleter(options));
 }
 
 /** Gemini, through the Generative Language API. */
-export function geminiClient({ apiKey, model, fetcher = fetch }: ClientOptions): ModelClient {
-  return modelClient(model, async (system, user) => {
+export function geminiCompleter({ apiKey, model, fetcher = fetch }: ClientOptions): Completer {
+  return async (system, user) => {
     const response = await fetcher(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       {
@@ -124,7 +130,21 @@ export function geminiClient({ apiKey, model, fetcher = fetch }: ClientOptions):
     const body = (await response.json()) as { candidates?: { content?: { parts?: { text?: unknown }[] } }[] };
 
     return body.candidates?.[0]?.content?.parts?.[0]?.text;
-  });
+  };
+}
+
+export function geminiClient(options: ClientOptions): ModelClient {
+  return modelClient(options.model, geminiCompleter(options));
+}
+
+/** Plain text-in, text-out models whose key is set, in the order to try them (Groq, then Gemini). */
+export function configuredCompleters(env: Record<string, string | undefined> = process.env): { model: string; complete: Completer }[] {
+  const list: { model: string; complete: Completer }[] = [];
+  if (env.GROQ_API_KEY && env.GROQ_MODEL) list.push({ model: env.GROQ_MODEL, complete: groqCompleter({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL }) });
+  if (env.GOOGLE_GENERATIVE_AI_API_KEY && env.GEMINI_MODEL)
+    list.push({ model: env.GEMINI_MODEL, complete: geminiCompleter({ apiKey: env.GOOGLE_GENERATIVE_AI_API_KEY, model: env.GEMINI_MODEL }) });
+
+  return list;
 }
 
 /** The clients whose key is set in the environment; a missing key gives null so the run can say "AI keys not set". */

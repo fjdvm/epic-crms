@@ -3,6 +3,10 @@
 import { randomUUID } from "node:crypto";
 
 import { ticketUpload } from "@/features/files/server";
+import { configuredCompleters } from "@/features/feedback/sentiment-clients";
+import { crmsDatabase } from "@/lib/crms-db";
+import { applyField, suggestForTicket, type SuggestDeps } from "./suggest";
+import { serializeSuggestion, type SerializedSuggestion, type SuggestFailure, type SuggestField } from "./suggest-view";
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -224,5 +228,63 @@ export async function addNote(id: number, body: string) {
     console.error("Internal note could not be saved", error);
 
     return { ok: false as const, reason: "unavailable" as const };
+  }
+}
+
+export type SuggestOutcome =
+  | { ok: true; suggestion: SerializedSuggestion }
+  | { ok: false; reason: SuggestFailure | "read-only" };
+export type ApplyOutcome = { ok: true } | { ok: false; reason: SuggestFailure | "read-only" };
+
+function suggestDeps(staff: { id: string; name: string }): SuggestDeps {
+  return { tickets: ticketsWriterDatabase(), crms: crmsDatabase(), audit: gatewayAuditTrail, staff: { id: staff.id, name: staff.name } };
+}
+
+/** On demand only: asks the AI for a Category and Priority from the Ticket text. Nothing on the Ticket changes. */
+export async function suggestCategoryAndPriority(id: number, operationId: string = randomUUID()): Promise<SuggestOutcome> {
+  const staff = await requireModule(TICKETS_MODULE);
+  if (!canWork(staff)) return READ_ONLY_REFUSAL;
+
+  try {
+    const result = await suggestForTicket(suggestDeps(staff), { id: staff.username, name: staff.name }, Number(id), configuredCompleters(), String(operationId));
+    if (!result.ok) return result;
+    revalidatePath(`/tickets/${id}`);
+
+    return { ok: true, suggestion: serializeSuggestion(result.suggestion) };
+  } catch (error) {
+    console.error("Suggestion could not be made", error);
+
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
+/** Accept (the suggested value) or Change (another one) for Category or Priority; `suggestionId` ties it to the suggestion. */
+export async function applySuggestedField(
+  id: number,
+  field: SuggestField,
+  value: string,
+  suggestionId: number | null,
+  operationId: string = randomUUID(),
+): Promise<ApplyOutcome> {
+  const staff = await requireModule(TICKETS_MODULE);
+  if (!canWork(staff)) return READ_ONLY_REFUSAL;
+
+  try {
+    const result = await applyField(
+      suggestDeps(staff),
+      { id: staff.username, name: staff.name },
+      Number(id),
+      field === "priority" ? "priority" : "category",
+      String(value),
+      suggestionId === null ? null : Number(suggestionId),
+      String(operationId),
+    );
+    if (result.ok) revalidatePath(`/tickets/${id}`);
+
+    return result;
+  } catch (error) {
+    console.error("Category or Priority could not be saved", error);
+
+    return { ok: false, reason: "unavailable" };
   }
 }

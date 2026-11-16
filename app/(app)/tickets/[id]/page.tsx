@@ -7,6 +7,8 @@ import { readServiceLevels } from "@/features/tickets/service-level-store";
 import { crmsDatabase } from "@/lib/crms-db";
 import { ticketFileStorage } from "@/features/files/server";
 import { listEscalations } from "@/features/tickets/escalate";
+import { latestSuggestion } from "@/features/tickets/suggest";
+import { serializeSuggestion } from "@/features/tickets/suggest-view";
 import { listReassignments } from "@/features/tickets/reassign";
 import { canWork, shopRole } from "@/lib/portal/roles";
 import { TICKETS_MODULE } from "@/lib/portal/config";
@@ -53,6 +55,13 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
     return [];
   });
 
+  // A suggestion is optional: if its record cannot be read the Ticket still opens, with manual fields.
+  const suggestion = await latestSuggestion(crmsDatabase(), result.ticket.id).catch((error) => {
+    console.error("AI suggestion could not be read", error);
+
+    return null;
+  });
+
   return (
     <TicketDetailView
       ticket={result.ticket}
@@ -63,6 +72,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
       canReassign={shopRole(staff.role) === "manager"}
       reassignments={reassignments}
       escalations={escalations}
+      suggestion={suggestion ? serializeSuggestion(suggestion) : null}
     />
   );
 }
