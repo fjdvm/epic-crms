@@ -71,6 +71,10 @@ _Avoid_: Shipping fee, shipping
 The reference number, and optionally a screenshot, a Customer submits for an Order paid by GCash, Maya or bank transfer. All three are manual: the Customer pays outside the shop and Staff check the proof by hand. Staff with the Payments Module check it and either mark the Order `paid`, reject it with a reason, or cancel the Order. A Customer whose proof is rejected may submit another; every proof and rejection is kept. After 3 rejected proofs only a Manager can approve the Order. A reference already used on another Order stops "Mark paid" for Staff; a Manager can approve it anyway with a reason.
 _Avoid_: Receipt, payment confirmation
 
+**Payment proof check**:
+An advisory comparison of the Customer-confirmed amount, payment date, recipient and reference against the Order and the shop account. Each check gives a pass or fail with a reason; Staff still decide whether to accept or reject the proof.
+_Avoid_: AI verification, automatic payment approval
+
 **Stage**:
 A label derived from a Customer's Orders (Replacement Orders do not count), never set by hand: New (no Orders), First order (one Order), Repeat (two or more), At risk (no Order in 60 days), Lost (no Order in 120 days). At risk and Lost take precedence over First order and Repeat.
 _Avoid_: Lifecycle, status, segment

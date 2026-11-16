@@ -192,3 +192,33 @@ it("sends a refund back the way the Customer paid, and none for Cash on Delivery
   const { refundDestination } = await import("@/features/orders/payment-methods");
   expect(["gcash", "maya", "bank-transfer", "cash-on-delivery"].map(refundDestination)).toEqual(["GCash", "Maya", "bank transfer", null]);
 });
+
+it("reads confirmed proof values and returns advisory pass/fail checks with other Orders", async () => {
+  await signIn("ana");
+  const id = await proofOrder();
+  await db.sql`update orders set subtotal_in_centavos = 10000, created_at = '2026-01-01T00:00:00Z' where id = ${id}`;
+  await db.sql`update order_payment_proofs set confirmed_amount_in_centavos = 10000, confirmed_paid_at = '2026-01-02T00:00:00Z', confirmed_recipient = '0917 123 4567', expected_recipient = '09171234567' where order_id = ${id}`;
+  const result = await loadOrder(() => db.sql, id);
+  expect(result).toMatchObject({ ok: true, order: { status: "awaiting payment", paymentProofs: [{ confirmed: { amountInCentavos: 10000, recipient: "0917 123 4567" }, checks: { amount: { pass: true }, date: { pass: true }, recipient: { pass: true }, reference: { pass: true, otherOrderIds: [] } } }] } });
+  const other = await proofOrder();
+  const duplicate = await loadOrder(() => db.sql, id);
+  expect(duplicate).toMatchObject({ ok: true, order: { status: "awaiting payment", paymentProofs: [{ rejection: null, checks: { reference: { pass: false, otherOrderIds: [other], reason: expect.stringContaining(`#${other}`) } } }] } });
+});
+
+it("explains missing legacy values and failed comparisons without changing the proof", async () => {
+  await signIn("ana");
+  const id = await proofOrder();
+  const legacy = await loadOrder(() => db.sql, id);
+  expect(legacy).toMatchObject({ ok: true, order: { paymentProofs: [{ checks: {
+    amount: { pass: false, reason: "Customer-confirmed amount is missing." },
+    date: { pass: false, reason: "Customer-confirmed payment date is missing." },
+    recipient: { pass: false, reason: "Customer-confirmed recipient is missing." },
+  } }] } });
+  await db.sql`update orders set created_at = '2026-01-02T00:00:00Z', subtotal_in_centavos = 10000, delivery_fee_in_centavos = 5000 where id = ${id}`;
+  await db.sql`update order_payment_proofs set confirmed_amount_in_centavos = 10000, confirmed_paid_at = '2026-01-02T00:00:00Z', confirmed_recipient = 'wrong account', expected_recipient = '09171234567' where order_id = ${id}`;
+  expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "awaiting payment", proofRejections: 0, paymentProofs: [{ rejection: null, checks: {
+    amount: { pass: false, reason: "Amount does not match the Order total." },
+    date: { pass: false, reason: "Payment date is not after the Order was placed." },
+    recipient: { pass: false, reason: "Recipient does not match the shop account." },
+  } }] } });
+});

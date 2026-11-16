@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-profiles/format";
 
+import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
 import { AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
@@ -55,7 +56,7 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
           Review
         </Button>
       </DialogTrigger>
-      <DialogContent className="flex w-[calc(100%-2rem)] max-w-[820px] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0! leading-[normal] shadow-[0_20px_48px_rgb(0_0_0/0.2)] sm:rounded-2xl md:max-w-[820px] lg:max-w-[820px]">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[820px] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0! leading-[normal] shadow-[0_20px_48px_rgb(0_0_0/0.2)] sm:rounded-2xl md:max-w-[820px] lg:max-w-[820px]">
         <div className="space-y-1 border-b border-[#f0f0f2] pt-5 pr-12 pb-4 pl-6">
           <DialogTitle className="text-lg font-semibold leading-[normal] text-foreground">
             Verify payment · Order #{order.id}
@@ -64,7 +65,7 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
             {order.customer.name} · {METHOD[order.method]} · uploaded {formatDate(submittedAt)}
           </DialogDescription>
         </div>
-        <div className="grid gap-6 px-6 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid min-h-0 gap-6 overflow-y-auto px-6 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <Receipt order={order} size="full" />
           <dl className="space-y-3 text-sm text-[#1f1a2e]">
             <div className="rounded-lg bg-[#fafafa] px-3.5 py-3">
@@ -75,6 +76,7 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
               <dt className="text-[13px] font-medium text-[#27272a]">Reference no.</dt>
               <dd className="rounded-lg border border-[#e4e4e7] px-3 py-2.5">{reference ?? "—"}</dd>
             </div>
+            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} />}
             <p className="rounded-lg bg-[#eff6ff] px-3 py-2.5 text-[13px] text-[#1d4ed8]">
               Marking paid tells the Customer their payment was received. Reject the receipt or ask for a new proof
               and the Customer is emailed a link to upload again; cancelling cancels the Order.
