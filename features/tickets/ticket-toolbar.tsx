@@ -32,7 +32,7 @@ const TYPING_PAUSE_MS = 150;
 
 const ANY = "any";
 
-function useParams(): TicketParams {
+function useTicketParams(): TicketParams {
   const search = useSearchParams();
 
   return parseTicketParams(Object.fromEntries(search.entries()));
@@ -127,7 +127,7 @@ function FilterSelect({
 /** Search, the filters and Clear filters over the Tickets list. Each change goes to the first page. */
 export function TicketToolbar({ options }: { options: TicketFilterOptions }) {
   const router = useRouter();
-  const params = useParams();
+  const params = useTicketParams();
 
   const go = (change: Partial<TicketParams>) =>
     router.replace(ticketsHref({ ...params, ...change, page: 1 }));
