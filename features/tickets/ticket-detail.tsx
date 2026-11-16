@@ -9,6 +9,9 @@ import { PILL, Pill, PRIORITY_LABELS } from "./pill";
 import { Bubbles } from "./conversation";
 import { MessageAttachment } from "./message-attachment";
 import { ByClaimer, ClaimerName, ClaimProvider } from "./claim";
+import { EscalatedPill, EscalationSummary } from "./escalate-ui";
+import { escalationReasonLabel } from "./escalate-reasons";
+import type { EscalationRecord } from "./escalate";
 import { HoldProvider, HoldSummary, StatusPill } from "./hold";
 import { TicketActions } from "./ticket-controls";
 import { ServiceLevelPanel } from "./service-level-panel";
@@ -50,6 +53,7 @@ export function TicketDetailView({
   canOpenOrder = false,
   canReassign = false,
   reassignments = [],
+  escalations = [],
 }: {
   ticket: TicketDetail;
   viewerId: string;
@@ -60,9 +64,12 @@ export function TicketDetailView({
   canReassign?: boolean;
   /** Every move of this Ticket, newest first. */
   reassignments?: ReassignmentRecord[];
+  /** Every escalation of this Ticket, newest first; the one with no resolution is open. */
+  escalations?: EscalationRecord[];
 }) {
   const { order, customer } = ticket;
   // Until both sides have spoken there is no chat history to read, only what the Ticket was opened with.
+  const activity = activityOf(reassignments, escalations);
   const hasExchange = new Set(ticket.messages.map((m) => m.sender)).size > 1;
 
   return (
@@ -70,6 +77,11 @@ export function TicketDetailView({
       ticketId={ticket.id}
       claimer={ticket.claimerId !== null ? { id: ticket.claimerId, name: ticket.claimerName ?? "" } : null}
       viewer={{ id: viewerId, name: viewerName }}
+      escalation={(() => {
+        const open = escalations.find((e) => e.resolution === null);
+
+        return open ? { reason: open.reason, note: open.note, byName: open.escalatedByName, at: open.at.toISOString() } : null;
+      })()}
     >
     <HoldProvider ticketId={ticket.id} status={ticket.status} hold={ticket.hold}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
@@ -80,6 +92,7 @@ export function TicketDetailView({
               TKT-{ticket.id} · {ticket.subject}
             </h1>
             <StatusPill />
+            <EscalatedPill />
           </div>
           <p className="text-sm leading-[normal] text-[#6e6680]">
             Opened {formatDate(ticket.openedAt)} ·{" "}
@@ -96,6 +109,7 @@ export function TicketDetailView({
           ticketId={ticket.id}
           withReply={false}
           canReassign={canReassign}
+          canEscalate
         />
       </div>
 
@@ -137,17 +151,16 @@ export function TicketDetailView({
 
         <div className="w-full space-y-4 lg:h-full lg:w-[380px] lg:shrink-0 lg:overflow-y-auto">
           <HoldSummary />
-          {reassignments.length > 0 && (
+          <EscalationSummary />
+          {activity.length > 0 && (
             <section aria-label="Activity" className={CARD}>
               <h2 className={CARD_TITLE}>Activity</h2>
               <ul className="space-y-3">
-                {reassignments.map((r) => (
-                  <li key={r.id} className="space-y-0.5 text-[13px] leading-[normal] text-[#1f1a2e]">
-                    <p>
-                      {r.movedByName} moved this Ticket from {r.fromName} to {r.toName}
-                    </p>
-                    <p className="text-[#6e6680]">Reason: {r.reason}</p>
-                    <p className="text-xs text-[#6e6680]">{formatDate(r.at)}</p>
+                {activity.map((a) => (
+                  <li key={a.key} className="space-y-0.5 text-[13px] leading-[normal] text-[#1f1a2e]">
+                    <p>{a.text}</p>
+                    {a.detail && <p className="text-[#6e6680]">{a.detail}</p>}
+                    <p className="text-xs text-[#6e6680]">{formatDate(a.at)}</p>
                   </li>
                 ))}
               </ul>
@@ -209,4 +222,42 @@ function Attachments({ messages }: { messages: TicketMessage[] }) {
       ))}
     </>
   );
+}
+
+interface ActivityItem {
+  key: string;
+  at: Date;
+  text: string;
+  detail?: string;
+}
+
+/** The Ticket's activity from CREOMS's own history, newest first: moves and escalations with what each Manager did. */
+function activityOf(reassignments: ReassignmentRecord[], escalations: EscalationRecord[]): ActivityItem[] {
+  const items: ActivityItem[] = reassignments.map((r) => ({
+    key: `move-${r.id}`,
+    at: r.at,
+    text: `${r.movedByName} moved this Ticket from ${r.fromName} to ${r.toName}`,
+    detail: `Reason: ${r.reason}`,
+  }));
+
+  for (const e of escalations) {
+    items.push({
+      key: `escalated-${e.id}`,
+      at: e.at,
+      text: `${e.escalatedByName} escalated this Ticket: ${escalationReasonLabel(e.reason)}`,
+      detail: `Note: ${e.note}`,
+    });
+    if (e.resolution && e.resolvedAt)
+      items.push({
+        key: `resolved-${e.id}`,
+        at: e.resolvedAt,
+        text:
+          e.resolution === "taken"
+            ? `${e.resolvedByName} took this Ticket after the escalation`
+            : `${e.resolvedByName} sent this Ticket back to its Claimer`,
+        detail: e.resolutionNote ? `Note: ${e.resolutionNote}` : undefined,
+      });
+  }
+
+  return items.sort((a, b) => b.at.getTime() - a.at.getTime());
 }

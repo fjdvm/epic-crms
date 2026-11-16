@@ -214,6 +214,20 @@ export function TicketToolbar({ options }: { options: TicketFilterOptions }) {
         Overdue
       </button>
 
+      <button
+        type="button"
+        aria-pressed={Boolean(params.escalated)}
+        onClick={() => go({ escalated: params.escalated ? undefined : true })}
+        className={cn(
+          "h-9 cursor-pointer rounded-lg border px-3 text-sm font-medium leading-[normal]",
+          params.escalated
+            ? "border-[#5b2a86] bg-[#efe6f8] text-[#5b2a86]"
+            : "border-[#e6e1ee] bg-white text-[#1f1a2e]",
+        )}
+      >
+        Escalated
+      </button>
+
       {hasTicketFilters(params) && (
         <button
           type="button"

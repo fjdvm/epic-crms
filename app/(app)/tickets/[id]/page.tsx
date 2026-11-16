@@ -6,6 +6,7 @@ import { loadTicket, type TicketResult } from "@/features/tickets/ticket";
 import { readServiceLevels } from "@/features/tickets/service-level-store";
 import { crmsDatabase } from "@/lib/crms-db";
 import { ticketFileStorage } from "@/features/files/server";
+import { listEscalations } from "@/features/tickets/escalate";
 import { listReassignments } from "@/features/tickets/reassign";
 import { shopRole } from "@/lib/portal/roles";
 import { TICKETS_MODULE } from "@/lib/portal/config";
@@ -46,6 +47,12 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
     return [];
   });
 
+  const escalations = await listEscalations(crmsDatabase(), result.ticket.id).catch((error) => {
+    console.error("Escalations could not be read", error);
+
+    return [];
+  });
+
   return (
     <TicketDetailView
       ticket={result.ticket}
@@ -54,6 +61,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
       canOpenOrder={await canOpenOrders()}
       canReassign={shopRole(staff.role) === "manager"}
       reassignments={reassignments}
+      escalations={escalations}
     />
   );
 }

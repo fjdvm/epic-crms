@@ -66,6 +66,15 @@ describe("the Tickets toolbar", () => {
     expect(replace).toHaveBeenCalledWith("/tickets?priority=high&overdue=1");
   });
 
+  it("toggles Escalated and keeps the rest of the filters", () => {
+    search = "priority=high";
+    render(<TicketToolbar options={OPTIONS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Escalated" }));
+
+    expect(replace).toHaveBeenCalledWith("/tickets?priority=high&escalated=1");
+  });
+
   it("has no Clear filters until something narrows the list, then clears search and filters but keeps the tab", () => {
     const { unmount } = render(<TicketToolbar options={OPTIONS} />);
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
@@ -79,14 +88,14 @@ describe("the Tickets toolbar", () => {
     expect(replace).toHaveBeenCalledWith("/tickets?tab=mine");
   });
 
-  it("has Priority, Category and Claimed by filters and no Channel", () => {
+  it("has Priority, Category and Claimed by filters, the Escalated toggle, and no Channel", () => {
     render(<TicketToolbar options={OPTIONS} />);
 
     for (const name of ["Priority", "Category", "Claimed by"]) {
       expect(screen.getByRole("combobox", { name })).toBeTruthy();
     }
     expect(screen.queryByText(/channel/i)).toBeNull();
-    expect(screen.queryByRole("button", { name: /escalated/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Escalated" })).toBeTruthy();
   });
 });
 

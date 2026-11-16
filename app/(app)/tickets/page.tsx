@@ -16,6 +16,7 @@ import {
   type TicketFilterOptions,
   type TicketListResult,
 } from "@/features/tickets/tickets";
+import { openEscalatedIds } from "@/features/tickets/escalate";
 import { readServiceLevels } from "@/features/tickets/service-level-store";
 import { crmsDatabase } from "@/lib/crms-db";
 import { TICKETS_MODULE } from "@/lib/portal/config";
@@ -91,8 +92,14 @@ async function TicketsData({ raw }: { raw: Awaited<SearchParams> }) {
   const params = parseTicketParams(raw);
 
   const levels = await readServiceLevels(crmsDatabase);
+  // The escalations are CREOMS's own; if they cannot be read the list still opens, without the badge.
+  const escalatedIds = await openEscalatedIds(crmsDatabase()).catch((error) => {
+    console.error("Escalations could not be read", error);
+
+    return [];
+  });
   const result: TicketListResult = levels
-    ? await loadTickets(ticketsDatabase, { ...params, viewerId: staff.username, levels })
+    ? await loadTickets(ticketsDatabase, { ...params, viewerId: staff.username, levels, escalatedIds })
     : { ok: false };
 
   if (!result.ok) {

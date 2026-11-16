@@ -47,6 +47,8 @@ export interface TicketFilters {
   /** A Staff id, or UNCLAIMED. */
   claimedBy?: string;
   overdue?: boolean;
+  /** Only Tickets a Manager has been asked about. */
+  escalated?: boolean;
 }
 
 export interface TicketQuery extends TicketFilters {
@@ -57,6 +59,8 @@ export interface TicketQuery extends TicketFilters {
   viewerId?: string;
   /** The moment Overdue is measured at; defaults to now. */
   now?: Date;
+  /** The Tickets with an open escalation, read from CREOMS's own schema; none when not given. */
+  escalatedIds?: number[];
   /** The saved Service levels; the defaults when not given. */
   levels?: ServiceLevels;
 }
@@ -77,6 +81,8 @@ export interface TicketRow {
   /** Open, and the last Message came from Staff. */
   waiting: boolean;
   overdue: boolean;
+  /** A Manager has been asked and has not acted. */
+  escalated: boolean;
   lastActivity: Date;
   /** The countdown to the first reply or resolve target. */
   serviceLevel: ServiceLevel;
@@ -155,6 +161,7 @@ export async function listTickets(
   const pageSize = query.pageSize ?? TICKETS_PAGE_SIZE;
   const now = query.now ?? new Date();
   const levels = query.levels ?? { history: DEFAULT_HISTORY };
+  const escalatedIds = new Set(query.escalatedIds ?? []);
 
   const derived = (where: postgres.PendingQuery<postgres.Row[]>) => sql`
     with derived as (
@@ -197,7 +204,8 @@ export async function listTickets(
   const filtered = sql`${ticketSearch(sql, query.q)}
     and ${query.priority ? sql`t.priority = ${query.priority}` : sql`true`}
     and ${query.category ? sql`t.category = ${query.category}` : sql`true`}
-    and ${claimedBy}`;
+    and ${claimedBy}
+    and ${query.escalated ? sql`t.id = any(${query.escalatedIds ?? []}::int[])` : sql`true`}`;
 
   const [counts] = await sql<Record<string, number>[]>`
     ${derived(filtered)}
@@ -277,6 +285,7 @@ export async function listTickets(
       claimedByName: (r.claimed_by_name as string | null) ?? null,
       waiting: r.waiting as boolean,
       overdue: r.overdue as boolean,
+      escalated: escalatedIds.has(r.id as number),
       lastActivity: r.last_activity as Date,
       serviceLevel: levelsById.get(r.id as number)!,
     })),

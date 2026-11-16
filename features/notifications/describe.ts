@@ -1,7 +1,9 @@
 import { feedbackAnchor } from "@/features/feedback/anchor";
 import { returnAnchor } from "@/features/returns/anchor";
 
-import type { Notification } from "./notifications";
+import { escalationReasonLabel } from "@/features/tickets/escalate-reasons";
+
+import type { EscalationDetail, Notification, ReassignDetail, SentBackDetail } from "./notifications";
 
 /** What a notification says and where it leads; the bell and the toast read it the same way. */
 export function describeNotification(n: Notification): { text: string; href: string } {
@@ -30,7 +32,7 @@ export function describeNotification(n: Notification): { text: string; href: str
     case "return-requested":
       return { text: `${n.customerName} requested Return RMA-${n.returnId}`, href: `/returns#${returnAnchor(n.returnId!)}` };
     case "ticket-reassigned": {
-      const d = n.detail;
+      const d = n.detail as ReassignDetail | null | undefined;
       if (!d) return { text: `${ticket} was reassigned`, href };
       const what = d.count > 1 ? `${d.count} Tickets` : ticket;
       const where = d.count > 1 ? "/tickets" : href;
@@ -40,6 +42,16 @@ export function describeNotification(n: Notification): { text: string; href: str
           : `${d.by} moved ${what} from you to ${d.to}. Reason: ${d.reason}`,
         href: where,
       };
+    }
+    case "ticket-escalated": {
+      const d = n.detail as EscalationDetail | null | undefined;
+      if (!d) return { text: `${ticket} was escalated to the Managers`, href };
+      return { text: `${d.by} escalated ${ticket}: ${escalationReasonLabel(d.reason)}. ${d.note}`, href };
+    }
+    case "ticket-sent-back": {
+      const d = n.detail as SentBackDetail | null | undefined;
+      if (!d) return { text: `${ticket} was sent back to you by a Manager`, href };
+      return { text: `${d.by} sent ${ticket} back to you. ${d.note}`, href };
     }
     case "ticket-not-fixed":
       return { text: `${n.customerName} says ${ticket} is not fixed`, href };
