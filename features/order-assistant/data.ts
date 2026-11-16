@@ -30,10 +30,16 @@ export function resultsOf(messages: StoredMessage[], now: Date) {
   );
   const questions = current.filter((m) => m.sender === "customer");
   const kinds = new Map<string, number>();
-  for (const q of questions) {
+  const answeredByKind: Record<string, number> = {};
+  const sorted = [...current].sort((a, b) => a.id - b.id);
+  sorted.forEach((q, i) => {
+    if (q.sender !== "customer") return;
     const kind = questionKindOf(q.body) ?? "unrecognised";
     kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
-  }
+    const reply = sorted.slice(i + 1).find((m) => m.chat_id === q.chat_id);
+    if (reply?.sender === "assistant" && reply.outcome === "answered")
+      answeredByKind[kind] = (answeredByKind[kind] ?? 0) + 1;
+  });
   return {
     questions: questions.length,
     lastWeek: messages.filter(
@@ -49,6 +55,7 @@ export function resultsOf(messages: StoredMessage[], now: Date) {
         m.ticket_id === null,
     ).length,
     kinds: [...kinds].sort((a, b) => b[1] - a[1]),
+    answeredByKind,
   };
 }
 export async function handoffs(db: postgres.Sql, ticketId?: number) {
