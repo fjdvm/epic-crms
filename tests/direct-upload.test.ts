@@ -57,7 +57,7 @@ describe("direct-upload server actions", () => {
     const { pending, ready } = await pdfUpload();
     expect(await getFileView("Tickets", ready.reference)).toMatchObject({ ok: true, url: expect.stringContaining("signature=short-lived"), contentType: "application/pdf" });
     const requests = storage.calls.length;
-    expect(await getFileView("Marketing", ready.reference)).toMatchObject({ ok: false });
+    expect(await getFileView("Returns", ready.reference)).toMatchObject({ ok: false });
     expect(await getFileView("Tickets", pending.reference)).toMatchObject({ ok: false });
     expect(await getFileView("Tickets", "direct-1")).toMatchObject({ ok: false });
     expect(storage.calls).toHaveLength(requests);

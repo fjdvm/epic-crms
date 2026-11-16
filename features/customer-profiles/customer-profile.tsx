@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 
 import { ActivityTimeline } from "./activity-timeline";
 import { CartTab } from "./cart-tab";
-import { EmailsTab } from "./emails-tab";
 import { FeedbackTab } from "./feedback-tab";
 import { Field } from "./field";
 import { formatAgo, formatDate, formatMonthYear, formatPesos } from "./format";
@@ -180,9 +179,6 @@ export function CustomerProfileView({
           <TabsTrigger className={TAB_TRIGGER} value="feedback">
             Feedback ({p.feedbackCount})
           </TabsTrigger>
-          <TabsTrigger className={TAB_TRIGGER} value="emails">
-            Emails
-          </TabsTrigger>
           <TabsTrigger className={TAB_TRIGGER} value="notes">
             Notes &amp; tasks
           </TabsTrigger>
@@ -216,10 +212,6 @@ export function CustomerProfileView({
               <FeedbackTab orders={p.orderHistory} onOpenOrder={openOrder} />
             </TabsContent>
 
-            <TabsContent value="emails" className="mt-0">
-              <EmailsTab marketingOptIn={p.marketingOptIn} emails={p.emailsReceived} />
-            </TabsContent>
-
             <TabsContent forceMount value="notes" className="mt-0 space-y-4 data-[state=inactive]:hidden">
               <TasksTab customerId={p.id} tasks={tasks} viewer={taskViewer} now={now} onTaskChange={changeTask} />
               <NotesTab customerId={p.id} notes={notes} readFailed={p.notes === null} author={noteAuthor} onNoteChange={changeNote} />
@@ -233,9 +225,6 @@ export function CustomerProfileView({
                   <Field label="Last name">{p.lastName}</Field>
                   <Field label="Email">{p.email}</Field>
                   <Field label="Contact number">{p.contactNumber}</Field>
-                  <Field label="Marketing emails">
-                    {p.marketingOptIn ? "Opted in" : "Not opted in"}
-                  </Field>
                   <Field label="Customer since">
                     {formatDate(p.customerSince)}
                   </Field>

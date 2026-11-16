@@ -25,7 +25,7 @@ A person who signed up but has not yet verified their email. Becomes a Customer 
 _Avoid_: Unverified customer, prospect
 
 **Customer Profile**:
-Everything staff can see about one Customer in one place: their details, orders, cart, and marketing emails received.
+Everything staff can see about one Customer in one place: their details, orders, cart, notes and tasks.
 _Avoid_: Contact, account, user
 
 **Customer note**:
@@ -91,24 +91,6 @@ _Avoid_: New order alert, payment alert
 An alert shown to every Staff member with the Feedback Module when a Customer gives Feedback of 1 to 3 stars. Feedback of 4 or 5 stars raises none.
 _Avoid_: Review alert, low-rating alert
 
-**Marketing Email**:
-A promotional email the store sends to a Customer, produced by the automated email marketing module (separate from Customer Profiles). "Email received" on a Customer Profile means these.
-_Avoid_: Inbox, support message
-
-**Subscriber**:
-A Customer whose Marketing opt-in is yes. Marketing Emails go only to Subscribers. Leads are never Subscribers, even if they said yes to marketing.
-_Avoid_: Recipient, mailing list member
-
-**Unsubscribe**:
-A Subscriber ends their own Marketing opt-in by clicking the link in the footer of any Marketing Email. They stop being a Subscriber at once. Staff cannot do this for them.
-_Avoid_: Opt out, remove from list
-
-**Announcement**:
-One Marketing Email composed by Staff: a title, a description, and zero or more images. A text-only Announcement is valid. It always goes to every Subscriber; Staff cannot pick an audience. Before sending, Staff can send a test copy of it to themselves. Staff either send it now or schedule it for a later date and time, always in Philippine Time. Its recipients are whoever is a Subscriber at the moment it is sent, not when it was scheduled. An Announcement is a Draft (saved, not yet sent or scheduled; Staff can edit or delete it), Scheduled (waiting for its send time; Staff can edit, reschedule, or cancel it back to Draft), Sent (final; it can be viewed but never edited or unsent) or Failed (a send that could not be fully handed over; Staff can retry it, and the retry skips Subscribers it already reached so nobody gets it twice).
-Announcements are shared: any Staff member with the Marketing Module can edit, schedule, cancel or send any Announcement that is not yet Sent, whoever wrote it, and there is no approval step.
-The Marketing Module's page is titled "Email Campaigns", following the design, and lists Announcements; it has no audience segments and shows no open, click, order or revenue figures.
-_Avoid_: Campaign (except as the page title), blast, newsletter, post, pubmat
-
 **Ticket**:
 A support request raised by a Customer, or opened by Staff on a Customer's behalf. A separate module from Customer Profiles. A Ticket has no Channel: where a request came from is not recorded.
 _Avoid_: Case, email
@@ -163,6 +145,22 @@ _Avoid_: Mood, score, tone
 **Top product**:
 The product the AI judges best liked, from the Feedback of the Orders that contained it, shown with its Feedback count and a one-line reason. Only products with at least 5 Feedbacks can be chosen. A product has no rating of its own.
 _Avoid_: Best seller, best rated
+
+**AI suggestion**:
+Anything an AI offers Staff to look at: a Ticket's suggested Category and Priority, a Ticket summary, a Drafted reply, or Complaint themes. It is only ever shown to Staff, who press the button that asks for it; nothing runs by itself, on a timer, or when a page opens. It never reaches a Customer and never changes a Ticket, Order or payment until a Staff member acts on it. The AI sees only the text the feature needs, with emails and phone numbers masked, and exactly what it saw is kept and shown. When Staff use a suggestion, the Audit Event names that Staff member.
+_Avoid_: AI decision, auto-reply, automation
+
+**Ticket summary**:
+A few lines an AI writes about one Ticket's thread, so Staff or a Manager who opens it can catch up quickly. Anyone who can open the Ticket can ask for one, Claimer or not. It is read-only and is never sent to the Customer.
+_Avoid_: Recap, digest
+
+**Drafted reply**:
+A reply an AI writes to the Customer's latest Message, in the Customer's own language (English or Taglish), placed in the reply box of the Claimer, the only Staff who can reply. It promises no refund, replacement or date, and says a teammate will confirm when unsure. Nothing is sent until the Claimer edits it as they wish and presses Send; the Audit Event records whether it was sent as drafted or edited.
+_Avoid_: Auto-reply, canned reply
+
+**Complaint themes**:
+Up to five groups of similar complaints an AI finds in a chosen period, each with a short label and a count and links to the Tickets, Returns and Feedback (1 to 3 stars) behind it, such as "leaking pouch on the 500 g". Managers ask for them with a button on the Dashboard; the counts and links come from the records, not from the AI. The last result is kept with the period and time it was made, and Admin and CEO can read it. Staff do not see it.
+_Avoid_: Trends, insights, alerts
 
 **Feedback request**:
 The one email and in-app Notification sent to a Customer 2 days after an Order is marked Delivered, linking to that Order's Feedback form. Sent once per Order, with no reminder, and not sent if the Customer has already given Feedback.

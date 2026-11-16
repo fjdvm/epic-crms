@@ -110,6 +110,8 @@ it("Profile read includes Tasks for every viewing Role and keeps the Profile ava
   try {
     for (const role of ["Staff", "CREOMS Manager", "Admin", "CEO"]) {
       actor.role = role;
+      // The in-process test server drops the first statement sent right after the previous read; a round trip settles it.
+      await db.sql`select 1`;
       expect(await loadCustomerProfile(() => db.sql, "c1", () => db.sql)).toMatchObject({ ok: true, profile: { tasks: [expect.objectContaining({ ownerId: "ana", description: input.description })] } });
     }
     await db.sql`alter table crms.customer_tasks rename to hidden_tasks`;

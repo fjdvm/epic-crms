@@ -16,9 +16,9 @@ vi.mock("@/features/customer-profiles/note-actions", () => ({ addCustomerNote: (
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), back: vi.fn() }) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const profile: CustomerProfile = {
-  id: "c", name: "Maria Santos", firstName: "Maria", middleName: null, lastName: "Santos", email: "maria@example.test", contactNumber: "09171234567", marketingOptIn: false,
+  id: "c", name: "Maria Santos", firstName: "Maria", middleName: null, lastName: "Santos", email: "maria@example.test", contactNumber: "09171234567",
   customerSince: new Date("2026-01-01"), stage: "new", defaultCity: null, orders: 0, totalSpent: 0, averageOrder: null, lastOrder: null, feedbackCount: 0, averageRating: null,
-  addresses: [], orderHistory: [], cart: { lines: [], total: 0 }, emailsReceived: [], returns: [], notes: [],
+  addresses: [], orderHistory: [], cart: { lines: [], total: 0 }, returns: [], notes: [],
 };
 it("opens cached notes immediately and keeps a pending save across tab switches, including timeline rollback", async () => {
   let finish!: (result: AddCustomerNoteResult) => void;
@@ -73,4 +73,13 @@ it("shows local pending and saved notes even when the history read is unavailabl
   expect(screen.queryByText("saving…")).toBeNull();
   expect(screen.getByRole("list", { name: "Customer notes" }).textContent).toContain("Local Customer note");
   expect(screen.getByRole("alert").textContent).toContain("Customer notes are unavailable");
+});
+
+it("has no Emails tab and no Marketing opt-in line, while the other tabs remain", async () => {
+  render(<CustomerProfileView profile={profile} noteAuthor={{ id: "r", name: "Rhea" }} />);
+  expect(screen.queryByRole("tab", { name: "Emails" })).toBeNull();
+  for (const name of [/Notes & tasks/, /Cart/, /Feedback/]) expect(screen.getByRole("tab", { name })).toBeTruthy();
+  await userEvent.click(screen.getByRole("tab", { name: "Details" }));
+  expect(screen.queryByText(/marketing emails/i)).toBeNull();
+  expect(screen.queryByText(/opted in/i)).toBeNull();
 });

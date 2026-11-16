@@ -175,18 +175,13 @@ describe("access to the Feedback page", () => {
   });
 });
 
-describe("access to the Email Campaigns page", () => {
-  it("is allowed with the Marketing Module", async () => {
-    expect((await accessFor(await signInAda([MARKETING])).check(MARKETING)).decision).toBe("allowed");
+describe("a stale Marketing grant from the Portal", () => {
+  it("does not break sign-in and unlocks no page", async () => {
+    expect((await accessFor(await signInAda([MARKETING])).overview()).decision).toBe("denied");
   });
 
-  it("is denied without it", async () => {
-    expect((await accessFor(await signInAda([FEEDBACK, TICKETS])).check(MARKETING)).decision).toBe("denied");
-  });
-
-  it("lists /email-campaigns only when its Module is granted", async () => {
-    expect(await accessFor(await signInAda([MARKETING])).overview()).toMatchObject({ pages: ["/email-campaigns"] });
-    expect(await accessFor(await signInAda([FEEDBACK])).overview()).toMatchObject({ pages: ["/feedback"] });
+  it("is ignored next to real grants", async () => {
+    expect(await accessFor(await signInAda([MARKETING, FEEDBACK])).overview()).toMatchObject({ pages: ["/feedback"] });
   });
 });
 
