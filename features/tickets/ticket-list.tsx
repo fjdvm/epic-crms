@@ -108,6 +108,7 @@ export function TicketListView({
             </Link>
           );
         })}
+        <Link href="/tickets/assistant" prefetch className="rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] text-[#6e6680]">From order assistant</Link>
       </nav>
 
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
@@ -237,6 +238,7 @@ export function TicketListSkeleton({
             {TAB_LABELS[tab]} <Skeleton className="h-4 w-5" />
           </span>
         ))}
+        <Link href="/tickets/assistant" prefetch className="rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] text-[#6e6680]">From order assistant</Link>
       </nav>
 
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
