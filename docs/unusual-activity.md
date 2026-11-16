@@ -66,3 +66,17 @@ Figma references were requested for the foundation, reference page, redesign pag
 The roles and alert context/metadata were available; foundation/redesign context calls failed or returned
 no selection. No UI is built or changed here. #471's deliberate exclusions still apply: no daily briefing,
 churn/batch cards, Complaint themes on Dashboard, or Admin AI settings.
+
+## AI "why" and "what to do" (#484)
+
+Part of #471. `features/dashboard/unusual-activity-explain.ts`, kept in `crms.unusual_activity_explanations`
+(`docs/db/crms-unusual-activity-explanations.sql`, run `node --env-file=.env scripts/deploy/migrate-unusual-activity-explanations.mjs`).
+
+- `POST /api/dashboard/unusual-activity/explain` (header `x-creoms-alert-explain: 1`, body `{ key }`) is asked for by the Dashboard
+  open, once per card that has none. The server recomputes the card; client numbers are never trusted.
+- Only Staff or a Manager can cause a call. Admin and CEO only read kept text (`GET` merges kept explanations; it never calls a model).
+- Sent: the rule text and the alert's own numbers, masked. No links, Orders or Customers. The sent text and system prompt are stored.
+- Kept per alert key with the numbers it was made from; made again only when a number is larger than the kept one.
+- Fact check: each of "why" and "what to do" is dropped if it quotes a digit or spelled-out number, or a link,
+  that the alert (numbers, rule text, link labels and hrefs) does not hold. If both are dropped or the model fails, nothing is kept
+  and the card shows without the explanation.
