@@ -1,6 +1,8 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { draftReply, type DraftRequest, type DraftResult } from "./draft";
+import { sendWithDraft, type DraftSendResult } from "./draft-send";
 
 import { ticketUpload } from "@/features/files/server";
 import { configuredCompleters } from "@/features/feedback/sentiment-clients";
@@ -37,24 +39,23 @@ import {
   type Actor,
   type HoldRequest,
   type TicketAudit,
-  type ReplyResult,
   type TicketActionResult,
 } from "./ticket-actions";
 
 export type TicketActionOutcome = TicketActionResult | { ok: false; reason: "unavailable" | "read-only" };
-export type ReplyOutcome = ReplyResult | { ok: false; reason: "unavailable" | "read-only" };
+export type ReplyOutcome = DraftSendResult | { ok: false; reason: "unavailable" | "read-only" };
 
 /** Server actions are public endpoints, so each proves the Staff member holds the Tickets Module. */
-async function act<R extends TicketActionResult | ReplyResult>(
+async function act<R extends TicketActionResult | DraftSendResult>(
   id: number,
-  run: (actor: Actor, audit: TicketAudit) => Promise<R>,
+  run: (actor: Actor & { role: string }, audit: TicketAudit) => Promise<R>,
   operationId: string = randomUUID(),
 ): Promise<R | { ok: false; reason: "unavailable" | "read-only" }> {
   const staff = await requireModule(TICKETS_MODULE);
 
   if (!canWork(staff)) return READ_ONLY_REFUSAL;
   try {
-    const result = await run({ id: staff.username, name: staff.name }, { trail: gatewayAuditTrail, staff, operationId });
+    const result = await run({ id: staff.username, name: staff.name, role: staff.role }, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath(`/tickets/${id}`);
 
     return result;
@@ -80,15 +81,19 @@ export async function reply(id: number, form: FormData) {
   // An empty file input still posts a nameless, empty File; that is "no image", not an empty image.
   const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
 
-  return act(id, async (actor) => {
+  return act(id, async (actor, audit) => {
     const reference = form.get("attachment");
     const upload = typeof reference === "string" ? await ticketUpload(reference, actor.id, id) : null;
     if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" as const };
-    return replyToTicket(ticketsWriterDatabase(), id, actor, body,
+    const draftReference = form.get("draftId");
+    const draftId = draftReference === null ? null : Number(draftReference);
+    const send = async () => replyToTicket(ticketsWriterDatabase(), id, actor, body,
       upload ? { fileId: upload.fileId, storage: gatewayFileStorage } : picked ? {
         image: { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) },
         storage: gatewayFileStorage,
       } : undefined);
+    if (draftId === null) return send();
+    return sendWithDraft({ tickets: ticketsDatabase(), crms: crmsDatabase() }, actor, id, body, draftId, send, audit);
   });
 }
 
@@ -286,5 +291,17 @@ export async function applySuggestedField(
     console.error("Category or Priority could not be saved", error);
 
     return { ok: false, reason: "unavailable" };
+  }
+}
+
+/** Only an explicit Claimer action generates or shortens a Drafted reply. No Ticket or Message changes. */
+export async function requestDraftedReply(id: number, request: DraftRequest): Promise<DraftResult> {
+  const staff = await requireModule(TICKETS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: "Your Role can only view shop work." };
+  try {
+    return await draftReply({ tickets: ticketsDatabase(), crms: crmsDatabase() },
+      { id: staff.username, name: staff.name, role: staff.role }, id, request);
+  } catch {
+    return { ok: false, reason: "Draft unavailable. You can still write your reply by hand." };
   }
 }
