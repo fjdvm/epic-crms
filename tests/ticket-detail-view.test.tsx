@@ -195,7 +195,7 @@ describe("working the Ticket", () => {
   it("offers Release and Mark resolved to the Claimer, and not Claim", () => {
     render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
-    expect(buttons()).toEqual(["Release", "Put on hold", "Mark resolved"]);
+    expect(buttons()).toEqual(["Release", "Escalate", "Put on hold", "Mark resolved"]);
   });
 
   it("offers Claim on an Unclaimed Ticket, and no Release", () => {
