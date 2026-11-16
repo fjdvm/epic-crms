@@ -29,6 +29,18 @@ export function describeNotification(n: Notification): { text: string; href: str
       return { text: `${n.customerName} submitted Payment proof for Order #${n.orderId}`, href: `/orders/${n.orderId}` };
     case "return-requested":
       return { text: `${n.customerName} requested Return RMA-${n.returnId}`, href: `/returns#${returnAnchor(n.returnId!)}` };
+    case "ticket-reassigned": {
+      const d = n.detail;
+      if (!d) return { text: `${ticket} was reassigned`, href };
+      const what = d.count > 1 ? `${d.count} Tickets` : ticket;
+      const where = d.count > 1 ? "/tickets" : href;
+      return {
+        text: d.side === "new"
+          ? `${d.by} moved ${what} from ${d.from} to you. Reason: ${d.reason}`
+          : `${d.by} moved ${what} from you to ${d.to}. Reason: ${d.reason}`,
+        href: where,
+      };
+    }
     case "ticket-not-fixed":
       return { text: `${n.customerName} says ${ticket} is not fixed`, href };
   }

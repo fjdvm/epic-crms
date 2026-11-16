@@ -6,6 +6,8 @@ import { loadTicket, type TicketResult } from "@/features/tickets/ticket";
 import { readServiceLevels } from "@/features/tickets/service-level-store";
 import { crmsDatabase } from "@/lib/crms-db";
 import { ticketFileStorage } from "@/features/files/server";
+import { listReassignments } from "@/features/tickets/reassign";
+import { shopRole } from "@/lib/portal/roles";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { canOpenOrders, requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -37,5 +39,21 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 
   if (!result.ticket) notFound();
 
-  return <TicketDetailView ticket={result.ticket} viewerId={staff.username} viewerName={staff.name} canOpenOrder={await canOpenOrders()} />;
+  // The history is CREOMS's own; if it cannot be read the Ticket still opens without it.
+  const reassignments = await listReassignments(crmsDatabase(), result.ticket.id).catch((error) => {
+    console.error("Reassign history could not be read", error);
+
+    return [];
+  });
+
+  return (
+    <TicketDetailView
+      ticket={result.ticket}
+      viewerId={staff.username}
+      viewerName={staff.name}
+      canOpenOrder={await canOpenOrders()}
+      canReassign={shopRole(staff.role) === "manager"}
+      reassignments={reassignments}
+    />
+  );
 }

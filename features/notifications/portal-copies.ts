@@ -41,7 +41,7 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
 
   const copies = await writer<(Notification & { userId: string; remoteId: string | null })[]>`
     select n.id::text, n.kind, n.customer_id as "customerId", n.customer_name as "customerName",
-      n.ticket_id as "ticketId", n.order_id as "orderId", n.rating, n.return_id as "returnId",
+      n.ticket_id as "ticketId", n.order_id as "orderId", n.rating, n.return_id as "returnId", n.detail,
       n.created_at as "createdAt", n.read_at is not null as read, c.user_id as "userId", c.remote_id as "remoteId"
     from ${s}.portal_copies c join ${s}.notifications n on n.id = c.notification_id
     where not c.read_synced order by c.last_attempt_at nulls first, n.id, c.user_id limit 100`;

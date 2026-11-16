@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ReassignAllDialog } from "@/features/tickets/reassign-dialog";
+import { shopRole } from "@/lib/portal/roles";
 import { NewTicketDialog } from "@/features/tickets/new-ticket-dialog";
 import {
   TicketListSkeleton,
@@ -46,6 +48,9 @@ export default async function TicketsPage({
             customer, and to an order when it is about one.
           </p>
         </div>
+        <Suspense fallback={null}>
+          <ReassignAllEntry />
+        </Suspense>
         <NewTicketDialog />
       </div>
       <Suspense
@@ -58,6 +63,13 @@ export default async function TicketsPage({
       </Suspense>
     </div>
   );
+}
+
+/** Only a CREOMS Manager is offered "Reassign all"; Staff, Admin and CEO see no button. */
+async function ReassignAllEntry() {
+  const staff = await requireModule(TICKETS_MODULE);
+
+  return shopRole(staff.role) === "manager" ? <ReassignAllDialog /> : null;
 }
 
 async function TicketToolbarData() {

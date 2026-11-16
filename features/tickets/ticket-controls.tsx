@@ -25,6 +25,7 @@ import { claim, reply, resolve, type ReplyOutcome, type TicketActionOutcome } fr
 import { useClaim } from "./claim";
 import { refusalMessage } from "./refusals";
 import { HoldDialog } from "./hold-dialog";
+import { ReassignTicketDialog } from "./reassign-dialog";
 import { useHold } from "./hold";
 
 const OUTLINE =
@@ -78,9 +79,12 @@ export function ClaimButton({ ticketId }: { ticketId: number }) {
 export function TicketActions({
   ticketId,
   withReply = true,
+  canReassign = false,
   className,
 }: {
   ticketId: number;
+  /** A CREOMS Manager sees Reassign; everyone else sees no button. */
+  canReassign?: boolean;
   /** Offer the Reply link to the composer; off where the composer sits beside the actions. */
   withReply?: boolean;
   className?: string;
@@ -112,6 +116,7 @@ export function TicketActions({
           Release
         </button>
       )}
+      {status !== "completed" && claimed && canReassign && <ReassignTicketDialog ticketId={ticketId} />}
       {status === "open" && isClaimer && <HoldDialog ticketId={ticketId} />}
       {status === "on_hold" && isClaimer && (
         <button type="button" className={OUTLINE} disabled={holding} onClick={takeOffHold}>
