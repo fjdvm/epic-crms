@@ -109,7 +109,7 @@ export function AskNewProofDialog({ id }: { id: number }) {
  * Figma "Dialog · Approve anyway", after 3 rejected proofs. A Manager approves with a reason. Staff see
  * "Request approval" instead, then "Approve anyway" once a Manager has approved their request.
  */
-export function ApproveAnywayDialog({ id, role, approvalId, waiting = false }: { id: number; role: ShopRole | null; approvalId?: string; waiting?: boolean }) {
+export function ApproveAnywayDialog({ id, role, approvalId, waiting = false, reusedOn = [] }: { id: number; role: ShopRole | null; approvalId?: string; waiting?: boolean; reusedOn?: number[] }) {
   const [reason, setReason] = useState("");
   const staff = role === "staff";
   if (staff && waiting && !approvalId) {
@@ -120,7 +120,9 @@ export function ApproveAnywayDialog({ id, role, approvalId, waiting = false }: {
     <OrderActionDialog
       trigger={request ? "Request approval…" : "Approve anyway"}
       title={request ? `Ask a Manager to approve Order #${id} anyway` : `Approve Order #${id} anyway?`}
-      description={`${MANAGER_AFTER_REJECTIONS} receipts were rejected, so only a Manager can approve this payment. The reason is kept on the Order.`}
+      description={reusedOn.length
+        ? `This payment reference was already used on ${reusedOn.map(n => `Order #${n}`).join(", ")}, so only a Manager can approve this payment. The reason is kept on the Order.`
+        : `${MANAGER_AFTER_REJECTIONS} receipts were rejected, so only a Manager can approve this payment. The reason is kept on the Order.`}
       confirm={request ? "Send request" : "Approve anyway"}
       busy={request ? "Sending…" : "Approving…"}
       disabled={!approvalId && !reason.trim()}
@@ -151,6 +153,8 @@ export function PaymentsActions({ order, withCancel, role = "staff", approvalId,
   if (role === "admin" || role === "ceo" || role === null) return null;
   const rejected = order.paymentProof?.rejectedAt != null;
   const capped = order.proofRejections >= MANAGER_AFTER_REJECTIONS;
+  const reusedOn = order.paymentProofs.at(-1)?.checks?.reference.otherOrderIds ?? [];
+  const needsManager = capped || reusedOn.length > 0;
   return (
     <>
       {withCancel && order.status === "awaiting payment" && <CancelPaymentDialog id={order.id} />}
@@ -160,8 +164,10 @@ export function PaymentsActions({ order, withCancel, role = "staff", approvalId,
           <AskNewProofDialog id={order.id} />
         </>
       )}
-      {canCheckPayment(order) && !rejected && !capped && <MarkPaidDialog id={order.id} />}
-      {canCheckPayment(order) && capped && <ApproveAnywayDialog id={order.id} role={role} approvalId={approvalId} waiting={waiting} />}
+      {canCheckPayment(order) && !rejected && !needsManager && <MarkPaidDialog id={order.id} />}
+      {canCheckPayment(order) && (capped || (!rejected && reusedOn.length > 0)) && (
+        <ApproveAnywayDialog id={order.id} role={role} approvalId={approvalId} waiting={waiting} reusedOn={reusedOn} />
+      )}
     </>
   );
 }
