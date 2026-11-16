@@ -23,6 +23,8 @@ export const HOLD_REASONS: { value: HoldReason; label: string; hint?: string }[]
 
 export const HOLD_NOTE_MAX = 500;
 export const HOLD_MESSAGE_MAX = 500;
+/** The longest Internal note, in characters. */
+export const NOTE_MAX = 2000;
 
 /** Why a Ticket is On hold and when it returns to Open. Staff only: the Customer is only ever told "We're on it". */
 export interface TicketHold {
@@ -187,7 +189,7 @@ export async function listTickets(
       join customers c on c.id = t.customer_id
       left join lateral (
         select sender, created_at from ticket_messages
-        where ticket_id = t.id
+        where ticket_id = t.id and not internal
         order by created_at desc, id desc
         limit 1
       ) m on true
@@ -252,7 +254,7 @@ export async function listTickets(
   const messageRows = ids.length
     ? await sql<{ ticket_id: number; sender: "customer" | "staff"; created_at: Date }[]>`
         select ticket_id, sender, created_at from ticket_messages
-        where ticket_id = any(${ids}::int[]) order by ticket_id, created_at, id`
+        where ticket_id = any(${ids}::int[]) and not internal order by ticket_id, created_at, id`
     : [];
   const levelsById = await withServiceLevels(
     levels,

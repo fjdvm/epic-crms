@@ -6,6 +6,7 @@ import { orderLabel, paymentStatusOf, STAGE_LABELS } from "@/features/customer-p
 import { cn } from "@/lib/utils";
 
 import { Conversation } from "./conversation";
+import { NotesProvider } from "./notes";
 import { inboxTime, type Conversations } from "./conversations";
 import { Pill, PILL, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
 import {
@@ -109,6 +110,7 @@ function SelectedChat({
       viewer={{ id: viewerId, name: viewerName }}
     >
       <HoldProvider ticketId={ticket.id} status={ticket.status} hold={ticket.hold}>
+      <NotesProvider key={ticket.id} ticketId={ticket.id} viewerName={viewerName}>
       <section aria-label="Chat" className={cn(CARD, "flex h-[70vh] min-h-0 w-full min-w-0 flex-col space-y-0 gap-3 lg:h-full lg:flex-1")}>
         <div className="flex items-center gap-2">
           <h2 className={cn(CARD_TITLE, "min-w-0 flex-1 truncate")}>{customer.name}</h2>
@@ -124,6 +126,7 @@ function SelectedChat({
           viewerName={viewerName}
           customerName={customer.name.split(" ")[0]}
           scrollable
+          canNote
           canReply={ticket.status !== "completed" && isClaimer}
           note={
             ticket.status === "completed"
@@ -199,6 +202,7 @@ function SelectedChat({
           </Link>
         </section>
       </div>
+      </NotesProvider>
       </HoldProvider>
     </ClaimProvider>
   );

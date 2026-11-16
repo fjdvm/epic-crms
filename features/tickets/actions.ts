@@ -22,6 +22,7 @@ import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 import { HOLD_MESSAGE_MAX } from "./tickets";
 import { customerOrders, openTicket, searchCustomers, type CustomerChoice, type OpenTicketResult, type OrderChoice } from "./new-ticket";
 import {
+  addInternalNote,
   claimTicket,
   changeTicketPriority,
   markResolved,
@@ -210,4 +211,18 @@ export async function putOnHold(
 
 export async function takeOffHold(id: number, operationId?: string) {
   return act(id, (actor, audit) => takeTicketOffHold(ticketsWriterDatabase(), id, actor, audit), operationId);
+}
+
+/** An Internal note: Staff-only text. Any Staff member with the Tickets Module may write one. */
+export async function addNote(id: number, body: string) {
+  const staff = await requireModule(TICKETS_MODULE);
+
+  if (!canWork(staff)) return READ_ONLY_REFUSAL;
+  try {
+    return await addInternalNote(ticketsWriterDatabase(), id, { id: staff.username, name: staff.name }, String(body ?? ""));
+  } catch (error) {
+    console.error("Internal note could not be saved", error);
+
+    return { ok: false as const, reason: "unavailable" as const };
+  }
 }

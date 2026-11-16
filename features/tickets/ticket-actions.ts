@@ -1,7 +1,7 @@
 import type postgres from "postgres";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { TICKETS_MODULE } from "@/lib/portal/config";
-import { HOLD_NOTE_MAX, HOLD_REASONS, TICKET_PRIORITIES, type HoldReason } from "./tickets";
+import { HOLD_NOTE_MAX, HOLD_REASONS, NOTE_MAX, TICKET_PRIORITIES, type HoldReason } from "./tickets";
 
 import { checkImage, type FileStorage, type ImageRefusal, type ImageUpload } from "./attachments";
 
@@ -46,6 +46,8 @@ export type TicketActionFailure =
   | "completed"
   | "already-resolved"
   | "empty-message"
+  | "note-empty"
+  | "internal-note-too-long"
   | "invalid-attachment"
   | ImageRefusal
   /** file-storage could not take the image; nothing was saved. */
@@ -350,4 +352,21 @@ export async function takeTicketOffHold(sql: postgres.Sql, id: number, actor: Ac
   if (t.claimed_by_id !== actor.id) return { ok: false, reason: "not-claimer" };
 
   return { ok: false, reason: "not-on-hold" };
+}
+
+/**
+ * An Internal note: text only, any Staff member with the Tickets Module (not only the Claimer), on a Ticket in any
+ * status. It is a flagged row in the Conversation, never a Staff reply, and raises no alert or audit event.
+ */
+export async function addInternalNote(sql: postgres.Sql, id: number, actor: Actor, body: string): Promise<ReplyResult> {
+  const text = body.trim();
+  if (!text) return { ok: false, reason: "note-empty" };
+  if (text.length > NOTE_MAX) return { ok: false, reason: "internal-note-too-long" };
+
+  const [message] = await sql<{ id: number }[]>`
+    insert into ticket_messages (ticket_id, sender, body, internal, author_name)
+    select t.id, 'staff', ${text}, true, ${actor.name} from tickets t where t.id = ${id}
+    returning id`;
+
+  return message ? { ok: true, messageId: message.id } : { ok: false, reason: "not-found" };
 }
