@@ -156,3 +156,10 @@ export async function draftReply(deps: DraftDeps, actor: DraftActor, ticketId: n
     return { ok: false, reason: unavailable };
   }
 }
+
+/** Why the Claimer's draft button is off, in plain words; null when it is on. */
+export function draftDisabledReason(status: string, isClaimer: boolean): string | null {
+  if (status !== "open") return "Drafts are only available while the Ticket is Open.";
+  if (!isClaimer) return "Claim this Ticket to ask for a draft.";
+  return null;
+}

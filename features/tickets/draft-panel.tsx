@@ -23,13 +23,6 @@ const PRIMARY =
   "inline-flex items-center gap-1.5 rounded-lg bg-[#5b2a86] px-3 py-1.5 text-[13px] font-medium leading-[normal] whitespace-nowrap text-white disabled:opacity-50";
 const LANGUAGES: DraftRequest["language"][] = ["Taglish", "English"];
 
-/** Why the Claimer's draft button is off, in plain words; null when it is on. */
-export function draftDisabledReason(status: string, isClaimer: boolean): string | null {
-  if (status !== "open") return "Drafts are only available while the Ticket is Open.";
-  if (!isClaimer) return "Claim this Ticket to ask for a draft.";
-  return null;
-}
-
 /**
  * The Drafted reply panel. Nothing is requested until the Claimer presses a button, and nothing is
  * sent: "Use in conversation" only fills the reply box, and never over typed text without a confirm.
