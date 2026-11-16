@@ -9,21 +9,12 @@ import { PILL, Pill, PRIORITY_LABELS } from "./pill";
 import { Bubbles } from "./conversation";
 import { MessageAttachment } from "./message-attachment";
 import { ByClaimer, ClaimerName, ClaimProvider } from "./claim";
+import { HoldProvider, HoldSummary, StatusPill } from "./hold";
 import { TicketActions } from "./ticket-controls";
 import type { TicketDetail, TicketMessage } from "./ticket";
 import type { TicketStatus } from "./tickets";
 
-export const STATUS_LABELS: Record<TicketStatus, string> = {
-  open: "Open",
-  resolved: "Resolved",
-  completed: "Completed",
-};
-
-export const STATUS_PILLS: Record<TicketStatus, string> = {
-  open: PILL.red,
-  resolved: PILL.green,
-  completed: PILL.green,
-};
+export { STATUS_LABELS, STATUS_PILLS } from "./status";
 
 export const STAGE_PILLS: Record<Stage, string> = {
   new: PILL.blue,
@@ -72,6 +63,7 @@ export function TicketDetailView({
       claimer={ticket.claimerId !== null ? { id: ticket.claimerId, name: ticket.claimerName ?? "" } : null}
       viewer={{ id: viewerId, name: viewerName }}
     >
+    <HoldProvider ticketId={ticket.id} status={ticket.status} hold={ticket.hold}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1">
@@ -79,7 +71,7 @@ export function TicketDetailView({
             <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
               TKT-{ticket.id} · {ticket.subject}
             </h1>
-            <Pill className={STATUS_PILLS[ticket.status]}>{STATUS_LABELS[ticket.status]}</Pill>
+            <StatusPill />
           </div>
           <p className="text-sm leading-[normal] text-[#6e6680]">
             Opened {formatDate(ticket.openedAt)} ·{" "}
@@ -94,7 +86,6 @@ export function TicketDetailView({
         </div>
         <TicketActions
           ticketId={ticket.id}
-          status={ticket.status}
           withReply={false}
         />
       </div>
@@ -134,6 +125,7 @@ export function TicketDetailView({
         </section>
 
         <div className="w-full space-y-4 lg:h-full lg:w-[380px] lg:shrink-0 lg:overflow-y-auto">
+          <HoldSummary />
           {order && (
             <section aria-label="Linked order" className={CARD}>
               <h2 className={CARD_TITLE}>Linked order</h2>
@@ -171,6 +163,7 @@ export function TicketDetailView({
         </div>
       </div>
     </div>
+    </HoldProvider>
     </ClaimProvider>
   );
 }

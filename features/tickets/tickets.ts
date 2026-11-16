@@ -9,7 +9,27 @@ export type TicketTab = "open" | "waiting" | "resolved";
 
 export const TICKET_TABS: TicketTab[] = ["open", "waiting", "resolved"];
 
-export type TicketStatus = "open" | "resolved" | "completed";
+export type TicketStatus = "open" | "on_hold" | "resolved" | "completed";
+
+export type HoldReason = "courier" | "kitchen_or_ims" | "supplier" | "manager_decision";
+
+/** What the Claimer is waiting on, as the Put on hold dialog words it. */
+export const HOLD_REASONS: { value: HoldReason; label: string; hint?: string }[] = [
+  { value: "courier", label: "Courier (Lalamove or Grab)", hint: "Rider pickup, return trip" },
+  { value: "kitchen_or_ims", label: "Kitchen or IMS", hint: "Fresh batch, stock count, QC check" },
+  { value: "supplier", label: "Supplier", hint: "Packaging, ingredients" },
+  { value: "manager_decision", label: "Manager decision" },
+];
+
+export const HOLD_NOTE_MAX = 500;
+export const HOLD_MESSAGE_MAX = 500;
+
+/** Why a Ticket is On hold and when it returns to Open. Staff only: the Customer is only ever told "We're on it". */
+export interface TicketHold {
+  reason: HoldReason;
+  note: string | null;
+  until: Date;
+}
 
 export type TicketPriority = "low" | "normal" | "high" | "urgent";
 

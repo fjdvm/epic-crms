@@ -19,14 +19,18 @@ import { canWork, READ_ONLY_REFUSAL } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
+import { HOLD_MESSAGE_MAX } from "./tickets";
 import { customerOrders, openTicket, searchCustomers, type CustomerChoice, type OpenTicketResult, type OrderChoice } from "./new-ticket";
 import {
   claimTicket,
   changeTicketPriority,
   markResolved,
+  putTicketOnHold,
   releaseTicket,
+  takeTicketOffHold,
   replyToTicket,
   type Actor,
+  type HoldRequest,
   type TicketAudit,
   type ReplyResult,
   type TicketActionResult,
@@ -178,4 +182,32 @@ export async function findCustomerOrders(customerId: string): Promise<OrderChoic
 /** Backend endpoint for Priority changes; the Tickets Module is checked by act. */
 export async function changePriority(id: number, priority: string, operationId?: string) {
   return act(id, (_actor, audit) => changeTicketPriority(ticketsWriterDatabase(), id, priority, audit), operationId);
+}
+
+/**
+ * Puts the Ticket on hold. An optional short Message to the Customer is sent by the Claimer in the same
+ * step; if it cannot be sent the hold still stands and `messageSent` is false, so Staff can write it again.
+ */
+export async function putOnHold(
+  id: number,
+  request: { reason: string; note?: string; until: string; message?: string },
+  operationId?: string,
+) {
+  const until = new Date(request.until);
+  const message = request.message?.trim();
+  if (message && message.length > HOLD_MESSAGE_MAX) return { ok: false as const, reason: "note-too-long" as const };
+  const hold: HoldRequest = { reason: request.reason, note: request.note, until: Number.isNaN(until.getTime()) ? null : until };
+
+  return act(id, async (actor, audit) => {
+    const result = await putTicketOnHold(ticketsWriterDatabase(), id, actor, hold, audit);
+    if (!result.ok || !message) return result;
+
+    const sent = await replyToTicket(ticketsWriterDatabase(), id, actor, message).catch(() => ({ ok: false as const }));
+
+    return { ...result, messageSent: sent.ok };
+  }, operationId);
+}
+
+export async function takeOffHold(id: number, operationId?: string) {
+  return act(id, (actor, audit) => takeTicketOffHold(ticketsWriterDatabase(), id, actor, audit), operationId);
 }

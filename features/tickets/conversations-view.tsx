@@ -15,10 +15,9 @@ import {
   ORDER_PILLS,
   PAYMENT_PILLS,
   STAGE_PILLS,
-  STATUS_LABELS,
-  STATUS_PILLS,
 } from "./ticket-detail";
 import { ClaimerName, ClaimProvider } from "./claim";
+import { HoldProvider, HoldSummary, StatusPill } from "./hold";
 import { TicketActions } from "./ticket-controls";
 
 const FACT = "flex items-center gap-2 text-[13px] leading-[normal]";
@@ -112,6 +111,7 @@ function SelectedChat({
       claimer={ticket.claimerId !== null ? { id: ticket.claimerId, name: ticket.claimerName ?? "" } : null}
       viewer={{ id: viewerId, name: viewerName }}
     >
+      <HoldProvider ticketId={ticket.id} status={ticket.status} hold={ticket.hold}>
       <section aria-label="Chat" className={cn(CARD, "flex h-[70vh] min-h-0 w-full min-w-0 flex-col space-y-0 gap-3 lg:h-full lg:flex-1")}>
         <div className="flex items-center gap-2">
           <h2 className={cn(CARD_TITLE, "min-w-0 flex-1 truncate")}>{customer.name}</h2>
@@ -139,6 +139,7 @@ function SelectedChat({
       </section>
 
       <div className="w-full space-y-4 lg:h-full lg:w-[320px] lg:shrink-0 lg:overflow-y-auto">
+        <HoldSummary />
         <section aria-label="Customer" className={CARD}>
           <div className="flex items-center gap-2">
             <h2 className={cn(CARD_TITLE, "flex-1")}>Customer</h2>
@@ -157,7 +158,7 @@ function SelectedChat({
         <section aria-label="Ticket" className={CARD}>
           <div className="flex items-center gap-2">
             <h2 className={cn(CARD_TITLE, "flex-1")}>TKT-{ticket.id}</h2>
-            <Pill className={STATUS_PILLS[ticket.status]}>{STATUS_LABELS[ticket.status]}</Pill>
+            <StatusPill />
           </div>
           <p className="text-base font-medium leading-[normal] text-[#1f1a2e]">{ticket.subject}</p>
           <div className="space-y-1.5 text-[#6e6680]">
@@ -193,7 +194,6 @@ function SelectedChat({
           </div>
           <TicketActions
             ticketId={ticket.id}
-            status={ticket.status}
             withReply={false}
             className="flex-wrap"
           />
@@ -202,6 +202,7 @@ function SelectedChat({
           </Link>
         </section>
       </div>
+      </HoldProvider>
     </ClaimProvider>
   );
 }

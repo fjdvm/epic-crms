@@ -141,6 +141,9 @@ const SCHEMA = `
     priority text not null default 'normal',
     claimed_by_id text,
     claimed_by_name text,
+    hold_reason text,
+    hold_note text,
+    hold_until timestamptz,
     resolved_at timestamptz,
     created_at timestamptz not null default now()
   );
