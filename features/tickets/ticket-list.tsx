@@ -2,10 +2,16 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import { ClaimButton } from "./ticket-controls";
 import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
+import {
+  hasTicketFilters,
+  ticketsHref,
+  type TicketParams,
+} from "./ticket-params";
 import {
   TICKET_TABS,
   type TicketList,
@@ -13,15 +19,15 @@ import {
   type TicketTab,
 } from "./tickets";
 
-export interface TicketListParams {
-  tab: TicketTab;
-  page: number;
-}
+export type TicketListParams = TicketParams;
 
 export const TAB_LABELS: Record<TicketTab, string> = {
   open: "Open",
   waiting: "Waiting on customer",
   resolved: "Resolved",
+  completed: "Completed",
+  all: "All",
+  mine: "Mine",
 };
 
 /** The Figma frame's columns, minus Channel: a Ticket has no Channel. They share the table width in proportion, so the rows fill the card. */
@@ -30,27 +36,25 @@ export const COLUMNS: { header: string; className: string }[] = [
   { header: "Subject", className: "min-w-0 flex-[3_1_270px]" },
   { header: "Customer", className: "min-w-0 flex-[2_1_150px]" },
   { header: "Linked order", className: "flex-[1_1_120px]" },
+  { header: "Category", className: "min-w-0 flex-[1_1_130px]" },
   { header: "Priority", className: "flex-[1_1_100px]" },
+  { header: "Claimed by", className: "min-w-0 flex-[1_1_130px]" },
   { header: "Status", className: "flex-[1_1_110px]" },
   { header: "", className: "flex-[0_0_90px] justify-end" },
 ];
 
-function href(params: TicketListParams, change: Partial<TicketListParams>): string {
-  const next = { ...params, ...change };
-  const query = new URLSearchParams();
-
-  if (next.tab !== "open") query.set("tab", next.tab);
-  if (next.page > 1) query.set("page", String(next.page));
-
-  const text = query.toString();
-
-  return text ? `/tickets?${text}` : "/tickets";
+function href(
+  params: TicketListParams,
+  change: Partial<TicketListParams>,
+): string {
+  return ticketsHref({ ...params, ...change });
 }
 
 function StatusPill({ row }: { row: TicketRow }) {
-  if (row.status === "resolved" || row.status === "completed") {
+  if (row.status === "resolved")
     return <Pill className={PILL.green}>Resolved</Pill>;
-  }
+  if (row.status === "completed")
+    return <Pill className={PILL.green}>Completed</Pill>;
   if (row.overdue) return <Pill className={PILL.red}>Overdue</Pill>;
   if (row.waiting) return <Pill className={PILL.amber}>Waiting</Pill>;
 
@@ -58,9 +62,16 @@ function StatusPill({ row }: { row: TicketRow }) {
 }
 
 export const HEAD = "flex items-start overflow-clip";
-export const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
+export const CELL =
+  "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
-export function TicketListView({ list, params }: { list: TicketList; params: TicketListParams }) {
+export function TicketListView({
+  list,
+  params,
+}: {
+  list: TicketList;
+  params: TicketListParams;
+}) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       <nav className="flex shrink-0 gap-1" aria-label="Ticket tabs">
@@ -85,10 +96,14 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
 
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
         {list.rows.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[#6e6680]">No Tickets here.</div>
+          <div className="p-8 text-center text-sm text-[#6e6680]">
+            {hasTicketFilters(params)
+              ? "No Tickets match this search and these filters."
+              : "No Tickets here."}
+          </div>
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
-            <div className="min-w-[740px]">
+            <div className="min-w-[1000px]">
               <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
                 {COLUMNS.map((col) => (
                   <div key={col.header} className={cn(HEAD, col.className)}>
@@ -97,8 +112,17 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
                 ))}
               </div>
               {list.rows.map((row) => (
-                <div key={row.id} className="flex items-center border-b border-[#efebf4] py-[11px]">
-                  <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
+                <div
+                  key={row.id}
+                  className="flex items-center border-b border-[#efebf4] py-[11px]"
+                >
+                  <div
+                    className={cn(
+                      CELL,
+                      COLUMNS[0].className,
+                      "font-medium text-[#5b2a86]",
+                    )}
+                  >
                     <Link href={`/tickets/${row.id}`}>TKT-{row.id}</Link>
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className)}>
@@ -111,13 +135,29 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
                     {row.orderId === null ? "None yet" : `#${row.orderId}`}
                   </div>
                   <div className={cn(CELL, COLUMNS[4].className)}>
-                    <Pill className={PRIORITY_PILLS[row.priority]}>{PRIORITY_LABELS[row.priority]}</Pill>
+                    <span className="truncate pr-3">{row.category}</span>
                   </div>
                   <div className={cn(CELL, COLUMNS[5].className)}>
-                    <StatusPill row={row} />
+                    <Pill className={PRIORITY_PILLS[row.priority]}>
+                      {PRIORITY_LABELS[row.priority]}
+                    </Pill>
                   </div>
                   <div className={cn(CELL, COLUMNS[6].className)}>
-                    {row.status !== "completed" && <ClaimButton ticketId={row.id} />}
+                    {row.claimedById === null ? (
+                      <Pill className={PILL.amber}>Unclaimed</Pill>
+                    ) : (
+                      <span className="truncate pr-3">
+                        {row.claimedByName ?? row.claimedById}
+                      </span>
+                    )}
+                  </div>
+                  <div className={cn(CELL, COLUMNS[7].className)}>
+                    <StatusPill row={row} />
+                  </div>
+                  <div className={cn(CELL, COLUMNS[8].className)}>
+                    {row.status !== "completed" && row.claimedById === null && (
+                      <ClaimButton ticketId={row.id} />
+                    )}
                   </div>
                 </div>
               ))}
@@ -147,6 +187,60 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** The tabs and table with only the data (counts, rows) as skeleton; shown at once while a tab, search or filter loads. */
+export function TicketListSkeleton({
+  announce = true,
+}: {
+  announce?: boolean;
+}) {
+  return (
+    <div
+      {...(announce ? { role: "status", "aria-label": "Loading Tickets" } : {})}
+      className="flex min-h-0 flex-1 flex-col gap-5"
+    >
+      <nav
+        className="flex shrink-0 gap-1 overflow-hidden"
+        aria-label="Ticket tabs"
+      >
+        {TICKET_TABS.map((tab) => (
+          <span
+            key={tab}
+            className="flex items-center gap-1.5 rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] whitespace-nowrap text-[#6e6680]"
+          >
+            {TAB_LABELS[tab]} <Skeleton className="h-4 w-5" />
+          </span>
+        ))}
+      </nav>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-w-[1000px]">
+            <div className="flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
+              {COLUMNS.map((col, c) => (
+                <div key={c} className={cn(HEAD, col.className)}>
+                  {col.header}
+                </div>
+              ))}
+            </div>
+            {Array.from({ length: 10 }, (_, i) => (
+              <div
+                key={i}
+                className="flex items-center border-b border-[#efebf4] py-[11px]"
+              >
+                {COLUMNS.map((col, c) => (
+                  <div key={c} className={cn(CELL, col.className)}>
+                    {col.header && <Skeleton className="h-4 w-3/4" />}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
