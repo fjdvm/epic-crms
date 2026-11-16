@@ -19,11 +19,12 @@ export function configuredStructuredModels(env: Record<string, string | undefine
 }
 
 /** Each provider gets one bounded attempt; invalid structured output also falls back. Never log prompts or provider errors. */
-export async function structuredOutput<T>({ schema, system, prompt, models }: {
+export async function structuredOutput<T>({ schema, system, prompt, models, maxOutputTokens = 600 }: {
   schema: z.ZodType<T>;
   system: string;
   prompt: string;
   models: StructuredModel[];
+  maxOutputTokens?: number;
 }): Promise<{ ok: true; output: T; model: string } | { ok: false; reason: "no-keys" | "model-failed" }> {
   for (const { name, model } of models) {
     try {
@@ -31,7 +32,7 @@ export async function structuredOutput<T>({ schema, system, prompt, models }: {
         model, system, prompt,
         output: Output.object({ schema }),
         temperature: 0,
-        maxOutputTokens: 600,
+        maxOutputTokens,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(20_000),
       });
