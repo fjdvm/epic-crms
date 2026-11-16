@@ -22,6 +22,7 @@ describe("Ticket summary card", () => {
     expect(loadTicketSummary).toHaveBeenCalledTimes(1);
     await act(async () => { resolve(kept); });
     expect(screen.getByText("AI-written")).toBeTruthy();
+    expect(screen.getByText("made when you opened this ticket")).toBeTruthy();
     expect(screen.getByText(kept.summary!.text)).toBeTruthy();
     fireEvent.click(screen.getByText("What the AI saw"));
     expect(screen.getByText("Subject: Leaking pouch Customer: It leaks.")).toBeTruthy();
