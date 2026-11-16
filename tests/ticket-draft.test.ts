@@ -53,7 +53,7 @@ it("uses only six public Messages, masks private details, persists exact input a
     values (${o.id}, '123 Private Street', 'Secret Village', 'Antipolo', 'Rizal', '1870')`;
   await db.sql`insert into ticket_messages (ticket_id, sender, body) values (${id}, 'customer', 'OLD omitted message')`;
   for (let i = 0; i < 6; i++) await db.sql`insert into ticket_messages (ticket_id, sender, body)
-    values (${id}, 'customer', ${`Message ${i}: Maria Santos maria@example.com 0917 123 4567 at 123 Private Street, Secret Village, Antipolo, Rizal 1870`})`;
+    values (${id}, 'customer', ${`Message ${i}: Maria Santos maria@example.com 0917 123 4567${i === 2 ? " at 123 Private Street, Secret Village, Antipolo, Rizal 1870" : ""}`})`;
   await db.sql`insert into ticket_messages (ticket_id, sender, body, internal) values (${id}, 'staff', 'SECRET note', true)`;
   const model = fake(["Hello!", "{{status}}", "{{dispatched_at}}", "{{payment_method}}"]);
   const result = await draftReply(deps(), actor, id, { language: "English" }, () => [{ name: "fake", model }]);
@@ -150,4 +150,29 @@ it('cannot shorten a draft belonging to someone else or another Ticket', async (
   expect((await draftReply(deps(), actor, another, { language: 'English', shorterThanId: result.draft.id }, never)).ok).toBe(false);
   await db.sql`update crms.ticket_drafts set requested_by_id = 'other' where id = ${result.draft.id}`;
   expect((await draftReply(deps(), actor, id, { language: 'English', shorterThanId: result.draft.id }, never)).ok).toBe(false);
+});
+it('masks alternate addresses and unusual phone separators even on an unlinked Ticket', async () => {
+  const id = await ticket();
+  await db.sql`insert into ticket_messages (ticket_id, sender, body) values
+    (${id}, 'customer', 'Please deliver to 45 New Road, Quezon City'),
+    (${id}, 'customer', 'Call 0917/123/4567 or 0917‑123‑4567 please.'),
+    (${id}, 'customer', 'Where is my order?')`;
+  const result = await draftReply(deps(), actor, id, { language: 'English' }, () => [{ name: 'fake', model: fake(['Hello!']) }]);
+  if (!result.ok) throw new Error(result.reason);
+  expect(result.draft.sentText).not.toMatch(/45 New|Quezon|0917|123\/4567/);
+  expect(result.draft.sentText).toContain('Where is my order?');
+});
+it('allows contextual English and Taglish prose while rejecting raw factual claims', async () => {
+  const id = await ticket();
+  for (const [language, prose] of [
+    ['English', 'Thank you for sharing the photo of the leaking pouch. Please keep the packaging while I look into your concern.'],
+    ['Taglish', 'Salamat po sa photo ng tumatagas na pouch. Paki-keep po ang packaging habang tinitingnan ko ang concern ninyo.'],
+  ] as const) {
+    const made = await draftReply(deps(), actor, id, { language }, () => [{ name: 'fake', model: fake([prose]) }]);
+    expect(made).toMatchObject({ ok: true, draft: { text: prose } });
+  }
+  for (const prose of ['Your parcel is on the way.', 'Darating bukas ang parcel.', 'Na-deliver na po.', 'Your payment is paid.', 'Your courier is Lalamove.', 'The booking was yesterday.', 'Visit fake.example.com', 'Here is your address: 45 New Road.']) {
+    expect(await draftReply(deps(), actor, id, { language: 'English' }, () => [{ name: 'fake', model: fake([prose]) }]))
+      .toMatchObject({ ok: false, reason: expect.stringContaining('could not be checked') });
+  }
 });

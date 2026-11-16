@@ -39,7 +39,6 @@ import {
   type Actor,
   type HoldRequest,
   type TicketAudit,
-  type ReplyResult,
   type TicketActionResult,
 } from "./ticket-actions";
 

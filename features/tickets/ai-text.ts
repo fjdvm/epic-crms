@@ -8,7 +8,7 @@ export function ticketText(subject: string, messages: { sender: "customer" | "st
       const escaped = value.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       text = text.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu"), "[private]");
     }
-    return text.replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "[email]").replace(/\+?\d[\d\s().-]{7,}\d/g, "[number]");
+    return text.replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "[email]").replace(/\+?\d[\d\s()./\p{Pd}\u2212\u200b-\u200d\u2060]{7,}\d/gu, "[number]");
   };
   // Mask before truncating so a cut email or phone number cannot slip through.
   const head = `Subject: ${scrub(subject.trim())}`.slice(0, 1000);
