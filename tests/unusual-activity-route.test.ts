@@ -24,7 +24,7 @@ it("does no work after access refusal", async () => {
   expect(mocks.loadUnusualActivity).not.toHaveBeenCalled();
 });
 it("blocks cross-site and form dismissals before any work", async () => {
-  for (const headers of [{}, { "x-creoms-alert-dismiss": "1", "sec-fetch-site": "cross-site" }]) {
+  for (const headers of [{}, { "x-creoms-alert-dismiss": "1", "sec-fetch-site": "cross-site" }] as Record<string, string>[]) {
     expect((await POST(request({}, headers))).status).toBe(403);
   }
   expect(mocks.requireModule).not.toHaveBeenCalled();
