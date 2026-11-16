@@ -12,6 +12,7 @@ import { ByClaimer, ClaimerName, ClaimProvider } from "./claim";
 import { HoldProvider, HoldSummary, StatusPill } from "./hold";
 import { TicketActions } from "./ticket-controls";
 import { ServiceLevelPanel } from "./service-level-panel";
+import type { ReassignmentRecord } from "./reassign";
 import type { TicketDetail, TicketMessage } from "./ticket";
 import type { TicketStatus } from "./tickets";
 
@@ -47,12 +48,18 @@ export function TicketDetailView({
   viewerId,
   viewerName = viewerId,
   canOpenOrder = false,
+  canReassign = false,
+  reassignments = [],
 }: {
   ticket: TicketDetail;
   viewerId: string;
   viewerName?: string;
   /** Staff who hold the Orders, Payments or Fulfilment Module open the Order detail page from the Linked order. */
   canOpenOrder?: boolean;
+  /** Only a CREOMS Manager can move the Ticket; Admin and CEO read the history below. */
+  canReassign?: boolean;
+  /** Every move of this Ticket, newest first. */
+  reassignments?: ReassignmentRecord[];
 }) {
   const { order, customer } = ticket;
   // Until both sides have spoken there is no chat history to read, only what the Ticket was opened with.
@@ -88,6 +95,7 @@ export function TicketDetailView({
         <TicketActions
           ticketId={ticket.id}
           withReply={false}
+          canReassign={canReassign}
         />
       </div>
 
@@ -129,6 +137,22 @@ export function TicketDetailView({
 
         <div className="w-full space-y-4 lg:h-full lg:w-[380px] lg:shrink-0 lg:overflow-y-auto">
           <HoldSummary />
+          {reassignments.length > 0 && (
+            <section aria-label="Activity" className={CARD}>
+              <h2 className={CARD_TITLE}>Activity</h2>
+              <ul className="space-y-3">
+                {reassignments.map((r) => (
+                  <li key={r.id} className="space-y-0.5 text-[13px] leading-[normal] text-[#1f1a2e]">
+                    <p>
+                      {r.movedByName} moved this Ticket from {r.fromName} to {r.toName}
+                    </p>
+                    <p className="text-[#6e6680]">Reason: {r.reason}</p>
+                    <p className="text-xs text-[#6e6680]">{formatDate(r.at)}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {order && (
             <section aria-label="Linked order" className={CARD}>
               <h2 className={CARD_TITLE}>Linked order</h2>

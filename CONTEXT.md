@@ -133,8 +133,12 @@ How urgently a Ticket needs attention: Low, Normal, High or Urgent. Defaults to 
 _Avoid_: Severity, urgency
 
 **Claim**:
-Staff take a Ticket for themselves to answer it; nobody assigns a Ticket to someone else. A Ticket has at most one Claimer, the Staff member shown as "Assigned to" in the design. A Ticket nobody has claimed is Unclaimed. Any Staff can claim an Unclaimed Ticket; only the Claimer can chat with the Customer, so a Ticket must be claimed before it is replied to. A Ticket Staff open is claimed by the Staff member who opened it. Only the Claimer can release a Ticket back to Unclaimed; nobody can take a claimed Ticket from its Claimer.
+Staff take a Ticket for themselves to answer it; Staff never assign a Ticket to someone else. A Ticket has at most one Claimer, the Staff member shown as "Assigned to" in the design. A Ticket nobody has claimed is Unclaimed. Any Staff can claim an Unclaimed Ticket; only the Claimer can chat with the Customer, so a Ticket must be claimed before it is replied to. A Ticket Staff open is claimed by the Staff member who opened it. Only the Claimer can release a Ticket back to Unclaimed; nobody can take a claimed Ticket from its Claimer, except a Manager, who can reassign it (see Reassign).
 _Avoid_: Assign, owner, agent
+
+**Reassign**:
+A Manager moves a claimed Ticket to a named Staff member with a required reason, or moves all of an absent teammate's open Tickets (everything not Completed) to one Staff member after seeing them. Both the previous and the new Claimer get an alert with the reason; each move is logged on the Ticket's activity and in the audit trail. Only a Manager can do it; Staff see no button, and Admin and CEO only read the history. There is no AI split, no move back, no followers and no Priority change with it. The move only happens if the Ticket is still held by the Claimer the Manager saw; otherwise it says someone else changed it first. A Completed or Unclaimed Ticket is not reassigned.
+_Avoid_: Assign, transfer, pass
 
 **Ticket number**:
 The Ticket's visible reference, written TKT- followed by its number, such as TKT-208.

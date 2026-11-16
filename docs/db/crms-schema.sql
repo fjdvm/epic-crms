@@ -40,7 +40,7 @@ CREATE TABLE crms.sync_state (
 CREATE TABLE crms.notifications (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   kind          text NOT NULL DEFAULT 'new-customer'
-                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'feedback-low', 'order-delivery-fee', 'order-placed', 'order-free-delivery', 'order-payment-proof', 'return-requested')),
+                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned', 'feedback-low', 'order-delivery-fee', 'order-placed', 'order-free-delivery', 'order-payment-proof', 'return-requested')),
   customer_id   text NOT NULL,
   customer_name text NOT NULL,
   ticket_id     integer,
@@ -48,6 +48,7 @@ CREATE TABLE crms.notifications (
   rating        smallint,
   return_id     integer,
   recipient_id  text,
+  detail        jsonb,
   created_at    timestamptz NOT NULL DEFAULT now(),
   read_at       timestamptz
 );

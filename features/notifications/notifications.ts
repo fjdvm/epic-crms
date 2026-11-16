@@ -7,7 +7,18 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "return-requested";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "return-requested";
+
+/** What a Reassign alert says. `side` is whether the reader was the previous or the new Claimer. */
+export interface ReassignDetail {
+  side: "previous" | "new";
+  from: string;
+  to: string;
+  by: string;
+  reason: string;
+  /** How many Tickets moved at once; 1 names the Ticket by `ticketId`. */
+  count: number;
+}
 
 export interface Notification {
   id: string;
@@ -21,6 +32,8 @@ export interface Notification {
   rating: number | null;
   /** The Return whose request raised this alert; null for other kinds. */
   returnId: number | null;
+  /** Who moved what and why, for a "ticket-reassigned" alert; null for other kinds. */
+  detail?: ReassignDetail | null;
   /** When CREOMS first saw the event, such as the person becoming a Customer. */
   createdAt: Date;
   read: boolean;
@@ -51,7 +64,7 @@ export function visibleTo(sql: postgres.Sql | postgres.TransactionSql, viewer: V
     or (kind in ('order-delivery-fee', 'order-placed', 'order-free-delivery') and ${viewer.orders})
     or (kind = 'order-payment-proof' and ${viewer.payments})
     or (kind = 'return-requested' and ${viewer.returns})
-    or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed') and ${viewer.ticketsStaffId !== null}
+    or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))
   )`;
 }
@@ -146,11 +159,12 @@ export async function listNotifications(
       order_id: number | null;
       rating: number | null;
       return_id: number | null;
+      detail: ReassignDetail | null;
       created_at: Date;
       read_at: Date | null;
     }[]
   >`
-    select id::text, kind, customer_id, customer_name, ticket_id, order_id, rating, return_id, created_at, read_at
+    select id::text, kind, customer_id, customer_name, ticket_id, order_id, rating, return_id, detail, created_at, read_at
     from ${s}.notifications
     where ${visibleTo(writer, viewer)}
     order by created_at desc, id desc
@@ -167,6 +181,7 @@ export async function listNotifications(
       orderId: r.order_id,
       rating: r.rating,
       returnId: r.return_id,
+      detail: r.detail,
       createdAt: r.created_at,
       read: r.read_at !== null,
     })),

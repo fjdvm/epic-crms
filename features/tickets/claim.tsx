@@ -5,6 +5,8 @@ import { createContext, useContext } from "react";
 import { useOptimisticAction } from "@/hooks/use-optimistic-action";
 
 import { claim as claimAction, release as releaseAction } from "./actions";
+import { reassignOne, type ReassignOutcome } from "./reassign-actions";
+import { REASSIGN_REFUSALS } from "./reassign-refusals";
 import { refusalMessage } from "./refusals";
 
 export interface Claimer {
@@ -18,6 +20,8 @@ interface ClaimState {
   pending: boolean;
   claim: () => void;
   release: () => void;
+  /** A Manager moves the Ticket to `to` with a reason; shown at once, rolled back with the reason if refused. */
+  reassign: (to: Claimer, reason: string, onDone?: () => void) => void;
 }
 
 const ClaimContext = createContext<ClaimState | null>(null);
@@ -32,6 +36,13 @@ export function useClaimer(ticketId: number, server: Claimer | null, viewer: Cla
     pending,
     claim: () => run(viewer, () => claimAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
     release: () => run(null, () => releaseAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
+    reassign: (to, reason, onDone) => {
+      if (!server) return;
+      run(to, () => reassignOne(ticketId, server.id, to.id, reason, crypto.randomUUID()), {
+        refusal: (o) => REASSIGN_REFUSALS[(o as Exclude<ReassignOutcome, { ok: true }>).reason],
+        onDone: () => onDone?.(),
+      });
+    },
   };
 }
 
