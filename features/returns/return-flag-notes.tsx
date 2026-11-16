@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { PILL, Pill } from "@/features/tickets/pill";
 
+import { ExplainFlag } from "./explain-flag";
 import type { ReturnFlag } from "./return-flags";
 
 const LABELS: Record<ReturnFlag["rule"], string> = {
@@ -10,7 +11,12 @@ const LABELS: Record<ReturnFlag["rule"], string> = {
 };
 
 /** The rule a flag fired on and the earlier Returns to compare. A flag informs Staff; it never blocks. */
-export function ReturnFlagNotes({ flags, compact = false }: { flags?: ReturnFlag[]; compact?: boolean }) {
+export function ReturnFlagNotes({ flags, compact = false, explain }: {
+  flags?: ReturnFlag[];
+  compact?: boolean;
+  /** On the Return only: Managers may ask for an explanation; kept ones are shown to Managers, Admin and CEO. */
+  explain?: { returnId: number; canExplain: boolean; kept: Partial<Record<ReturnFlag["rule"], string>> };
+}) {
   if (!flags || flags.length === 0) return null;
 
   return (
@@ -26,6 +32,9 @@ export function ReturnFlagNotes({ flags, compact = false }: { flags?: ReturnFlag
               <Link href={`/returns/${earlier.id}`} className="font-medium text-[#5b2a86] hover:underline">{earlier.number}</Link>
             </span>
           ))}
+          {explain && !compact && (
+            <ExplainFlag returnId={explain.returnId} rule={flag.rule} kept={explain.kept[flag.rule]} canExplain={explain.canExplain} />
+          )}
         </li>
       ))}
     </ul>

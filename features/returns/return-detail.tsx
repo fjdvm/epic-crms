@@ -45,6 +45,7 @@ export function ReturnDetailView({
   requests,
   windowRequest,
   flags,
+  flagExplanations,
 }: {
   detail: ReturnDetail;
   imageUrls: ImageUrls;
@@ -60,6 +61,8 @@ export function ReturnDetailView({
   windowRequest?: ApprovalView;
   /** Why this Return is flagged, for Staff to double-check. Nothing here blocks the Return. */
   flags?: ReturnFlag[];
+  /** Kept explanations by rule, for Managers, Admin and CEO; absent for Staff. */
+  flagExplanations?: Partial<Record<ReturnFlag["rule"], string>>;
 }) {
   const goods = goodsLine(detail);
 
@@ -101,7 +104,7 @@ export function ReturnDetailView({
           {flags && flags.length > 0 && (
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Flags</h2>
-              <ReturnFlagNotes flags={flags} />
+              <ReturnFlagNotes flags={flags} explain={{ returnId: detail.id, canExplain: role === "manager", kept: flagExplanations ?? {} }} />
               <p className="text-xs text-[#6e6680]">Flags are a prompt to double-check. They never block or decline a Return.</p>
             </section>
           )}
