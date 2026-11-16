@@ -625,9 +625,10 @@ describe("the Payments page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
 
     const dialog = screen.getByRole("dialog", { name: "Verify payment · Order #1046" });
-    expect(within(dialog).getByText("Amount due").nextElementSibling?.textContent).toBe("₱1,197.00");
-    expect(within(dialog).getByText("Reference no.").nextElementSibling?.textContent).toBe("5012334812");
+    expect(within(dialog).getByText(/order total ₱1,197.00/)).toBeTruthy();
     expect(within(dialog).getByRole("img", { name: "Receipt for Order #1046" })).toBeTruthy();
+    expect(within(dialog).getByRole("link", { name: "Open full size" }).getAttribute("href")).toBe("https://files.test/receipt.png");
+    expect(within(dialog).getByText(/Reading the screenshot never marks an Order paid/)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Mark paid" })).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Cancel order" })).toBeTruthy();
     expect(markPaid).not.toHaveBeenCalled();
@@ -638,6 +639,7 @@ describe("the Payments page", () => {
     vi.mocked(markPaid).mockReturnValue(pending.promise);
     renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark paid" }));
 
     const confirm = screen.getByRole("alertdialog", { name: "Mark Order #1046 as paid?" });
@@ -660,6 +662,7 @@ describe("the Payments page", () => {
     vi.mocked(markPaid).mockResolvedValue({ ok: false, reason: "Order already changed; refresh it before trying again." });
     renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark paid" }));
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark paid" }));
 
@@ -682,6 +685,65 @@ describe("the Payments page", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1046 cancelled."));
     expect(cancelPaymentOrder).toHaveBeenCalledWith(1046);
     expect(cancelOrder).not.toHaveBeenCalled();
+  });
+});
+
+const reused = (checks: Partial<PaymentRow["proofChecks"] & object> = {}): PaymentRow["proofChecks"] => ({
+  confirmed: { amountInCentavos: 119_700, paidAt: new Date("2026-10-19T12:50:00Z"), recipient: "09171234567" },
+  expected: { amountInCentavos: 119_700, placedAt: new Date("2026-10-19T12:40:00Z"), recipient: "09171234567" },
+  checks: {
+    amount: { pass: true, reason: "Amount matches the Order total." },
+    date: { pass: true, reason: "Payment date is after the Order was placed." },
+    recipient: { pass: true, reason: "Recipient matches the shop account." },
+    reference: { pass: false, reason: "Reference also used on Order #42.", otherOrderIds: [42] },
+  },
+  ...checks,
+});
+
+describe("the proof check dialog by Role", () => {
+  const open = () => fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+  it("shows a reused reference with both Orders and no Mark paid", () => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role="staff" />);
+    open();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("alert").textContent).toContain("Order #42");
+    expect(within(dialog).getAllByRole("link", { name: "Order #42" }).length).toBeGreaterThan(0);
+    expect(within(dialog).queryByRole("button", { name: "Mark paid" })).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Request approval…" })).toHaveProperty("disabled", true);
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    expect(within(dialog).getByRole("button", { name: "Request approval…" })).toHaveProperty("disabled", false);
+  });
+
+  it("gives a Manager Approve anyway instead", () => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role="manager" />);
+    open();
+    fireEvent.click(screen.getByRole("checkbox"));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Approve anyway" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Request approval…" })).toBeNull();
+  });
+
+  it("keeps Mark paid disabled until the GCash history is ticked, and never calls the server from reading alone", () => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused({ checks: { ...reused()!.checks, reference: { pass: true, reason: "Reference is not used on another Order.", otherOrderIds: [] } } }) })]} now={NOW} role="staff" />);
+    open();
+    expect(screen.getByRole("button", { name: "Mark paid" })).toHaveProperty("disabled", true);
+    expect(markPaid).not.toHaveBeenCalled();
+  });
+
+  it.each(["admin", "ceo"] as const)("is view only for %s", (role) => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role={role} />);
+    open();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("button", { name: /Mark paid|Approve anyway|Request approval|Reject receipt|Cancel order/ })).toBeNull();
+    expect(within(dialog).getByRole("checkbox")).toHaveProperty("disabled", true);
+  });
+
+  it("shows Waiting for approval to Staff whose request is pending", () => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role="staff" approvals={{ 1046: { waiting: true } }} />);
+    open();
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(within(screen.getByRole("dialog")).getByText("Waiting for approval")).toBeTruthy();
   });
 });
 

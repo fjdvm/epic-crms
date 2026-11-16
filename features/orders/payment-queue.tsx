@@ -10,7 +10,8 @@ import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-p
 
 import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
-import { AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
+import type { ShopRole } from "@/lib/portal/roles";
+import { ApproveAnywayDialog, AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PAYMENTS_WINDOW_DAYS, summarize, type PaymentRow, type PaymentTab } from "./payments";
@@ -46,9 +47,24 @@ function Receipt({ order, size }: { order: PaymentRow; size: "thumb" | "full" })
   );
 }
 
-function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: () => void }) {
+export type ProofApproval = { approvalId?: string; waiting?: boolean };
+
+/** A money step that stays disabled until Staff have found the payment in the shop's GCash history. */
+function GatedButton({ label, open, children }: { label: string; open: boolean; children: React.ReactNode }) {
+  return open ? <>{children}</> : (
+    <Button type="button" disabled title="Tick the GCash history check first" className="h-auto rounded-lg px-3 py-1.5 text-[13px] leading-[normal] shadow-none">{label}</Button>
+  );
+}
+
+function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow; role: ShopRole | null; approval?: ProofApproval; onMarkPaid: () => void }) {
   const { reference, submittedAt } = order.proof!;
   const reusedOn = order.proofChecks?.checks.reference.otherOrderIds ?? [];
+  const [found, setFound] = useState(false);
+  // Admin and the CEO only look; nobody's reading of the screenshot ever marks an Order paid.
+  const canWork = role === "staff" || role === "manager";
+  const needsManager = order.rejections >= MANAGER_AFTER_REJECTIONS || reusedOn.length > 0;
+  const shotLink = isViewableScreenshot(order.proof?.screenshot) ? order.proof!.screenshot : null;
+  const last4 = reference ? reference.replace(/\s/g, "").slice(-4) : "";
 
   return (
     <Dialog>
@@ -57,51 +73,64 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
           Review
         </Button>
       </DialogTrigger>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[820px] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0! leading-[normal] shadow-[0_20px_48px_rgb(0_0_0/0.2)] sm:rounded-2xl md:max-w-[820px] lg:max-w-[820px]">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[1040px] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0! leading-[normal] shadow-[0_20px_48px_rgb(0_0_0/0.2)] sm:rounded-2xl md:max-w-[1040px] lg:max-w-[1040px]">
         <div className="space-y-1 border-b border-[#f0f0f2] pt-5 pr-12 pb-4 pl-6">
           <DialogTitle className="text-lg font-semibold leading-[normal] text-foreground">
             Verify payment · Order #{order.id}
           </DialogTitle>
           <DialogDescription className="text-[13px] leading-[normal] text-[#71717a]">
-            {order.customer.name} · {METHOD[order.method]} · uploaded {formatDate(submittedAt)}
+            {order.customer.name} · {METHOD[order.method]} · uploaded {formatDate(submittedAt)} · order total {formatPesos(order.total)}
           </DialogDescription>
         </div>
-        <div className="grid min-h-0 gap-6 overflow-y-auto px-6 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <Receipt order={order} size="full" />
-          <dl className="space-y-3 text-sm text-[#1f1a2e]">
-            <div className="rounded-lg bg-[#fafafa] px-3.5 py-3">
-              <dt className="text-xs text-[#71717a]">Amount due</dt>
-              <dd className="text-[22px] font-bold">{formatPesos(order.total)}</dd>
-            </div>
-            <div className="space-y-1">
-              <dt className="text-[13px] font-medium text-[#27272a]">Reference no.</dt>
-              <dd className="rounded-lg border border-[#e4e4e7] px-3 py-2.5">{reference ?? "—"}</dd>
-            </div>
+        <div className="grid min-h-0 gap-6 overflow-y-auto px-6 py-5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <div className="space-y-4 text-sm text-[#1f1a2e]">
+            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} reference={reference} />}
             {reusedOn.length > 0 && (
               <p role="alert" className="rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
                 Reference already used on {reusedOn.map((n, i) => <span key={n}>{i > 0 && ", "}<Link href={`/orders/${n}`} className="font-medium underline">Order #{n}</Link></span>)}.
-                Only a Manager can mark this paid; Staff request approval.
+                {" "}{role === "manager" ? "You can approve it anyway with a reason." : canWork ? "Only a Manager can mark this paid: request approval." : "Only a Manager can mark this paid."}
               </p>
             )}
-            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} />}
-            <p className="rounded-lg bg-[#eff6ff] px-3 py-2.5 text-[13px] text-[#1d4ed8]">
-              Marking paid tells the Customer their payment was received. Reject the receipt or ask for a new proof
-              and the Customer is emailed a link to upload again; cancelling cancels the Order.
+            <section className="space-y-2 rounded-lg border border-[#e4e4e7] px-4 py-3">
+              <h3 className="font-semibold">Before you mark it paid</h3>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={found} disabled={!canWork} onChange={(e) => setFound(e.target.checked)} className="mt-1" />
+                <span>
+                  I found {formatPesos(order.total)}{last4 && <> with reference …{last4}</>} in the shop&apos;s GCash history
+                  <span className="block text-xs text-[#71717a]">Required · a screenshot can be edited</span>
+                </span>
+              </label>
+              <p className="text-xs text-[#71717a]">Reading the screenshot never marks an Order paid. Only a person who ticks this and confirms does.</p>
+            </section>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm font-semibold">
+              <h3>Screenshot</h3>
+              {shotLink && <a href={shotLink} target="_blank" rel="noreferrer" className="text-[13px] font-medium text-[#5b2a86] underline">Open full size</a>}
+            </div>
+            <Receipt order={order} size="full" />
+            <p className="flex items-start gap-2 rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
+              <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
+              <span><b>Duplicate reference rule.</b> If the same reference number was used on another Order, Mark paid is stopped for Staff and both Orders are shown. A Manager can approve it anyway with a reason.</span>
             </p>
-          </dl>
+          </div>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-[#f0f0f2] bg-[#fafafa] px-6 py-3.5">
-          <CancelPaymentDialog id={order.id} />
-          <RejectProofDialog id={order.id} />
-          <AskNewProofDialog id={order.id} />
-          {order.rejections >= MANAGER_AFTER_REJECTIONS || reusedOn.length > 0 ? (
-            <Link href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">
-              Open the Order for approval
-            </Link>
-          ) : (
-            <MarkPaidDialog id={order.id} onMarkPaid={onMarkPaid} />
-          )}
-        </div>
+        {canWork && (
+          <div className="flex items-center justify-end gap-2 border-t border-[#f0f0f2] bg-[#fafafa] px-6 py-3.5">
+            <CancelPaymentDialog id={order.id} />
+            {order.rejections < MANAGER_AFTER_REJECTIONS && <RejectProofDialog id={order.id} />}
+            {order.rejections < MANAGER_AFTER_REJECTIONS && <AskNewProofDialog id={order.id} />}
+            {needsManager ? (
+              <GatedButton label={role === "manager" || approval?.approvalId ? "Approve anyway" : approval?.waiting ? "Waiting for approval" : "Request approval…"} open={found}>
+                <ApproveAnywayDialog id={order.id} role={role} approvalId={approval?.approvalId} waiting={approval?.waiting} reusedOn={reusedOn} />
+              </GatedButton>
+            ) : (
+              <GatedButton label="Mark paid" open={found}>
+                <MarkPaidDialog id={order.id} onMarkPaid={onMarkPaid} />
+              </GatedButton>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -117,7 +146,7 @@ function Stat({ label, value, note, noteClassName }: { label: string; value: str
   );
 }
 
-function Row({ order, tab, now, onMarkPaid }: { order: PaymentRow; tab: PaymentTab; now: Date; onMarkPaid: () => void }) {
+function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRow; tab: PaymentTab; now: Date; role: ShopRole | null; approval?: ProofApproval; onMarkPaid: () => void }) {
   const cells = [
     order.proof ? <Receipt order={order} size="thumb" /> : <span className="text-[#a1a1aa]">—</span>,
     <Link key="o" href={`/orders/${order.id}`} className="font-medium text-[#5b2a86]">#{order.id}</Link>,
@@ -131,7 +160,7 @@ function Row({ order, tab, now, onMarkPaid }: { order: PaymentRow; tab: PaymentT
     </span>,
     <span key="u" className="text-[13px] text-[#71717a]">{order.proof ? ago(order.proof.submittedAt, now) : "—"}</span>,
     tab === "verify" ? (
-      <VerifyDialog order={order} onMarkPaid={onMarkPaid} />
+      <VerifyDialog order={order} role={role} approval={approval} onMarkPaid={onMarkPaid} />
     ) : (
       <Link key="v" href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">View</Link>
     ),
@@ -153,7 +182,7 @@ function Row({ order, tab, now, onMarkPaid }: { order: PaymentRow; tab: PaymentT
  * list of Orders. Mark paid moves its Order to Paid and adjusts the counts at once, and rolls back
  * with the reason if the storefront refuses (the Customer is only emailed once it accepts).
  */
-export function PaymentsView({ rows: served, now }: { rows: PaymentRow[]; now: Date }) {
+export function PaymentsView({ rows: served, now, role = "staff", approvals = {} }: { rows: PaymentRow[]; now: Date; role?: ShopRole | null; approvals?: Record<number, ProofApproval> }) {
   const [rows, markPaid] = useOptimistic(served, (current, id: number) =>
     current.map((r) => (r.id === id ? { ...r, status: "paid" } : r)),
   );
@@ -220,7 +249,7 @@ export function PaymentsView({ rows: served, now }: { rows: PaymentRow[]; now: D
                 ))}
               </div>
               {shown.map((order) => (
-                <Row key={order.id} order={order} tab={tab} now={now} onMarkPaid={() => markPaid(order.id)} />
+                <Row key={order.id} order={order} tab={tab} now={now} role={role} approval={approvals[order.id]} onMarkPaid={() => markPaid(order.id)} />
               ))}
             </div>
           )}
