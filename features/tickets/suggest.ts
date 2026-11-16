@@ -10,8 +10,8 @@ import { TICKET_CATEGORIES, type SuggestFailure, type SuggestField, type TicketS
 
 export { TICKET_CATEGORIES };
 
-/** The most characters of Ticket text sent to the model. */
-export const SENT_TEXT_MAX = 4000;
+import { ticketText } from "./ai-text";
+export { ticketText, SENT_TEXT_MAX } from "./ai-text";
 
 const PROMPT =
   "You triage customer support tickets for a small food store. You only see the ticket text. Choose a Category from: " +
@@ -19,24 +19,6 @@ const PROMPT =
   "high: a missed promise or deadline; normal: usual questions; low: no rush). The text may be English or Taglish. " +
   'Reply with JSON only: {"category": "<one Category exactly as listed>", "categoryReason": "<under 80 characters>", ' +
   '"priority": "<low|normal|high|urgent>", "priorityReason": "<under 80 characters>"}.';
-
-/** Emails and phone numbers are masked; the model needs the problem, not who has it. */
-function scrub(text: string): string {
-  return text.replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "[email]").replace(/\+?\d[\d\s().-]{7,}\d/g, "[number]");
-}
-
-/** The Ticket text, and only that: the subject and the Messages, never Internal notes, names, addresses or the Order. */
-export function ticketText(subject: string, messages: { sender: "customer" | "staff"; body: string }[]): string {
-  const lines = messages
-    .filter((m) => m.body.trim())
-    .map((m) => `${m.sender === "customer" ? "Customer" : "Staff"}: ${m.body.trim().replace(/\s+/g, " ")}`);
-  const head = `Subject: ${subject.trim()}`;
-  let body = lines.join("\n");
-  // Keep the newest Messages when the thread is long.
-  if (head.length + body.length > SENT_TEXT_MAX) body = body.slice(body.length - (SENT_TEXT_MAX - head.length - 1));
-
-  return scrub(`${head}\n${body}`);
-}
 
 /** The Category and Priority in a model's JSON reply, even inside a code fence; a throw otherwise. */
 export function parseSuggestion(reply: unknown): { category: string; categoryReason: string; priority: TicketPriority; priorityReason: string } {
