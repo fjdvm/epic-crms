@@ -33,7 +33,6 @@ docker run -d --name "$name" -p "$port:3000" \
   -e CREOMS_SYNC_SECRET=smoke-sync-secret-placeholder \
   -e CREOMS_SERVICE_SECRET=smoke-service-secret-at-least-32-characters \
   -e CREOMS_SIGNAL_SECRET=smoke-signal-secret-at-least-32-characters \
-  -e UNSUBSCRIBE_SECRET=smoke-unsubscribe-secret-placeholder \
   -e CRON_SECRET="$secret" \
   "$image" >/dev/null
 
@@ -62,6 +61,4 @@ echo "ok: sign-in hands off to the Portal ($location)"
 
 cron=$(curl --silent --output /dev/null --write-out '%{http_code}' "$base/api/cron/feedback-analysis")
 test "$cron" = 401 || { echo "::error::cron route without secret answered $cron"; exit 1; }
-cron=$(curl --silent --output /dev/null --write-out '%{http_code}' -H 'Authorization: Bearer wrong' "$base/api/cron/scheduled-announcements")
-test "$cron" = 401 || { echo "::error::cron route with a wrong secret answered $cron"; exit 1; }
-echo "ok: cron routes answer 401 without the secret"
+echo "ok: cron route answers 401 without the secret"

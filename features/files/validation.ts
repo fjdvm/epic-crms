@@ -1,5 +1,3 @@
-import sharp from "sharp";
-import { IMAGE_REFUSALS, IMAGE_WIDTH } from "@/features/marketing/image-limits";
 import { fileTypeFromBuffer } from "file-type";
 import { MAX_FILE_BYTES, type FileInfo, type UploadModule } from "./policy";
 import { storageUrl } from "./storage";
@@ -32,14 +30,6 @@ export async function validateStoredFile(url: string, file: FileInfo, module: Up
     const actual = await fileTypeFromBuffer(bytes);
     const type = actual?.mime === "image/apng" ? "image/png" : actual?.mime;
     if (type !== file.contentType) return "The file's contents do not match its claimed type. Choose the correct file.";
-    if (module === "Marketing") {
-      try {
-        // Decode the entire image, as the former Announcement path did. A recognized header is insufficient.
-        await sharp(bytes, { animated: false }).rotate().resize({ width: IMAGE_WIDTH, withoutEnlargement: true }).jpeg().toBuffer();
-      } catch {
-        return IMAGE_REFUSALS["not-an-image"];
-      }
-    }
     return null;
   } catch {
     return "The file's contents could not be verified. Choose a valid file.";

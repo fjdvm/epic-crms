@@ -133,7 +133,7 @@ const profile = (overrides: Partial<CustomerProfile> = {}): CustomerProfile => (
   lastName: "Santos",
   email: "maria@example.com",
   contactNumber: "0917 555 0142",
-  marketingOptIn: true,
+ 
   customerSince: new Date("2026-03-01T00:00:00Z"),
   stage: "repeat",
   defaultCity: "Antipolo",
@@ -146,7 +146,7 @@ const profile = (overrides: Partial<CustomerProfile> = {}): CustomerProfile => (
   addresses: [],
   orderHistory: [],
   cart: { lines: [], total: 0 },
-  emailsReceived: [],
+ 
   returns: [],
   ...overrides,
 });

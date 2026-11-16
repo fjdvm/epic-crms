@@ -18,7 +18,7 @@ Set in **Settings > Secrets and variables > Actions** of `fjdvm/epic-crms`. The 
 (never its value).
 
 - Database: `CREOMS_DATABASE_URL`, `CREOMS_TICKETS_DATABASE_URL`, `CREOMS_WRITER_DATABASE_URL`, `CREOMS_FEEDBACK_DATABASE_URL`
-- Gateway and signing: `CREOMS_GATEWAY_CALLER_KEY`, `CREOMS_SERVICE_SECRET`, `CREOMS_SIGNAL_SECRET`, `CREOMS_SYNC_SECRET`, `UNSUBSCRIBE_SECRET`, `CRON_SECRET`
+- Gateway and signing: `CREOMS_GATEWAY_CALLER_KEY`, `CREOMS_SERVICE_SECRET`, `CREOMS_SIGNAL_SECRET`, `CREOMS_SYNC_SECRET`, `CRON_SECRET`
 - AI: `GROQ_API_KEY`, `GROQ_MODEL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `GEMINI_MODEL`
 - `PORTAL_SYSTEM_SECRET`: set at the Portal cutover (the Portal only stores its hash). Until then the deploy uses a
   placeholder and warns; the app starts but Portal sign-in fails.

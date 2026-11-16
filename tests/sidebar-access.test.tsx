@@ -154,14 +154,8 @@ describe("the sidebar", () => {
     expect(screen.queryByText("Feedback")).toBeNull();
   });
 
-  it("links Email Campaigns with the Marketing page permitted", async () => {
+  it("never shows Email Campaigns, even when a stale Marketing page is permitted", async () => {
     renderSidebar(["/customer-profiles", "/email-campaigns"]);
-
-    expect((await screen.findByRole("link", { name: "Email Campaigns" })).getAttribute("href")).toBe("/email-campaigns");
-  });
-
-  it("hides Email Campaigns entirely, not even dimmed, without the Marketing Module", async () => {
-    renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
     expect(screen.queryByText("Email Campaigns")).toBeNull();

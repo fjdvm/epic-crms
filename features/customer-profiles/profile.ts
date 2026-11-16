@@ -7,7 +7,6 @@ import type { CustomerAudit } from "./audit";
 
 import { getCustomerCart, type Cart } from "./cart";
 import { getCustomerOrders, type CustomerOrder } from "./orders";
-import { listEmailsReceived, type EmailReceived } from "@/features/marketing/announcements";
 import { loadEmbeddedReturns, type ReturnRow } from "@/features/returns/returns";
 import { crmsDatabase } from "@/lib/crms-db";
 
@@ -34,7 +33,6 @@ export interface CustomerProfile {
   lastName: string;
   email: string;
   contactNumber: string;
-  marketingOptIn: boolean;
   customerSince: Date;
   stage: Stage;
   /** City of the Default address, if the Customer has one. */
@@ -52,8 +50,6 @@ export interface CustomerProfile {
   /** Newest first. */
   orderHistory: CustomerOrder[];
   cart: Cart;
-  /** Marketing Emails this Customer was sent, newest first. Null when CREOMS could not read them. */
-  emailsReceived: EmailReceived[] | null;
   /** The Customer's Returns, Requested ones first, as the Returns page orders them. Empty unless loaded for Staff with the Returns Module; null when CREOMS could not read them. */
   returns: ReturnRow[] | null;
   /** Open first; null means the Task store is unavailable. */
@@ -71,7 +67,7 @@ export async function getCustomerProfile(
   const [row] = await sql<Record<string, unknown>[]>`
     select
       c.id, c.full_name, c.first_name, c.middle_name, c.last_name, c.email, c.contact_number,
-      c.marketing_opt_in, u."createdAt" as customer_since,
+      u."createdAt" as customer_since,
       o.orders, o.total_spent, o.paid_orders, o.stage_orders, o.last_order,
       f.feedback_count, f.average_rating
     from public.customers c
@@ -129,7 +125,6 @@ export async function getCustomerProfile(
     lastName: row.last_name as string,
     email: row.email as string,
     contactNumber: row.contact_number as string,
-    marketingOptIn: row.marketing_opt_in as boolean,
     customerSince: row.customer_since as Date,
     stage: stageOf({ orders: row.stage_orders as number, lastOrder }, now),
     defaultCity: mapped.find((a) => a.isDefault)?.city ?? null,
@@ -142,7 +137,6 @@ export async function getCustomerProfile(
     addresses: mapped,
     orderHistory,
     cart,
-    emailsReceived: [],
     returns: [],
   };
 }
@@ -173,7 +167,6 @@ export async function loadCustomerProfile(
         console.error("Customer Profile could not read Customer notes", error);
         profile.notes = null;
       }
-      profile.emailsReceived = await readEmailsReceived(connectCrms, profile.id);
       if (withReturns) profile.returns = await loadEmbeddedReturns(connect, { customerId: profile.id });
     }
 
@@ -181,17 +174,6 @@ export async function loadCustomerProfile(
   } catch (error) {
     console.error("Customer Profile could not read the ecommerce database", error);
     return { ok: false };
-  }
-}
-
-/** The Returns are the storefront's: if they cannot be read, the profile still opens and the tab says so. */
-/** Announcements are CREOMS's own data: if they cannot be read, the profile still opens and the tab says so. */
-async function readEmailsReceived(connectCrms: () => postgres.Sql, customerId: string): Promise<EmailReceived[] | null> {
-  try {
-    return await listEmailsReceived(connectCrms(), customerId);
-  } catch (error) {
-    console.error("Customer Profile could not read the Emails received", error);
-    return null;
   }
 }
 

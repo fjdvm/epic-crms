@@ -116,13 +116,6 @@ export const feedbackItem: NavItem = {
   icon: Star,
 };
 
-export const emailCampaignsItem: NavItem = {
-  group: "MARKETING",
-  name: "Email Campaigns",
-  href: "/email-campaigns",
-  icon: Mail,
-};
-
 /** The Figma sidebar, top to bottom. */
 export const sidebarItems: NavItem[] = [
   dashboardItem,
@@ -136,7 +129,6 @@ export const sidebarItems: NavItem[] = [
   ticketsItem,
   conversationsItem,
   feedbackItem,
-  emailCampaignsItem,
 ];
 
 export const systems: SystemItem[] = [
@@ -150,7 +142,7 @@ export const systems: SystemItem[] = [
   },
   {
     fullName: "Customer Relationship Management",
-    desc: "Contact profiles, tickets & marketing",
+    desc: "Contact profiles, tickets & feedback",
     icon: Building2,
     active: true,
     url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://creoms.buildwrite.me/",

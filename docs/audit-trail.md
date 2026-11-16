@@ -145,8 +145,7 @@ branch as that role. The temporary database branch was removed afterward.
 `lib/error-monitor.ts` records every server error as a `system.error` Audit Event and emails the owner
 (`OWNER_ALERT_EMAIL`, through the notifications App email) at most once per kind per hour; the throttle is the
 `crms.error_alerts` table (`docs/db/crms-error-alerts.sql`), claimed by one atomic upsert. Sources: `onRequestError`
-in `instrumentation.ts` (kind = error name + route) and the two cron routes (`cron:feedback-analysis`,
-`cron:scheduled-announcements`). The stock auto-release job runs in the storefront, not CREOMS, so it reports from
+in `instrumentation.ts` (kind = error name + route) and the cron route (`cron:feedback-analysis`). The stock auto-release job runs in the storefront, not CREOMS, so it reports from
 there. `/api/ready` checks both databases; `/api/health` stays liveness-only.
 
 ## Customer Tasks (#420)

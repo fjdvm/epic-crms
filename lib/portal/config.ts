@@ -10,7 +10,6 @@ export const DASHBOARD_MODULE = "Dashboard";
 export const CUSTOMER_PROFILES_MODULE = "Customer Profiles";
 export const TICKETS_MODULE = "Tickets";
 export const FEEDBACK_MODULE = "Feedback";
-export const MARKETING_MODULE = "Marketing";
 export const ORDERS_MODULE = "Orders";
 export const SENIOR_PWD_MODULE = "Senior/PWD";
 export const PAYMENTS_MODULE = "Payments";

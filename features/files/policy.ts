@@ -4,18 +4,18 @@ import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "@/features/tickets/attachments"
 export const FILE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf", "video/mp4", "video/quicktime"] as const;
 export type FileContentType = (typeof FILE_TYPES)[number];
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
-export type UploadModule = "Tickets" | "Marketing" | "Fulfilment" | "Returns";
+export type UploadModule = "Tickets" | "Fulfilment" | "Returns";
 export interface FileInfo { filename: string; contentType: FileContentType; size: number }
 export interface UploadContext { ticketId: number | null }
 export type FileFailure = { ok: false; reason: string; cleanupFailed?: boolean };
 export type ReadyFile = { ok: true; reference: string } & FileInfo;
 
 export function filePolicy(module: UploadModule) {
-  return { visibility: module === "Marketing" ? "public" as const : "private" as const,
+  return { visibility: "private" as const,
     retentionType: module === "Fulfilment" || module === "Returns" ? "temporary" as const : "permanent" as const };
 }
 export const isUploadModule = (value: unknown): value is UploadModule =>
-  ["Tickets", "Marketing", "Fulfilment", "Returns"].includes(value as string);
+  ["Tickets", "Fulfilment", "Returns"].includes(value as string);
 
 export function checkFileInfo(module: UploadModule, file: FileInfo): string | null {
   if (!file || typeof file.filename !== "string" || !file.filename.trim() || file.filename.length > 255) return "Choose a file with a name of at most 255 characters.";

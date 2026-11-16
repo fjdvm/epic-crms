@@ -7,14 +7,12 @@ import { FulfilmentMove } from "@/features/orders/fulfilment-moves";
 import { deliverOrder } from "@/features/orders/actions";
 import { ReturnActions } from "@/features/returns/return-actions";
 import { markReturnRefunded } from "@/features/returns/actions";
-import { CampaignForm, type CampaignFormActions } from "@/features/marketing/campaign-form";
 
 vi.mock("@/features/files/actions", () => ({ requestFileUpload: vi.fn(), confirmFileUpload: vi.fn() }));
 vi.mock("@/features/orders/actions", () => ({ deliverOrder: vi.fn(), dispatchOrder: vi.fn(), startPreparing: vi.fn() }));
 vi.mock("@/features/returns/actions", () => ({
   approveReturn: vi.fn(), declineReturn: vi.fn(), markReturnGoodsReceived: vi.fn(), markReturnRefunded: vi.fn(), markReturnReplaced: vi.fn(),
 }));
-vi.mock("@/features/marketing/prepare-image", () => ({ prepareImage: async (file: File) => file }));
 const { toast, refresh, push } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() }, refresh: vi.fn(), push: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, push }) }));
@@ -141,57 +139,3 @@ for (const picker of evidence) {
     });
   });
 }
-
-function campaign() {
-  const actions: CampaignFormActions = {
-    save: vi.fn(async () => ({ ok: true as const, announcement: { id: "draft" } })),
-    edit: vi.fn(async () => ({ ok: true as const })), remove: vi.fn(async () => ({ ok: true as const })),
-    sendTest: vi.fn(async () => ({ ok: true as const })),
-    addImage: vi.fn(async () => ({ ok: true as const, url: "https://cdn.test/door.png" })),
-    send: vi.fn(async () => ({ ok: true as const, state: "sent" as const, subscribers: 1 })),
-    schedule: vi.fn(async () => ({ ok: true as const })), unschedule: vi.fn(async () => ({ ok: true as const })),
-  };
-  render(<CampaignForm actions={actions} />);
-  fireEvent.change(screen.getByLabelText(/Title/), { target: { value: "Halaya" } });
-  fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Restocked." } });
-  return actions;
-}
-
-describe("Announcement image direct upload", () => {
-  it("uploads bytes to storage, previews the resolved image and waits for confirmation before saving", async () => {
-    const actions = campaign();
-    const file = photo();
-    pick("Add images", file);
-    await screen.findByRole("button", { name: "Remove image 1" });
-    expect(requestFileUpload).toHaveBeenCalledWith("Marketing", { filename: "door.png", contentType: "image/png", size: 4 }, { ticketId: null });
-    expect(put).toHaveBeenCalledWith(storageUrl, expect.objectContaining({ method: "PUT", body: file }));
-    expect(confirmFileUpload).toHaveBeenCalledWith("Marketing", "pending-reference");
-    const form = vi.mocked(actions.addImage).mock.calls[0][0];
-    expect(Array.from(form.entries())).toEqual([["image", "ready-reference"]]);
-    expect(within(screen.getByTestId("inbox-preview")).getByRole("img", { name: "Image 1" }).getAttribute("src")).toBe("https://cdn.test/door.png");
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-    expect(actions.save).not.toHaveBeenCalled();
-    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(actions.save).toHaveBeenCalledWith({ title: "Halaya", description: "Restocked.", images: ["https://cdn.test/door.png"] }, expect.any(String)));
-  });
-
-  it.each(["request", "PUT", "confirmation"] as const)("keeps earlier images when %s fails and allows a retry", async (stage) => {
-    const actions = campaign();
-    pick("Add images", photo());
-    await screen.findByRole("button", { name: "Remove image 1" });
-    const reason = "The uploaded file does not match its declared size or type.";
-    if (stage === "request") vi.mocked(requestFileUpload).mockResolvedValueOnce({ ok: false, reason });
-    if (stage === "PUT") put.mockResolvedValueOnce(new Response(null, { status: 403 }));
-    if (stage === "confirmation") vi.mocked(confirmFileUpload).mockResolvedValueOnce({ ok: false, reason });
-    pick("Add images", photo());
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(`door.png: ${stage === "PUT" ? "The file could not be uploaded. Please try again." : reason}`));
-    expect(actions.addImage).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Remove image 1" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Remove image 2" })).toBeNull();
-    await waitFor(() => expect(screen.getByLabelText("Add images").hasAttribute("disabled")).toBe(false));
-    pick("Add images", photo());
-    await screen.findByRole("button", { name: "Remove image 2" });
-    expect(actions.addImage).toHaveBeenCalledTimes(2);
-    expect(actions.save).not.toHaveBeenCalled();
-  });
-});

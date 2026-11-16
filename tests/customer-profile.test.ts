@@ -73,7 +73,8 @@ describe.skipIf(!url)("getCustomerProfile (real database)", () => {
       expect(p.firstName).toBe(c.first_name);
       expect(p.middleName).toBe(c.middle_name ?? null);
       expect(p.lastName).toBe(c.last_name);
-      expect(p.marketingOptIn).toBe(c.marketing_opt_in);
+      expect(p).not.toHaveProperty("marketingOptIn");
+      expect(p).not.toHaveProperty("emailsReceived");
       expect(p.customerSince.getTime()).toBe(user.created.getTime());
       expect(p.defaultCity).toBe(mineAddresses.find((a) => a.is_default)?.city ?? null);
 
