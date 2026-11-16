@@ -43,3 +43,13 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
 - Order detail's Customer card shows Senior/PWD status ("Not verified" by default) and, for an approved Pickup,
   a reminder to see the original ID at collection.
 - The checkout step (photo front/back, number) is Storefront work in the Ecommerce repo, not CREOMS.
+
+## ID reading in the review screen (#476)
+
+- Approve opens "Read from the photo": the browser reads the ID with Tesseract (`tesseract.js`, `features/senior-pwd/read-id-photo.ts`)
+  and `parseIdText` (`id-reading.ts`) turns the text into name, ID number and expiry. The photo is only handed to the local
+  worker: no request carries the image, and nothing read is stored or sent except the confirmed expiry date, as before.
+- Each field is pre-filled, Staff can type over it, and a field applies only after Staff press Confirm (typing again un-confirms it).
+  Approve needs all three confirmed and the name to match the account name (`nameMatches`).
+- If the reading fails or the photo is poor, the fields are empty and Staff type them. The existing expiry rule (server) and the storefront's
+  hash and one-ID-one-account check are unchanged. Override has no photo and keeps its manual date.
