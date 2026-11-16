@@ -50,6 +50,7 @@ it("uses Manila Monday boundaries, actual stored questions and confirmed handoff
     ["order_status", 1],
     ["payment", 1],
   ]);
+  expect(r.answeredByKind).toEqual({ order_status: 1, payment: 1 });
 });
 it("lists why the Ticket was handed off and reads exact chat/model input and approved summary", async () => {
   expect(await handoffs(db.sql)).toMatchObject([
