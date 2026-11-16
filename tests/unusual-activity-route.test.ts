@@ -36,7 +36,7 @@ it("rejects malformed numbers and keys without a database write", async () => {
   expect(mocks.dismissUnusualActivity).not.toHaveBeenCalled();
 });
 it("uses the authenticated identity and returns a plain refusal for stale cards", async () => {
-  mocks.dismissUnusualActivity.mockResolvedValue({ ok: false, reason: "This alert changed. Refresh the Dashboard." });
+  mocks.dismissUnusualActivity.mockResolvedValue({ ok: false, reason: "This Unusual activity card changed. Refresh the Dashboard." });
   const response = await POST(request({ key: "a", numbers: { count: 3 }, staffId: "someone-else", modules: ["Returns"] }));
   expect(response.status).toBe(409);
   expect(mocks.dismissUnusualActivity.mock.calls[0].slice(1)).toEqual([{ id: "s1", role: "Staff" }, ["Payments"], "a", { count: 3 }]);
@@ -46,5 +46,5 @@ it("keeps the Dashboard usable when the database connection fails", async () => 
   mocks.loadUnusualActivity.mockRejectedValue(new Error("offline"));
   expect(await (await GET()).json()).toEqual({ cards: [], unavailable: ["Payments"] });
   mocks.dismissUnusualActivity.mockRejectedValue(new Error("offline"));
-  expect(await (await POST(request({ key: "a", numbers: { count: 3 } }))).json()).toEqual({ ok: false, reason: "Could not dismiss this alert. Please try again." });
+  expect(await (await POST(request({ key: "a", numbers: { count: 3 } }))).json()).toEqual({ ok: false, reason: "Could not dismiss this Unusual activity card. Please try again." });
 });

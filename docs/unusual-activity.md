@@ -22,10 +22,10 @@ Named constants live in `features/dashboard/unusual-activity.ts`.
   Manager approval starts at 3 on an individual Order. Numbers: that highest count.
   Links: Customer profile and relevant Orders. Settled Orders do not count.
 
-Staff and Managers see only held Modules. Both Payments rules need Payments; the other rules need
+Per the owner’s decision on #474, Staff see no Unusual activity. Managers see only held Modules. Both Payments rules need Payments; the other rules need
 Returns and Fulfilment respectively. Admin and CEO read all three Modules and cannot dismiss.
 Unknown Roles read nothing. The authenticated route checks Dashboard access and discovers Modules server-side.
-The rejected-proof card is also readable by Payments Staff under #471 story 41; it does not grant approval power.
+This owner decision supersedes the Staff access in #471 stories 31–42 and the original #474 Module-gating criterion. It avoids exposing shop-wide records on the Staff Dashboard.
 
 Urgency is the largest ratio to the firing boundary (payment count uses 6, not 5).
 Sort descending, then by stable alert key. Apply dismissals before limiting to five so hidden cards
@@ -46,7 +46,7 @@ returned `reason` if `ok` is false. The frontend rollback and refusal-message te
 Dismissal rechecks the current rule and refuses changed snapshots. Only the authenticated person's record
 is written. Equal or smaller numbers stay dismissed, even after recovery and recurrence. Any larger number
 resurfaces it: for payments this means a higher count **or another whole hour of waiting**; for other rules,
-a higher count. Another person's dismissal never applies. Dismissing a resurfaced card replaces the baseline.
+a higher count. Another person's dismissal never applies. Dismissing a resurfaced card atomically preserves the highest dismissed value of each metric, so concurrent requests cannot lower the baseline.
 If dismissal storage is unavailable, report unavailability rather than redisplay suppressed alerts.
 
 ## Migration and verification

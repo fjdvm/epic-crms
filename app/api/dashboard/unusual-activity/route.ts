@@ -26,11 +26,11 @@ export async function POST(request: Request) {
   if (!body || typeof body.key !== "string" || body.key.length > 1000 || !body.numbers ||
     Array.isArray(body.numbers) || typeof body.numbers !== "object" ||
     Object.keys(body.numbers).length > 10 || Object.values(body.numbers).some(n => typeof n !== "number" || !Number.isSafeInteger(n) || n < 0))
-    return Response.json({ ok: false, reason: "Invalid alert." }, { status: 400, headers });
+    return Response.json({ ok: false, reason: "Invalid Unusual activity card." }, { status: 400, headers });
   try {
     const result = await dismissUnusualActivity({ source: database(), crms: crmsDatabase() }, staff, modules, body.key, body.numbers);
     return Response.json(result, { status: result.ok ? 200 : 409, headers });
   } catch {
-    return Response.json({ ok: false, reason: "Could not dismiss this alert. Please try again." }, { status: 503, headers });
+    return Response.json({ ok: false, reason: "Could not dismiss this Unusual activity card. Please try again." }, { status: 503, headers });
   }
 }

@@ -1,7 +1,7 @@
 import type postgres from "postgres";
 import { MANAGER_AFTER_REJECTIONS } from "@/features/orders/payment-methods";
 import type { Staff } from "@/lib/portal/client";
-import { canWork, shopRole } from "@/lib/portal/roles";
+import { shopRole } from "@/lib/portal/roles";
 import { PAYMENTS_MODULE, RETURNS_MODULE, FULFILMENT_MODULE } from "@/lib/portal/config";
 
 export const UNVERIFIED_PAYMENT_LIMIT = 5;
@@ -30,7 +30,7 @@ export interface UnusualActivity { cards: UnusualActivityCard[]; unavailable: st
 function visibleModules(staff: Staff, modules: readonly string[]) {
   const role = shopRole(staff.role);
   if (role === "admin" || role === "ceo") return UNUSUAL_ACTIVITY_MODULES;
-  return role === "staff" || role === "manager" ? UNUSUAL_ACTIVITY_MODULES.filter(m => modules.includes(m)) : [];
+  return role === "manager" ? UNUSUAL_ACTIVITY_MODULES.filter(m => modules.includes(m)) : [];
 }
 const orderLink = (id: number) => ({ label: `Order #${id}`, href: `/orders/${id}` });
 
@@ -133,17 +133,21 @@ export async function loadUnusualActivity(deps: Dependencies, staff: Staff, modu
 
 /** Snapshot is what the person saw, never arbitrary client numbers. A changed alert must be reviewed again. */
 export async function dismissUnusualActivity(deps: Dependencies, staff: Staff, modules: readonly string[], key: string, numbers: Numbers, now = new Date()) {
-  if (!canWork(staff)) return { ok: false, reason: "Your Role can only view Unusual activity." } as const;
+  if (shopRole(staff.role) !== "manager") return { ok: false, reason: "Your Role can only view Unusual activity." } as const;
   try {
     const card = (await compute(deps, staff, modules, now)).cards.find(c => c.key === key);
     if (!card || Object.keys(numbers).length !== Object.keys(card.numbers).length ||
       Object.entries(card.numbers).some(([k, n]) => numbers[k] !== n))
-      return { ok: false, reason: "This alert changed or is no longer available. Refresh the Dashboard." } as const;
+      return { ok: false, reason: "This Unusual activity card changed or is no longer available. Refresh the Dashboard." } as const;
     await deps.crms`insert into crms.unusual_activity_dismissals (staff_id, alert_key, numbers)
       values (${staff.id}, ${key}, ${deps.crms.json(card.numbers)})
-      on conflict (staff_id, alert_key) do update set numbers = excluded.numbers, dismissed_at = now()`;
+      on conflict (staff_id, alert_key) do update set numbers = (
+        select jsonb_object_agg(n.key, greatest((n.value #>> '{}')::numeric,
+          coalesce((crms.unusual_activity_dismissals.numbers ->> n.key)::numeric, 0)))
+        from jsonb_each(excluded.numbers) as n(key, value)
+      ), dismissed_at = now()`;
     return { ok: true } as const;
   } catch {
-    return { ok: false, reason: "Could not dismiss this alert. Please try again." } as const;
+    return { ok: false, reason: "Could not dismiss this Unusual activity card. Please try again." } as const;
   }
 }

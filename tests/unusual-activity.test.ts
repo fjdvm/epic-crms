@@ -5,7 +5,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 let db: TestDatabase;
 const now = new Date("2026-11-16T08:00:00Z");
-const staff = { id: "s1", name: "Rhea", username: "rhea", email: "rhea@example.com", role: "Staff" };
+const staff = { id: "s1", name: "Rhea", username: "rhea", email: "rhea@example.com", role: "CREOMS Manager" };
 const modules = ["Payments", "Returns", "Fulfilment"];
 const open = (person = staff, held = modules, at = now) => loadUnusualActivity({ source: db.sql, crms: db.sql }, person, held, at);
 beforeAll(async () => {
@@ -95,7 +95,7 @@ it("warns at two rejected proofs, increases at three, and uses the highest per-O
   await db.sql`update orders set status = 'paid'`;
   expect((await open()).cards).toEqual([]);
 });
-it("gates by Module and Role, permits Admin and CEO to read and fails closed for unknown Roles", async () => {
+it("gates Managers by Module, excludes Staff, permits Admin and CEO to read and fails closed for unknown Roles", async () => {
   await order(24); await returned(); await returned(); await returned();
   expect((await open(staff, [])).cards).toEqual([]);
   expect((await open(staff, ["Returns"])).cards.map(c => c.module)).toEqual(["Returns"]);
@@ -104,7 +104,11 @@ it("gates by Module and Role, permits Admin and CEO to read and fails closed for
     expect((await open({ ...staff, role }, [])).cards).toHaveLength(2);
     expect(await dismissUnusualActivity({ source: db.sql, crms: db.sql }, { ...staff, role }, modules, "unverified-payments", { count: 1, oldestHours: 24 }, now)).toMatchObject({ ok: false });
   }
-  expect((await open({ ...staff, role: "Customer" })).cards).toEqual([]);
+  for (const role of ["Staff", "Staff/Employee", "Customer"]) {
+    expect((await open({ ...staff, role })).cards).toEqual([]);
+    expect(await dismissUnusualActivity({ source: db.sql, crms: db.sql }, { ...staff, role }, modules,
+      "unverified-payments", { count: 1, oldestHours: 24 }, now)).toMatchObject({ ok: false });
+  }
 });
 it("returns at most five cards by descending urgency with a stable tie break", async () => {
   for (let i = 0; i < 7; i++) {
@@ -150,8 +154,23 @@ it("returns a plain refusal on a failed dismissal and preserves the alert", asyn
   const card = (await open()).cards[0];
   await db.sql`alter table crms.unusual_activity_dismissals rename to unavailable_dismissals`;
   try {
-    expect(await dismissUnusualActivity({ source: db.sql, crms: db.sql }, staff, modules, card.key, card.numbers, now)).toEqual({ ok: false, reason: "Could not dismiss this alert. Please try again." });
+    expect(await dismissUnusualActivity({ source: db.sql, crms: db.sql }, staff, modules, card.key, card.numbers, now)).toEqual({ ok: false, reason: "Could not dismiss this Unusual activity card. Please try again." });
     expect(await open()).toEqual({ cards: [], unavailable: modules });
   } finally { await db.sql`alter table crms.unavailable_dismissals rename to unusual_activity_dismissals`; }
   expect((await open()).cards).toHaveLength(1);
+});
+
+it("keeps each dismissed metric's high-water value when another metric worsens", async () => {
+  for (let i = 0; i < 7; i++) await order(24);
+  const deps = { source: db.sql, crms: db.sql };
+  let card = (await open()).cards[0];
+  await dismissUnusualActivity(deps, staff, modules, card.key, card.numbers, now);
+  await db.sql`delete from orders where id = 7`;
+  const later = new Date(+now + 3600000);
+  card = (await open(staff, modules, later)).cards[0];
+  expect(card.numbers).toEqual({ count: 6, oldestHours: 25 });
+  expect(await dismissUnusualActivity(deps, staff, modules, card.key, card.numbers, later)).toEqual({ ok: true });
+  await order(24);
+  // Neither metric exceeds what this person already dismissed (7, 25).
+  expect((await open()).cards).toEqual([]);
 });
