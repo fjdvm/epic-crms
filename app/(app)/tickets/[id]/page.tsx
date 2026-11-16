@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+import { AssistantChat } from "@/features/order-assistant/ticket-chat";
+import { Skeleton } from "@/components/ui/skeleton";
 import { notFound } from "next/navigation";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -64,6 +67,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 
   return (
     <TicketDetailView
+      assistantChat={<Suspense fallback={<Skeleton className="h-40" />}><AssistantChat ticketId={Number(id)} canFlag={canWork(staff)} /></Suspense>}
       ticket={result.ticket}
       viewerId={staff.username}
       viewerName={staff.name}
@@ -74,5 +78,6 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
       escalations={escalations}
       suggestion={suggestion ? serializeSuggestion(suggestion) : null}
     />
+
   );
 }
