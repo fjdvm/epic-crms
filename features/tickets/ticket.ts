@@ -46,6 +46,21 @@ export interface TicketCustomer {
   totalSpent: number;
 }
 
+/** The Customer's rating of the support they got, given once when they confirmed a fix or completed the Ticket. */
+export interface TicketRatingRecord {
+  /** 1 to 5; null when the Customer left only a comment. */
+  stars: number | null;
+  comment: string | null;
+  at: Date;
+}
+
+/** A Ticket linked to this one as its earlier or later half of a Follow-up. */
+export interface RelatedTicket {
+  id: number;
+  subject: string;
+  status: TicketStatus;
+}
+
 export interface TicketDetail {
   /** The Ticket number is this id, written TKT-<id>. */
   id: number;
@@ -63,6 +78,12 @@ export interface TicketDetail {
   serviceLevel: ServiceLevel;
   /** Oldest first. */
   messages: TicketMessage[];
+  /** The Customer's rating; null when they skipped it, or when the Ticket was completed automatically. */
+  rating: TicketRatingRecord | null;
+  /** The Completed Ticket this one follows up; null for an ordinary Ticket. */
+  followUpOf: RelatedTicket | null;
+  /** Tickets the Customer opened to follow up this one, oldest first. */
+  followUps: RelatedTicket[];
   /** The Linked order; null when the Ticket has none. */
   order: TicketOrder | null;
   customer: TicketCustomer;
@@ -79,6 +100,7 @@ export async function getTicket(
 ): Promise<TicketDetail | null> {
   const [t] = await sql<Record<string, unknown>[]>`
     select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id, t.hold_reason, t.hold_note, t.hold_until, t.resolved_at, t.held_seconds, t.hold_started_at,
+      t.follow_up_of_id, t.rating, t.rating_comment, t.rated_at,
       c.id as customer_id, c.full_name, c.first_name
     from tickets t
     join customers c on c.id = t.customer_id
@@ -95,6 +117,16 @@ export async function getTicket(
     from ticket_messages
     where ticket_id = ${id}
     order by created_at, id`;
+
+  const relatedRows = await sql<Record<string, unknown>[]>`
+    select id, subject, status, follow_up_of_id from tickets
+    where id = ${(t.follow_up_of_id as number | null) ?? 0} or follow_up_of_id = ${id}
+    order by id`;
+  const related = (r: Record<string, unknown>): RelatedTicket => ({
+    id: r.id as number,
+    subject: r.subject as string,
+    status: r.status as TicketStatus,
+  });
 
   const [totals] = await sql<Record<string, unknown>[]>`
     select
@@ -176,6 +208,16 @@ export async function getTicket(
       attachmentUrl: null,
       createdAt: m.created_at as Date,
     })),
+    rating:
+      t.rated_at !== null && t.rated_at !== undefined
+        ? {
+            stars: (t.rating as number | null) ?? null,
+            comment: (t.rating_comment as string | null) ?? null,
+            at: t.rated_at as Date,
+          }
+        : null,
+    followUpOf: relatedRows.filter((r) => r.id === t.follow_up_of_id).map(related)[0] ?? null,
+    followUps: relatedRows.filter((r) => r.follow_up_of_id === id).map(related),
     order,
     customer: {
       id: customerId,

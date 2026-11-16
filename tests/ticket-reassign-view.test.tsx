@@ -26,7 +26,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 const ticket: TicketDetail = {
   id: 208, subject: "Leaking pouch", status: "open", priority: "high", openedAt: new Date("2026-10-19T02:00:00Z"),
-  claimerName: "Liza", claimerId: "liza", hold: null, serviceLevel: someServiceLevel(), messages: [], order: null,
+  claimerName: "Liza", claimerId: "liza", hold: null, serviceLevel: someServiceLevel(), rating: null, followUpOf: null, followUps: [], messages: [], order: null,
   customer: { id: "c1", name: "Maria Santos", stage: "repeat", orders: 1, totalSpent: 0 },
 };
 const teammates = [

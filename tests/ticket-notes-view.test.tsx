@@ -26,7 +26,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 const ticket: TicketDetail = {
   id: 208, subject: "Leaking pouch", status: "open", priority: "high", openedAt: new Date("2026-10-19T02:00:00Z"),
-  claimerName: "Liza", claimerId: "liza", hold: null, serviceLevel: someServiceLevel(),
+  claimerName: "Liza", claimerId: "liza", hold: null, serviceLevel: someServiceLevel(), rating: null, followUpOf: null, followUps: [],
   messages: [
     { id: 1, sender: "customer", senderName: "Maria", body: "It leaks", hasAttachment: false, createdAt: new Date("2026-10-19T02:00:00Z") },
     { id: 2, sender: "staff", senderName: "Carlo", body: "Courier lost the box", internal: true, hasAttachment: false, createdAt: new Date("2026-10-19T03:00:00Z") },

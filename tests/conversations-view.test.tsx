@@ -30,6 +30,9 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   claimerId: "bernice",
   hold: null,
   serviceLevel: someServiceLevel(),
+  rating: null,
+  followUpOf: null,
+  followUps: [],
   messages: [
     {
       id: 1,

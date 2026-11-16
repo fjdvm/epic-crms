@@ -37,6 +37,9 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   claimerId: "bernice",
   hold: null,
   serviceLevel: someServiceLevel(),
+  rating: null,
+  followUpOf: null,
+  followUps: [],
   messages: [
     {
       id: 1,
@@ -477,5 +480,35 @@ describe("On hold", () => {
 
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith("This Ticket is no longer on hold."));
     expect(screen.getByRole("region", { name: "On hold" })).toBeTruthy();
+  });
+});
+
+describe("Customer rating and Related tickets", () => {
+  it("shows the rating and comment, and no rating section when there is none", () => {
+    render(<TicketDetailView ticket={ticket({ rating: { stars: 4, comment: "Quick help", at: new Date("2026-10-20T03:00:00Z") } })} viewerId="bernice" />);
+    const section = screen.getByRole("region", { name: "Customer rating" });
+    expect(within(section).getByText("4 out of 5")).toBeTruthy();
+    expect(within(section).getByText(/Quick help/)).toBeTruthy();
+    cleanup();
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
+    expect(screen.queryByRole("region", { name: "Customer rating" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Related tickets" })).toBeNull();
+  });
+
+  it("links Follow-up of TKT-x and Follow-up: TKT-y", () => {
+    render(
+      <TicketDetailView
+        ticket={ticket({
+          followUpOf: { id: 100, subject: "Leaking pouch", status: "completed" },
+          followUps: [{ id: 300, subject: "Still no refund", status: "open" }],
+        })}
+        viewerId="bernice"
+      />,
+    );
+    const section = screen.getByRole("region", { name: "Related tickets" });
+    expect(within(section).getByText(/Follow-up of/)).toBeTruthy();
+    expect(within(section).getByRole("link", { name: "TKT-100" }).getAttribute("href")).toBe("/tickets/100");
+    expect(within(section).getByText(/Follow-up:/)).toBeTruthy();
+    expect(within(section).getByRole("link", { name: "TKT-300" }).getAttribute("href")).toBe("/tickets/300");
   });
 });
