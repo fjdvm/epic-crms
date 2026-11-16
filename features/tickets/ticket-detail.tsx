@@ -15,6 +15,7 @@ import { escalationReasonLabel } from "./escalate-reasons";
 import type { EscalationRecord } from "./escalate";
 import { HoldProvider, HoldSummary, StatusPill } from "./hold";
 import { TicketActions } from "./ticket-controls";
+import { SummaryCard } from "./summary-card";
 import { SuggestCard } from "./suggest-card";
 import type { SerializedSuggestion } from "./suggest-view";
 import { ServiceLevelPanel } from "./service-level-panel";
@@ -134,6 +135,7 @@ export function TicketDetailView({
           aria-label="Conversation"
           className={cn(CARD, "flex h-[60vh] min-h-0 w-full min-w-0 flex-col space-y-0 gap-3 lg:h-full lg:flex-1")}
         >
+          <SummaryCard key={ticket.id} ticketId={ticket.id} />
           <h2 className={CARD_TITLE}>Conversation</h2>
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
             {ticket.messages.length === 0 && !canNote ? (

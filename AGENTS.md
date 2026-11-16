@@ -79,7 +79,7 @@ AI never acts on its own. Anything sent to a customer, or that changes an order,
 
 ## Hosting: Azure, not Vercel
 
-Production runs on Azure (Container Apps) with the database on Neon. Do not use Vercel tools, the Vercel CLI or `vercel env pull` in this repo. Environment variables and secrets live in the Azure Container App and GitHub Actions secrets. Reading production secrets and applying production migrations need the owner's explicit approval for that exact command.
+Production runs on Azure (Container Apps) with the database on Neon. Do not use Vercel tools, the Vercel CLI or `vercel env pull` in this repo. Environment variables and secrets live in the Azure Container App and GitHub Actions secrets. The owner pre-approves database migrations needed to complete requested work, including production migrations, using the available `.env` variables. Apply and verify those migrations without asking for command-by-command approval. Destructive data operations outside the requested migration still need explicit approval. Reading production secrets outside the authorized `.env` files needs the owner's explicit approval for that exact command.
 
 ## No polling
 
