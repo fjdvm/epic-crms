@@ -21,6 +21,7 @@ const REASONS: Record<Refusal["reason"], string> = {
   "empty-message": "Write a reply or attach a file first.",
   "note-empty": "Write the note first.",
   ...IMAGE_REFUSALS,
+  "invalid-draft": "That Drafted reply is unavailable. Discard it and write your reply by hand, or ask for a new draft.",
   "invalid-attachment": "That attachment is invalid or expired. Attach the file again.",
   "storage-unavailable": "CREOMS could not store that file. Try again in a moment.",
   "read-only": "Your Role can only view shop work.",
