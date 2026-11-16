@@ -92,7 +92,7 @@ Staff Claim Tickets, reply live, and mark them Resolved. The Customer confirms t
 - Staff mark Resolved; the Customer's confirmation, or 3 days of silence, makes Completed. A Customer can complete at any time. Completed is final.
 - A new Customer Message, or "Not fixed", returns a Resolved Ticket to Open. Staff can never set Completed.
 - A Ticket has no Channel. The Figma's Channel column and labels are removed.
-- A Conversation is the chat inside one Ticket. There is no chat without a Ticket, so the Conversations page is an inbox of Ticket chats only. "Not matched", Convert to ticket, Compose, Create order, Add to segment and the whole "Resolve with" card are out of v1.
+- A Conversation is the chat inside one Ticket. There is no chat without a Ticket, so the Conversations page is an inbox of Ticket chats only. "Not matched", Convert to ticket, Compose, Create order and the whole "Resolve with" card are out of v1.
 - Claim replaces assign. Customer-raised Tickets start Unclaimed. Only the Claimer replies, so a Ticket is Claimed before it is answered. A Ticket Staff open is Claimed by its opener. Only the Claimer releases; nobody takes a Claimed Ticket. The Figma's "Assign to" pickers are removed.
 - Overdue: an Open Ticket whose last Message is from the Customer and unanswered by Staff for more than 24 hours, the same for every Priority.
 - Staff's description when opening a Ticket becomes the first Message and is visible to the Customer.
@@ -148,7 +148,7 @@ Staff Claim Tickets, reply live, and mark them Resolved. The Customer confirms t
 ## Out of Scope
 
 - Messenger, Instagram and email channels, and any Channel field.
-- Compose, Convert to ticket, Create order (bulk quote), Add to segment, and the "Resolve with" actions (replacement order, refund, return).
+- Compose, Convert to ticket, Create order (bulk quote), and the "Resolve with" actions (replacement order, refund, return).
 - Reassigning or taking over a Claimed Ticket, and releasing a stuck Ticket after inactivity.
 - Search on the lists, per-Priority Overdue limits, and manager roles.
 - Migrating old Vercel Blob attachments to file-storage.

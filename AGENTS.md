@@ -38,16 +38,15 @@ Handle the shop's daily work and can do anything that is easy to undo. Dashboard
 - **Returns:** inspect what came back, record whether it goes back to stock or gets written off, request a replacement or refund.
 - **Tickets and Conversations:** claim, reply, put tickets on hold, escalate, resolve, write internal notes, use AI assist.
 - **Feedback:** reply to customers.
-- **No access** to Email campaigns, Segments, Reports or the Portal.
+- **No access** to Reports or the Portal.
 - When they try something that needs a Manager, they see "Request approval" instead of the button.
 
 ### CREOMS Manager
 
-Everything Staff can do, plus approvals, reports and marketing. Dashboard shows the whole team and the approvals waiting for them.
+Everything Staff can do, plus approvals and reports. Dashboard shows the whole team and the approvals waiting for them.
 - **Approves** anything involving money, removing stock, overriding an AI warning, or moving someone else's work: refunds and "approve anyway" on payments, cancelling an order after dispatch, approving replacements, refunds and store credit on returns, holding a bad batch, extending the 24-hour return window.
 - **Tickets:** reassign tickets, move all of an absent teammate's tickets at once, take escalations.
 - **Customers and feedback:** merge duplicate customers, send win-back offers, publish or hide reviews, open the complaint themes.
-- **Marketing:** full use of Email campaigns and Segments, including AI drafts, sending and automations.
 - **Reports:** view the fulfilment and ticket reports.
 - **Portal:** view settings only. Cannot manage users or open system logs or system health.
 
@@ -88,7 +87,7 @@ Every screen must feel instant. This builds on `docs/adr/0002-instant-reads-and-
 
 - **Instant navigation.** A click on a link, tab, tile or period control reacts at once: show the loading skeleton or the cached page immediately, prefetch the likely next page, and never leave a blank or frozen screen while data loads. Keep the page fixed and let inner containers scroll.
 - **Optimistic by default.** For a reversible action, update the screen the moment the user confirms and send the change in the background. If the server refuses, roll the screen back and say why in plain words. A Customer Message shows "sending…" until confirmed.
-- **Not optimistic:** anything that moves money or has an outside effect, or that a Manager or the CEO decides. That includes approving a refund, write-off, "approve anyway" or a cancellation after dispatch, a Delivery fee quote, a Senior/PWD decision, sending an Announcement, and placing an Order. These wait for the server and show a spinner within 100 ms.
+- **Not optimistic:** anything that moves money or has an outside effect, or that a Manager or the CEO decides. That includes approving a refund, write-off, "approve anyway" or a cancellation after dispatch, a Delivery fee quote, a Senior/PWD decision, and placing an Order. These wait for the server and show a spinner within 100 ms.
 - **Confirm first still applies.** The confirm dialog on a submit comes first; the optimistic update starts after the user confirms.
 - **Targets:** react in under 100 ms, confirm in under 500 ms; a flow that misses gets its own follow-up issue.
 - **Tests:** cover the rollback and the refusal message for each optimistic action, and the immediate loading state for each new page.
