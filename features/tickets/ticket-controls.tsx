@@ -168,12 +168,28 @@ const ACCEPT = FILE_TYPES.join(",");
 export function Composer({
   ticketId,
   onSent,
+  value,
+  onValueChange,
+  draftId = null,
+  onDraftSent,
 }: {
   ticketId: number;
   /** Called once the reply is saved, so it can be relayed live. */
   onSent?: (message: { id: number; body: string }) => void;
+  /** Optional controlled reply text, so a Drafted reply can be put in the box. */
+  value?: string;
+  onValueChange?: (text: string) => void;
+  /** The saved Drafted reply this text came from, so the send is recorded as drafted or edited. */
+  draftId?: number | null;
+  onDraftSent?: () => void;
 }) {
-  const [text, setText] = useState("");
+  const [ownText, setOwnText] = useState("");
+  const text = value ?? ownText;
+  const setText = (next: string | ((current: string) => string)) => {
+    const resolved = typeof next === "function" ? next(text) : next;
+    setOwnText(resolved);
+    onValueChange?.(resolved);
+  };
   const picker = useRef<HTMLInputElement>(null);
   const { pending, run } = useTicketAction();
   const [confirming, setConfirming] = useState(false);
@@ -235,6 +251,7 @@ export function Composer({
         try {
           const form = new FormData();
           form.set("body", sentText);
+          if (draftId !== null) form.set("draftId", String(draftId));
 
           if (sentFile) {
             if (uploaded.current?.file !== sentFile) {
@@ -264,11 +281,13 @@ export function Composer({
           return;
         }
 
-        if ("messageId" in r)
+        if ("messageId" in r) {
+          onDraftSent?.();
           onSent?.({
             id: r.messageId,
             body: sentText.trim() || "Sent a file",
           });
+        }
       },
     );
   };
