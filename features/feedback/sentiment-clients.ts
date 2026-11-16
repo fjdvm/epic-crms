@@ -1,8 +1,12 @@
+import { createGroq } from "@ai-sdk/groq";
+import { createGoogle } from "@ai-sdk/google";
+import { z } from "zod";
+import { configuredStructuredModels, structuredOutput, type StructuredModel } from "@/lib/ai/structured";
 import { SENTIMENTS, type ModelClient, type Sentiment } from "./analysis";
 import type { TopProductCandidate } from "./top-product";
 
 const PROMPT =
-  "You label customer feedback about an ecommerce order. Reply with exactly one word: positive, neutral or negative. " +
+  "You label customer feedback about an ecommerce order. Return the sentiment as positive, neutral or negative. " +
   "Judge the comment; if there is none, judge by the star rating (1 to 2 negative, 3 neutral, 4 to 5 positive).";
 
 const TOP_PRODUCT_PROMPT =
@@ -26,37 +30,11 @@ function describeCandidates(candidates: TopProductCandidate[]): string {
     .join("\n\n");
 }
 
-/** The one-word label in a model's reply, or a throw when it is not one of the three. */
-export function parseSentiment(reply: unknown): Sentiment {
-  const word = typeof reply === "string" ? reply.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
-  const found = SENTIMENTS.find((s) => s === word);
-
-  if (!found) throw new Error(`The model replied with "${String(reply)}", not a Sentiment`);
-
-  return found;
-}
-
-/** The product and reason in a model's JSON reply, even when wrapped in a code fence; a throw otherwise. */
-export function parseTopProduct(reply: unknown): { product: string; reason: string } {
-  const text = typeof reply === "string" ? reply : "";
-  const object = text.match(/\{[\s\S]*\}/)?.[0];
-
-  let parsed: unknown = null;
-
-  try {
-    if (object) parsed = JSON.parse(object);
-  } catch {
-    // Not JSON: rejected below.
-  }
-
-  const { product, reason } = (parsed ?? {}) as { product?: unknown; reason?: unknown };
-
-  if (typeof product !== "string" || typeof reason !== "string" || !product.trim() || !reason.trim()) {
-    throw new Error(`The model replied with "${String(reply)}", not a Top product`);
-  }
-
-  return { product, reason };
-}
+export const sentimentSchema = z.object({ sentiment: z.enum(SENTIMENTS) });
+export const topProductSchema = z.object({
+  product: z.string().refine((value) => value.trim().length > 0),
+  reason: z.string().refine((value) => value.trim().length > 0),
+});
 
 interface ClientOptions {
   apiKey: string;
@@ -64,90 +42,42 @@ interface ClientOptions {
   fetcher?: typeof fetch;
 }
 
-/** A model, from one function that sends a system and a user message and returns the reply's text. */
-function modelClient(model: string, complete: (system: string, user: string) => Promise<unknown>): ModelClient {
+/** The completer seam accepts a schema; SDK providers own request encoding and reply parsing. */
+export type Completer = (system: string, user: string, schema: z.ZodType) => Promise<unknown>;
+
+function sdkCompleter(model: StructuredModel): Completer {
+  return async (system, prompt, schema) => {
+    const result = await structuredOutput({ system, prompt, schema, models: [model] });
+    if (!result.ok) throw new Error("AI model unavailable");
+    return result.output;
+  };
+}
+
+function modelClient(model: string, complete: Completer): ModelClient {
   return {
     model,
-    async classify(feedback) {
-      return parseSentiment(await complete(PROMPT, describe(feedback)));
+    async classify(feedback): Promise<Sentiment> {
+      return sentimentSchema.parse(await complete(PROMPT, describe(feedback), sentimentSchema)).sentiment;
     },
     async pickTopProduct(candidates) {
-      return parseTopProduct(await complete(TOP_PRODUCT_PROMPT, describeCandidates(candidates)));
+      return topProductSchema.parse(await complete(TOP_PRODUCT_PROMPT, describeCandidates(candidates), topProductSchema));
     },
   };
 }
 
-export type Completer = (system: string, user: string) => Promise<unknown>;
-
-/** Groq, through Groq's OpenAI-compatible chat API. */
-export function groqCompleter({ apiKey, model, fetcher = fetch }: ClientOptions): Completer {
-  return async (system, user) => {
-    const response = await fetcher("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-
-    if (!response.ok) throw new Error(`Groq refused the request: ${response.status}`);
-
-    const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
-
-    return body.choices?.[0]?.message?.content;
-  };
+export function groqClient({ apiKey, model, fetcher }: ClientOptions): ModelClient {
+  return modelClient(model, sdkCompleter({ name: model, model: createGroq({ apiKey, fetch: fetcher })(model) }));
 }
 
-export function groqClient(options: ClientOptions): ModelClient {
-  return modelClient(options.model, groqCompleter(options));
+export function geminiClient({ apiKey, model, fetcher }: ClientOptions): ModelClient {
+  return modelClient(model, sdkCompleter({ name: model, model: createGoogle({ apiKey, fetch: fetcher })(model) }));
 }
 
-/** Gemini, through the Generative Language API. */
-export function geminiCompleter({ apiKey, model, fetcher = fetch }: ClientOptions): Completer {
-  return async (system, user) => {
-    const response = await fetcher(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: "POST",
-        headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: "user", parts: [{ text: user }] }],
-          generationConfig: { temperature: 0 },
-        }),
-        signal: AbortSignal.timeout(20_000),
-      },
-    );
-
-    if (!response.ok) throw new Error(`Gemini refused the request: ${response.status}`);
-
-    const body = (await response.json()) as { candidates?: { content?: { parts?: { text?: unknown }[] } }[] };
-
-    return body.candidates?.[0]?.content?.parts?.[0]?.text;
-  };
-}
-
-export function geminiClient(options: ClientOptions): ModelClient {
-  return modelClient(options.model, geminiCompleter(options));
-}
-
-/** Plain text-in, text-out models whose key is set, in the order to try them (Groq, then Gemini). */
+/** Keep the existing per-feature fallback loops and missing-key results. */
 export function configuredCompleters(env: Record<string, string | undefined> = process.env): { model: string; complete: Completer }[] {
-  const list: { model: string; complete: Completer }[] = [];
-  if (env.GROQ_API_KEY && env.GROQ_MODEL) list.push({ model: env.GROQ_MODEL, complete: groqCompleter({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL }) });
-  if (env.GOOGLE_GENERATIVE_AI_API_KEY && env.GEMINI_MODEL)
-    list.push({ model: env.GEMINI_MODEL, complete: geminiCompleter({ apiKey: env.GOOGLE_GENERATIVE_AI_API_KEY, model: env.GEMINI_MODEL }) });
-
-  return list;
+  return configuredStructuredModels(env).map((model) => ({ model: model.name, complete: sdkCompleter(model) }));
 }
 
-/** The clients whose key is set in the environment; a missing key gives null so the run can say "AI keys not set". */
 export function configuredClients(env: Record<string, string | undefined> = process.env): {
   groq: ModelClient | null;
   gemini: ModelClient | null;
