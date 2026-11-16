@@ -16,6 +16,7 @@ import { SalesChart, SalesChartSkeleton } from "@/features/dashboard/sales-chart
 import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
 import { DASHBOARD_DATA_MODULES, DASHBOARD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireModule } from "@/lib/portal/staff";
+import { UnusualActivityCards } from "@/features/dashboard/unusual-activity-cards";
 import { RoleStrip } from "@/features/dashboard/role-strip";
 import { approvals } from "@/features/approvals/server";
 import { toView } from "@/features/approvals/view";
@@ -137,6 +138,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <PeriodPicker />
       </div>
       <RoleStrip role={role} requests={requests} now={now.getTime()} />
+      {role !== null && role !== "staff" && <UnusualActivityCards canDismiss={role === "manager"} />}
       {Object.values(show).some(Boolean) || attention ? (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">
