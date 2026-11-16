@@ -146,6 +146,10 @@ const SCHEMA = `
     hold_until timestamptz,
     hold_started_at timestamptz,
     held_seconds integer not null default 0,
+    follow_up_of_id integer references tickets (id),
+    rating integer check (rating is null or rating between 1 and 5),
+    rating_comment text,
+    rated_at timestamptz,
     resolved_at timestamptz,
     created_at timestamptz not null default now()
   );

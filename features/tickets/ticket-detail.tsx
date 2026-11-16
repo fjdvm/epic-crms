@@ -176,6 +176,48 @@ export function TicketDetailView({
               </ul>
             </section>
           )}
+          {ticket.rating && (
+            <section aria-label="Customer rating" className={CARD}>
+              <h2 className={CARD_TITLE}>Customer rating</h2>
+              {ticket.rating.stars !== null && (
+                <p className="text-base font-medium leading-[normal] text-[#1f1a2e]">
+                  <span aria-hidden>{"★".repeat(ticket.rating.stars)}{"☆".repeat(5 - ticket.rating.stars)}</span>{" "}
+                  {ticket.rating.stars} out of 5
+                </p>
+              )}
+              {ticket.rating.comment && (
+                <p className="text-[13px] leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
+                  “{ticket.rating.comment}”
+                </p>
+              )}
+              <p className="text-xs leading-[normal] text-[#6e6680]">Given {formatDate(ticket.rating.at)}</p>
+            </section>
+          )}
+          {(ticket.followUpOf || ticket.followUps.length > 0) && (
+            <section aria-label="Related tickets" className={CARD}>
+              <h2 className={CARD_TITLE}>Related tickets</h2>
+              <ul className="space-y-2">
+                {ticket.followUpOf && (
+                  <li className="text-[13px] leading-[normal] text-[#1f1a2e]">
+                    Follow-up of{" "}
+                    <Link href={`/tickets/${ticket.followUpOf.id}`} className="font-medium text-[#5b2a86] underline">
+                      TKT-{ticket.followUpOf.id}
+                    </Link>{" "}
+                    · {ticket.followUpOf.subject}
+                  </li>
+                )}
+                {ticket.followUps.map((f) => (
+                  <li key={f.id} className="text-[13px] leading-[normal] text-[#1f1a2e]">
+                    Follow-up:{" "}
+                    <Link href={`/tickets/${f.id}`} className="font-medium text-[#5b2a86] underline">
+                      TKT-{f.id}
+                    </Link>{" "}
+                    · {f.subject}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {order && (
             <section aria-label="Linked order" className={CARD}>
               <h2 className={CARD_TITLE}>Linked order</h2>
