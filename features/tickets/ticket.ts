@@ -66,6 +66,8 @@ export interface TicketDetail {
   id: number;
   subject: string;
   status: TicketStatus;
+  /** One of the storefront's Categories. */
+  category: string;
   priority: TicketPriority;
   openedAt: Date;
   /** The Claimer's name; null while Unclaimed. */
@@ -99,7 +101,7 @@ export async function getTicket(
   levels: ServiceLevels = { history: DEFAULT_HISTORY },
 ): Promise<TicketDetail | null> {
   const [t] = await sql<Record<string, unknown>[]>`
-    select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id, t.hold_reason, t.hold_note, t.hold_until, t.resolved_at, t.held_seconds, t.hold_started_at,
+    select t.id, t.subject, t.status, t.category, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id, t.hold_reason, t.hold_note, t.hold_until, t.resolved_at, t.held_seconds, t.hold_started_at,
       t.follow_up_of_id, t.rating, t.rating_comment, t.rated_at,
       c.id as customer_id, c.full_name, c.first_name
     from tickets t
@@ -183,6 +185,7 @@ export async function getTicket(
     id: t.id as number,
     subject: t.subject as string,
     status: t.status as TicketStatus,
+    category: t.category as string,
     priority: t.priority as TicketPriority,
     openedAt: t.created_at as Date,
     claimerName,

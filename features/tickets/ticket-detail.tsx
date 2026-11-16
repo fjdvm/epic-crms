@@ -15,6 +15,8 @@ import { escalationReasonLabel } from "./escalate-reasons";
 import type { EscalationRecord } from "./escalate";
 import { HoldProvider, HoldSummary, StatusPill } from "./hold";
 import { TicketActions } from "./ticket-controls";
+import { SuggestCard } from "./suggest-card";
+import type { SerializedSuggestion } from "./suggest-view";
 import { ServiceLevelPanel } from "./service-level-panel";
 import type { ReassignmentRecord } from "./reassign";
 import type { TicketDetail, TicketMessage } from "./ticket";
@@ -56,6 +58,7 @@ export function TicketDetailView({
   canNote = false,
   reassignments = [],
   escalations = [],
+  suggestion = null,
 }: {
   ticket: TicketDetail;
   viewerId: string;
@@ -70,6 +73,8 @@ export function TicketDetailView({
   reassignments?: ReassignmentRecord[];
   /** Every escalation of this Ticket, newest first; the one with no resolution is open. */
   escalations?: EscalationRecord[];
+  /** The newest AI suggestion for this Ticket, if Staff asked for one. */
+  suggestion?: SerializedSuggestion | null;
 }) {
   const { order, customer } = ticket;
   // Until both sides have spoken there is no chat history to read, only what the Ticket was opened with.
@@ -160,6 +165,14 @@ export function TicketDetailView({
         </section>
 
         <div className="w-full space-y-4 lg:h-full lg:w-[380px] lg:shrink-0 lg:overflow-y-auto">
+          <SuggestCard
+            ticketId={ticket.id}
+            category={ticket.category}
+            priority={ticket.priority}
+            suggestion={suggestion}
+            canWork={canNote}
+            completed={ticket.status === "completed"}
+          />
           <HoldSummary />
           <EscalationSummary />
           {activity.length > 0 && (
