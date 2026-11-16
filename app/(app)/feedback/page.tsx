@@ -13,6 +13,8 @@ import { configuredClients } from "@/features/feedback/sentiment-clients";
 import { readTopProduct } from "@/features/feedback/top-product";
 import { FEEDBACK_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
+import { shopRole } from "@/lib/portal/roles";
+import Link from "next/link";
 import { ticketsDatabase } from "@/lib/tickets-db";
 import { searchParamsKey } from "@/lib/search-params-key";
 import Loading from "./loading";
@@ -35,7 +37,8 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Sea
 }
 
 async function FeedbackData({ raw }: { raw: Awaited<SearchParams> }) {
-  await requireModule(FEEDBACK_MODULE);
+  const staff = await requireModule(FEEDBACK_MODULE);
+  const role = shopRole(staff.role);
 
   const filters = parseFilters(raw);
 
@@ -87,6 +90,11 @@ async function FeedbackData({ raw }: { raw: Awaited<SearchParams> }) {
           <p className="shrink-0 text-xs leading-[normal] text-[#6e6680]" data-testid="last-analyzed">
             {lastAnalyzed}
           </p>
+        )}
+        {(role === "manager" || role === "admin" || role === "ceo") && (
+          <Link href="/feedback/complaint-themes" className="shrink-0 rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium leading-[normal] text-[#1f1a2e]">
+            Complaint themes
+          </Link>
         )}
         <AnalyzeButton
           keysSet={groq !== null || gemini !== null}
