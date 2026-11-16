@@ -56,3 +56,9 @@ function compare(p: {
     },
   };
 }
+
+/** The other Orders that already used the latest proof's reference; empty when the reference is not reused. */
+export async function reusedReferenceOrderIds(sql: postgres.Sql, orderId: number): Promise<number[]> {
+  const checks = [...(await paymentProofChecksForOrders(sql, [orderId])).values()];
+  return checks.at(-1)?.checks.reference.otherOrderIds ?? [];
+}

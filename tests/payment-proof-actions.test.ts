@@ -74,16 +74,16 @@ async function signIn(id: string) {
   session.handle = (await exchanged.json()).handle;
 }
 
-async function proofOrder(method = "gcash") {
+async function proofOrder(method = "gcash", reference?: string) {
   const [o] = await db.sql`insert into orders (customer_id, status, payment_method) values ('c1','awaiting payment',${method}) returning id`;
-  await storefront.submitProof(o.id, "REF-1");
+  await storefront.submitProof(o.id, reference ?? `REF-${o.id}-1`);
   return Number(o.id);
 }
 /** Staff reject the current proof and the Customer sends another. */
 async function rejectAndResubmit(id: number, n: number) {
   for (let i = 1; i <= n; i++) {
     expect(await rejectPaymentProof(id, `Blurry ${i}`)).toMatchObject({ ok: true });
-    await storefront.submitProof(id, `REF-${i + 1}`);
+    await storefront.submitProof(id, `REF-${id}-${i + 1}`);
   }
 }
 
@@ -120,7 +120,7 @@ it("keeps every proof and rejection, oldest first", async () => {
   const result = await loadOrder(() => db.sql, id);
   if (!result.ok || !result.order) throw new Error("Order missing");
   expect(result.order.paymentProofs.map(p => [p.reference, p.rejection?.reason ?? null, p.rejection?.by.name ?? null])).toEqual([
-    ["REF-1", "Blurry 1", "ana Person"], ["REF-2", "Blurry 2", "ana Person"], ["REF-3", null, null],
+    [`REF-${id}-1`, "Blurry 1", "ana Person"], [`REF-${id}-2`, "Blurry 2", "ana Person"], [`REF-${id}-3`, null, null],
   ]);
   expect(result.order.proofRejections).toBe(2);
 });
@@ -188,6 +188,48 @@ describe("after 3 rejections", () => {
   });
 });
 
+describe("a reference already used on another Order", () => {
+  async function reusedPair() {
+    const first = await proofOrder("gcash", "REF-SHARED");
+    const second = await proofOrder("gcash", "REF-SHARED");
+    return { first, second };
+  }
+
+  it("stops Mark paid for Staff, names the other Order, and lets a Manager approve anyway with a reason, audited", async () => {
+    const { first, second } = await reusedPair();
+    await signIn("ana");
+    expect(await markPaid(second)).toEqual({ ok: false, reason: "Enter a reason to approve this payment anyway." });
+    const pending = await markPaid(second, { reason: "Same customer paid both in one transfer" });
+    expect(pending).toMatchObject({ ok: false, status: "waiting-manager" });
+    expect(await loadOrder(() => db.sql, second)).toMatchObject({ order: { status: "awaiting payment", paymentProofs: [{ checks: { reference: { pass: false, otherOrderIds: [first], reason: `Reference also used on Order #${first}.` } } }] } });
+    await signIn("mario");
+    expect(await markPaid(second)).toEqual({ ok: false, reason: "Enter a reason to approve this payment anyway." });
+    expect(await markPaid(second, { reason: "  " })).toMatchObject({ ok: false });
+    expect(await markPaid(second, { reason: "Checked both in the GCash history" })).toMatchObject({ ok: true, order: { status: "paid" } });
+    expect(audit.mock.calls).toContainEqual([expect.objectContaining({
+      action: "payment.approved_anyway", actor: expect.objectContaining({ id: "mario" }),
+      metadata: { reason: "Checked both in the GCash history", reusedReferenceOrderIds: [first] },
+    })]);
+    expect(audit.mock.calls.map(([e]) => e.action)).not.toContain("payment.marked_paid");
+  });
+
+  it("never lets Admin or the CEO approve", async () => {
+    const { second } = await reusedPair();
+    for (const who of ["ada", "owner"]) {
+      await signIn(who);
+      expect(await markPaid(second, { reason: "Looks fine" })).toMatchObject({ ok: false });
+    }
+    expect(await loadOrder(() => db.sql, second)).toMatchObject({ order: { status: "awaiting payment" } });
+  });
+
+  it("behaves as today when the reference is not reused", async () => {
+    const id = await proofOrder();
+    await signIn("ana");
+    expect(await markPaid(id)).toMatchObject({ ok: true, order: { status: "paid" } });
+    expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "payment.marked_paid" })]);
+  });
+});
+
 it("sends a refund back the way the Customer paid, and none for Cash on Delivery", async () => {
   const { refundDestination } = await import("@/features/orders/payment-methods");
   expect(["gcash", "maya", "bank-transfer", "cash-on-delivery"].map(refundDestination)).toEqual(["GCash", "Maya", "bank transfer", null]);
@@ -195,12 +237,12 @@ it("sends a refund back the way the Customer paid, and none for Cash on Delivery
 
 it("reads confirmed proof values and returns advisory pass/fail checks with other Orders", async () => {
   await signIn("ana");
-  const id = await proofOrder();
+  const id = await proofOrder("gcash", "REF-DUP");
   await db.sql`update orders set subtotal_in_centavos = 10000, created_at = '2026-01-01T00:00:00Z' where id = ${id}`;
   await db.sql`update order_payment_proofs set confirmed_amount_in_centavos = 10000, confirmed_paid_at = '2026-01-02T00:00:00Z', confirmed_recipient = '0917 123 4567', expected_recipient = '09171234567' where order_id = ${id}`;
   const result = await loadOrder(() => db.sql, id);
   expect(result).toMatchObject({ ok: true, order: { status: "awaiting payment", paymentProofs: [{ confirmed: { amountInCentavos: 10000, recipient: "0917 123 4567" }, checks: { amount: { pass: true }, date: { pass: true }, recipient: { pass: true }, reference: { pass: true, otherOrderIds: [] } } }] } });
-  const other = await proofOrder();
+  const other = await proofOrder("gcash", "REF-DUP");
   const duplicate = await loadOrder(() => db.sql, id);
   expect(duplicate).toMatchObject({ ok: true, order: { status: "awaiting payment", paymentProofs: [{ rejection: null, checks: { reference: { pass: false, otherOrderIds: [other], reason: expect.stringContaining(`#${other}`) } } }] } });
 });
