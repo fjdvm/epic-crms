@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyField, latestSuggestion, parseSuggestion, suggestForTicket, ticketText } from "@/features/tickets/suggest";
+import { applyField, latestSuggestion, suggestionSchema, suggestForTicket, ticketText } from "@/features/tickets/suggest";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -36,7 +36,7 @@ async function ticket(status = "open") {
 }
 
 const deps = () => ({ tickets: db.sql, crms: db.sql, audit, staff });
-const reply = JSON.stringify({ category: "delivery issue", categoryReason: "Leak in transit", priority: "high", priorityReason: "Food safety" });
+const reply = { category: "delivery issue", categoryReason: "Leak in transit", priority: "high", priorityReason: "Food safety" };
 const model = (complete: (s: string, u: string) => Promise<unknown>) => [{ model: "m1", complete }];
 
 describe("AI-suggested Category and Priority", () => {
@@ -124,9 +124,9 @@ describe("AI-suggested Category and Priority", () => {
 });
 
 describe("helpers", () => {
-  it("parses a fenced reply and rejects a bad one", () => {
-    expect(parseSuggestion("```json\n" + reply + "\n```").priority).toBe("high");
-    expect(() => parseSuggestion('{"category":"x","priority":"high"}')).toThrow();
+  it("validates a structured suggestion and rejects a bad one", () => {
+    expect(suggestionSchema.parse(reply).priority).toBe("high");
+    expect(() => suggestionSchema.parse({ category: "x", priority: "high" })).toThrow();
   });
 
   it("caps long threads, keeping the newest Messages", () => {

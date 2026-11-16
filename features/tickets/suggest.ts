@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type postgres from "postgres";
 
 import type { Completer } from "@/features/feedback/sentiment-clients";
@@ -20,26 +21,12 @@ const PROMPT =
   'Reply with JSON only: {"category": "<one Category exactly as listed>", "categoryReason": "<under 80 characters>", ' +
   '"priority": "<low|normal|high|urgent>", "priorityReason": "<under 80 characters>"}.';
 
-/** The Category and Priority in a model's JSON reply, even inside a code fence; a throw otherwise. */
-export function parseSuggestion(reply: unknown): { category: string; categoryReason: string; priority: TicketPriority; priorityReason: string } {
-  const object = (typeof reply === "string" ? reply : "").match(/\{[\s\S]*\}/)?.[0];
-  let parsed: Record<string, unknown> = {};
-
-  try {
-    if (object) parsed = JSON.parse(object);
-  } catch {
-    // Rejected below.
-  }
-
-  const category = TICKET_CATEGORIES.find((c) => c.toLowerCase() === String(parsed.category ?? "").trim().toLowerCase());
-  const priority = TICKET_PRIORITIES.find((p) => p === String(parsed.priority ?? "").trim().toLowerCase());
-
-  if (!category || !priority) throw new Error(`The model replied with "${String(reply)}", not a Category and Priority`);
-
-  const reason = (v: unknown) => String(v ?? "").trim().slice(0, 120);
-
-  return { category, categoryReason: reason(parsed.categoryReason), priority, priorityReason: reason(parsed.priorityReason) };
-}
+export const suggestionSchema = z.object({
+  category: z.string().trim().transform((value) => TICKET_CATEGORIES.find((category) => category.toLowerCase() === value.toLowerCase())).pipe(z.enum(TICKET_CATEGORIES)),
+  categoryReason: z.string().nullish().transform((value) => (value ?? "").trim().slice(0, 120)),
+  priority: z.string().trim().toLowerCase().pipe(z.enum(TICKET_PRIORITIES)),
+  priorityReason: z.string().nullish().transform((value) => (value ?? "").trim().slice(0, 120)),
+});
 
 export interface SuggestDeps {
   /** The ecommerce database; reads the Ticket text and, when Staff accept or change, writes Category and Priority. */
@@ -107,7 +94,7 @@ export async function suggestForTicket(
 
   for (const { model, complete } of models) {
     try {
-      const s = parseSuggestion(await complete(PROMPT, sent));
+      const s = suggestionSchema.parse(await complete(PROMPT, sent, suggestionSchema));
       const [row] = await deps.crms<Row[]>`
         insert into crms.ticket_ai_suggestions
           (ticket_id, requested_by_id, requested_by_name, operation_id, model, sent_text, category, category_reason, priority, priority_reason)
