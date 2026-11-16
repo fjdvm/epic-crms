@@ -1,6 +1,10 @@
 import Link from "next/link";
-import { formatDate, formatPesos } from "@/features/customer-profiles/format";
+import { formatPesos } from "@/features/customer-profiles/format";
 import type { PaymentProofChecks } from "./payment-proof-checks";
+
+const dateTime = new Intl.DateTimeFormat("en-PH", {
+  dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila",
+});
 
 /** Advisory comparisons only. Staff still verify the shop's transaction history. */
 export function PaymentProofChecksView({ confirmed, expected, checks }: PaymentProofChecks) {
@@ -9,7 +13,7 @@ export function PaymentProofChecksView({ confirmed, expected, checks }: PaymentP
       <h3 className="font-semibold">Customer-confirmed values · plain-rule checks</h3>
       <dl className="grid grid-cols-2 gap-2">
         <dt>Amount paid</dt><dd>{confirmed.amountInCentavos === null ? "Not provided" : formatPesos(confirmed.amountInCentavos)} · expected {formatPesos(expected.amountInCentavos)}</dd>
-        <dt>Payment date</dt><dd>{confirmed.paidAt ? formatDate(confirmed.paidAt) : "Not provided"} · after {formatDate(expected.placedAt)}</dd>
+        <dt>Payment date (Philippine time)</dt><dd>{confirmed.paidAt ? dateTime.format(confirmed.paidAt) : "Not provided"} · after {dateTime.format(expected.placedAt)}</dd>
         <dt>Recipient</dt><dd>{confirmed.recipient ?? "Not provided"} · shop account {expected.recipient ?? "Not available"}</dd>
       </dl>
       <ul className="space-y-1">
