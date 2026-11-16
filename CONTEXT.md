@@ -68,7 +68,7 @@ The courier cost of a Delivery Order, quoted by Staff by hand after the Order is
 _Avoid_: Shipping fee, shipping
 
 **Payment proof**:
-The reference number, and optionally a screenshot, a Customer submits for an Order paid by GCash, Maya or bank transfer. All three are manual: the Customer pays outside the shop and Staff check the proof by hand. Staff with the Payments Module check it and either mark the Order `paid`, reject it with a reason, or cancel the Order. A Customer whose proof is rejected may submit another; every proof and rejection is kept. After 3 rejected proofs only a Manager can approve the Order.
+The reference number, and optionally a screenshot, a Customer submits for an Order paid by GCash, Maya or bank transfer. All three are manual: the Customer pays outside the shop and Staff check the proof by hand. Staff with the Payments Module check it and either mark the Order `paid`, reject it with a reason, or cancel the Order. A Customer whose proof is rejected may submit another; every proof and rejection is kept. After 3 rejected proofs only a Manager can approve the Order. A reference already used on another Order stops "Mark paid" for Staff; a Manager can approve it anyway with a reason.
 _Avoid_: Receipt, payment confirmation
 
 **Stage**:
@@ -147,20 +147,32 @@ The product the AI judges best liked, from the Feedback of the Orders that conta
 _Avoid_: Best seller, best rated
 
 **AI suggestion**:
-Anything an AI offers Staff to look at: a Ticket's suggested Category and Priority, a Ticket summary, a Drafted reply, or Complaint themes. It is only ever shown to Staff, who press the button that asks for it; nothing runs by itself, on a timer, or when a page opens. It never reaches a Customer and never changes a Ticket, Order or payment until a Staff member acts on it. The AI sees only the text the feature needs, with emails and phone numbers masked, and exactly what it saw is kept and shown. When Staff use a suggestion, the Audit Event names that Staff member.
+Anything an AI offers Staff to look at: a Ticket's suggested Category and Priority, a Ticket summary, a Drafted reply, or Complaint themes. It is only ever shown to Staff, and only runs because a Staff member asked for it, by pressing a button or by opening the page that shows it (a Ticket summary, an alert's explanation, Complaint themes); the result is kept and shown again on later visits, and nothing runs by itself or on a timer. It never reaches a Customer and never changes a Ticket, Order or payment until a Staff member acts on it. The AI sees only the text the feature needs, with emails and phone numbers masked, and exactly what it saw is kept and shown. When Staff use a suggestion, the Audit Event names that Staff member.
 _Avoid_: AI decision, auto-reply, automation
 
 **Ticket summary**:
-A few lines an AI writes about one Ticket's thread, so Staff or a Manager who opens it can catch up quickly. Anyone who can open the Ticket can ask for one, Claimer or not. It is read-only and is never sent to the Customer.
+A few lines an AI writes about one Ticket's thread, so Staff or a Manager who opens it can catch up quickly. It is made when a Staff member or Manager opens the Ticket and is then kept; it is made again only when a new Message has arrived since and a Staff member opens the Ticket. Admin and CEO see the kept summary and never cause one to be made. Claimer or not, anyone who can open the Ticket sees it. It is read-only and is never sent to the Customer.
 _Avoid_: Recap, digest
 
 **Drafted reply**:
-A reply an AI writes to the Customer's latest Message, in the Customer's own language (English or Taglish), placed in the reply box of the Claimer, the only Staff who can reply. It promises no refund, replacement or date, and says a teammate will confirm when unsure. Nothing is sent until the Claimer edits it as they wish and presses Send; the Audit Event records whether it was sent as drafted or edited.
+A reply an AI writes for the Claimer, the only Staff who can reply, from the Ticket's last Messages and the status, courier, dates and payment kind of its Linked order; never the address, phone or email. The Claimer picks English or Taglish, and can make it shorter, discard it, or use it in the Conversation. Facts such as the tracking link and dates are put in from the Order's record, and a draft that contradicts the record is not shown. It promises no refund or replacement, and says a teammate will confirm when unsure. It never overwrites what the Claimer has already typed without a confirm. Nothing is sent until the Claimer presses Send; the Audit Event records whether it was sent as drafted or edited.
 _Avoid_: Auto-reply, canned reply
 
 **Complaint themes**:
-Up to five groups of similar complaints an AI finds in a chosen period, each with a short label and a count and links to the Tickets, Returns and Feedback (1 to 3 stars) behind it, such as "leaking pouch on the 500 g". Managers ask for them with a button on the Dashboard; the counts and links come from the records, not from the AI. The last result is kept with the period and time it was made, and Admin and CEO can read it. Staff do not see it.
+Up to five groups of similar complaints an AI finds in a chosen period, each with a short label and a count and links to the Tickets, Returns and Feedback (1 to 3 stars) behind it, such as "leaking pouch on the 500 g". They sit on the Feedback page for Managers and are made when a Manager opens it for a period that has none yet; a Refresh button makes new ones. The counts and links come from the records, not from the AI; a group needs at least 3 items, each item is in one group, and one Customer counts once per group. The last result is kept with the period, the time and how many Tickets, Returns and Feedback were read, and Admin and CEO can read it. Staff do not see it.
 _Avoid_: Trends, insights, alerts
+
+**Order assistant**:
+A chat on the storefront's Support page and My orders where a signed-in Customer asks about their own Orders (status, payment, pickup, courier link, delivery fee estimates) and about the shop (product details, hours, rules). The Customer's questions are answered by an AI from the live records, with the facts shown by the system itself; it never changes, cancels or refunds anything, never promises a refund, discount or replacement, and never reads another Customer's Order. It hands over to a person, as a Ticket with the Order as its Linked order, when the Customer asks for one, the question is about damaged, spoiled or wrong items, food safety, refunds, discounts or replacements, or it cannot answer from the records. Staff can mark an answer wrong, with a reason; a Manager sees those and the counts. It is the one place an AI writes words a Customer reads without a person reviewing them, an exception the owner agreed.
+_Avoid_: Chatbot, bot
+
+**Handoff summary**:
+The short account of the Order assistant's chat that the Customer sees and sends to the team when they ask for a person, so they do not repeat themselves. It states facts from their own chat and the Order's record and promises nothing. It is attached to the Ticket it opens, separate from the Staff-facing Ticket summary.
+_Avoid_: Chat summary
+
+**Unusual activity**:
+Up to five cards on the Dashboard, each shown to Staff who hold the Module of its data: Unverified payments over a limit, a spike of Returns on one product, Failed deliveries piling up, or a Customer at or near 3 rejected Payment proofs. Fixed rules in the system decide that something is unusual and give its numbers and links; an AI only writes the "why" and "what to do", made the first time a Staff member opens the Dashboard while it exists and kept, and made again only if the numbers get worse. Staff can dismiss one for themselves, and it comes back only if it gets worse. It is never sent to a Customer and changes nothing.
+_Avoid_: Anomaly, alert (a Notification word)
 
 **Feedback request**:
 The one email and in-app Notification sent to a Customer 2 days after an Order is marked Delivered, linking to that Order's Feedback form. Sent once per Order, with no reminder, and not sent if the Customer has already given Feedback.
