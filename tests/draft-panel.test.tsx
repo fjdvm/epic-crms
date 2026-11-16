@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DraftPanel, draftDisabledReason } from "@/features/tickets/draft-panel";
+import { draftDisabledReason } from "@/features/tickets/draft";
+import { DraftPanel } from "@/features/tickets/draft-panel";
 import { requestDraftedReply } from "@/features/tickets/actions";
 
 vi.mock("@/features/tickets/actions", () => ({ requestDraftedReply: vi.fn() }));
@@ -80,5 +81,15 @@ describe("Draft panel", () => {
     render(<Harness />);
     fireEvent.click(screen.getByText("Draft a reply"));
     expect(await screen.findByText(/You can still write your reply by hand/)).toBeTruthy();
+  });
+});
+
+describe("server/client boundary", () => {
+  it("keeps draftDisabledReason in a module the server view can call (it 500ed /conversations in production)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const view = readFileSync("features/tickets/conversations-view.tsx", "utf8");
+    const draft = readFileSync("features/tickets/draft.ts", "utf8");
+    expect(draft).not.toMatch(/^["']use client["']/);
+    expect(view).toMatch(/import \{ draftDisabledReason \} from "\.\/draft";/);
   });
 });

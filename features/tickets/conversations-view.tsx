@@ -6,7 +6,7 @@ import { orderLabel, paymentStatusOf, STAGE_LABELS } from "@/features/customer-p
 import { cn } from "@/lib/utils";
 
 import { Conversation } from "./conversation";
-import { draftDisabledReason } from "./draft-panel";
+import { draftDisabledReason } from "./draft";
 import { NotesProvider } from "./notes";
 import { inboxTime, type Conversations } from "./conversations";
 import { Pill, PILL, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
