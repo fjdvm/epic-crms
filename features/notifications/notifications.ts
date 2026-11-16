@@ -7,7 +7,7 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "return-requested";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "ticket-escalated" | "ticket-sent-back" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "return-requested";
 
 /** What a Reassign alert says. `side` is whether the reader was the previous or the new Claimer. */
 export interface ReassignDetail {
@@ -19,6 +19,21 @@ export interface ReassignDetail {
   /** How many Tickets moved at once; 1 names the Ticket by `ticketId`. */
   count: number;
 }
+
+/** What an escalation alert says: why, the Claimer's note and who asked. */
+export interface EscalationDetail {
+  reason: string;
+  note: string;
+  by: string;
+}
+
+/** What a "sent back" alert says: which Manager and their note. */
+export interface SentBackDetail {
+  by: string;
+  note: string;
+}
+
+export type NotificationDetail = ReassignDetail | EscalationDetail | SentBackDetail;
 
 export interface Notification {
   id: string;
@@ -32,8 +47,8 @@ export interface Notification {
   rating: number | null;
   /** The Return whose request raised this alert; null for other kinds. */
   returnId: number | null;
-  /** Who moved what and why, for a "ticket-reassigned" alert; null for other kinds. */
-  detail?: ReassignDetail | null;
+  /** Who moved what and why (reassigned), or the escalation note (escalated, sent back); null for other kinds. */
+  detail?: NotificationDetail | null;
   /** When CREOMS first saw the event, such as the person becoming a Customer. */
   createdAt: Date;
   read: boolean;
@@ -64,7 +79,7 @@ export function visibleTo(sql: postgres.Sql | postgres.TransactionSql, viewer: V
     or (kind in ('order-delivery-fee', 'order-placed', 'order-free-delivery') and ${viewer.orders})
     or (kind = 'order-payment-proof' and ${viewer.payments})
     or (kind = 'return-requested' and ${viewer.returns})
-    or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned') and ${viewer.ticketsStaffId !== null}
+    or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned', 'ticket-escalated', 'ticket-sent-back') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))
   )`;
 }
@@ -159,7 +174,7 @@ export async function listNotifications(
       order_id: number | null;
       rating: number | null;
       return_id: number | null;
-      detail: ReassignDetail | null;
+      detail: NotificationDetail | null;
       created_at: Date;
       read_at: Date | null;
     }[]

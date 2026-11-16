@@ -28,6 +28,7 @@ export function parseTicketParams(raw: Raw): TicketParams {
     category: first(raw.category) || undefined,
     claimedBy: first(raw.claimed) || undefined,
     overdue: first(raw.overdue) === "1" || undefined,
+    escalated: first(raw.escalated) === "1" || undefined,
   };
 }
 
@@ -38,7 +39,8 @@ export function hasTicketFilters(params: TicketFilters): boolean {
     params.priority ||
     params.category ||
     params.claimedBy ||
-    params.overdue,
+    params.overdue ||
+    params.escalated,
   );
 }
 
@@ -52,6 +54,7 @@ export function ticketsHref(params: TicketParams): string {
   if (params.category) query.set("category", params.category);
   if (params.claimedBy) query.set("claimed", params.claimedBy);
   if (params.overdue) query.set("overdue", "1");
+  if (params.escalated) query.set("escalated", "1");
   if (params.page > 1) query.set("page", String(params.page));
 
   const text = query.toString();

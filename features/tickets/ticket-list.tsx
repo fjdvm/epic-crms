@@ -168,7 +168,10 @@ export function TicketListView({
                     )}
                   </div>
                   <div className={cn(CELL, COLUMNS[7].className)}>
-                    <StatusPill row={row} />
+                    <span className="flex flex-wrap items-center gap-1">
+                      <StatusPill row={row} />
+                      {row.escalated && row.status !== "completed" && <Pill className={PILL.red}>Escalated</Pill>}
+                    </span>
                   </div>
                   <div className={cn(CELL, COLUMNS[8].className)}>
                     <ServiceCell clock={row.serviceLevel.current} />

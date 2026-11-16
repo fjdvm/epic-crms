@@ -25,6 +25,7 @@ import { claim, reply, resolve, type ReplyOutcome, type TicketActionOutcome } fr
 import { useClaim } from "./claim";
 import { refusalMessage } from "./refusals";
 import { HoldDialog } from "./hold-dialog";
+import { EscalateDialog, EscalationManagerButtons } from "./escalate-ui";
 import { ReassignTicketDialog } from "./reassign-dialog";
 import { useHold } from "./hold";
 
@@ -80,17 +81,20 @@ export function TicketActions({
   ticketId,
   withReply = true,
   canReassign = false,
+  canEscalate = false,
   className,
 }: {
   ticketId: number;
-  /** A CREOMS Manager sees Reassign; everyone else sees no button. */
+  /** A CREOMS Manager sees Reassign, Take ticket and Send back; everyone else sees no button. */
   canReassign?: boolean;
+  /** The Ticket page knows the escalation; the Conversations page does not offer Escalate. */
+  canEscalate?: boolean;
   /** Offer the Reply link to the composer; off where the composer sits beside the actions. */
   withReply?: boolean;
   className?: string;
 }) {
   const { pending, run } = useTicketAction();
-  const { claimer, isClaimer, pending: claiming, claim: claimTicket, release: releaseTicket } = useClaim();
+  const { claimer, isClaimer, escalation, pending: claiming, claim: claimTicket, release: releaseTicket } = useClaim();
   const claimed = claimer !== null;
   const { status, pending: holding, takeOffHold } = useHold();
 
@@ -106,7 +110,7 @@ export function TicketActions({
           Claim
         </button>
       )}
-      {status !== "completed" && isClaimer && (
+      {status !== "completed" && isClaimer && !escalation && (
         <button
           type="button"
           className={OUTLINE}
@@ -116,6 +120,8 @@ export function TicketActions({
           Release
         </button>
       )}
+      {status !== "completed" && canEscalate && isClaimer && !escalation && <EscalateDialog ticketId={ticketId} />}
+      {status !== "completed" && canReassign && <EscalationManagerButtons ticketId={ticketId} />}
       {status !== "completed" && claimed && canReassign && <ReassignTicketDialog ticketId={ticketId} />}
       {status === "open" && isClaimer && <HoldDialog ticketId={ticketId} />}
       {status === "on_hold" && isClaimer && (

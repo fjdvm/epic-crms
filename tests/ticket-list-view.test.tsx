@@ -28,6 +28,7 @@ const row = (overrides: Partial<TicketRow>): TicketRow => ({
   status: "open",
   waiting: false,
   overdue: false,
+  escalated: false,
   lastActivity: new Date("2026-10-20T00:00:00Z"),
   serviceLevel: someServiceLevel(),
   ...overrides,
@@ -63,6 +64,12 @@ describe("the Tickets list as designed", () => {
     expect(screen.getByText("Rhea")).toBeTruthy();
     expect(screen.getByText("Unclaimed")).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Claim" })).toHaveLength(1);
+  });
+
+  it("badges only the Tickets a Manager has been asked about", () => {
+    view([row({ id: 208, escalated: true }), row({ id: 207 })]);
+
+    expect(screen.getAllByText("Escalated")).toHaveLength(1);
   });
 
   it("shows each Ticket's Category", () => {

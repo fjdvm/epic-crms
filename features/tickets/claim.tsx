@@ -5,6 +5,8 @@ import { createContext, useContext } from "react";
 import { useOptimisticAction } from "@/hooks/use-optimistic-action";
 
 import { claim as claimAction, release as releaseAction } from "./actions";
+import { escalate as escalateAction, sendBack as sendBackAction, takeEscalated, type EscalateOutcome } from "./escalate-actions";
+import { ESCALATE_REFUSALS, type EscalationReason } from "./escalate-reasons";
 import { reassignOne, type ReassignOutcome } from "./reassign-actions";
 import { REASSIGN_REFUSALS } from "./reassign-refusals";
 import { refusalMessage } from "./refusals";
@@ -14,51 +16,95 @@ export interface Claimer {
   name: string;
 }
 
+/** The open escalation as the page shows it; the date travels as text so guesses compare cleanly. */
+export interface OpenEscalation {
+  reason: EscalationReason;
+  note: string;
+  byName: string;
+  at: string;
+}
+
+interface Shown {
+  claimer: Claimer | null;
+  escalation: OpenEscalation | null;
+}
+
 interface ClaimState {
   claimer: Claimer | null;
+  /** Set while the Ticket is Escalated: a Manager has been asked, and has neither taken it nor sent it back. */
+  escalation: OpenEscalation | null;
   isClaimer: boolean;
   pending: boolean;
   claim: () => void;
   release: () => void;
   /** A Manager moves the Ticket to `to` with a reason; shown at once, rolled back with the reason if refused. */
   reassign: (to: Claimer, reason: string, onDone?: () => void) => void;
+  /** The Claimer asks every Manager for help; shows Escalated at once, rolled back with the reason if refused. */
+  escalate: (reason: EscalationReason, note: string, onDone?: () => void) => void;
+  /** A Manager takes the escalated Ticket and becomes its Claimer. */
+  take: () => void;
+  /** A Manager sends it back to the Claimer with a note. */
+  sendBack: (note: string, onDone?: () => void) => void;
 }
 
 const ClaimContext = createContext<ClaimState | null>(null);
 
-/** Claim and Release, shown at once and rolled back, with the reason, if the server refuses. */
-export function useClaimer(ticketId: number, server: Claimer | null, viewer: Claimer): ClaimState {
-  const { state, pending, run } = useOptimisticAction(server);
+const escalateRefusal = (o: Exclude<EscalateOutcome, { ok: true }>) => ESCALATE_REFUSALS[o.reason];
+
+/** Claim, Release, Reassign and Escalate, shown at once and rolled back, with the reason, if the server refuses. */
+export function useClaimer(
+  ticketId: number,
+  server: Claimer | null,
+  viewer: Claimer,
+  serverEscalation: OpenEscalation | null = null,
+): ClaimState {
+  const { state, pending, run } = useOptimisticAction<Shown>({ claimer: server, escalation: serverEscalation });
 
   return {
-    claimer: state,
-    isClaimer: state !== null && state.id === viewer.id,
+    claimer: state.claimer,
+    escalation: state.escalation,
+    isClaimer: state.claimer !== null && state.claimer.id === viewer.id,
     pending,
-    claim: () => run(viewer, () => claimAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
-    release: () => run(null, () => releaseAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
+    claim: () => run({ ...state, claimer: viewer }, () => claimAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
+    release: () => run({ ...state, claimer: null }, () => releaseAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
     reassign: (to, reason, onDone) => {
       if (!server) return;
-      run(to, () => reassignOne(ticketId, server.id, to.id, reason, crypto.randomUUID()), {
+      run({ ...state, claimer: to }, () => reassignOne(ticketId, server.id, to.id, reason, crypto.randomUUID()), {
         refusal: (o) => REASSIGN_REFUSALS[(o as Exclude<ReassignOutcome, { ok: true }>).reason],
         onDone: () => onDone?.(),
       });
     },
+    escalate: (reason, note, onDone) =>
+      run(
+        { ...state, escalation: { reason, note: note.trim(), byName: viewer.name, at: new Date().toISOString() } },
+        () => escalateAction(ticketId, reason, note, crypto.randomUUID()),
+        { refusal: escalateRefusal, onDone: () => onDone?.() },
+      ),
+    take: () =>
+      run({ claimer: viewer, escalation: null }, () => takeEscalated(ticketId, crypto.randomUUID()), { refusal: escalateRefusal }),
+    sendBack: (note, onDone) =>
+      run({ ...state, escalation: null }, () => sendBackAction(ticketId, note, crypto.randomUUID()), {
+        refusal: escalateRefusal,
+        onDone: () => onDone?.(),
+      }),
   };
 }
 
-/** Shares one Ticket's Claimer, as the Staff member sees it right now, with everything on the page that shows it. */
+/** Shares one Ticket's Claimer and escalation, as the Staff member sees them right now, with everything on the page. */
 export function ClaimProvider({
   ticketId,
   claimer,
   viewer,
+  escalation = null,
   children,
 }: {
   ticketId: number;
   claimer: Claimer | null;
   viewer: Claimer;
+  escalation?: OpenEscalation | null;
   children: React.ReactNode;
 }) {
-  return <ClaimContext.Provider value={useClaimer(ticketId, claimer, viewer)}>{children}</ClaimContext.Provider>;
+  return <ClaimContext.Provider value={useClaimer(ticketId, claimer, viewer, escalation)}>{children}</ClaimContext.Provider>;
 }
 
 export function useClaim(): ClaimState {
