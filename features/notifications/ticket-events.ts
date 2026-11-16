@@ -35,7 +35,7 @@ export async function readTicketEvents(reader: postgres.Sql, now: Date = new Dat
     { key: string; kind: TicketEventKind; ticket_id: number; customer_id: string; customer_name: string; recipient_id: string | null }[]
   >`
     with first_message as (
-      select ticket_id, min(id) as id from ticket_messages group by ticket_id
+      select ticket_id, min(id) as id from ticket_messages where not internal group by ticket_id
     )
     select 'ticket-new:' || t.id as key, 'ticket-new' as kind, t.id as ticket_id,
       t.customer_id, c.full_name as customer_name, null::text as recipient_id
