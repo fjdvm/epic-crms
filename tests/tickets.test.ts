@@ -27,7 +27,7 @@ beforeEach(async () => {
 async function ticket(
   options: {
     subject?: string;
-    status?: "open" | "resolved" | "completed";
+    status?: "open" | "on_hold" | "resolved" | "completed";
     priority?: string;
     category?: string;
     customer?: string;
@@ -106,6 +106,19 @@ describe("the Tickets list tabs", () => {
     expect(await at("resolved")).toEqual(["resolved one"]);
     expect(await at("completed")).toEqual(["completed one"]);
     expect(await at("all")).toEqual(["open one", "resolved one", "completed one"]);
+  });
+
+  it("On hold lists On hold Tickets, which are not Open and never Overdue", async () => {
+    await ticket({ subject: "open one", messages: [["customer", 1]] });
+    await ticket({ subject: "waiting on courier", status: "on_hold", messages: [["customer", 90]] });
+
+    const held = await listTickets(db.sql, { tab: "on_hold", now: NOW });
+    const open = await listTickets(db.sql, { tab: "open", now: NOW });
+
+    expect(subjects(held.rows)).toEqual(["waiting on courier"]);
+    expect(held.rows[0].overdue).toBe(false);
+    expect(subjects(open.rows)).toEqual(["open one"]);
+    expect(open.counts.on_hold).toBe(1);
   });
 
   it("Mine lists only the viewer's Claimed Tickets, of any status", async () => {

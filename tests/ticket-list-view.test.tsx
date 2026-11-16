@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { someServiceLevel } from "./service-level-fixture";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -28,13 +29,14 @@ const row = (overrides: Partial<TicketRow>): TicketRow => ({
   waiting: false,
   overdue: false,
   lastActivity: new Date("2026-10-20T00:00:00Z"),
+  serviceLevel: someServiceLevel(),
   ...overrides,
 });
 
 function view(rows: TicketRow[]) {
   const list: TicketList = {
     rows,
-    counts: { open: 7, waiting: 3, resolved: 9, completed: 119, all: 135, mine: 4 },
+    counts: { open: 7, waiting: 3, on_hold: 2, resolved: 9, completed: 119, all: 135, mine: 4 },
     totalOpen: 7,
     overdue: 2,
     page: 1,
@@ -72,7 +74,7 @@ describe("the Tickets list as designed", () => {
   it("says nothing matched when a search or filter leaves no Tickets", () => {
     const list: TicketList = {
       rows: [],
-      counts: { open: 0, waiting: 0, resolved: 0, completed: 0, all: 0, mine: 0 },
+      counts: { open: 0, waiting: 0, on_hold: 0, resolved: 0, completed: 0, all: 0, mine: 0 },
       totalOpen: 7,
       overdue: 2,
       page: 1,
@@ -86,7 +88,7 @@ describe("the Tickets list as designed", () => {
   });
 
   it("keeps the search and filters when moving between tabs", () => {
-    const list = { rows: [row({})], counts: { open: 1, waiting: 0, resolved: 0, completed: 0, all: 1, mine: 0 }, totalOpen: 1, overdue: 0, page: 1, pageSize: 25, totalPages: 1 };
+    const list = { rows: [row({})], counts: { open: 1, waiting: 0, on_hold: 0, resolved: 0, completed: 0, all: 1, mine: 0 }, totalOpen: 1, overdue: 0, page: 1, pageSize: 25, totalPages: 1 };
 
     render(<TicketListView list={list} params={{ tab: "open", page: 1, q: "maria", priority: "high", overdue: true }} />);
 

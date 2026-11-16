@@ -3,7 +3,9 @@ import type postgres from "postgres";
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "@/features/customer-profiles/rules";
 
 import type { FileStorage } from "./attachments";
-import type { TicketPriority, TicketStatus } from "./tickets";
+import { DEFAULT_HISTORY, type ServiceLevel } from "./service-level";
+import { withServiceLevels, type ServiceLevels } from "./service-level-store";
+import type { HoldReason, TicketHold, TicketPriority, TicketStatus } from "./tickets";
 
 export interface TicketMessage {
   id: number;
@@ -51,6 +53,10 @@ export interface TicketDetail {
   claimerName: string | null;
   /** The Claimer's opaque Staff id; null while Unclaimed. */
   claimerId: string | null;
+  /** Set while the Ticket is On hold; null otherwise. */
+  hold: TicketHold | null;
+  /** The countdown to the first reply or resolve target, taken from the pair in force when it was opened. */
+  serviceLevel: ServiceLevel;
   /** Oldest first. */
   messages: TicketMessage[];
   /** The Linked order; null when the Ticket has none. */
@@ -65,9 +71,10 @@ export async function getTicket(
   sql: postgres.Sql,
   id: number,
   now: Date = new Date(),
+  levels: ServiceLevels = { history: DEFAULT_HISTORY },
 ): Promise<TicketDetail | null> {
   const [t] = await sql<Record<string, unknown>[]>`
-    select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id,
+    select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id, t.hold_reason, t.hold_note, t.hold_until, t.resolved_at, t.held_seconds, t.hold_started_at,
       c.id as customer_id, c.full_name, c.first_name
     from tickets t
     join customers c on c.id = t.customer_id
@@ -113,6 +120,26 @@ export async function getTicket(
     };
   }
 
+  const serviceLevel = (
+    await withServiceLevels(
+      levels,
+      [
+        {
+          id,
+          createdAt: t.created_at as Date,
+          input: {
+            status: t.status as TicketStatus,
+            resolvedAt: (t.resolved_at as Date | null) ?? null,
+            heldSeconds: t.held_seconds as number,
+            holdStartedAt: (t.hold_started_at as Date | null) ?? null,
+            messages: messages.map((m) => ({ sender: m.sender as "customer" | "staff", at: m.created_at as Date })),
+          },
+        },
+      ],
+      now,
+    )
+  ).get(id)!;
+
   return {
     id: t.id as number,
     subject: t.subject as string,
@@ -121,6 +148,15 @@ export async function getTicket(
     openedAt: t.created_at as Date,
     claimerName,
     claimerId: (t.claimed_by_id as string | null) ?? null,
+    hold:
+      t.status === "on_hold" && t.hold_reason && t.hold_until
+        ? {
+            reason: t.hold_reason as HoldReason,
+            note: (t.hold_note as string | null) ?? null,
+            until: t.hold_until as Date,
+          }
+        : null,
+    serviceLevel,
     messages: messages.map((m) => ({
       id: m.id as number,
       sender: m.sender as "customer" | "staff",
@@ -156,9 +192,10 @@ export async function loadTicket(
   connect: () => postgres.Sql,
   id: number,
   storage?: FileStorage,
+  levels?: ServiceLevels,
 ): Promise<TicketResult> {
   try {
-    const ticket = await getTicket(connect(), id);
+    const ticket = await getTicket(connect(), id, new Date(), levels);
     if (ticket && storage) await addImageAddresses(ticket, storage);
 
     return { ok: true, ticket };

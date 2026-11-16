@@ -1,7 +1,7 @@
 import type postgres from "postgres";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { TICKETS_MODULE } from "@/lib/portal/config";
-import { TICKET_PRIORITIES } from "./tickets";
+import { HOLD_NOTE_MAX, HOLD_REASONS, TICKET_PRIORITIES, type HoldReason } from "./tickets";
 
 import { checkImage, type FileStorage, type ImageRefusal, type ImageUpload } from "./attachments";
 
@@ -29,6 +29,13 @@ export interface Actor {
 
 export type TicketActionFailure =
   | "invalid-priority"
+  | "invalid-hold-reason"
+  /** The date and time it returns to Open is missing, unreadable or not in the future. */
+  | "invalid-hold-date"
+  | "note-too-long"
+  /** Only an Open Ticket goes on hold. */
+  | "not-open"
+  | "not-on-hold"
   | "unchanged"
   | "not-found"
   /** Someone else holds the Claim; nobody takes a Claimed Ticket from its Claimer. */
@@ -93,7 +100,9 @@ export async function releaseTicket(
   audit?: TicketAudit,
 ): Promise<TicketActionResult> {
   const rows = await sql`
-    update tickets set claimed_by_id = null, claimed_by_name = null
+    update tickets set claimed_by_id = null, claimed_by_name = null,
+      status = case when status = 'on_hold' then 'open' else status end,
+      hold_reason = null, hold_note = null, hold_until = null
     where id = ${id} and claimed_by_id = ${actor.id} and status <> 'completed'
     returning id`;
 
@@ -274,4 +283,71 @@ export async function changeTicketPriority(sql: postgres.Sql, id: number, priori
   }
   await auditChange(audit, id, "ticket.priority_changed", `changed Priority to ${priority} on Ticket`);
   return { ok: true };
+}
+
+export interface HoldRequest {
+  reason: string;
+  /** Staff-only; optional. */
+  note?: string;
+  /** When the Ticket returns to Open by itself. */
+  until: Date | null;
+}
+
+/**
+ * Only the Claimer puts an Open Ticket on hold, with a reason and the date and time it returns to Open.
+ * The date is required so a hold can never sit forever; the scheduled job in the shop returns it when due.
+ */
+export async function putTicketOnHold(
+  sql: postgres.Sql,
+  id: number,
+  actor: Actor,
+  request: HoldRequest,
+  audit?: TicketAudit,
+  now: Date = new Date(),
+): Promise<TicketActionResult> {
+  if (!HOLD_REASONS.some((r) => r.value === request.reason)) return { ok: false, reason: "invalid-hold-reason" };
+  if (!request.until || Number.isNaN(request.until.getTime()) || request.until.getTime() <= now.getTime())
+    return { ok: false, reason: "invalid-hold-date" };
+
+  const note = request.note?.trim() || null;
+  if (note && note.length > HOLD_NOTE_MAX) return { ok: false, reason: "note-too-long" };
+
+  const rows = await sql`
+    update tickets set status = 'on_hold', hold_reason = ${request.reason as HoldReason}, hold_note = ${note},
+      hold_until = ${request.until}
+    where id = ${id} and status = 'open' and claimed_by_id = ${actor.id}
+    returning id`;
+
+  if (rows.length) {
+    const label = HOLD_REASONS.find((r) => r.value === request.reason)!.label;
+    await auditChange(audit, id, "ticket.put_on_hold", `put on hold (${label}, until ${request.until.toISOString()}) Ticket`);
+    return { ok: true };
+  }
+
+  const reason = await whyNot(sql, id, actor);
+  if (reason !== "not-claimed") return { ok: false, reason: reason === "claimed" ? "not-claimer" : reason };
+
+  const [t] = await sql<{ status: string; claimed_by_id: string | null }[]>`select status, claimed_by_id from tickets where id = ${id}`;
+
+  return { ok: false, reason: t?.claimed_by_id === actor.id ? "not-open" : "not-claimed" };
+}
+
+/** Only the Claimer takes a Ticket off hold early, back to Open. */
+export async function takeTicketOffHold(sql: postgres.Sql, id: number, actor: Actor, audit?: TicketAudit): Promise<TicketActionResult> {
+  const rows = await sql`
+    update tickets set status = 'open', hold_reason = null, hold_note = null, hold_until = null
+    where id = ${id} and status = 'on_hold' and claimed_by_id = ${actor.id}
+    returning id`;
+
+  if (rows.length) {
+    await auditChange(audit, id, "ticket.taken_off_hold", "took off hold Ticket");
+    return { ok: true };
+  }
+
+  const [t] = await sql<{ status: string; claimed_by_id: string | null }[]>`select status, claimed_by_id from tickets where id = ${id}`;
+  if (!t) return { ok: false, reason: "not-found" };
+  if (t.status === "completed") return { ok: false, reason: "completed" };
+  if (t.claimed_by_id !== actor.id) return { ok: false, reason: "not-claimer" };
+
+  return { ok: false, reason: "not-on-hold" };
 }

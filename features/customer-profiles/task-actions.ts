@@ -122,3 +122,18 @@ export async function changeCustomerTaskDueDate(customerId: string, taskId: stri
 export async function reassignCustomerTask(customerId: string, taskId: string, owner: Owner, operationId: string): Promise<TaskResult> {
   return changeTask(customerId, taskId, { kind: "reassigned", owner }, operationId);
 }
+
+/** Active Staff and Managers a Manager may reassign a Task to. Staff and read-only Roles get nothing. */
+export async function listTaskOwners(): Promise<{ ok: true; owners: Owner[] } | { ok: false; message: string }> {
+  const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
+  if (shopRole(staff.role) !== "manager") return { ok: false, message: "Only a Manager can reassign a Task. Request approval." };
+  try {
+    const people = await portalGateway().recipients();
+    return { ok: true, owners: people
+      .filter(person => person.name?.trim() && person.modules.includes(CUSTOMER_PROFILES_MODULE) && ["staff", "manager"].includes(shopRole(person.role ?? "") ?? ""))
+      .map(person => ({ id: person.id, name: person.name! })) };
+  } catch (error) {
+    console.error("Task owners could not be read", error);
+    return { ok: false, message: "Staff list is unavailable right now. Please try again." };
+  }
+}

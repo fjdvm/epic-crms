@@ -141,9 +141,27 @@ const SCHEMA = `
     priority text not null default 'normal',
     claimed_by_id text,
     claimed_by_name text,
+    hold_reason text,
+    hold_note text,
+    hold_until timestamptz,
+    hold_started_at timestamptz,
+    held_seconds integer not null default 0,
     resolved_at timestamptz,
     created_at timestamptz not null default now()
   );
+  create function tickets_track_hold() returns trigger as $$
+  begin
+    if NEW.status = 'on_hold' and OLD.status is distinct from 'on_hold' then
+      NEW.hold_started_at := now();
+    elsif OLD.status = 'on_hold' and NEW.status <> 'on_hold' then
+      NEW.held_seconds := OLD.held_seconds + greatest(0, floor(extract(epoch from now() - coalesce(OLD.hold_started_at, now()))))::integer;
+      NEW.hold_started_at := null;
+    end if;
+    return NEW;
+  end;
+  $$ language plpgsql;
+  create trigger tickets_track_hold before update of status on tickets
+    for each row execute function tickets_track_hold();
   create table ticket_messages (
     id integer primary key generated always as identity,
     ticket_id integer not null references tickets (id) on delete cascade,

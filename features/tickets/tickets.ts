@@ -1,16 +1,36 @@
 import type postgres from "postgres";
 
+import { DEFAULT_HISTORY, firstReplyHoursSql, type ServiceLevel } from "./service-level";
+import { withServiceLevels, type ServiceLevels } from "./service-level-store";
+
 export const TICKETS_PAGE_SIZE = 25;
 
-/** A Ticket the Customer has gone this long without a Staff reply to is Overdue. */
-export const OVERDUE_AFTER_HOURS = 24;
+export type TicketTab = "open" | "waiting" | "on_hold" | "resolved" | "completed" | "all" | "mine";
 
-export type TicketTab = "open" | "waiting" | "resolved" | "completed" | "all" | "mine";
+export const TICKET_TABS: TicketTab[] = ["open", "waiting", "on_hold", "resolved", "completed", "all", "mine"];
 
-/** On hold joins this list when it ships (slice 2). */
-export const TICKET_TABS: TicketTab[] = ["open", "waiting", "resolved", "completed", "all", "mine"];
+export type TicketStatus = "open" | "on_hold" | "resolved" | "completed";
 
-export type TicketStatus = "open" | "resolved" | "completed";
+export type HoldReason = "courier" | "kitchen_or_ims" | "supplier" | "manager_decision";
+
+/** What the Claimer is waiting on, as the Put on hold dialog words it. */
+export const HOLD_REASONS: { value: HoldReason; label: string; hint?: string }[] = [
+  { value: "courier", label: "Courier (Lalamove or Grab)", hint: "Rider pickup, return trip" },
+  { value: "kitchen_or_ims", label: "Kitchen or IMS", hint: "Fresh batch, stock count, QC check" },
+  { value: "supplier", label: "Supplier", hint: "Packaging, ingredients" },
+  { value: "manager_decision", label: "Manager decision" },
+];
+
+export const HOLD_NOTE_MAX = 500;
+export const HOLD_MESSAGE_MAX = 500;
+
+/** Why a Ticket is On hold and when it returns to Open. Staff only: the Customer is only ever told "We're on it". */
+export interface TicketHold {
+  reason: HoldReason;
+  note: string | null;
+  until: Date;
+}
+
 
 export type TicketPriority = "low" | "normal" | "high" | "urgent";
 
@@ -37,6 +57,8 @@ export interface TicketQuery extends TicketFilters {
   viewerId?: string;
   /** The moment Overdue is measured at; defaults to now. */
   now?: Date;
+  /** The saved Service levels; the defaults when not given. */
+  levels?: ServiceLevels;
 }
 
 export interface TicketRow {
@@ -56,6 +78,8 @@ export interface TicketRow {
   waiting: boolean;
   overdue: boolean;
   lastActivity: Date;
+  /** The countdown to the first reply or resolve target. */
+  serviceLevel: ServiceLevel;
 }
 
 export interface TicketList {
@@ -129,9 +153,8 @@ export async function listTickets(
 ): Promise<TicketList> {
   const tab = query.tab ?? "open";
   const pageSize = query.pageSize ?? TICKETS_PAGE_SIZE;
-  const overdueBefore = new Date(
-    (query.now ?? new Date()).getTime() - OVERDUE_AFTER_HOURS * 60 * 60 * 1000,
-  );
+  const now = query.now ?? new Date();
+  const levels = query.levels ?? { history: DEFAULT_HISTORY };
 
   const derived = (where: postgres.PendingQuery<postgres.Row[]>) => sql`
     with derived as (
@@ -143,12 +166,16 @@ export async function listTickets(
         t.order_id,
         t.priority,
         t.status,
+        t.created_at,
+        t.resolved_at,
+        t.held_seconds,
+        t.hold_started_at,
         t.claimed_by_id,
         t.claimed_by_name,
         coalesce(m.created_at, t.created_at) as last_activity,
         t.status = 'open' and coalesce(m.sender, 'customer') = 'staff' as waiting,
         t.status = 'open' and coalesce(m.sender, 'customer') = 'customer'
-          and coalesce(m.created_at, t.created_at) < ${overdueBefore} as overdue
+          and coalesce(m.created_at, t.created_at) + ${firstReplyHoursSql(sql, levels.history)} * interval '1 hour' < ${now} as overdue
       from tickets t
       join customers c on c.id = t.customer_id
       left join lateral (
@@ -177,6 +204,7 @@ export async function listTickets(
     select
       count(*) filter (where status = 'open' and (not ${query.overdue ?? false} or overdue))::int as open,
       count(*) filter (where waiting and (not ${query.overdue ?? false} or overdue))::int as waiting,
+      count(*) filter (where status = 'on_hold' and not ${query.overdue ?? false})::int as on_hold,
       count(*) filter (where status = 'resolved' and not ${query.overdue ?? false})::int as resolved,
       count(*) filter (where status = 'completed' and not ${query.overdue ?? false})::int as completed,
       count(*) filter (where not ${query.overdue ?? false} or overdue)::int as all,
@@ -198,6 +226,7 @@ export async function listTickets(
   const tabFilter = {
     open: sql`status = 'open'`,
     waiting: sql`waiting`,
+    on_hold: sql`status = 'on_hold'`,
     resolved: sql`status = 'resolved'`,
     completed: sql`status = 'completed'`,
     all: sql`true`,
@@ -210,6 +239,30 @@ export async function listTickets(
     where ${tabFilter} and (${query.overdue ? sql`overdue` : sql`true`})
     order by last_activity desc, id desc
     limit ${pageSize} offset ${(page - 1) * pageSize}`;
+
+  const ids = rows.map((r) => r.id as number);
+  const messageRows = ids.length
+    ? await sql<{ ticket_id: number; sender: "customer" | "staff"; created_at: Date }[]>`
+        select ticket_id, sender, created_at from ticket_messages
+        where ticket_id = any(${ids}::int[]) order by ticket_id, created_at, id`
+    : [];
+  const levelsById = await withServiceLevels(
+    levels,
+    rows.map((r) => ({
+      id: r.id as number,
+      createdAt: r.created_at as Date,
+      input: {
+        status: r.status as TicketStatus,
+        resolvedAt: (r.resolved_at as Date | null) ?? null,
+        heldSeconds: r.held_seconds as number,
+        holdStartedAt: (r.hold_started_at as Date | null) ?? null,
+        messages: messageRows
+          .filter((m) => m.ticket_id === r.id)
+          .map((m) => ({ sender: m.sender, at: m.created_at })),
+      },
+    })),
+    now,
+  );
 
   return {
     rows: rows.map((r) => ({
@@ -225,10 +278,12 @@ export async function listTickets(
       waiting: r.waiting as boolean,
       overdue: r.overdue as boolean,
       lastActivity: r.last_activity as Date,
+      serviceLevel: levelsById.get(r.id as number)!,
     })),
     counts: {
       open: counts.open,
       waiting: counts.waiting,
+      on_hold: counts.on_hold,
       resolved: counts.resolved,
       completed: counts.completed,
       all: counts.all,

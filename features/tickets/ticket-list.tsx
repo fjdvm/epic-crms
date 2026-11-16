@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
+import { describeClock, type Clock } from "./service-level";
 import { ClaimButton } from "./ticket-controls";
 import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
 import {
@@ -24,6 +25,7 @@ export type TicketListParams = TicketParams;
 export const TAB_LABELS: Record<TicketTab, string> = {
   open: "Open",
   waiting: "Waiting on customer",
+  on_hold: "On hold",
   resolved: "Resolved",
   completed: "Completed",
   all: "All",
@@ -40,6 +42,7 @@ export const COLUMNS: { header: string; className: string }[] = [
   { header: "Priority", className: "flex-[1_1_100px]" },
   { header: "Claimed by", className: "min-w-0 flex-[1_1_130px]" },
   { header: "Status", className: "flex-[1_1_110px]" },
+  { header: "Service level", className: "flex-[1_1_130px]" },
   { header: "", className: "flex-[0_0_90px] justify-end" },
 ];
 
@@ -48,6 +51,19 @@ function href(
   change: Partial<TicketListParams>,
 ): string {
   return ticketsHref({ ...params, ...change });
+}
+
+function ServiceCell({ clock }: { clock: Clock }) {
+  const tone =
+    clock.state === "missed"
+      ? "text-[#b91c1c]"
+      : clock.state === "breaching"
+        ? "text-[#b45309]"
+        : clock.state === "met"
+          ? "text-[#15803d]"
+          : "text-[#6e6680]";
+
+  return <span className={cn("font-medium", tone)}>{describeClock(clock)}</span>;
 }
 
 function StatusPill({ row }: { row: TicketRow }) {
@@ -103,7 +119,7 @@ export function TicketListView({
           </div>
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
-            <div className="min-w-[1000px]">
+            <div className="min-w-[1130px]">
               <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
                 {COLUMNS.map((col) => (
                   <div key={col.header} className={cn(HEAD, col.className)}>
@@ -155,6 +171,9 @@ export function TicketListView({
                     <StatusPill row={row} />
                   </div>
                   <div className={cn(CELL, COLUMNS[8].className)}>
+                    <ServiceCell clock={row.serviceLevel.current} />
+                  </div>
+                  <div className={cn(CELL, COLUMNS[9].className)}>
                     {row.status !== "completed" && row.claimedById === null && (
                       <ClaimButton ticketId={row.id} />
                     )}
@@ -219,7 +238,7 @@ export function TicketListSkeleton({
 
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
         <div className="min-h-0 flex-1 overflow-hidden">
-          <div className="min-w-[1000px]">
+          <div className="min-w-[1130px]">
             <div className="flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
               {COLUMNS.map((col, c) => (
                 <div key={c} className={cn(HEAD, col.className)}>

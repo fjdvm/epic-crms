@@ -12,7 +12,10 @@ import {
   listTicketFilterOptions,
   loadTickets,
   type TicketFilterOptions,
+  type TicketListResult,
 } from "@/features/tickets/tickets";
+import { readServiceLevels } from "@/features/tickets/service-level-store";
+import { crmsDatabase } from "@/lib/crms-db";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -75,10 +78,10 @@ async function TicketsData({ raw }: { raw: Awaited<SearchParams> }) {
   const staff = await requireModule(TICKETS_MODULE);
   const params = parseTicketParams(raw);
 
-  const result = await loadTickets(ticketsDatabase, {
-    ...params,
-    viewerId: staff.username,
-  });
+  const levels = await readServiceLevels(crmsDatabase);
+  const result: TicketListResult = levels
+    ? await loadTickets(ticketsDatabase, { ...params, viewerId: staff.username, levels })
+    : { ok: false };
 
   if (!result.ok) {
     return (
