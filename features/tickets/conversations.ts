@@ -4,6 +4,7 @@ import { formatDate } from "@/features/customer-profiles/format";
 
 import type { FileStorage } from "./attachments";
 import { loadTicket, type TicketDetail } from "./ticket";
+import { ticketSearch } from "./tickets";
 
 export interface ConversationRow {
   /** The Ticket number is this id, written TKT-<id>. */
@@ -14,8 +15,15 @@ export interface ConversationRow {
   lastActivity: Date;
 }
 
-/** The chats of the Tickets this Staff member Claimed, newest activity first. A chat is a Ticket's Conversation; there is none without a Ticket. */
-export async function listConversations(sql: postgres.Sql, viewerId: string): Promise<ConversationRow[]> {
+/**
+ * The chats of the Tickets this Staff member Claimed, newest activity first, narrowed by the same search as
+ * the Tickets list when one is given. A chat is a Ticket's Conversation; there is none without a Ticket.
+ */
+export async function listConversations(
+  sql: postgres.Sql,
+  viewerId: string,
+  search?: string,
+): Promise<ConversationRow[]> {
   const rows = await sql<Record<string, unknown>[]>`
     select
       t.id,
@@ -32,7 +40,7 @@ export async function listConversations(sql: postgres.Sql, viewerId: string): Pr
       order by created_at desc, id desc
       limit 1
     ) m on true
-    where t.claimed_by_id = ${viewerId}
+    where t.claimed_by_id = ${viewerId} and ${ticketSearch(sql, search)}
     order by last_activity desc, t.id desc`;
 
   return rows.map((r) => ({
@@ -75,9 +83,10 @@ export async function loadConversations(
   viewerId: string,
   selectedId?: number,
   storage?: FileStorage,
+  search?: string,
 ): Promise<ConversationsResult> {
   try {
-    const chats = await listConversations(connect(), viewerId);
+    const chats = await listConversations(connect(), viewerId, search);
     const id = chats.find((c) => c.ticketId === selectedId)?.ticketId ?? chats[0]?.ticketId;
     if (id === undefined) return { ok: true, conversations: { chats, selected: null } };
 

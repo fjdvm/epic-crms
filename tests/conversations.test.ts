@@ -43,6 +43,41 @@ async function chat(
   return row.id;
 }
 
+describe("searching Conversations", () => {
+  it("narrows the viewer's chats by Ticket number, Customer name or email, or Linked order", async () => {
+    const [order] = await db.sql<{ id: number }[]>`insert into orders (customer_id) values ('c2') returning id`;
+    const maria = await chat("c1", "Leak", [{ body: "hi", minutes: 5 }]);
+    const ana = await chat("c2", "Receipt", [{ body: "hi", minutes: 6 }]);
+    await db.sql`update tickets set order_id = ${order.id} where id = ${ana}`;
+
+    const ids = async (q: string) => (await listConversations(db.sql, ME, q)).map((r) => r.ticketId);
+
+    expect(await ids("maria")).toEqual([maria]);
+    expect(await ids("ana@example")).toEqual([ana]);
+    expect(await ids(`TKT-${maria}`)).toEqual([maria]);
+    expect(await ids(`#${order.id}`)).toEqual([ana]);
+    expect(await ids("")).toEqual([maria, ana]);
+    expect(await ids("nobody")).toEqual([]);
+  });
+
+  it("still shows only the viewer's own Claimed Tickets", async () => {
+    const mine = await chat("c1", "Mine", [{ body: "hi", minutes: 5 }]);
+    await chat("c1", "Hers", [{ body: "hi", minutes: 6 }], 1_000, "staff-2");
+    await chat("c1", "Unclaimed", [{ body: "hi", minutes: 7 }], 1_000, null);
+
+    expect((await listConversations(db.sql, ME, "maria")).map((r) => r.ticketId)).toEqual([mine]);
+  });
+
+  it("opens the first match when the open chat does not match", async () => {
+    const maria = await chat("c1", "Leak", [{ body: "hi", minutes: 5 }]);
+    const ana = await chat("c2", "Receipt", [{ body: "hi", minutes: 6 }]);
+
+    const result = await loadConversations(() => db.sql, ME, maria, undefined, "ana");
+
+    expect(result.ok && result.conversations.selected?.id).toBe(ana);
+  });
+});
+
 describe("the Conversations list", () => {
   it("lists every chat with Customer name, last Message preview, time and Ticket number, newest activity first", async () => {
     const older = await chat("c2", "Receipt", [{ body: "first", minutes: 300 }, { body: "My receipt was rejected", minutes: 180 }]);

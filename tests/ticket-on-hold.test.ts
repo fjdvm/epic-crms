@@ -157,7 +157,7 @@ describe("While On hold", () => {
 
     const list = await listTickets(db.sql, { now: NOW });
     expect(list.overdue).toBe(0);
-    expect(list.counts).toEqual({ open: 0, waiting: 0, resolved: 0 });
+    expect(list.counts).toMatchObject({ open: 0, waiting: 0, resolved: 0, on_hold: 1 });
 
     const figures = await loadDashboardFigures(() => db.sql, {
       period: resolvePeriod("today", NOW),

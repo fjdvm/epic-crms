@@ -28,35 +28,33 @@ export function ConversationsView({
   viewerId,
   viewerName,
   now = new Date(),
+  query = "",
 }: {
   conversations: Conversations;
   viewerId: string;
   viewerName: string;
   now?: Date;
+  /** The search narrowing the chats: opening a chat keeps it, and an empty inbox says nothing matched. */
+  query?: string;
 }) {
   const { chats, selected } = conversations;
+  const searching = query !== "";
 
   return (
-    <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
-      <div className="shrink-0 space-y-1">
-        <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Conversations</h1>
-        <p className="text-sm leading-[normal] text-[#6e6680]">
-          One inbox for every Ticket chat, newest activity first. Each chat belongs to a Ticket.
-        </p>
-      </div>
-
       <div className="flex flex-col items-start gap-4 lg:min-h-0 lg:w-full lg:flex-1 lg:flex-row">
         <nav
           aria-label="Chats"
           className="flex h-[40vh] w-full flex-col gap-1 overflow-y-auto rounded-xl border border-[#e6e1ee] bg-white px-2 py-3 lg:h-full lg:w-[300px] lg:shrink-0"
         >
           {chats.length === 0 && (
-            <p className="px-3 py-2 text-[13px] leading-[normal] text-[#6e6680]">No chats yet.</p>
+            <p className="px-3 py-2 text-[13px] leading-[normal] text-[#6e6680]">
+              {searching ? "No chats match this search." : "No chats yet."}
+            </p>
           )}
           {chats.map((chat) => (
             <Link
               key={chat.ticketId}
-              href={`/conversations?ticket=${chat.ticketId}`}
+              href={`/conversations?ticket=${chat.ticketId}${searching ? `&q=${encodeURIComponent(query)}` : ""}`}
               aria-current={chat.ticketId === selected?.id ? "true" : undefined}
               className={cn(
                 "flex flex-col gap-[3px] rounded-lg px-3 py-[10px]",
@@ -84,12 +82,11 @@ export function ConversationsView({
         ) : (
           <section className={cn(CARD, "w-full min-w-0 lg:flex-1")}>
             <p className="text-sm leading-[normal] text-[#6e6680]">
-              When a Customer opens a Ticket, its chat appears here.
+              {searching ? "No chat matches this search." : "When a Customer opens a Ticket, its chat appears here."}
             </p>
           </section>
         )}
       </div>
-    </div>
   );
 }
 
