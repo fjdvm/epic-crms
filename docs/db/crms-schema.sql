@@ -131,6 +131,17 @@ CREATE TABLE crms.return_sync_state (
   baselined_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- The similar-image fingerprint of each Return evidence photo, computed by CREOMS from the stored
+-- file (no outside service sees it) and kept with the Return. See docs/return-flags.md.
+CREATE TABLE crms.return_photo_fingerprints (
+  return_id   integer NOT NULL,
+  position    integer NOT NULL CHECK (position BETWEEN 1 AND 3),
+  file_id     text NOT NULL,
+  fingerprint text NOT NULL CHECK (fingerprint ~ '^[0-9a-f]{16}:[0-9a-f]{16}$'),
+  computed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (return_id, position)
+);
+
 -- Run as creoms_writer before deploying #249. Additive and safe to re-run.
 create table if not exists crms.portal_copy_audiences (
   notification_id bigint primary key references crms.notifications(id) on delete cascade
