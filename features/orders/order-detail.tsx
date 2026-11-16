@@ -1,3 +1,4 @@
+import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import Link from "next/link";
 import { FULFILMENT_MODULE, ORDERS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 
@@ -115,6 +116,7 @@ function PaymentProof({ order }: { order: OrderDetail }) {
             <span>{method} reference: {proof.reference ?? "—"} · submitted {formatDate(proof.submittedAt)}</span>
             {proof.rejection && <span className="rounded-full bg-[#fee2e2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">Rejected</span>}
           </p>
+          {proof.confirmed && proof.expected && proof.checks && <PaymentProofChecksView confirmed={proof.confirmed} expected={proof.expected} checks={proof.checks} />}
           <Screenshot source={proof.screenshot} alt={`Payment proof ${index + 1} for order ${order.id}`} />
           {proof.rejection && (
             <p className="text-xs text-[#6e6680]">

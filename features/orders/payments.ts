@@ -1,3 +1,4 @@
+import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
 import type postgres from "postgres";
 
 import { paymentScreenshotSource } from "./payment-screenshot";
@@ -55,6 +56,7 @@ export interface PaymentRow {
   proofRejectedAt: Date | null;
   /** Proofs rejected so far; at 3 only a Manager can approve. */
   rejections: number;
+  proofChecks?: PaymentProofChecks;
 }
 
 export type PaymentsResult = { ok: true; rows: PaymentRow[]; now: Date } | { ok: false; reason: string };
@@ -82,7 +84,14 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date()): Pr
       and (o.status in ${sql(ACTIVE)} or o.created_at >= ${since})
     order by o.id`;
 
+  const byProof = await paymentProofChecksForOrders(sql, rows.filter(o => o.payment_proof_submitted_at !== null).map(o => o.id));
+  // The query orders proofs oldest first; retain only the most recent for each Order below.
+  const latestProofs = rows.length ? await sql<{ id: number; order_id: number }[]>`
+    select distinct on (order_id) id, order_id from public.order_payment_proofs
+    where order_id in ${sql(rows.map(o => o.id))} order by order_id, submitted_at desc, id desc` : [];
+  const byOrder = new Map(latestProofs.map(p => [p.order_id, byProof.get(p.id)]));
   return rows.map(o => ({
+    proofChecks: byOrder.get(o.id),
     id: o.id, customer: { id: o.customer_id, name: o.full_name }, method: o.payment_method, status: o.status,
     total: o.total,
     proof: o.payment_proof_submitted_at

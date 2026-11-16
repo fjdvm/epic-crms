@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-profiles/format";
 
+import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
 import { AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
@@ -75,6 +76,7 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
               <dt className="text-[13px] font-medium text-[#27272a]">Reference no.</dt>
               <dd className="rounded-lg border border-[#e4e4e7] px-3 py-2.5">{reference ?? "—"}</dd>
             </div>
+            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} />}
             <p className="rounded-lg bg-[#eff6ff] px-3 py-2.5 text-[13px] text-[#1d4ed8]">
               Marking paid tells the Customer their payment was received. Reject the receipt or ask for a new proof
               and the Customer is emailed a link to upload again; cancelling cancels the Order.
