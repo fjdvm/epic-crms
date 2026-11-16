@@ -5,6 +5,7 @@ import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { ReturnDetailView } from "@/features/returns/return-detail";
 import { loadReturnDetail } from "@/features/returns/returns";
 import { fetchReturnPhoto } from "@/features/returns/photo-bytes";
+import { keptFlagExplanation } from "@/features/returns/return-flag-explain";
 import { fingerprintReturnPhotos, loadReturnFlags } from "@/features/returns/return-flags";
 import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayFileStorage } from "@/lib/gateway";
@@ -76,11 +77,21 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
     return undefined;
   });
 
+  // Staff never see the AI-written explanation; a read failure just leaves it out.
+  const flagExplanations: Partial<Record<"frequent-returns" | "similar-photo", string>> = {};
+  if (role && role !== "staff") {
+    for (const flag of flags ?? []) {
+      const kept = await keptFlagExplanation(crmsDatabase(), detail.id, flag.rule).catch(() => null);
+      if (kept) flagExplanations[flag.rule] = kept;
+    }
+  }
+
   return (
     <>
       <BackgroundRefresh />
       <ReturnDetailView
         flags={flags}
+        flagExplanations={flagExplanations}
         detail={detail}
         imageUrls={imageUrls}
         deliveryPhotoUrl={deliveryPhotoUrl}
