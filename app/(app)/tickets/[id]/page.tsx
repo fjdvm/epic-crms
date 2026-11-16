@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TicketDetailView } from "@/features/tickets/ticket-detail";
-import { loadTicket } from "@/features/tickets/ticket";
+import { loadTicket, type TicketResult } from "@/features/tickets/ticket";
+import { readServiceLevels } from "@/features/tickets/service-level-store";
+import { crmsDatabase } from "@/lib/crms-db";
 import { ticketFileStorage } from "@/features/files/server";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { canOpenOrders, requireModule } from "@/lib/portal/staff";
@@ -14,7 +16,10 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
 
-  const result = await loadTicket(ticketsDatabase, Number(id), ticketFileStorage);
+  const levels = await readServiceLevels(crmsDatabase);
+  const result: TicketResult = levels
+    ? await loadTicket(ticketsDatabase, Number(id), ticketFileStorage, levels)
+    : { ok: false };
 
   if (!result.ok) {
     return (

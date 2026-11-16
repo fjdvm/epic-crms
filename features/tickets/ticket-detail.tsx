@@ -11,6 +11,7 @@ import { MessageAttachment } from "./message-attachment";
 import { ByClaimer, ClaimerName, ClaimProvider } from "./claim";
 import { HoldProvider, HoldSummary, StatusPill } from "./hold";
 import { TicketActions } from "./ticket-controls";
+import { ServiceLevelPanel } from "./service-level-panel";
 import type { TicketDetail, TicketMessage } from "./ticket";
 import type { TicketStatus } from "./tickets";
 
@@ -89,6 +90,8 @@ export function TicketDetailView({
           withReply={false}
         />
       </div>
+
+      <ServiceLevelPanel level={ticket.serviceLevel} />
 
       <div className="flex flex-col items-start gap-4 lg:min-h-0 lg:w-full lg:flex-1 lg:flex-row">
         <section

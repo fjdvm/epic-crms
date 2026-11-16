@@ -3,7 +3,7 @@ import type postgres from "postgres";
 import {
   FEEDBACK_MODULE, FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, TICKETS_MODULE,
 } from "@/lib/portal/config";
-import { OVERDUE_AFTER_HOURS } from "@/features/tickets/tickets";
+import { DEFAULT_HISTORY, firstReplyHoursSql, type TargetHistory } from "@/features/tickets/service-level";
 
 /** One Needs attention queue: how much work waits, and since when the oldest of it has. */
 export type Queue<Extra = object> = ({ ok: true; count: number; oldest: Date | null } & Extra) | { ok: false };
@@ -21,7 +21,7 @@ export interface Attention {
 
 interface Row { count: number; oldest: Date | null }
 
-type Read<Extra> = (sql: postgres.Sql, now: Date) => Promise<{ count: number; oldest: Date | null } & Extra>;
+type Read<Extra> = (sql: postgres.Sql, now: Date, history: TargetHistory) => Promise<{ count: number; oldest: Date | null } & Extra>;
 
 /** Every queue is read live, on its own, so one failing leaves the rest standing. */
 const queues: { key: keyof Attention; module: string; read: Read<object> }[] = [
@@ -58,16 +58,16 @@ const queues: { key: keyof Attention; module: string; read: Read<object> }[] = [
   },
   {
     key: "openTickets", module: TICKETS_MODULE,
-    read: async (sql, now) => {
-      const overdueBefore = new Date(now.getTime() - OVERDUE_AFTER_HOURS * 60 * 60 * 1000);
+    read: async (sql, now, history) => {
       // As the Tickets page: Unclaimed Open Tickets. The oldest waiting is the longest unanswered by Staff.
       const [row] = await sql<(Row & { overdue: number })[]>`
         select count(*)::int as count,
-          (count(*) filter (where from_customer and last_activity < ${overdueBefore}))::int as overdue,
+          (count(*) filter (where from_customer and overdue))::int as overdue,
           min(last_activity) filter (where from_customer) as oldest
         from (
           select coalesce(m.created_at, t.created_at) as last_activity,
-            coalesce(m.sender, 'customer') = 'customer' as from_customer
+            coalesce(m.sender, 'customer') = 'customer' as from_customer,
+            coalesce(m.created_at, t.created_at) + ${firstReplyHoursSql(sql, history)} * interval '1 hour' < ${now} as overdue
           from public.tickets t
           left join lateral (
             select sender, created_at from public.ticket_messages
@@ -104,17 +104,24 @@ async function one(rows: Promise<Row[]>): Promise<Row> {
 
 export async function loadAttention(
   connect: () => postgres.Sql,
-  { modules, now }: { modules: readonly string[]; now: Date },
+  { modules, now, targets }: { modules: readonly string[]; now: Date; targets?: TargetHistory | null },
 ): Promise<Attention> {
   const held = queues.filter(({ module }) => modules.includes(module));
 
   const results = await Promise.all(held.map(async ({ key, read }) => {
     try {
-      return [key, { ok: true, ...(await read(connect(), now)) }] as const;
+      return [key, { ok: true, ...(await read(connect(), now, targets === undefined ? DEFAULT_HISTORY : requireTargets(targets))) }] as const;
     } catch {
       return [key, { ok: false }] as const;
     }
   }));
 
   return Object.fromEntries(results) as Attention;
+}
+
+/** Overdue needs the Admin's first reply target; if it could not be read the queue says so rather than guess. */
+function requireTargets(targets: TargetHistory | null): TargetHistory {
+  if (!targets) throw new Error("Service levels are unavailable");
+
+  return targets;
 }
