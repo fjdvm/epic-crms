@@ -49,7 +49,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   ...overrides,
 });
 
-function view(selected: TicketDetail | null = ticket(), viewerId = "bernice") {
+function view(selected: TicketDetail | null = ticket(), viewerId = "bernice", canDraft = false) {
   const conversations: Conversations = {
     chats: [
       { ticketId: 208, customerName: "Maria Santos", preview: "Replacement please", lastActivity: new Date(NOW.getTime() - 5 * 60_000) },
@@ -58,7 +58,7 @@ function view(selected: TicketDetail | null = ticket(), viewerId = "bernice") {
     selected,
   };
 
-  return render(<ConversationsView conversations={conversations} viewerId={viewerId} viewerName="Bernice" now={NOW} />);
+  return render(<ConversationsView conversations={conversations} viewerId={viewerId} viewerName="Bernice" now={NOW} canDraft={canDraft} />);
 }
 
 describe("the Conversations page as designed", () => {
@@ -149,5 +149,16 @@ describe("the Conversations page as designed", () => {
     render(<ConversationsView conversations={{ chats: [], selected: null }} viewerId="bernice" viewerName="Bernice" />);
 
     expect(screen.getByText("No chats yet.")).toBeTruthy();
+  });
+});
+
+describe("the draft panel on the chat", () => {
+  it("shows the panel to Staff and Managers, and none to Admin or CEO", () => {
+    const staff = view(ticket(), "bernice", true);
+    expect(screen.getByRole("region", { name: "Draft reply" })).toBeTruthy();
+    staff.unmount();
+    view(ticket(), "bernice", false);
+    expect(screen.queryByRole("region", { name: "Draft reply" })).toBeNull();
+    expect(screen.queryByText("Use in conversation")).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import { ChatSearchInput } from "@/features/tickets/ticket-toolbar";
 import { ticketFileStorage } from "@/features/files/server";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
+import { canWork } from "@/lib/portal/roles";
 import { ticketsDatabase } from "@/lib/tickets-db";
 import { searchParamsKey } from "@/lib/search-params-key";
 import { ConversationsSkeleton } from "@/features/tickets/conversations-skeleton";
@@ -83,6 +84,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
       viewerId={staff.username}
       viewerName={staff.name}
       query={query}
+      canDraft={canWork(staff)}
     />
   );
 }

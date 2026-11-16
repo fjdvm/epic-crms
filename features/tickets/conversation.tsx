@@ -12,6 +12,7 @@ import { MessageAttachment } from "./message-attachment";
 import type { TicketMessage } from "./ticket";
 import { NoteBox, Sending, useMessagesWithNotes } from "./notes";
 import { Composer } from "./ticket-controls";
+import { DraftPanel } from "./draft-panel";
 
 const TIME = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
@@ -103,6 +104,7 @@ export function Conversation({
   note,
   canReply,
   canNote = false,
+  draftDisabledReason,
   scrollable = false,
   connect = connectLive,
 }: {
@@ -115,6 +117,8 @@ export function Conversation({
   canReply: boolean;
   /** Any Staff member may add an Internal note, claimer or not; the page must hold a NotesProvider. */
   canNote?: boolean;
+  /** Staff and Managers get the draft panel; undefined (Admin, CEO) shows none. Null means on, a string is why it is off. */
+  draftDisabledReason?: string | null;
   /** Fill the parent's height: the Messages scroll inside it and the reply box stays in view. */
   scrollable?: boolean;
   connect?: ConnectLive;
@@ -212,12 +216,23 @@ export function Conversation({
     if (box) box.scrollTop = box.scrollHeight;
   }, [shown.length]);
 
+  const [reply, setReply] = useState("");
+  const [draftId, setDraftId] = useState<number | null>(null);
+
   const bubbles = <Bubbles messages={shown} />;
 
   const footer = (
     <>
+      {draftDisabledReason !== undefined && (
+        <DraftPanel
+          ticketId={ticketId}
+          disabledReason={draftDisabledReason}
+          replyText={reply}
+          onUse={(text, id) => { setReply(text); setDraftId(id); }}
+        />
+      )}
       {canReply ? (
-        <Composer ticketId={ticketId} onSent={sent} />
+        <Composer ticketId={ticketId} onSent={sent} value={reply} onValueChange={setReply} draftId={draftId} onDraftSent={() => setDraftId(null)} />
       ) : (
         <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
       )}

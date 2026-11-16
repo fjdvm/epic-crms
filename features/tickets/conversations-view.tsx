@@ -6,6 +6,7 @@ import { orderLabel, paymentStatusOf, STAGE_LABELS } from "@/features/customer-p
 import { cn } from "@/lib/utils";
 
 import { Conversation } from "./conversation";
+import { draftDisabledReason } from "./draft-panel";
 import { NotesProvider } from "./notes";
 import { inboxTime, type Conversations } from "./conversations";
 import { Pill, PILL, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
@@ -30,6 +31,7 @@ export function ConversationsView({
   viewerName,
   now = new Date(),
   query = "",
+  canDraft = false,
 }: {
   conversations: Conversations;
   viewerId: string;
@@ -37,6 +39,8 @@ export function ConversationsView({
   now?: Date;
   /** The search narrowing the chats: opening a chat keeps it, and an empty inbox says nothing matched. */
   query?: string;
+  /** Staff and Managers only; Admin and CEO see no draft button. */
+  canDraft?: boolean;
 }) {
   const { chats, selected } = conversations;
   const searching = query !== "";
@@ -79,7 +83,7 @@ export function ConversationsView({
         </nav>
 
         {selected ? (
-          <SelectedChat ticket={selected} viewerId={viewerId} viewerName={viewerName} />
+          <SelectedChat ticket={selected} viewerId={viewerId} viewerName={viewerName} canDraft={canDraft} />
         ) : (
           <section className={cn(CARD, "w-full min-w-0 lg:flex-1")}>
             <p className="text-sm leading-[normal] text-[#6e6680]">
@@ -95,10 +99,12 @@ function SelectedChat({
   ticket,
   viewerId,
   viewerName,
+  canDraft,
 }: {
   ticket: NonNullable<Conversations["selected"]>;
   viewerId: string;
   viewerName: string;
+  canDraft: boolean;
 }) {
   const { order, customer } = ticket;
   const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
@@ -127,6 +133,7 @@ function SelectedChat({
           customerName={customer.name.split(" ")[0]}
           scrollable
           canNote
+          draftDisabledReason={canDraft ? draftDisabledReason(ticket.status, isClaimer) : undefined}
           canReply={ticket.status !== "completed" && isClaimer}
           note={
             ticket.status === "completed"
