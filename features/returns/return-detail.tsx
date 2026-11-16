@@ -10,6 +10,8 @@ import type { ShopRole } from "@/lib/portal/roles";
 import { InspectReturn } from "./inspect-return";
 import { RefundWindow } from "./refund-window";
 import { ReturnActions } from "./return-actions";
+import { ReturnFlagNotes } from "./return-flag-notes";
+import type { ReturnFlag } from "./return-flags";
 import type { ReturnDetail } from "./returns";
 import { STATUS_PILLS } from "./returns-table";
 
@@ -42,6 +44,7 @@ export function ReturnDetailView({
   role,
   requests,
   windowRequest,
+  flags,
 }: {
   detail: ReturnDetail;
   imageUrls: ImageUrls;
@@ -55,6 +58,8 @@ export function ReturnDetailView({
   requests?: ApprovalView[];
   /** The Staff request to extend this Order's Refund window, if any. */
   windowRequest?: ApprovalView;
+  /** Why this Return is flagged, for Staff to double-check. Nothing here blocks the Return. */
+  flags?: ReturnFlag[];
 }) {
   const goods = goodsLine(detail);
 
@@ -93,6 +98,14 @@ export function ReturnDetailView({
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
         <div className="space-y-5">
+          {flags && flags.length > 0 && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Flags</h2>
+              <ReturnFlagNotes flags={flags} />
+              <p className="text-xs text-[#6e6680]">Flags are a prompt to double-check. They never block or decline a Return.</p>
+            </section>
+          )}
+
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Reason</h2>
             <p className="text-sm font-medium text-[#1f1a2e]">{orderLabel(detail.reason)}</p>

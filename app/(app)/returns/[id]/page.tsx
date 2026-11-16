@@ -4,6 +4,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { ReturnDetailView } from "@/features/returns/return-detail";
 import { loadReturnDetail } from "@/features/returns/returns";
+import { fetchReturnPhoto } from "@/features/returns/photo-bytes";
+import { fingerprintReturnPhotos, loadReturnFlags } from "@/features/returns/return-flags";
+import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayFileStorage } from "@/lib/gateway";
 import { RETURNS_MODULE } from "@/lib/portal/config";
 import { shopRole } from "@/lib/portal/roles";
@@ -62,10 +65,22 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
     detail.refundProofFileId ? viewUrl(detail.refundProofFileId) : undefined,
   ]);
 
+  // Photos not yet fingerprinted are done now; a failure here only means no flag, never an error page.
+  const flags = await (async () => {
+    await fingerprintReturnPhotos(ticketsDatabase(), crmsDatabase(), fetchReturnPhoto, [detail.id]);
+
+    return (await loadReturnFlags(ticketsDatabase(), crmsDatabase(), [detail.id])).get(detail.id);
+  })().catch((error) => {
+    console.error("Return flags could not be read", error);
+
+    return undefined;
+  });
+
   return (
     <>
       <BackgroundRefresh />
       <ReturnDetailView
+        flags={flags}
         detail={detail}
         imageUrls={imageUrls}
         deliveryPhotoUrl={deliveryPhotoUrl}

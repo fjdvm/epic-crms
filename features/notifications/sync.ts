@@ -9,9 +9,17 @@ import { readCustomers, syncNewCustomers, type SyncResult } from "./notification
 import { syncTicketEvents } from "./ticket-events";
 import { syncFeedbackEvents } from "./feedback-events";
 import { syncOrderEvents } from "./order-events";
+import { fetchReturnPhoto } from "@/features/returns/photo-bytes";
+import { fingerprintReturnPhotos } from "@/features/returns/return-flags";
 import { syncReturnEvents } from "./return-events";
 
 type Connection = () => postgres.Sql;
+
+/** Keeps each new Return photo's similar-image fingerprint; a few per sync, and never fails the sync. */
+export async function fingerprintNewReturnPhotos(writer: postgres.Sql, reader: postgres.Sql) {
+  await fingerprintReturnPhotos(reader, writer, fetchReturnPhoto, undefined, 10)
+    .catch((error) => console.error("Return photo fingerprinting failed", error));
+}
 export type SyncBatch = Record<"customers" | "tickets" | "feedback" | "orders" | "returns" | "cancellations", SyncResult | { error: string }>;
 
 /** The poll, scheduler and signal use the same truth and ledgers. Each feed fails independently. */
@@ -28,7 +36,12 @@ export async function syncNotifications({ writer = crmsDatabase, reader = databa
     tickets: await attempt("Ticket", () => syncTicketEvents(writer(), tickets())),
     feedback: await attempt("Feedback", () => syncFeedbackEvents(writer(), tickets())),
     orders: await attempt("Order", () => syncOrderEvents(writer(), tickets())),
-    returns: await attempt("Return", () => syncReturnEvents(writer(), reader())),
+    returns: await attempt("Return", async () => {
+      const result = await syncReturnEvents(writer(), reader());
+      await fingerprintNewReturnPhotos(writer(), reader());
+
+      return result;
+    }),
   };
   if (copies) await syncNotificationCopies(writer);
   return batch;

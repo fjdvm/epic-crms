@@ -1,4 +1,4 @@
-import { syncNotificationCopies } from "@/features/notifications/sync";
+import { fingerprintNewReturnPhotos, syncNotificationCopies } from "@/features/notifications/sync";
 import { syncOrderEvents } from "@/features/notifications/order-events";
 import { syncReturnEvents } from "@/features/notifications/return-events";
 import { timingSafeEqual } from "node:crypto";
@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
       return { error: "sync failed" };
     });
 
+    await fingerprintNewReturnPhotos(crmsDatabase(), database());
     await syncNotificationCopies();
     return NextResponse.json({ ...customers, tickets, feedback, orders, returns });
   } catch (error) {
