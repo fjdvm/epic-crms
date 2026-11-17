@@ -1,4 +1,5 @@
 import { loadDashboardFigures } from "@/features/dashboard/figures";
+import { currentUnconfirmedHours } from "@/features/settings/automatic-checks-server";
 import { readServiceLevels } from "@/features/tickets/service-level-store";
 import { crmsDatabase } from "@/lib/crms-db";
 import { PERIOD_PRESETS, resolvePeriod } from "@/features/dashboard/period";
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   const period = resolvePeriod(preset, now);
   const modules = await heldModules(DASHBOARD_DATA_MODULES);
   const targets = (await readServiceLevels(crmsDatabase))?.history ?? null;
-  const figures = await loadDashboardFigures(ticketsDatabase, { period, modules, now, targets });
+  const figures = await loadDashboardFigures(ticketsDatabase, { period, modules, now, targets, unconfirmedHours: await currentUnconfirmedHours() });
   const pdf = await dashboardPdf(figures, { period, preset, now });
   const date = new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 

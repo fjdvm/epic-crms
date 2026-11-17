@@ -20,6 +20,7 @@ import { UnusualActivityCards } from "@/features/dashboard/unusual-activity-card
 import { RoleStrip } from "@/features/dashboard/role-strip";
 import { approvals } from "@/features/approvals/server";
 import { toView } from "@/features/approvals/view";
+import { currentUnconfirmedHours } from "@/features/settings/automatic-checks-server";
 import { shopRole } from "@/lib/portal/roles";
 import { RETURNS_MODULE } from "@/lib/portal/config";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -123,7 +124,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const period = resolvePeriod(preset, now);
   const modules = await heldModules(DASHBOARD_DATA_MODULES);
   const targets = (await readServiceLevels(crmsDatabase))?.history ?? null;
-  const figures = loadDashboardFigures(ticketsDatabase, { period, modules, now, stream: true, targets });
+  const unconfirmedHours = await currentUnconfirmedHours();
+  const figures = loadDashboardFigures(ticketsDatabase, { period, modules, now, stream: true, targets, unconfirmedHours });
   const show = visibleWidgets(modules);
   const attention = hasAttentionQueue(modules);
 

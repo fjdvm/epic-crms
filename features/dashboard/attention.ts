@@ -11,6 +11,8 @@ export type Queue<Extra = object> = ({ ok: true; count: number; oldest: Date | n
 export interface Attention {
   paymentProofs?: Queue;
   deliveryFees?: Queue;
+  /** Orders still unconfirmed past the Admin's limit. Nothing is cancelled for them. */
+  overdueOrders?: Queue;
   ordersToPack?: Queue;
   /** Centavos still out with couriers. */
   codToCollect?: Queue<{ centavos: number }>;
@@ -21,7 +23,10 @@ export interface Attention {
 
 interface Row { count: number; oldest: Date | null }
 
-type Read<Extra> = (sql: postgres.Sql, now: Date, history: TargetHistory) => Promise<{ count: number; oldest: Date | null } & Extra>;
+/** Hours an Order may wait to be confirmed; the default is the Admin setting's default. */
+export const DEFAULT_UNCONFIRMED_HOURS = 48;
+
+type Read<Extra> = (sql: postgres.Sql, now: Date, history: TargetHistory, unconfirmedHours: number | null) => Promise<{ count: number; oldest: Date | null } & Extra>;
 
 /** Every queue is read live, on its own, so one failing leaves the rest standing. */
 const queues: { key: keyof Attention; module: string; read: Read<object> }[] = [
@@ -37,6 +42,17 @@ const queues: { key: keyof Attention; module: string; read: Read<object> }[] = [
     read: async (sql) => one(sql<Row[]>`
       select count(*)::int as count, min(created_at) as oldest from public.orders
       where status = 'placed' and fulfillment_method = 'delivery'`),
+  },
+  {
+    key: "overdueOrders", module: ORDERS_MODULE,
+    // Any payment method, Delivery or Pickup: `placed` is the one unconfirmed status. Confirming clears it.
+    read: async (sql, now, _history, hours) => {
+      if (hours === null) return { count: 0, oldest: null };
+
+      return one(sql<Row[]>`
+        select count(*)::int as count, min(created_at) as oldest from public.orders
+        where status = 'placed' and created_at <= ${now}::timestamptz - ${hours}::int * interval '1 hour'`);
+    },
   },
   {
     key: "ordersToPack", module: FULFILMENT_MODULE,
@@ -104,13 +120,17 @@ async function one(rows: Promise<Row[]>): Promise<Row> {
 
 export async function loadAttention(
   connect: () => postgres.Sql,
-  { modules, now, targets }: { modules: readonly string[]; now: Date; targets?: TargetHistory | null },
+  { modules, now, targets, unconfirmedHours = DEFAULT_UNCONFIRMED_HOURS }: {
+    modules: readonly string[]; now: Date; targets?: TargetHistory | null;
+    /** The Admin's limit for an unconfirmed Order; null when the rule is switched off. */
+    unconfirmedHours?: number | null;
+  },
 ): Promise<Attention> {
   const held = queues.filter(({ module }) => modules.includes(module));
 
   const results = await Promise.all(held.map(async ({ key, read }) => {
     try {
-      return [key, { ok: true, ...(await read(connect(), now, targets === undefined ? DEFAULT_HISTORY : requireTargets(targets))) }] as const;
+      return [key, { ok: true, ...(await read(connect(), now, targets === undefined ? DEFAULT_HISTORY : requireTargets(targets), unconfirmedHours)) }] as const;
     } catch {
       return [key, { ok: false }] as const;
     }

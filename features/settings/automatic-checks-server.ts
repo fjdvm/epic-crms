@@ -19,6 +19,12 @@ export async function currentAutomaticChecks(): Promise<AutomaticChecks> {
   catch (error) { console.error("Automatic checks could not be read; using the defaults", error); return DEFAULT_AUTOMATIC_CHECKS; }
 }
 
+/** Hours an Order may wait to be confirmed before it is Overdue; null when the Admin switched the rule off. */
+export async function currentUnconfirmedHours(): Promise<number | null> {
+  const { enabled, hours } = (await currentAutomaticChecks()).dashboard.unconfirmedOrders;
+  return enabled ? hours : null;
+}
+
 type Staff = { id: string; name: string; role: string };
 
 /** The rules whose switch or numbers differ between two sets, as plain labels. */
