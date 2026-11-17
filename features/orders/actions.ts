@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { database } from "@/lib/db";
@@ -13,11 +14,11 @@ import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
-import { cancelStorefrontItems, changeOrderStatus, type ConfirmedAmounts, rejectStorefrontProof, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { cancelStorefrontItems, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
-import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
+import { CANCELLABLE_STATUSES, confirmationEmailFailure, loadOrder } from "./orders";
 import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { reusedReferenceOrderIds } from "./payment-proof-checks";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
@@ -422,4 +423,30 @@ export async function loadPackingSlip(id: number) {
       packedBy: row?.staff_id && row.staff_name && row.at ? { id: row.staff_id, name: row.staff_name, at: new Date(row.at) } : null,
     } };
   } catch { return { ok: false as const, reason: "Packing slip is temporarily unavailable." }; }
+}
+
+/**
+ * Staff and Managers resend a confirmation email that failed after retries. It reaches a Customer, so it waits
+ * for the server and is never optimistic. Each resend is its own Audit Event (a fresh operation id), with the
+ * person's name, and the notice clears only because the storefront now records the email as sent.
+ */
+export async function resendConfirmationEmail(id: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const staff = await requireModule(ORDERS_MODULE);
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  try {
+    if (!(await confirmationEmailFailure(database(), id))) return { ok: false, reason: "That email is not marked as failed. Refresh the Order." };
+  } catch {
+    return { ok: false, reason: "Order is temporarily unavailable." };
+  }
+  const result = await resendOrderEmail(id, "confirmation", { id: staff.id, name: staff.name });
+  if (!result.ok) return result;
+  await recordAudit(gatewayAuditTrail, {
+    action: "order.email_resent", module: ORDERS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "order", id: String(id), display_name: `Order #${id}` },
+    description: `${staff.name} resent the confirmation email for Order #${id}.`,
+    metadata: { kind: "confirmation" }, occurred_at: new Date().toISOString(), operationId: `order:${id}:email-resend:${randomUUID()}`,
+  });
+  revalidatePath(`/orders/${id}`);
+  return { ok: true };
 }

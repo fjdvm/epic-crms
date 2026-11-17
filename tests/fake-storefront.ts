@@ -13,6 +13,7 @@ export class FakeStorefront {
   packedEvents: { action: string; actor: { id: string; name: string }; at: string }[] = [];
   /** Courier bookings the fake storefront has recorded, by Order id. */
   couriers = new Map<number, Record<string, string>>();
+  resentEmails: { orderId: number; kind: string; staffName: string }[] = [];
   /** Re-upload emails the fake storefront sent, one per rejection. */
   reuploadEmails: { orderId: number; reason: string; link: string }[] = [];
 
@@ -415,6 +416,16 @@ export class FakeStorefront {
           where id = ${id} returning *`;
         return Response.json({ id, status: updated.status, deliveryFeeInCentavos: updated.delivery_fee_in_centavos });
       });
+    }
+    const resend = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/email\/resend$/);
+    if (resend && request.method === "POST") {
+      if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+      const id = Number(resend[1]), body = await request.json();
+      const [outcome] = await this.sql`select status from order_email_outcomes where order_id = ${id} and kind = ${body.kind}`;
+      if (outcome?.status !== "failed") return Response.json({ error: "That email is not marked as failed." }, { status: 409 });
+      await this.sql`update order_email_outcomes set status = 'sent', reason = null, updated_at = now() where order_id = ${id} and kind = ${body.kind}`;
+      this.resentEmails.push({ orderId: id, kind: body.kind, staffName: body.staffName });
+      return Response.json({ id, kind: body.kind, status: "sent" });
     }
     const reject = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/payment-proof\/reject$/);
     if (reject && request.method === "POST") return this.rejectProof(request, Number(reject[1]));

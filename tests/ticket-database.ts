@@ -85,6 +85,14 @@ const SCHEMA = `
     rejected_by_name text,
     rejection_reason text
   );
+  create table order_email_outcomes (
+    order_id integer not null references orders (id) on delete cascade,
+    kind text not null,
+    status text not null,
+    reason text,
+    updated_at timestamptz not null default now(),
+    primary key (order_id, kind)
+  );
   create table order_delivery_addresses (
     order_id integer primary key references orders (id) on delete cascade,
     label text not null default 'Home',

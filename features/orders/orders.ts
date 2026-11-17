@@ -6,6 +6,7 @@ import type postgres from "postgres";
 import { getOrderById, type CustomerOrder } from "@/features/customer-profiles/orders";
 import { paymentStatusOf } from "@/features/customer-profiles/rules";
 import { currentStatus, type IdType, type VerificationStatus } from "@/features/senior-pwd/verifications";
+import { safeReason } from "./placement-audit";
 import { paymentScreenshotSource } from "./payment-screenshot";
 
 export const ORDERS_PAGE_SIZE = 25;
@@ -188,6 +189,8 @@ export interface OrderDetail extends CustomerOrder {
   deliveryPhotoRemovedAt: Date | null;
   /** The Senior/PWD verification attached to this Order, as of now; null when the Order has none. */
   seniorPwd?: { id: number; idType: IdType; status: VerificationStatus } | null;
+  /** Set only while the confirmation email has failed after retries; the reason never holds an email address. */
+  emailFailure?: { reason: string } | null;
   /** The storefront's weekly-cap facts for the approved discount; absent until the storefront saves them. Never holds an ID number. */
   discountDetail?: { allowanceUsed: number | null; reductionReason: string | null };
 }
@@ -196,6 +199,17 @@ export interface OrderDetail extends CustomerOrder {
 export const SENIOR_PWD_WEEKLY_CAP = 12_500;
 
 export type OrderResult = { ok: true; order: OrderDetail | null } | { ok: false };
+
+/** Why the confirmation email failed, or null when it was sent, is still being retried or was never recorded. */
+export async function confirmationEmailFailure(sql: postgres.Sql, orderId: number): Promise<{ reason: string } | null> {
+  try {
+    const [row] = await sql<{ reason: string | null }[]>`
+      select reason from public.order_email_outcomes where order_id = ${orderId} and kind = 'confirmation' and status = 'failed'`;
+    return row ? { reason: safeReason(row.reason) } : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The Order's Senior/PWD verification, or null. Never selects the ID number or its hash. */
 async function orderVerification(sql: postgres.Sql, orderId: number): Promise<OrderDetail["seniorPwd"]> {
@@ -244,6 +258,7 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number, se
         deliveryPhotoFileId: customer.delivery_photo_file_id,
         deliveryPhotoRemovedAt: customer.delivery_photo_removed_at ? new Date(customer.delivery_photo_removed_at) : null,
         seniorPwd: await orderVerification(sql, orderId),
+        emailFailure: await confirmationEmailFailure(sql, orderId),
         discountDetail: {
           allowanceUsed: customer.allowance_used === null || !Number.isSafeInteger(Number(customer.allowance_used)) ? null : Number(customer.allowance_used),
           reductionReason: customer.reduction_reason?.trim() || null,

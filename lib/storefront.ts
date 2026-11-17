@@ -49,6 +49,28 @@ export async function cancelStorefrontItems(id: number, lineIds: number[], staff
   return orderRequest(id, { lineIds, staffId: staff.id, staffName: staff.name, expectedStatus }, "items/cancel");
 }
 
+/** The storefront resends under the email's stable id, so asking twice never sends two; CREOMS only says who asked. */
+export async function resendOrderEmail(id: number, kind: "confirmation", staff: { id: string; name: string }): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the resend. Refresh the Order before trying again.";
+  try {
+    const response = await fetch(new URL(`/api/internal/orders/${id}/email/resend`, origin), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret)}` },
+      body: JSON.stringify({ kind, staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the resend." };
+    if (body?.id !== id || body.kind !== kind) return { ok: false, reason: uncertain };
+    if (body.status !== "sent") return { ok: false, reason: "The email could not be sent again. Try again later." };
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: uncertain };
+  }
+}
+
 async function orderRequest(id: number, update: OrderStatusUpdate | ProofRejection | { lineIds: number[]; staffId: string; staffName: string; expectedStatus: string }, path = "status", responseStatus?: string): Promise<OrderChangeResult & { rejections?: number }> {
   const origin = process.env.CREOMS_STOREFRONT_URL;
   const secret = process.env.CREOMS_SERVICE_SECRET;

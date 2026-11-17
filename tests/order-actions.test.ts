@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, confirmPickup as realConfirm, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
-  loadPackingSlip, startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
+  resendConfirmationEmail, loadPackingSlip, startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
@@ -860,5 +860,52 @@ describe("Fulfilment Audit Events", () => {
     expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
     expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
     expect(audit).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("resendConfirmationEmail", () => {
+  async function failedEmail(reason = "mailbox full") {
+    const id = await order("delivery", "confirmed");
+    await db.sql`insert into order_email_outcomes (order_id, kind, status, reason) values (${id}, 'confirmation', 'failed', ${reason})`;
+    return id;
+  }
+  const outcome = async (id: number) => (await db.sql`select status, reason from order_email_outcomes where order_id = ${id}`)[0];
+
+  it("resends, clears the failure and audits the person's name", async () => {
+    const id = await failedEmail();
+    expect(await resendConfirmationEmail(id)).toEqual({ ok: true });
+    expect(await outcome(id)).toMatchObject({ status: "sent", reason: null });
+    expect(storefront.resentEmails).toEqual([{ orderId: id, kind: "confirmation", staffName: "Ana" }]);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.email_resent", description: expect.stringContaining("Ana") }));
+    expect((await loadOrder(() => db.sql, id) as { order: { emailFailure: unknown } }).order.emailFailure).toBeNull();
+  });
+
+  it("shows the failure reason without an email address", async () => {
+    const id = await failedEmail("rejected maria@example.com");
+    const result = await loadOrder(() => db.sql, id);
+    expect(result.ok && result.order?.emailFailure).toEqual({ reason: "rejected [email removed]" });
+  });
+
+  it("refuses when the storefront refuses, keeping the failure and writing no audit", async () => {
+    const id = await failedEmail();
+    storefront.refusal = "Resend is not available right now.";
+    expect(await resendConfirmationEmail(id)).toEqual({ ok: false, reason: "Resend is not available right now." });
+    expect((await outcome(id)).status).toBe("failed");
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("refuses an email that is not failed, without calling the storefront", async () => {
+    const id = await order("delivery", "confirmed");
+    await db.sql`insert into order_email_outcomes (order_id, kind, status) values (${id}, 'confirmation', 'sent')`;
+    expect((await resendConfirmationEmail(id)).ok).toBe(false);
+    expect(storefront.resentEmails).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("refuses Admin and the CEO", async () => {
+    const id = await failedEmail();
+    vi.mocked(requireModule).mockResolvedValue({ id: "z", username: "z", name: "Zed", email: "z@example.com", role: "CEO" });
+    expect(await resendConfirmationEmail(id)).toEqual({ ok: false, reason: expect.stringContaining("view") });
+    expect(storefront.resentEmails).toEqual([]);
   });
 });

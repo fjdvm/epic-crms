@@ -176,3 +176,14 @@ emails write nothing; failed then sent is two entries. Entries carry no ID numbe
 address; addresses are stripped from the failure reason. A refused Order action writes nothing here.
 An email outcome change appears in the log at the next signal, so the storefront must signal CREOMS
 when it saves one.
+
+## Resent confirmation email (#573)
+
+Order Details shows "Email not sent" with the reason while `order_email_outcomes` holds a failed
+`confirmation` row. Staff and Managers can resend it after a confirm dialog; Admin and the CEO only read.
+`resendConfirmationEmail` asks the storefront (`POST /api/internal/orders/:id/email/resend`, body `{kind, staffId,
+staffName}`; the storefront must resend under the email's stable id and record the outcome as `sent`, which
+clears the notice) and waits for the answer. That endpoint is the storefront's to provide. Each success writes `order.email_resent` with the
+person's name and a fresh operation id (a second resend is a second entry). A refusal changes and audits nothing.
+The #572 sync will also record the failed-to-sent change as a system `order.email_sent`, so one resend can show two
+entries: who asked, and what the storefront then recorded.
