@@ -173,3 +173,8 @@ sweep, or a repeated failure, adds nothing; failed then sent is two entries. Pen
 emails write nothing. Entries carry no ID number or Customer email address; email addresses are
 stripped from the failure reason. Refused Order actions write no entry because nothing here is
 written by an action. No schema migration is needed.
+
+The sweep is a server-side scheduled job like Feedback analysis, not a client or tab refetch, so
+ADR-0005 (no polling) is read as not covering it. The storefront does not push placement or email
+events to CREOMS; if it ever does, replace the sweep with that. Orders and outcomes older than the
+48-hour window are not recorded if the schedule was down for longer.
