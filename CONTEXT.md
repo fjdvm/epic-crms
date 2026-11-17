@@ -45,7 +45,7 @@ A Deleted Customer who signs up again with the same email and verifies it. The s
 _Avoid_: Reactivated customer, new customer
 
 **Customer since**:
-The date a Customer first signed up. It is the sign-up date, not the date they verified their email. Signing up creates the login and exactly one linked Customer Profile (unique per login and per email, safe to retry) and records one "registration" audit event with no email address.
+The date a Customer first signed up. It is the sign-up date, not the date they verified their email. Signing up creates the login and exactly one linked Customer Profile (unique per login and per email, safe to retry) and records one "registration" audit event with no email address. Every sign-up field blocks characters it never allows (typed or pasted) and shows its message as the Customer leaves it, using the same rules as the server.
 
 **Total spent**:
 The sum of a Customer's Order totals (subtotal plus delivery fee) for Orders that have been paid for or fulfilled: `paid`, `preparing`, `dispatched`, `delivered` and `received`, minus Refunded Return amounts. Returns still in progress, Replaced Returns, Declined Returns and Customer-cancelled Returns do not reduce it. Cancelled and merely placed or confirmed Orders do not count.
