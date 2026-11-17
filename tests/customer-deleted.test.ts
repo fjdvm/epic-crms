@@ -4,6 +4,9 @@ import { listCustomers } from "@/features/customer-profiles/customers";
 import { getCustomerProfile } from "@/features/customer-profiles/profile";
 import { customersByStageAt } from "@/features/dashboard/customers";
 import { listOrders } from "@/features/orders/orders";
+import { getTicket } from "@/features/tickets/ticket";
+import { listTickets } from "@/features/tickets/tickets";
+import { listConversations } from "@/features/tickets/conversations";
 import { searchCustomers } from "@/features/tickets/new-ticket";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -80,6 +83,24 @@ describe("Orders of a Deleted Customer", () => {
       expect(total).toBe(100000);
     } finally {
       await db.sql`update customers set deleted_at = null where id = 'gone'`;
+    }
+  });
+});
+
+describe("Tickets and Conversations of a Deleted Customer", () => {
+  it("stay visible under the Deleted customer tag", async () => {
+    const [{ id }] = await db.sql`insert into tickets (customer_id, subject, category, status, claimed_by_id, claimed_by_name) values ('gone', 'Leaky pouch', 'Order issue', 'open', 'bernice', 'Bernice') returning id`;
+    await db.sql`update customers set deleted_at = now() where id = 'gone'`;
+    try {
+      const ticket = await getTicket(db.sql, id as number);
+      expect(ticket?.customer).toMatchObject({ name: "Deleted customer", deleted: true });
+      const list = await listTickets(db.sql);
+      expect(list.rows.map((r) => r.customerName)).toContain("Deleted customer");
+      const convos = await listConversations(db.sql, 'bernice');
+      expect(convos.map((c) => c.customerName)).toEqual(["Deleted customer"]);
+    } finally {
+      await db.sql`update customers set deleted_at = null where id = 'gone'`;
+      await db.sql`delete from tickets where id = ${id}`;
     }
   });
 });

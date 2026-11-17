@@ -152,14 +152,16 @@ function SelectedChat({
             <h2 className={cn(CARD_TITLE, "flex-1")}>Customer</h2>
             <Pill className={STAGE_PILLS[customer.stage]}>{STAGE_LABELS[customer.stage]}</Pill>
           </div>
-          <p className="text-base font-medium leading-[normal] text-[#1f1a2e]">{customer.name}</p>
+          <p data-testid={customer.deleted ? "deleted-customer-tag" : undefined} className="text-base font-medium leading-[normal] text-[#1f1a2e]">{customer.name}</p>
           <p className="text-xs leading-[normal] text-[#6e6680]">
             {customer.orders} {customer.orders === 1 ? "order" : "orders"} ·{" "}
             {formatWholePesos(customer.totalSpent)} total spent
           </p>
-          <Link href={`/customer-profiles/${customer.id}`} className={CARD_LINK}>
-            View customer profile →
-          </Link>
+          {!customer.deleted && (
+            <Link href={`/customer-profiles/${customer.id}`} className={CARD_LINK}>
+              View customer profile →
+            </Link>
+          )}
         </section>
 
         <section aria-label="Ticket" className={CARD}>
@@ -183,12 +185,16 @@ function SelectedChat({
               Linked order
               {order ? (
                 <span className="flex flex-wrap items-center gap-1.5 text-[#1f1a2e]">
-                  <Link
-                    href={`/customer-profiles/${customer.id}#${orderAnchor(order.id)}`}
-                    className="font-medium text-[#5b2a86]"
-                  >
-                    #{order.id}
-                  </Link>
+                  {customer.deleted ? (
+                    <span className="font-medium text-[#1f1a2e]">#{order.id}</span>
+                  ) : (
+                    <Link
+                      href={`/customer-profiles/${customer.id}#${orderAnchor(order.id)}`}
+                      className="font-medium text-[#5b2a86]"
+                    >
+                      #{order.id}
+                    </Link>
+                  )}
                   <Pill className={PAYMENT_PILLS[paymentStatusOf(order.status)]}>
                     {paymentStatusOf(order.status)}
                   </Pill>
