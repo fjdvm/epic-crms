@@ -18,6 +18,7 @@ import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
 import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks";
 import { reusedReferenceOrderIds } from "./payment-proof-checks";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
@@ -221,7 +222,7 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
     }
     const rejections = Number(order.payment_proof_rejections ?? 0);
     // A reference already used on another Order stops Mark paid for everyone but a Manager, read on the server each time.
-    reusedOn = await reusedReferenceOrderIds(database(), id);
+    reusedOn = await reusedReferenceOrderIds(database(), id, await currentAutomaticChecks());
     if (rejections < MANAGER_AFTER_REJECTIONS && reusedOn.length === 0) {
       if (order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
       return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });

@@ -12,6 +12,7 @@ describe("proxy matcher", () => {
   it("leaves the Approval limit route to its own bearer-handle check, so Portal Settings is not redirected to sign-in", () => {
     expect(matches("/api/approvals/limit")).toBe(false);
     expect(matches("/api/service-levels")).toBe(false);
+    expect(matches("/api/automatic-checks")).toBe(false);
   });
 
   it("still guards the other approval routes", () => {

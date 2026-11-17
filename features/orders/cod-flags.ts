@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 
+import type { AutomaticChecks } from "@/features/settings/automatic-checks";
+
 /** The four plain rules. Each fires on its own; nothing is scored and nothing is blocked. */
 export const COD_RULES = ["first-order", "first-order-over-amount", "refused-earlier-order", "earlier-failed-delivery"] as const;
 export type CodRule = (typeof COD_RULES)[number];
@@ -38,7 +40,8 @@ const REFUSED_REASONS = ["Refused to pay COD", "Refused the item"];
 export type CodFlags = Map<number, CodRule[]>;
 
 /** Flags for Cash on Delivery Orders among `orderIds`. A phone matches across accounts, by digits only. */
-export async function codFlags(sql: postgres.Sql, orderIds: number[], amountInCentavos: number): Promise<CodFlags> {
+export async function codFlags(sql: postgres.Sql, orderIds: number[], settings: AutomaticChecks["cod"]): Promise<CodFlags> {
+  const amountInCentavos = settings.firstOrderOverAmount.amountInCentavos;
   const flags: CodFlags = new Map();
   if (orderIds.length === 0) return flags;
   const rows = await sql<{ id: number; first_order: boolean; over: boolean; refused: boolean; failed: boolean }[]>`
@@ -63,10 +66,10 @@ export async function codFlags(sql: postgres.Sql, orderIds: number[], amountInCe
     from target t`;
   for (const row of rows) {
     const rules: CodRule[] = [];
-    if (row.first_order) rules.push("first-order");
-    if (row.over) rules.push("first-order-over-amount");
-    if (row.refused) rules.push("refused-earlier-order");
-    if (row.failed) rules.push("earlier-failed-delivery");
+    if (row.first_order && settings.firstOrder.enabled) rules.push("first-order");
+    if (row.over && settings.firstOrderOverAmount.enabled) rules.push("first-order-over-amount");
+    if (row.refused && settings.earlierRefusal.enabled) rules.push("refused-earlier-order");
+    if (row.failed && settings.earlierFailedDelivery.enabled) rules.push("earlier-failed-delivery");
     flags.set(row.id, rules);
   }
   return flags;

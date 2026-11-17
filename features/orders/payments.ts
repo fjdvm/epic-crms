@@ -1,3 +1,4 @@
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
 import type postgres from "postgres";
 
@@ -84,7 +85,7 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date()): Pr
       and (o.status in ${sql(ACTIVE)} or o.created_at >= ${since})
     order by o.id`;
 
-  const byProof = await paymentProofChecksForOrders(sql, rows.filter(o => o.payment_proof_submitted_at !== null).map(o => o.id));
+  const byProof = await paymentProofChecksForOrders(sql, rows.filter(o => o.payment_proof_submitted_at !== null).map(o => o.id), await currentAutomaticChecks());
   // The query orders proofs oldest first; retain only the most recent for each Order below.
   const latestProofs = rows.length ? await sql<{ id: number; order_id: number }[]>`
     select distinct on (order_id) id, order_id from public.order_payment_proofs

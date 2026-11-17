@@ -7,15 +7,16 @@ import { gatewayAuditTrail } from "@/lib/gateway";
 import { ORDERS_MODULE } from "@/lib/portal/config";
 import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
+import { loadAutomaticChecks } from "@/features/settings/automatic-checks";
 import { changeCodAmount } from "./cod-settings";
-import { codAmountSetting, codFlags, COD_CHOICE_LABELS, COD_RULE_LABELS, COD_RULE_REASONS, type CodRule } from "./cod-flags";
+import { codFlags, COD_CHOICE_LABELS, COD_RULE_LABELS, COD_RULE_REASONS, type CodRule } from "./cod-flags";
 
 export type CodFlagView = { rule: CodRule; label: string; reason: string };
 export type CodFlagsResult = { ok: true; flags: Record<number, CodFlagView[]> } | { ok: false; reason: string };
 const UNAVAILABLE = "Cash on Delivery flags are temporarily unavailable.";
 
 async function load(ids: number[]): Promise<Map<number, CodRule[]> | null> {
-  try { return await codFlags(database(), ids, await codAmountSetting(crmsDatabase())); }
+  try { return await codFlags(database(), ids, (await loadAutomaticChecks(crmsDatabase())).cod); }
   catch (error) { console.error("COD flags could not be worked out", error); return null; }
 }
 const view = (flags: Map<number, CodRule[]>): Record<number, CodFlagView[]> =>

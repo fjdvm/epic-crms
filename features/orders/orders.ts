@@ -1,3 +1,4 @@
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
 import type postgres from "postgres";
 
@@ -162,7 +163,7 @@ export async function paymentProofHistory(sql: postgres.Sql, orderId: number): P
     rejected_at: Date | null; rejected_by_id: string | null; rejected_by_name: string | null; rejection_reason: string | null;
   }[]>`select id, reference, screenshot_file_id, screenshot_pathname, submitted_at, rejected_at, rejected_by_id, rejected_by_name, rejection_reason
     from public.order_payment_proofs where order_id = ${orderId} order by submitted_at, id`;
-  const checks = await paymentProofChecksForOrders(sql, [orderId]);
+  const checks = await paymentProofChecksForOrders(sql, [orderId], await currentAutomaticChecks());
   return rows.map(p => ({
     ...checks.get(p.id),
     id: p.id, reference: p.reference, screenshot: paymentScreenshotSource(orderId, p.screenshot_file_id, p.screenshot_pathname), submittedAt: p.submitted_at,

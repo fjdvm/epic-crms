@@ -1,14 +1,16 @@
 import type postgres from "postgres";
+import { DEFAULT_AUTOMATIC_CHECKS, loadAutomaticChecks, type AutomaticChecks } from "@/features/settings/automatic-checks";
 import { MANAGER_AFTER_REJECTIONS } from "@/features/orders/payment-methods";
 import type { Staff } from "@/lib/portal/client";
 import { shopRole } from "@/lib/portal/roles";
 import { PAYMENTS_MODULE, RETURNS_MODULE, FULFILMENT_MODULE } from "@/lib/portal/config";
 
-export const UNVERIFIED_PAYMENT_LIMIT = 5;
-export const UNVERIFIED_PAYMENT_WAIT_HOURS = 24;
-export const RETURN_SPIKE_COUNT = 3;
-export const RETURN_SPIKE_DAYS = 7;
-export const FAILED_DELIVERY_COUNT = 3;
+/** The thresholds are Admin settings (Automatic checks); these are the defaults, which are today's behaviour. */
+export const UNVERIFIED_PAYMENT_LIMIT = DEFAULT_AUTOMATIC_CHECKS.dashboard.unverifiedPayments.count;
+export const UNVERIFIED_PAYMENT_WAIT_HOURS = DEFAULT_AUTOMATIC_CHECKS.dashboard.unverifiedPayments.waitHours;
+export const RETURN_SPIKE_COUNT = DEFAULT_AUTOMATIC_CHECKS.dashboard.returnSpike.count;
+export const RETURN_SPIKE_DAYS = DEFAULT_AUTOMATIC_CHECKS.dashboard.returnSpike.days;
+export const FAILED_DELIVERY_COUNT = DEFAULT_AUTOMATIC_CHECKS.dashboard.unresolvedFailedDeliveries.count;
 export const REJECTED_PROOF_WARNING = 2;
 export const UNUSUAL_ACTIVITY_CARD_LIMIT = 5;
 const HOUR = 3_600_000;
@@ -36,7 +38,10 @@ function visibleModules(staff: Staff, modules: readonly string[]) {
 }
 const orderLink = (id: number) => ({ label: `Order #${id}`, href: `/orders/${id}` });
 
-async function paymentCards(sql: postgres.Sql, now: Date): Promise<UnusualActivityCard[]> {
+type Dashboard = AutomaticChecks["dashboard"];
+
+async function paymentCards(sql: postgres.Sql, now: Date, rules: Dashboard): Promise<UnusualActivityCard[]> {
+  const { count: limit, waitHours } = rules.unverifiedPayments;
   const rows = await sql<{ id: number; payment_proof_submitted_at: Date }[]>`
     select id, payment_proof_submitted_at from public.orders
     where status = 'awaiting payment' and payment_method in ('gcash', 'maya', 'bank-transfer')
@@ -44,11 +49,11 @@ async function paymentCards(sql: postgres.Sql, now: Date): Promise<UnusualActivi
     order by payment_proof_submitted_at, id`;
   const cards: UnusualActivityCard[] = [];
   const oldestHours = rows.length ? Math.floor((+now - +rows[0].payment_proof_submitted_at) / HOUR) : 0;
-  if (rows.length > UNVERIFIED_PAYMENT_LIMIT || oldestHours >= UNVERIFIED_PAYMENT_WAIT_HOURS) {
+  if (rules.unverifiedPayments.enabled && rows.length > 0 && (rows.length > limit || oldestHours >= waitHours)) {
     cards.push({ key: "unverified-payments", module: PAYMENTS_MODULE,
-      rule: `More than ${UNVERIFIED_PAYMENT_LIMIT} unverified payments or a proof waiting at least ${UNVERIFIED_PAYMENT_WAIT_HOURS} hours`,
+      rule: `More than ${limit} unverified payments or a proof waiting at least ${waitHours} hours`,
       numbers: { count: rows.length, oldestHours },
-      urgency: Math.max(rows.length / (UNVERIFIED_PAYMENT_LIMIT + 1), oldestHours / UNVERIFIED_PAYMENT_WAIT_HOURS),
+      urgency: Math.max(rows.length / (limit + 1), oldestHours / waitHours),
       links: rows.map(r => orderLink(r.id)) });
   }
   // The approval limit is per Order. Do not add unrelated Orders into a fictitious approval limit.
@@ -69,32 +74,36 @@ async function paymentCards(sql: postgres.Sql, now: Date): Promise<UnusualActivi
   return cards;
 }
 
-async function returnCards(sql: postgres.Sql, now: Date): Promise<UnusualActivityCard[]> {
+async function returnCards(sql: postgres.Sql, now: Date, rules: Dashboard): Promise<UnusualActivityCard[]> {
+  const { count: spikeCount, days: spikeDays } = rules.returnSpike;
+  if (!rules.returnSpike.enabled) return [];
   // Product names are the immutable snapshot identity available on Return items; sizes count together.
   const rows = await sql<{ product_name: string; return_id: number }[]>`
     select distinct i.product_name, r.id as return_id
     from public.order_returns r join public.order_return_items i on i.return_id = r.id
-    where r.requested_at > ${new Date(+now - RETURN_SPIKE_DAYS * 24 * HOUR)} and r.requested_at <= ${now}
+    where r.requested_at > ${new Date(+now - spikeDays * 24 * HOUR)} and r.requested_at <= ${now}
       and r.status not in ('declined', 'cancelled') order by i.product_name, r.id`;
   const products = new Map<string, number[]>();
   for (const row of rows) products.set(row.product_name, [...(products.get(row.product_name) ?? []), row.return_id]);
-  return [...products].flatMap(([product, ids]) => ids.length < RETURN_SPIKE_COUNT ? [] : [{
+  return [...products].flatMap(([product, ids]) => ids.length < spikeCount ? [] : [{
     key: `return-spike:${product}`, module: RETURNS_MODULE,
-    rule: `At least ${RETURN_SPIKE_COUNT} Returns for ${product} in the last ${RETURN_SPIKE_DAYS} days`,
-    numbers: { count: ids.length, days: RETURN_SPIKE_DAYS }, urgency: ids.length / RETURN_SPIKE_COUNT,
+    rule: `At least ${spikeCount} Returns for ${product} in the last ${spikeDays} days`,
+    numbers: { count: ids.length, days: spikeDays }, urgency: ids.length / spikeCount,
     links: ids.map(id => ({ label: `Return #${id}`, href: `/returns/${id}` })),
   }]);
 }
 
-async function deliveryCards(sql: postgres.Sql): Promise<UnusualActivityCard[]> {
+async function deliveryCards(sql: postgres.Sql, rules: Dashboard): Promise<UnusualActivityCard[]> {
+  const { count: limit, enabled } = rules.unresolvedFailedDeliveries;
+  if (!enabled) return [];
   const rows = await sql<{ order_id: number }[]>`
     select distinct f.order_id from public.failed_deliveries f join public.orders o on o.id = f.order_id
     where f.rebooked_at is null and f.disposition is null and o.status = 'dispatched'
       and o.fulfillment_method = 'delivery' order by f.order_id`;
-  return rows.length < FAILED_DELIVERY_COUNT ? [] : [{
+  return rows.length < limit ? [] : [{
     key: "failed-deliveries", module: FULFILMENT_MODULE,
-    rule: `At least ${FAILED_DELIVERY_COUNT} Failed deliveries still awaiting action`,
-    numbers: { count: rows.length }, urgency: rows.length / FAILED_DELIVERY_COUNT,
+    rule: `At least ${limit} unresolved Failed deliveries, however long ago they happened`,
+    numbers: { count: rows.length }, urgency: rows.length / limit,
     links: rows.map(r => ({ label: `Order #${r.order_id}`, href: `/orders/${r.order_id}/failed-delivery` })),
   }];
 }
@@ -104,12 +113,13 @@ function worsened(current: Numbers, dismissed: Numbers) {
   return Object.entries(current).some(([key, value]) => value > (dismissed[key] ?? value));
 }
 
-async function compute({ source }: Dependencies, staff: Staff, modules: readonly string[], now: Date) {
+async function compute({ source, crms }: Dependencies, staff: Staff, modules: readonly string[], now: Date) {
   const held = visibleModules(staff, modules);
+  const rules = (await loadAutomaticChecks(crms)).dashboard;
   const readers = [
-    { module: PAYMENTS_MODULE, read: () => paymentCards(source, now) },
-    { module: RETURNS_MODULE, read: () => returnCards(source, now) },
-    { module: FULFILMENT_MODULE, read: () => deliveryCards(source) },
+    { module: PAYMENTS_MODULE, read: () => paymentCards(source, now, rules) },
+    { module: RETURNS_MODULE, read: () => returnCards(source, now, rules) },
+    { module: FULFILMENT_MODULE, read: () => deliveryCards(source, rules) },
   ].filter(r => held.includes(r.module));
   const results = await Promise.all(readers.map(async r => {
     try { return { cards: await r.read(), unavailable: [] as string[] }; }
