@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const root = path.resolve(import.meta.dirname, "..");
 const roots = ["app", "lib", "features", "components", "hooks", "proxy.ts", "instrumentation.ts"];
 // Set by the platform or the test harness, not by an operator.
-const provided = new Set(["NODE_ENV", "NEXT_RUNTIME", "CREOMS_TEST_DATABASE_URL", "PORT", "HOSTNAME"]);
+const provided = new Set(["NODE_ENV", "NEXT_RUNTIME", "VERCEL_ENV", "VERCEL_URL", "CREOMS_TEST_DATABASE_URL", "PORT", "HOSTNAME"]);
 
 function sources(target: string): string[] {
   const full = path.join(root, target);

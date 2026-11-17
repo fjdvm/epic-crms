@@ -40,6 +40,16 @@ describe("dev bypass", () => {
     ).toThrow(/CREOMS_APP_URL/);
   });
 
+  it("refuses to start on a Vercel deployment", () => {
+    expect(() =>
+      devBypassEnabled({
+        ...on,
+        NODE_ENV: "development",
+        VERCEL_ENV: "preview",
+      }),
+    ).toThrow(/Vercel/);
+  });
+
   it("stops the server from starting when the environment is unsafe", () => {
     vi.stubEnv("CREOMS_DEV_BYPASS", "true");
     vi.stubEnv("NODE_ENV", "production");
