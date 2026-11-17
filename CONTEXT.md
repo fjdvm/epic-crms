@@ -25,7 +25,7 @@ A person who signed up but has not yet verified their email. Becomes a Customer 
 _Avoid_: Unverified customer, prospect
 
 **Customer Profile**:
-Everything staff can see about one Customer in one place: their details, orders, cart, notes and tasks.
+Everything staff can see about one Customer in one place: their details, orders, cart, notes and tasks. A Customer's own changes to their name, Contact number and Addresses are saved at once and stay after refresh and sign-out; each save records one "profile_updated" audit event listing the names of the fields changed (never the values), and a save that changes nothing records nothing.
 _Avoid_: Contact, account, user
 
 **Customer note**:
@@ -230,7 +230,7 @@ The one place online Orders are reserved from, packed at and dispatched from; th
 _Avoid_: Commissary, factory, branch, location
 
 **Reservation**:
-Stock the IMS sets aside for an Order the moment it is placed, so no one else can buy it. It is released if the Order is cancelled, or if a GCash Order stays unpaid for 24 hours (the Customer is emailed and the Order is cancelled). The IMS takes it out of stock when the Order is packed. Checkout blocks when none is left.
+Stock the IMS sets aside for an Order the moment it is placed, so no one else can buy it. It is released if the Order is cancelled, or if an Online payment Order stays unpaid for 24 hours counted from confirmation (the Customer is emailed and the Order is cancelled). An Order of any kind still not confirmed 48 hours after placement (an Admin setting) is flagged Overdue on the Dashboard and alerts the Managers; a person decides, nothing is cancelled automatically. The IMS takes it out of stock when the Order is packed. Checkout blocks when none is left.
 _Avoid_: Hold (a batch Hold is different)
 
 **Free delivery**:
