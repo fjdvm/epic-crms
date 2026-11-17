@@ -119,6 +119,7 @@ export async function listCustomers(
           count(*) filter (where status <> 'cancelled') as stage_orders
         from public.orders customer_order where customer_order.customer_id = c.id and ${notReplacement(sql, "customer_order")}
       ) o on true
+      where to_jsonb(c)->>'deleted_at' is null
     ),
     staged as (
       select agg.*,

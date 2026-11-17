@@ -101,6 +101,17 @@ describe("the Conversations page as designed", () => {
     expect(within(card).getByRole("link", { name: "View customer profile →" }).getAttribute("href")).toBe("/customer-profiles/c1");
   });
 
+  it("tags a Deleted Customer with no profile link, and the reply box still works", () => {
+    view(ticket({ customer: { id: "c1", name: "Deleted customer", deleted: true, stage: "repeat", orders: 6, totalSpent: 473_400 } }));
+
+    const card = screen.getByRole("region", { name: "Customer" });
+
+    expect(within(card).getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
+    expect(within(card).queryByRole("link", { name: "View customer profile →" })).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Ticket" })).queryByRole("link", { name: "#1042" })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Write a reply" })).toBeTruthy();
+  });
+
   it("shows the Ticket card with number, subject, status, Priority, Claimer, Linked order and a link to the Ticket", () => {
     view();
 

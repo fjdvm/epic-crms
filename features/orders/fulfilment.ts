@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
 import { paymentStatusOf } from "@/features/customer-profiles/rules";
 import type { OrderRow } from "./orders";
@@ -34,7 +35,7 @@ export async function loadFulfilmentBoard(
     }[]>`
       select o.id, o.status, o.fulfillment_method, o.payment_method, o.delivered_at,
         to_jsonb(o)->>'packed_by_name' as packed_by_name,
-        o.created_at, o.customer_id, c.full_name,
+        o.created_at, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name,
         o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total
       from public.orders o join public.customers c on c.id = o.customer_id
       where o.status in ('confirmed', 'paid', 'preparing', 'dispatched')

@@ -25,7 +25,7 @@ A person who signed up but has not yet verified their email. Becomes a Customer 
 _Avoid_: Unverified customer, prospect
 
 **Customer Profile**:
-Everything staff can see about one Customer in one place: their details, orders, cart, notes and tasks.
+Everything staff can see about one Customer in one place: their details, orders, cart, notes and tasks. A Customer's own changes to their name, Contact number and Addresses are saved at once and stay after refresh and sign-out; each save records one "profile_updated" audit event listing the names of the fields changed (never the values), and a save that changes nothing records nothing.
 _Avoid_: Contact, account, user
 
 **Customer note**:
@@ -36,8 +36,20 @@ _Avoid_: Note, Message, comment, Profile note
 A follow-up a Staff member must do for a Customer, written on their Customer Profile. It has an owner, a required due date and a done state, which is what separates it from a Customer note. The owner is the Staff member who created it; only a Manager can assign or reassign it to someone else. The due date is a date only, in Philippine Time. The owner or a Manager can change the due date, mark it done and reopen it. Its description is fixed and it is never deleted; a Task no longer needed is marked done. It is overdue once its due date has passed and it is not done.
 _Avoid_: Reminder, to-do, follow-up
 
+**Deleted Customer**:
+A Customer who deleted their account on the storefront. ("Account" here always means the sign-in login, never the Customer Profile.) Their Customer Profile is soft-deleted: login is disabled and they vanish at once from the Customer List, Customer Details and the Dashboard's Customer figures for every role, while every Order, Ticket, Return and Feedback record is kept and shown with a "Deleted customer" tag, no contact details and no profile link. Sales and Total spent are unaffected. A Customer can delete only with no Order from `placed` to `dispatched`, no Requested or Approved Return and no Open or On hold Ticket. A deletion request that is refused names every blocking Order, Return and Ticket. Deleting sets the profile's deleted time, refuses the login from then on and records one "account deleted" Audit Event with no email address; no data is deleted or nulled. The Customer asks from Account settings: a confirm dialog comes first, then a spinner (deleting is not optimistic), and a refusal lists each blocking Order, Return and Ticket. The data is kept, hidden, indefinitely: there is no purge. Staff cannot delete or restore a Customer.
+_Avoid_: Removed customer, purged customer
+
+**Welcome email**:
+The one email a new Customer gets when they sign up, in the shop's email design. It is claimed once per Customer id, so a retried or double-submitted sign-up never sends a second one, and a failed send never fails sign-up. Each outcome, sent or failed, is recorded once in the audit trail as a `welcome_email` event; a failure carries its reason, and no event holds an email address. A Returning Customer gets a welcome-back email instead.
+_Avoid_: Greeting email, onboarding email
+
+**Returning Customer**:
+A Deleted Customer who signs up again with the same email and verifies it. ("Account" means the sign-in login.) The same Customer Profile and history come back, the new password replaces the old one, Customer since is unchanged, and they get a welcome-back email instead of a second welcome, sent once per return when the profile is restored (never at sign-up, never before verification) and audited as a `welcome_back_email` event, sent or failed, with no email address. Signing up again removes the old login through Neon's management API and creates a fresh one with the new password (needs `NEON_API_KEY`, `NEON_PROJECT_ID` and `NEON_BRANCH_ID` on the storefront). The profile is restored only after the email is verified, moving to the new login id with every record that pointed at the old one; the audit trail records one "Customer returned" event with no email address. Not to be confused with a Returning Buyer, a Dashboard term about Orders.
+_Avoid_: Reactivated customer, new customer
+
 **Customer since**:
-The date a Customer first signed up. It is the sign-up date, not the date they verified their email.
+The date a Customer first signed up. It is the sign-up date, not the date they verified their email. Signing up creates the login and exactly one linked Customer Profile (unique per login and per email, safe to retry) and records one "registration" audit event with no email address. Every sign-up field blocks characters it never allows (typed or pasted) and shows its message as the Customer leaves it, using the same rules as the server.
 
 **Total spent**:
 The sum of a Customer's Order totals (subtotal plus delivery fee) for Orders that have been paid for or fulfilled: `paid`, `preparing`, `dispatched`, `delivered` and `received`, minus Refunded Return amounts. Returns still in progress, Replaced Returns, Declined Returns and Customer-cancelled Returns do not reduce it. Cancelled and merely placed or confirmed Orders do not count.
@@ -218,11 +230,11 @@ The one place online Orders are reserved from, packed at and dispatched from; th
 _Avoid_: Commissary, factory, branch, location
 
 **Reservation**:
-Stock the IMS sets aside for an Order the moment it is placed, so no one else can buy it. It is released if the Order is cancelled, or if a GCash Order stays unpaid for 24 hours (the Customer is emailed and the Order is cancelled). The IMS takes it out of stock when the Order is packed. Checkout blocks when none is left.
+Stock the IMS sets aside for an Order the moment it is placed, so no one else can buy it. It is released if the Order is cancelled, or if an Online payment Order stays unpaid for 24 hours counted from confirmation (the Customer is emailed and the Order is cancelled). An Order of any kind still not confirmed 48 hours after placement (an Admin setting) is flagged Overdue on the Dashboard and alerts the Managers; a person decides, nothing is cancelled automatically. The IMS takes it out of stock when the Order is packed. Checkout blocks when none is left.
 _Avoid_: Hold (a batch Hold is different)
 
 **Free delivery**:
-A Delivery Order whose subtotal, before any Senior/PWD discount, is strictly over ₱2,500 has a Delivery fee of ₱0 and is confirmed at placement. If cancelled items bring the subtotal to ₱2,500 or less, Staff must quote a Delivery fee.
+A Delivery Order whose Delivery fee Staff or a Manager entered as ₱0. There is no automatic free delivery: every Delivery Order waits for a Delivery fee entered by Staff or a Manager, and ₱0 is allowed.
 
 **Senior/PWD verified**:
 A Customer whose Senior Citizen or PWD ID Staff have checked and approved. They get 5% off one item per ID, for personal use. The ID photo is private and is deleted right after review; if nobody reviews it within 7 days it is removed anyway and the Customer uploads it again. Only the verified mark, a hash of the ID number, the approver's name and the ID's expiry date are kept: the ID number itself is never stored in plain text, shown in an email, or written to a log. Staff check the name against the one already on the account, and the Customer is never asked for a detail the system already holds. The same ID number cannot verify a second account. The discount stops on the expiry date and the Customer verifies again. For Pickup, Staff also see the original ID at collection.

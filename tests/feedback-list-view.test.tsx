@@ -327,3 +327,12 @@ describe("the date range picker", () => {
     expect(push).toHaveBeenCalledWith("/feedback?stars=2");
   });
 });
+
+describe("Feedback of a Deleted Customer", () => {
+  it("tags the Customer without a profile link", () => {
+    render(<FeedbackListView list={list([row({ customerName: "Deleted customer", customerDeleted: true })])} filters={NO_FILTERS} />);
+    expect(screen.getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
+    expect(document.querySelector('a[href^="/customer-profiles/"]')).toBeNull();
+    expect(screen.getByRole("link", { name: "#1040" }).getAttribute("href")).toBe("/orders/1040");
+  });
+});

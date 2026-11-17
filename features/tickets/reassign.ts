@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { TICKETS_MODULE } from "@/lib/portal/config";
@@ -200,7 +201,7 @@ export interface AbsentTicket {
 /** The Tickets an absent teammate holds that a bulk move would take. */
 export async function ticketsHeldBy(sql: postgres.Sql, claimerId: string): Promise<AbsentTicket[]> {
   const rows = await sql<{ id: number; subject: string; full_name: string; status: string }[]>`
-    select t.id, t.subject, c.full_name, t.status from tickets t join customers c on c.id = t.customer_id
+    select t.id, t.subject, ${sql.unsafe(customerNameSql('c'))} as full_name, t.status from tickets t join customers c on c.id = t.customer_id
     where t.claimed_by_id = ${claimerId} and t.status <> 'completed' order by t.id`;
 
   return rows.map((r) => ({ id: r.id, subject: r.subject, customerName: r.full_name, status: r.status }));

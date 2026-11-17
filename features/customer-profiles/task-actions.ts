@@ -45,7 +45,7 @@ async function changeTask(customerId: string, taskId: string | null, change: Cha
     return refused("Only a Manager can assign or reassign a Task to someone else. Request approval.");
   const request = JSON.stringify([customerId, taskId, change]);
   try {
-    const [customer] = await database()<{ name: string }[]>`select c.full_name as name from public.customers c join neon_auth."user" u on u.id::text = c.id and u."emailVerified" where c.id = ${customerId}`;
+    const [customer] = await database()<{ name: string }[]>`select c.full_name as name from public.customers c join neon_auth."user" u on u.id::text = c.id and u."emailVerified" where c.id = ${customerId} and to_jsonb(c)->>'deleted_at' is null`;
     if (!customer) return refused("Customer not found. Tasks require a verified Customer.");
     const sql = crmsDatabase();
     const result = await sql.begin(async tx => {

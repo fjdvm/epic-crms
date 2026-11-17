@@ -87,6 +87,14 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
 });
 
 describe("the Ticket page as designed", () => {
+  it("tags a Deleted Customer with no profile link", () => {
+    render(<TicketDetailView ticket={ticket({ customer: { id: "c1", name: "Deleted customer", deleted: true, stage: "repeat", orders: 6, totalSpent: 473_400 } })} viewerId="bernice" />);
+
+    expect(screen.getByTestId("deleted-customer-tag").textContent).toContain("Deleted customer");
+    expect(screen.queryByRole("link", { name: "View customer profile →" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open order →" })).toBeNull();
+  });
+
   it("has the TKT number, subject and status in the title, and the opened date, Claimer and Priority beneath", () => {
     render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 

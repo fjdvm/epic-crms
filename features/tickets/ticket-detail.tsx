@@ -252,9 +252,11 @@ export function TicketDetailView({
               <p className="text-[13px] leading-[normal] text-[#6e6680]">
                 {order.lines.map((l) => `${l.product} ×${l.quantity}`).join(", ")}
               </p>
-              <Link href={canOpenOrder ? `/orders/${order.id}` : `/customer-profiles/${customer.id}#${orderAnchor(order.id)}`} className={CARD_LINK}>
-                Open order →
-              </Link>
+              {(canOpenOrder || !customer.deleted) && (
+                <Link href={canOpenOrder ? `/orders/${order.id}` : `/customer-profiles/${customer.id}#${orderAnchor(order.id)}`} className={CARD_LINK}>
+                  Open order →
+                </Link>
+              )}
             </section>
           )}
 
@@ -263,13 +265,15 @@ export function TicketDetailView({
               <h2 className={cn(CARD_TITLE, "flex-1")}>Customer</h2>
               <Pill className={STAGE_PILLS[customer.stage]}>{STAGE_LABELS[customer.stage]}</Pill>
             </div>
-            <p className="text-[13px] leading-[normal] text-[#6e6680]">
+            <p data-testid={customer.deleted ? "deleted-customer-tag" : undefined} className="text-[13px] leading-[normal] text-[#6e6680]">
               {customer.name} · {customer.orders} {customer.orders === 1 ? "order" : "orders"} ·{" "}
               {formatWholePesos(customer.totalSpent)}
             </p>
-            <Link href={`/customer-profiles/${customer.id}`} className={CARD_LINK}>
-              View customer profile →
-            </Link>
+            {!customer.deleted && (
+              <Link href={`/customer-profiles/${customer.id}`} className={CARD_LINK}>
+                View customer profile →
+              </Link>
+            )}
           </section>
         </div>
       </div>
