@@ -18,11 +18,9 @@ import { PaymentPill } from "./status-pill";
 import { CancelDispatched, CancellationNote } from "./cancel-dispatched";
 import type { CancellationState } from "./cancellation-state";
 
-/** A Delivery Order whose subtotal is strictly over ₱2,500 (250,000 centavos) ships free. */
-export const FREE_DELIVERY_THRESHOLD = 250_000;
-
+/** A Delivery Order whose entered Delivery fee is ₱0 ships free, whatever the subtotal. */
 export function hasFreeDelivery(order: OrderDetail): boolean {
-  return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0 && order.subtotal > FREE_DELIVERY_THRESHOLD;
+  return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0;
 }
 
 const SENIOR_PWD_STATUS: Record<string, string> = {
@@ -63,34 +61,6 @@ function DeliveryFee({ order }: { order: OrderDetail }) {
       <dt className="text-[#6e6680]">Delivery fee</dt>
       <dd className={hasFreeDelivery(order) ? "font-medium text-[#16a34a]" : undefined}>{text}</dd>
     </div>
-  );
-}
-
-function FreeDeliveryRule({ order }: { order: OrderDetail }) {
-  if (!hasFreeDelivery(order)) return null;
-
-  return (
-    <div role="note" aria-label="Free delivery rule" className="flex gap-2.5 rounded-[10px] bg-[#e3f4e8] p-3 text-[#1e6b3a]">
-      <span aria-hidden className="text-sm leading-none">✓</span>
-      <div className="space-y-0.5">
-        <p className="text-[13px] font-semibold">Free delivery rule</p>
-        <p className="text-xs">
-          Subtotal is over {formatPesos(FREE_DELIVERY_THRESHOLD)}, so delivery is free and the order was confirmed at
-          placement. The delivery fee is locked at ₱0 — saving any other amount is refused.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function QuoteAgainNote({ order }: { order: OrderDetail }) {
-  if (!hasFreeDelivery(order)) return null;
-
-  return (
-    <p role="note" aria-label="Quote again" className="rounded-[10px] bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">
-      If items are cancelled and the subtotal drops to {formatPesos(FREE_DELIVERY_THRESHOLD)} or less, staff must quote a
-      delivery fee again.
-    </p>
   );
 }
 
@@ -275,7 +245,6 @@ export function OrderDetailView({
                 <dd>{formatPesos(order.total)}</dd>
               </div>
             </dl>
-            <FreeDeliveryRule order={order} />
           </section>
 
           {modules.includes(RETURNS_MODULE) && (
@@ -362,8 +331,6 @@ export function OrderDetailView({
               </p>
             </section>
           )}
-
-          <QuoteAgainNote order={order} />
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>

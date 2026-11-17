@@ -192,22 +192,15 @@ describe("an Order's detail", () => {
     expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
   });
 
-  it("shows the Free delivery rule, the locked ₱0 fee and the quote-again note on a Free delivery Order", () => {
-    render(<OrderDetailView order={detail({ subtotal: 266_900, deliveryFee: 0, total: 266_900 })} />);
-
+  it("shows a ₱0 fee as free delivery on any subtotal, with no subtotal rule note", () => {
+    render(<OrderDetailView order={detail({ subtotal: 100_000, deliveryFee: 0, total: 100_000 })} />);
     expect(screen.getAllByText("Free delivery").length).toBeGreaterThan(0);
     expect(screen.getByText("Free · ₱0")).toBeTruthy();
-    expect(screen.getByRole("note", { name: "Free delivery rule" }).textContent).toContain("locked at ₱0");
-    expect(screen.getByRole("note", { name: "Quote again" }).textContent).toContain("quote a");
-  });
-
-  it("shows no Free delivery rule at exactly ₱2,500 or on a quoted fee", () => {
-    render(<OrderDetailView order={detail({ subtotal: 250_000, deliveryFee: 0, total: 250_000 })} />);
-    expect(screen.queryByRole("note", { name: "Free delivery rule" })).toBeNull();
-    cleanup();
-    render(<OrderDetailView order={detail({})} />);
     expect(screen.queryByRole("note", { name: "Free delivery rule" })).toBeNull();
     expect(screen.queryByRole("note", { name: "Quote again" })).toBeNull();
+    cleanup();
+    render(<OrderDetailView order={detail({})} />);
+    expect(screen.queryByText("Free · ₱0")).toBeNull();
   });
 
   it("shows the items, Delivery fee, total, address and a link to the Customer Profile", () => {

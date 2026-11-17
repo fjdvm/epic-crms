@@ -102,14 +102,11 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
       return { ok: false, reason: "Only a placed Delivery Order can be quoted." };
     }
     if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
-    if (order.subtotal_in_centavos > 250_000) {
-      return { ok: false, reason: "Free delivery applies to this Order. No Delivery fee quote is needed." };
-    }
     if (!CANCELLABLE_STATUSES.includes(order.status) || order.delivery_fee_in_centavos !== null) return { ok: false, reason: ALREADY_CHANGED };
     return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos }, order.status === "placed" ? "confirmed" : order.status);
   }, ORDERS_MODULE, {
     action: "order.delivery_fee_quoted",
-    description: staff => `${staff.name} quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)} and confirmed Order #${id}${choiceNote(codChoice)}.`,
+    description: staff => `${staff.name} ${deliveryFeeInCentavos === 0 ? "quoted free delivery (₱0.00)" : `quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)}`} and confirmed Order #${id}${choiceNote(codChoice)}.`,
   });
 }
 

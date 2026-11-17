@@ -121,10 +121,22 @@ describe("Order actions", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 
-  it("refuses a quote on Free delivery, including a legacy placed Order", async () => {
+  it("accepts a ₱0 Delivery fee on any subtotal and audits it as free delivery", async () => {
     const id = await order();
     await db.sql`update orders set subtotal_in_centavos = 250001 where id = ${id}`;
-    expect(await quoteDeliveryFee(id, 100)).toEqual({ ok: false, reason: "Free delivery applies to this Order. No Delivery fee quote is needed." });
+    expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: true, order: { status: "confirmed", deliveryFeeInCentavos: 0 } });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.delivery_fee_quoted", description: expect.stringContaining("free delivery") }));
+  });
+
+  it("quotes a Delivery fee on a subtotal over ₱2,500 instead of refusing", async () => {
+    const id = await order();
+    await db.sql`update orders set subtotal_in_centavos = 300000 where id = ${id}`;
+    expect(await quoteDeliveryFee(id, 15000)).toMatchObject({ ok: true, order: { deliveryFeeInCentavos: 15000 } });
+  });
+
+  it("refuses a Delivery fee quote on a Pickup Order", async () => {
+    const id = await order("pickup");
+    expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: false });
     expect(storefront.requests).toBe(0);
   });
 

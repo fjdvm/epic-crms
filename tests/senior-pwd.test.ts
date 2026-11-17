@@ -215,14 +215,13 @@ it("does not confirm an Order while its Senior/PWD ID waits for review, and conf
   expect(await quoteDeliveryFee(delivery.id, 15000)).toMatchObject({ ok: true });
 });
 
-it("checks free delivery against the subtotal before the discount", async () => {
+it("accepts a Delivery fee on a large subtotal once the ID is reviewed", async () => {
   const { id } = await upload();
   await signIn("ana");
   await approveVerification(id, future(30));
-  // ₱2,600 gross is ₱2,470 after 5% off; free delivery still applies, so no fee can be quoted.
   const [order] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, delivery_fee_in_centavos, senior_pwd_verification_id)
     values ('c1','placed','delivery',260000,null,${id}) returning id`;
-  expect(await quoteDeliveryFee(order.id, 15000)).toMatchObject({ ok: false, reason: expect.stringContaining("Free delivery") });
+  expect(await quoteDeliveryFee(order.id, 15000)).toMatchObject({ ok: true });
 });
 
 it("leaves the verification unchanged and the photo in place when the storefront refuses or is unreachable", async () => {
