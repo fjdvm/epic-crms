@@ -22,6 +22,22 @@ async function list(query: Parameters<typeof loadReturns>[1] = {}) {
   if (!result.ok) throw new Error("Expected Returns to load");
   return result.list;
 }
+describe("Returns of a Deleted Customer", () => {
+  it("stay visible under the Deleted customer tag, and Return decisions still work", async () => {
+    const id = await request("requested", "2026-10-20T01:00:00Z");
+    await db.sql`alter table customers add column if not exists deleted_at timestamptz`;
+    await db.sql`update customers set deleted_at = now() where id = 'c1'`;
+    try {
+      expect((await list()).rows).toMatchObject([{ id, customer: { name: "Deleted customer", deleted: true } }]);
+      expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { customer: { name: "Deleted customer", deleted: true } } });
+      await db.sql`update order_returns set status = 'approved' where id = ${id}`;
+      expect((await list({ status: "approved" })).total).toBe(1);
+    } finally {
+      await db.sql`update customers set deleted_at = null where id = 'c1'`;
+    }
+  });
+});
+
 describe("Returns read model", () => {
   it("reads preferred/final Resolution, video, refund proof and Replaced history", async () => {
     const id = await request('replaced', '2026-10-20T01:00:00Z');

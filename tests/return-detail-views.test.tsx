@@ -417,3 +417,12 @@ describe("Refund window", () => {
     expect(screen.getByRole("link", { name: "Order #77" }).getAttribute("href")).toBe("/orders/77");
   });
 });
+
+describe("Return detail for a Deleted Customer", () => {
+  it("tags the Customer without a profile link, and Return decisions are still offered", () => {
+    render(<ReturnDetailView detail={detail({ customer: { id: "c1", name: "Deleted customer", deleted: true } })} imageUrls={[]} />);
+    expect(screen.getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
+    expect(screen.queryByRole("link", { name: "Deleted customer" })).toBeNull();
+    expect(screen.getByRole("button", { name: /approve/i })).toBeTruthy();
+  });
+});

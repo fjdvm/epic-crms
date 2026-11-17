@@ -62,12 +62,16 @@ export function FeedbackListView({ list, filters }: { list: FeedbackList; filter
               <div className="flex items-center gap-[10px] text-[13px] font-medium leading-[normal] text-[#1f1a2e]">
                 <Stars rating={row.rating} />
                 <p className="min-w-0 flex-1">
-                  <Link href={`/customer-profiles/${row.customerId}`} className="text-[#5b2a86] hover:underline">
-                    {row.customerName}
-                  </Link>
+                  {row.customerDeleted ? (
+                    <span data-testid="deleted-customer-tag" className="text-[#6e6680]">{row.customerName}</span>
+                  ) : (
+                    <Link href={`/customer-profiles/${row.customerId}`} className="text-[#5b2a86] hover:underline">
+                      {row.customerName}
+                    </Link>
+                  )}
                   {" · "}
                   <Link
-                    href={`/customer-profiles/${row.customerId}#${orderAnchor(row.orderId)}`}
+                    href={row.customerDeleted ? `/orders/${row.orderId}` : `/customer-profiles/${row.customerId}#${orderAnchor(row.orderId)}`}
                     className="text-[#5b2a86] hover:underline"
                   >
                     #{row.orderId}

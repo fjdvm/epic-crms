@@ -214,9 +214,13 @@ export function ReturnDetailView({
               <div className="flex justify-between">
                 <dt className="text-[#6e6680]">Customer</dt>
                 <dd>
-                  <Link href={`/customer-profiles/${detail.customer.id}`} className="font-medium text-[#5b2a86]">
-                    {detail.customer.name}
-                  </Link>
+                  {detail.customer.deleted ? (
+                    <span data-testid="deleted-customer-tag" className="font-medium text-[#6e6680]">{detail.customer.name}</span>
+                  ) : (
+                    <Link href={`/customer-profiles/${detail.customer.id}`} className="font-medium text-[#5b2a86]">
+                      {detail.customer.name}
+                    </Link>
+                  )}
                 </dd>
               </div>
             </dl>

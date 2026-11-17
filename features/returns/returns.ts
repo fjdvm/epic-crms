@@ -22,7 +22,8 @@ export interface ReturnRow {
   id: number;
   number: string;
   orderId: number;
-  customer: { id: string; name: string };
+  /** `deleted` is true once the storefront has soft-deleted the Customer: no profile link, no contact details. */
+  customer: { id: string; name: string; deleted?: boolean };
   status: ReturnStatus;
   preferredResolution: ReturnResolution;
   finalResolution: ReturnResolution | null;
@@ -42,14 +43,14 @@ export interface ReturnList {
 export type ReturnListResult = { ok: true; list: ReturnList } | { ok: false };
 
 type Row = {
-  id: number; order_id: number; customer_id: string; full_name: string;
+  id: number; order_id: number; customer_id: string; full_name: string; deleted: boolean;
   preferred_resolution: ReturnResolution; final_resolution: ReturnResolution | null;
   status: ReturnStatus; requested_at: Date; amount_in_centavos: number;
 };
 function returnRow(row: Row, items: ReturnItem[]): ReturnRow {
   return {
     id: row.id, number: `RMA-${row.id}`, orderId: row.order_id,
-    customer: { id: row.customer_id, name: row.full_name }, status: row.status,
+    customer: { id: row.customer_id, name: row.full_name, deleted: row.deleted }, status: row.status,
     preferredResolution: row.preferred_resolution, finalResolution: row.final_resolution,
     requestedAt: row.requested_at, amount: row.amount_in_centavos, items,
   };
@@ -95,7 +96,7 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const page = Math.min(totalPages, positiveInteger(query.page, 1));
     const rows = await sql<Row[]>`
-      select r.id, r.order_id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, r.status, r.preferred_resolution, r.final_resolution, r.requested_at, r.amount_in_centavos
+      select r.id, r.order_id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, r.status, r.preferred_resolution, r.final_resolution, r.requested_at, r.amount_in_centavos
       from public.order_returns r join public.orders o on o.id = r.order_id
       join public.customers c on c.id = o.customer_id
       where true ${scope}
@@ -200,7 +201,7 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at,
       to_jsonb(o)->>'refund_window_extended_at' as window_extended_at,
       (select ro.id from public.orders ro where to_jsonb(ro)->>'replacement_for_return_id' = r.id::text limit 1) as replacement_order_id,
-      ${sql.unsafe(customerNameSql('c'))} as full_name from public.order_returns r
+      ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted from public.order_returns r
       join public.orders o on o.id = r.order_id join public.customers c on c.id = o.customer_id
       where r.id = ${id}`;
     if (!row) return { ok: true, detail: null };
