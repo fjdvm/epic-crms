@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "@/features/customer-profiles/rules";
 
@@ -103,7 +104,7 @@ export async function getTicket(
   const [t] = await sql<Record<string, unknown>[]>`
     select t.id, t.subject, t.status, t.category, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id, t.hold_reason, t.hold_note, t.hold_until, t.resolved_at, t.held_seconds, t.hold_started_at,
       t.follow_up_of_id, t.rating, t.rating_comment, t.rated_at,
-      c.id as customer_id, c.full_name, c.first_name
+      c.id as customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, case when to_jsonb(c)->>'deleted_at' is null then c.first_name else '' end as first_name
     from tickets t
     join customers c on c.id = t.customer_id
     where t.id = ${id}`;

@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
 import { formatDate } from "@/features/customer-profiles/format";
 
@@ -28,7 +29,7 @@ export async function listConversations(
     select
       t.id,
       t.subject,
-      c.full_name as customer_name,
+      ${sql.unsafe(customerNameSql('c'))} as customer_name,
       m.body,
       (m.file_id is not null or m.attachment_pathname is not null) as has_attachment,
       coalesce(m.created_at, t.created_at) as last_activity

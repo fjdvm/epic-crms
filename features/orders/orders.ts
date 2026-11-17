@@ -1,4 +1,5 @@
 import { DEFAULT_AUTOMATIC_CHECKS, type AutomaticChecks } from "@/features/settings/automatic-checks";
+import { customerNameSql } from "@/lib/deleted-customer";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
 import type postgres from "postgres";
 
@@ -89,7 +90,7 @@ export async function listOrders(sql: postgres.Sql, query: OrderQuery = {}): Pro
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);
 
   const orders = await sql<Record<string, unknown>[]>`
-    select o.id, o.created_at, o.status, o.customer_id, c.full_name,
+    select o.id, o.created_at, o.status, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name,
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total
     from public.orders o
     join public.customers c on c.id = o.customer_id
@@ -215,7 +216,7 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number, se
     if (!order) return { ok: true, order: null };
 
     const [customer] = await sql<{ id: string; full_name: string; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null; packed_by_id: string | null; packed_by_name: string | null; packed_at: string | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null }[]>`
-      select c.id, c.full_name, o.paid_by_id, o.paid_by_name, o.paid_at,
+      select c.id, ${sql.unsafe(customerNameSql('c'))} as full_name, o.paid_by_id, o.paid_by_name, o.paid_at,
         to_jsonb(o)->>'packed_by_id' as packed_by_id, to_jsonb(o)->>'packed_by_name' as packed_by_name,
         to_jsonb(o)->>'packed_at' as packed_at,
         to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,

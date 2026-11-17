@@ -29,7 +29,7 @@ export async function addCustomerNote(customerId: string, text: string, operatio
     const [customer] = await database()<{ name: string }[]>`
       select c.full_name as name from public.customers c
       join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
-      where c.id = ${customerId}`;
+      where c.id = ${customerId} and to_jsonb(c)->>'deleted_at' is null`;
     if (!customer) return { ok: false, message: "This Customer could not be found." };
     const [saved] = await writer<CustomerNoteRow[]>`
       insert into crms.customer_notes (customer_id, author_id, author_name, body, operation_id)

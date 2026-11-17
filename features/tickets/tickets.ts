@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
 import { DEFAULT_HISTORY, firstReplyHoursSql, type ServiceLevel } from "./service-level";
 import { withServiceLevels, type ServiceLevels } from "./service-level-store";
@@ -170,7 +171,7 @@ export async function listTickets(
       select
         t.id,
         t.subject,
-        c.full_name as customer_name,
+        ${sql.unsafe(customerNameSql('c'))} as customer_name,
         t.category,
         t.order_id,
         t.priority,

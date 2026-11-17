@@ -1,4 +1,5 @@
 import { DEFAULT_AUTOMATIC_CHECKS, type AutomaticChecks } from "@/features/settings/automatic-checks";
+import { customerNameSql } from "@/lib/deleted-customer";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
 import type postgres from "postgres";
 
@@ -25,7 +26,7 @@ export async function paymentQueue(sql: postgres.Sql): Promise<PaymentQueueOrder
     gcash_reference_number: string | null; payment_proof_screenshot_pathname: string | null; payment_proof_file_id: string | null;
     payment_proof_submitted_at: Date;
   }[]>`
-    select o.id, o.created_at, o.customer_id, c.full_name,
+    select o.id, o.created_at, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name,
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total,
       o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at
     from public.orders o join public.customers c on c.id = o.customer_id
@@ -75,7 +76,7 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), set
     gcash_reference_number: string | null; payment_proof_screenshot_pathname: string | null; payment_proof_file_id: string | null;
     payment_proof_submitted_at: Date | null; payment_proof_rejected_at: Date | null; payment_proof_rejections: number;
   }[]>`
-    select o.id, o.customer_id, c.full_name, o.payment_method, o.status,
+    select o.id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, o.payment_method, o.status,
       o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total,
       o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at,
       o.payment_proof_rejected_at, o.payment_proof_rejections

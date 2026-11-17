@@ -90,7 +90,7 @@ export async function getCustomerProfile(
       join public.orders oo on oo.id = ff.order_id
       where oo.customer_id = c.id
     ) f
-    where c.id = ${id}`;
+    where c.id = ${id} and to_jsonb(c)->>'deleted_at' is null`;
 
   if (!row) return null;
 
@@ -187,7 +187,7 @@ export async function recordCustomerProfileView(
     const [customer] = await connect()<{ name: string }[]>`
       select c.full_name as name from public.customers c
       join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
-      where c.id = ${id}`;
+      where c.id = ${id} and to_jsonb(c)->>'deleted_at' is null`;
     if (!customer) return;
     const name = customer.name;
     await recordAudit(audit.trail, {

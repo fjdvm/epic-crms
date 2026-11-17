@@ -33,7 +33,7 @@ export async function searchCustomers(sql: postgres.Sql, term: string): Promise<
     select c.id, c.full_name, c.email
     from public.customers c
     join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
-    where c.full_name ilike ${pattern} or c.email ilike ${pattern}
+    where to_jsonb(c)->>'deleted_at' is null and (c.full_name ilike ${pattern} or c.email ilike ${pattern})
     order by c.full_name, c.id
     limit ${SEARCH_LIMIT}`;
 

@@ -36,6 +36,14 @@ _Avoid_: Note, Message, comment, Profile note
 A follow-up a Staff member must do for a Customer, written on their Customer Profile. It has an owner, a required due date and a done state, which is what separates it from a Customer note. The owner is the Staff member who created it; only a Manager can assign or reassign it to someone else. The due date is a date only, in Philippine Time. The owner or a Manager can change the due date, mark it done and reopen it. Its description is fixed and it is never deleted; a Task no longer needed is marked done. It is overdue once its due date has passed and it is not done.
 _Avoid_: Reminder, to-do, follow-up
 
+**Deleted Customer**:
+A Customer who deleted their account on the storefront. Their Customer Profile is soft-deleted: login is disabled and they vanish at once from the Customer List, Customer Details and the Dashboard's Customer figures for every role, while every Order, Ticket, Return and Feedback record is kept and shown with a "Deleted customer" tag, no contact details and no profile link. Sales and Total spent are unaffected. A Customer can delete only with no Order from `placed` to `dispatched`, no Requested or Approved Return and no Open or On hold Ticket. The data is kept, hidden, indefinitely: there is no purge. Staff cannot delete or restore a Customer.
+_Avoid_: Removed customer, purged customer
+
+**Returning Customer**:
+A Deleted Customer who signs up again with the same email and verifies it. The same Customer Profile and history come back, the new password replaces the old one, Customer since is unchanged, and they get a welcome-back email instead of a second welcome. Not to be confused with a Returning Buyer, a Dashboard term about Orders.
+_Avoid_: Reactivated customer, new customer
+
 **Customer since**:
 The date a Customer first signed up. It is the sign-up date, not the date they verified their email.
 

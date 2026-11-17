@@ -20,7 +20,8 @@ const SCHEMA = `
     full_name text not null,
     first_name text not null default '',
     email text not null,
-    marketing_opt_in boolean not null default false
+    marketing_opt_in boolean not null default false,
+    deleted_at timestamptz
   );
   create table senior_pwd_verifications (
     id integer primary key generated always as identity,
