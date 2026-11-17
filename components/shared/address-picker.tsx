@@ -57,18 +57,21 @@ function plain(a: LegacyAddress): string {
  */
 export function AddressPicker({
   legacy = null,
+  initial,
   readOnly = false,
   loadOptions = fetchPsgcOptions,
   onChange,
   streetError,
 }: {
   legacy?: LegacyAddress | null;
+  /** A saved pick to start from (codes and street), so the lists open already narrowed to it. */
+  initial?: Partial<AddressPick>;
   readOnly?: boolean;
   loadOptions?: LoadOptions;
   onChange?: (value: AddressPick) => void;
   streetError?: string;
 }) {
-  const [pick, setPick] = useState<AddressPick>(EMPTY);
+  const [pick, setPick] = useState<AddressPick>({ ...EMPTY, ...initial });
   const [lists, setLists] = useState<Lists>(NONE);
   const [failed, setFailed] = useState(false);
   const [editing, setEditing] = useState(!legacy);
@@ -85,7 +88,15 @@ export function AddressPicker({
     [loadOptions],
   );
 
-  useEffect(() => { if (editing && !readOnly) load({ level: "region" }); }, [editing, readOnly, load]);
+  useEffect(() => {
+    if (!editing || readOnly) return;
+    load({ level: "region" });
+    // A saved pick opens with every list it needs already loaded.
+    if (initial?.regionCode) load({ level: "province", region: initial.regionCode });
+    if (initial?.regionCode && initial.provinceCode) load({ level: "city", region: initial.regionCode, province: initial.provinceCode });
+    if (initial?.regionCode && initial.cityCode) load({ level: "barangay", region: initial.regionCode, city: initial.cityCode });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, readOnly, load]);
 
   const update = (next: AddressPick) => { setPick(next); onChange?.(next); };
 
