@@ -289,11 +289,31 @@ export function OrderDetailView({
             <h2 className={CARD_TITLE}>
               {address ? "Delivery address" : "Pickup"}
             </h2>
-            <p className="text-sm text-[#1f1a2e]">
-              {address
-                ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
-                : "The Customer collects this Order; there is nothing to deliver."}
-            </p>
+            {address?.region ? (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-[#1f1a2e]" aria-label="Structured delivery address">
+                {(
+                  [
+                    ["Country", address.country],
+                    ["Region", address.region],
+                    ["Province", address.province],
+                    ["City", address.city],
+                    ["Barangay", address.barangay],
+                    ["Street", address.street],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-[#6b6580]">{label}</dt>
+                    <dd>{value || "—"}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-[#1f1a2e]">
+                {address
+                  ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
+                  : "The Customer collects this Order; there is nothing to deliver."}
+              </p>
+            )}
           </section>
         </div>
 

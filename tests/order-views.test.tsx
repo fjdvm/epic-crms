@@ -221,6 +221,22 @@ describe("an Order's detail", () => {
     expect(screen.getByRole("link", { name: "Maria Santos" }).getAttribute("href")).toBe("/customer-profiles/c1");
   });
 
+  it("shows Country, Region, Province, City, Barangay and Street for an Order with a Region", () => {
+    const base = detail({}).address!;
+    render(<OrderDetailView order={detail({ address: { ...base, region: "NCR" } })} />);
+
+    for (const [label, value] of [["Country", "Philippines"], ["Region", "NCR"], ["Province", "Metro Manila"], ["City", "Makati"], ["Barangay", "Poblacion"], ["Street", "1 Rizal St"]]) {
+      expect(screen.getByText(label).nextElementSibling?.textContent).toBe(value);
+    }
+  });
+
+  it("shows an older Order's address as the original plain text", () => {
+    render(<OrderDetailView order={detail({})} />);
+
+    expect(screen.queryByLabelText("Structured delivery address")).toBeNull();
+    expect(screen.getByText("1 Rizal St, Poblacion, Makati, Metro Manila 1210, Philippines")).toBeTruthy();
+  });
+
   it("shows no Delivery fee row and no address for a Pickup Order", () => {
     render(
       <OrderDetailView order={detail({ fulfillmentMethod: "pickup", deliveryFee: null, total: 100_000, address: null })} />,

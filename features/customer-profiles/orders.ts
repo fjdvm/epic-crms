@@ -22,6 +22,8 @@ export interface OrderAddress {
   province: string;
   postalCode: string;
   country: string;
+  /** Set only on Orders saved with the structured picker; older Orders have none and show as plain text. */
+  region?: string | null;
 }
 
 export interface CustomerOrder {
@@ -67,6 +69,7 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
       o.payment_proof_rejected_at, o.payment_proof_rejections,
       a.label as a_label, a.street as a_street, a.barangay as a_barangay, a.city as a_city,
       a.province as a_province, a.postal_code as a_postal_code, a.country as a_country,
+      to_jsonb(a) ->> 'region' as a_region,
       f.rating as f_rating, f.comment as f_comment, f.created_at as f_created_at, f.sentiment as f_sentiment
     from public.orders o
     left join public.order_delivery_addresses a on a.order_id = o.id
@@ -121,6 +124,7 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
             province: o.a_province as string,
             postalCode: o.a_postal_code as string,
             country: o.a_country as string,
+            region: (o.a_region as string | null) || null,
           },
       feedback:
         o.f_rating === null || o.f_rating === undefined
