@@ -6,7 +6,7 @@ import { ReturnListView, type ReturnListParams } from "@/features/returns/return
 import { ReturnsSkeleton } from "@/features/returns/returns-skeleton";
 import { PageHeader } from "./page-header";
 import { loadReturns, loadReturnStats, RETURN_TABS } from "@/features/returns/returns";
-import { currentAutomaticChecks } from "@/features/settings/automatic-checks";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { loadReturnFlags } from "@/features/returns/return-flags";
 import { crmsDatabase } from "@/lib/crms-db";
 import { ticketsDatabase } from "@/lib/tickets-db";

@@ -1,4 +1,4 @@
-import { currentAutomaticChecks } from "@/features/settings/automatic-checks";
+import { DEFAULT_AUTOMATIC_CHECKS, type AutomaticChecks } from "@/features/settings/automatic-checks";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
 import type postgres from "postgres";
 
@@ -157,13 +157,13 @@ export interface PaymentProofEntry {
 }
 
 /** Every proof the Customer submitted, oldest first, so the history reads in the order it happened. */
-export async function paymentProofHistory(sql: postgres.Sql, orderId: number): Promise<PaymentProofEntry[]> {
+export async function paymentProofHistory(sql: postgres.Sql, orderId: number, settings: AutomaticChecks = DEFAULT_AUTOMATIC_CHECKS): Promise<PaymentProofEntry[]> {
   const rows = await sql<{
     id: number; reference: string | null; screenshot_file_id: string | null; screenshot_pathname: string | null; submitted_at: Date;
     rejected_at: Date | null; rejected_by_id: string | null; rejected_by_name: string | null; rejection_reason: string | null;
   }[]>`select id, reference, screenshot_file_id, screenshot_pathname, submitted_at, rejected_at, rejected_by_id, rejected_by_name, rejection_reason
     from public.order_payment_proofs where order_id = ${orderId} order by submitted_at, id`;
-  const checks = await paymentProofChecksForOrders(sql, [orderId], await currentAutomaticChecks());
+  const checks = await paymentProofChecksForOrders(sql, [orderId], settings);
   return rows.map(p => ({
     ...checks.get(p.id),
     id: p.id, reference: p.reference, screenshot: paymentScreenshotSource(orderId, p.screenshot_file_id, p.screenshot_pathname), submittedAt: p.submitted_at,
@@ -207,7 +207,7 @@ async function orderVerification(sql: postgres.Sql, orderId: number): Promise<Or
 }
 
 /** One Order with its Customer, or `order: null` if there is no such Order. */
-export async function loadOrder(connect: () => postgres.Sql, orderId: number): Promise<OrderResult> {
+export async function loadOrder(connect: () => postgres.Sql, orderId: number, settings: AutomaticChecks = DEFAULT_AUTOMATIC_CHECKS): Promise<OrderResult> {
   try {
     const sql = connect();
     const order = await getOrderById(sql, orderId);
@@ -227,7 +227,7 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number): P
       ok: true,
       order: {
         ...order,
-        paymentProofs: await paymentProofHistory(sql, orderId),
+        paymentProofs: await paymentProofHistory(sql, orderId, settings),
         paymentLabel: paymentStatusOf(order.status),
         packedBy: customer.packed_by_id && customer.packed_by_name && customer.packed_at
           ? { id: customer.packed_by_id, name: customer.packed_by_name, at: new Date(customer.packed_at) }

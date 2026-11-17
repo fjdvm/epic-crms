@@ -18,7 +18,7 @@ import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
 import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
-import { currentAutomaticChecks } from "@/features/settings/automatic-checks";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { reusedReferenceOrderIds } from "./payment-proof-checks";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
@@ -199,7 +199,7 @@ export async function loadPayments(): Promise<PaymentsResult> {
   await requireModule(PAYMENTS_MODULE);
   try {
     const now = new Date();
-    return { ok: true, rows: await paymentRows(database(), now), now };
+    return { ok: true, rows: await paymentRows(database(), now, await currentAutomaticChecks()), now };
   } catch {
     return { ok: false, reason: "Payments are temporarily unavailable." };
   }
@@ -378,7 +378,7 @@ export async function reconcileDeliveryPhoto(id: number): Promise<{ ok: true } |
 export async function loadPackingSlip(id: number) {
   await requireModule(FULFILMENT_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false as const, reason: "Invalid Order number." };
-  const result = await loadOrder(database, id);
+  const result = await loadOrder(database, id, await currentAutomaticChecks());
   if (!result.ok) return { ok: false as const, reason: "Packing slip is temporarily unavailable." };
   if (!result.order) return { ok: false as const, reason: "Order was not found." };
   const { id: orderId, createdAt, customer, fulfillmentMethod, lines, address } = result.order;

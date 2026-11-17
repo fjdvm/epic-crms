@@ -6,9 +6,9 @@ import { codFlags } from "@/features/orders/cod-flags";
 import { paymentProofChecksForOrders, reusedReferenceOrderIds } from "@/features/orders/payment-proof-checks";
 import { frequentReturnsFlag } from "@/features/returns/return-flags";
 import {
-  DEFAULT_AUTOMATIC_CHECKS, loadAutomaticChecks, resolveAutomaticChecks, saveAutomaticChecks, validateAutomaticChecks,
-  type AutomaticChecks,
+  DEFAULT_AUTOMATIC_CHECKS, loadAutomaticChecks, resolveAutomaticChecks, validateAutomaticChecks, type AutomaticChecks,
 } from "@/features/settings/automatic-checks";
+import { saveAutomaticChecks } from "@/features/settings/automatic-checks-server";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 

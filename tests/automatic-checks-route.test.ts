@@ -8,8 +8,9 @@ vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => ({}) }));
 vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn() }));
 vi.mock("@/features/settings/automatic-checks", async importOriginal => ({
   ...(await importOriginal<typeof import("@/features/settings/automatic-checks")>()),
-  loadAutomaticChecks: mocks.load, saveAutomaticChecks: mocks.save,
+  loadAutomaticChecks: mocks.load,
 }));
+vi.mock("@/features/settings/automatic-checks-server", () => ({ saveAutomaticChecks: mocks.save }));
 
 import { GET, PUT } from "@/app/api/automatic-checks/route";
 

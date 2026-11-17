@@ -6,7 +6,7 @@ import { ReturnDetailView } from "@/features/returns/return-detail";
 import { loadReturnDetail } from "@/features/returns/returns";
 import { fetchReturnPhoto } from "@/features/returns/photo-bytes";
 import { keptFlagExplanation } from "@/features/returns/return-flag-explain";
-import { currentAutomaticChecks } from "@/features/settings/automatic-checks";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { fingerprintReturnPhotos, loadReturnFlags } from "@/features/returns/return-flags";
 import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayFileStorage } from "@/lib/gateway";

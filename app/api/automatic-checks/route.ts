@@ -2,7 +2,8 @@ import { validateSession } from "@/lib/portal/client";
 import { shopRole } from "@/lib/portal/roles";
 import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayAuditTrail } from "@/lib/gateway";
-import { loadAutomaticChecks, saveAutomaticChecks } from "@/features/settings/automatic-checks";
+import { loadAutomaticChecks } from "@/features/settings/automatic-checks";
+import { saveAutomaticChecks } from "@/features/settings/automatic-checks-server";
 
 /**
  * Portal Settings, Automatic checks. Same short-lived Portal handle as the Approval limit.
