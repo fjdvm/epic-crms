@@ -22,6 +22,7 @@ const order = (over: Partial<CustomerOrder>): CustomerOrder => ({
   paymentMethod: "cash-on-delivery",
   lines: [{ product: "Sourdough", size: "Large", quantity: 2, price: 25000 }],
   subtotal: 50000,
+  discount: 0,
   deliveryFee: 10000,
   total: 60000,
   address,

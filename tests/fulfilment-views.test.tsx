@@ -330,6 +330,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   paymentMethod: "gcash",
   lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }],
   subtotal: 100_000,
+  discount: 0,
   deliveryFee: 15_000,
   total: 115_000,
   address: null,

@@ -12,9 +12,13 @@ export interface CourierBooking {
 /** What Staff say when they reject a proof; the storefront keeps it, emails the Customer once and asks for another proof. */
 export interface ProofRejection { reason: string; staffId: string; staffName: string }
 
+/** The final amounts Staff saw when confirming, in centavos; the storefront checks them against its own figures. */
+export interface ConfirmedAmounts { subtotalInCentavos: number; discountInCentavos: number; deliveryFeeInCentavos: number; totalInCentavos: number; staffId: string; staffName: string }
+
 export type OrderStatusUpdate =
   | { status: "preparing"; staffId: string; staffName: string; courier?: never }
-  | { status: "confirmed" | "cancelled"; deliveryFeeInCentavos?: number; courier?: never }
+  | { status: "confirmed"; amounts: ConfirmedAmounts; deliveryFeeInCentavos?: number; courier?: never }
+  | { status: "cancelled"; deliveryFeeInCentavos?: never; courier?: never; amounts?: never }
   | { status: "dispatched"; courier?: CourierBooking; deliveryFeeInCentavos?: never }
   | { status: "delivered"; deliveryPhotoFileId: string; deliveryFeeInCentavos?: never; courier?: never }
   | { status: "paid"; staffId: string; staffName: string; approvedAnyway?: { reason: string }; deliveryFeeInCentavos?: never; courier?: never };
@@ -64,6 +68,7 @@ async function orderRequest(id: number, update: OrderStatusUpdate | ProofRejecti
       body.id !== id || ("status" in update ? body.status !== (responseStatus ?? update.status) : !["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(body.status)) ||
       ("courier" in update && update.courier !== undefined && (body.courier?.name !== update.courier.name || body.courier?.trackingUrl !== update.courier.trackingUrl)) ||
       ("deliveryFeeInCentavos" in update && update.deliveryFeeInCentavos !== undefined && body.deliveryFeeInCentavos !== update.deliveryFeeInCentavos) ||
+      ("amounts" in update && update.amounts !== undefined && body.totalInCentavos !== undefined && body.totalInCentavos !== update.amounts.totalInCentavos) ||
       !(body.deliveryFeeInCentavos === null || Number.isSafeInteger(body.deliveryFeeInCentavos))) {
       return { ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." };
     }

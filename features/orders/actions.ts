@@ -13,7 +13,7 @@ import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
-import { cancelStorefrontItems, changeOrderStatus, rejectStorefrontProof, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { cancelStorefrontItems, changeOrderStatus, type ConfirmedAmounts, rejectStorefrontProof, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
@@ -29,6 +29,8 @@ interface CurrentOrder {
   payment_method: string;
   subtotal_in_centavos: number;
   delivery_fee_in_centavos: number | null;
+  /** The approved Senior/PWD discount saved on the Order; absent or 0 when it has none. */
+  discount_in_centavos?: number | null;
   payment_proof_submitted_at: Date | null;
   payment_proof_rejected_at: Date | null;
   payment_proof_rejections: number;
@@ -55,6 +57,7 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
   try {
     const [order] = await database()<CurrentOrder[]>`
       select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at,
+        coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as discount_in_centavos,
         payment_proof_rejected_at, payment_proof_rejections,
         exists (select 1 from public.senior_pwd_verifications v where v.id = o.senior_pwd_verification_id and v.status = 'pending') as senior_pwd_pending
       from public.orders o where o.id = ${id}`;
@@ -92,9 +95,31 @@ function choiceNote(choice?: CodChoice): string {
   return choice && COD_CHOICES.includes(choice) ? ` after choosing "${COD_CHOICE_LABELS[choice]}"` : "";
 }
 
-/** Quote in integer centavos; the storefront confirms the Delivery Order in the same write. */
-export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
-  return act(id, async (order) => {
+const pesos = (centavos: number) => `₱${(centavos / 100).toFixed(2)}`;
+
+/**
+ * The final amounts for a confirmation, worked out from what the server holds. Staff confirm the total
+ * they saw; if it no longer matches, nothing is sent or saved.
+ */
+function finalAmounts(order: CurrentOrder, staff: Staff, deliveryFeeInCentavos: number, expectedTotalInCentavos: number):
+  { ok: true; amounts: ConfirmedAmounts } | { ok: false; reason: string } {
+  const discountInCentavos = order.discount_in_centavos ?? 0;
+  const totalInCentavos = order.subtotal_in_centavos - discountInCentavos + deliveryFeeInCentavos;
+  if (expectedTotalInCentavos !== totalInCentavos) {
+    return { ok: false, reason: `The total is now ${pesos(totalInCentavos)}, not ${pesos(Number.isFinite(expectedTotalInCentavos) ? expectedTotalInCentavos : 0)}. Refresh the Order before confirming.` };
+  }
+  return { ok: true, amounts: { subtotalInCentavos: order.subtotal_in_centavos, discountInCentavos, deliveryFeeInCentavos, totalInCentavos, staffId: staff.id, staffName: staff.name } };
+}
+
+const amountsMetadata = (a: { subtotalInCentavos: number; discountInCentavos: number; deliveryFeeInCentavos: number; totalInCentavos: number }) => ({
+  subtotal_in_centavos: a.subtotalInCentavos, discount_in_centavos: a.discountInCentavos,
+  delivery_fee_in_centavos: a.deliveryFeeInCentavos, total_in_centavos: a.totalInCentavos,
+});
+
+/** Quote in integer centavos; the storefront confirms the Delivery Order in the same write, after checking the final amounts. */
+export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, expectedTotalInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
+  let confirmed: ConfirmedAmounts | undefined;
+  return act(id, async (order, staff) => {
     if (!Number.isSafeInteger(deliveryFeeInCentavos) || deliveryFeeInCentavos < 0) {
       return { ok: false, reason: "Enter a nonnegative whole number of centavos." };
     }
@@ -103,23 +128,32 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     }
     if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
     if (!CANCELLABLE_STATUSES.includes(order.status) || order.delivery_fee_in_centavos !== null) return { ok: false, reason: ALREADY_CHANGED };
-    return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos }, order.status === "placed" ? "confirmed" : order.status);
+    const final = finalAmounts(order, staff, deliveryFeeInCentavos, expectedTotalInCentavos);
+    if (!final.ok) return final;
+    confirmed = final.amounts;
+    return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos, amounts: final.amounts }, order.status === "placed" ? "confirmed" : order.status);
   }, ORDERS_MODULE, {
-    action: "order.delivery_fee_quoted",
-    description: staff => `${staff.name} ${deliveryFeeInCentavos === 0 ? "quoted free delivery (₱0.00)" : `quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)}`} and confirmed Order #${id}${choiceNote(codChoice)}.`,
+    action: "order.confirmed",
+    description: staff => `${staff.name} ${deliveryFeeInCentavos === 0 ? "quoted free delivery (₱0.00)" : `quoted a Delivery fee of ${pesos(deliveryFeeInCentavos)}`} and confirmed Order #${id}${choiceNote(codChoice)}.`,
+    get metadata() { return confirmed ? amountsMetadata(confirmed) : undefined; },
   });
 }
 
-export async function confirmPickup(id: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
-  return act(id, async (order) => {
+export async function confirmPickup(id: number, expectedTotalInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
+  let confirmed: ConfirmedAmounts | undefined;
+  return act(id, async (order, staff) => {
     if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
     if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
     if (order.fulfillment_method !== "pickup") {
       return { ok: false, reason: "A Delivery Order needs a Delivery fee." };
     }
-    return changeOrderStatus(id, { status: "confirmed" });
+    const final = finalAmounts(order, staff, 0, expectedTotalInCentavos);
+    if (!final.ok) return final;
+    confirmed = final.amounts;
+    return changeOrderStatus(id, { status: "confirmed", amounts: final.amounts });
   }, ORDERS_MODULE, {
     action: "order.confirmed", description: staff => `${staff.name} confirmed Order #${id}${choiceNote(codChoice)}.`,
+    get metadata() { return confirmed ? amountsMetadata(confirmed) : undefined; },
   });
 }
 

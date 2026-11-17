@@ -156,6 +156,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   paymentMethod: "gcash",
   lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }],
   subtotal: 100_000,
+  discount: 0,
   deliveryFee: 15_000,
   total: 115_000,
   address: {
@@ -464,7 +465,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee to charge/), { target: { value: "190" } });
     fireEvent.click(submit);
 
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000);
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000, 119_000);
   });
 
   it("quotes a Delivery fee in pesos, sends centavos, and confirms once the server does", async () => {
@@ -478,10 +479,10 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(submit.disabled).toBe(true);
 
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150.50" } });
-    expect(within(dialog).getByText("New total").nextElementSibling?.textContent).toBe("₱1,150.50");
+    expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱1,150.50");
     fireEvent.click(submit);
 
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050);
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050, 115_050);
     expect(within(dialog).getByRole("button", { name: "Confirming…" }).getAttribute("aria-busy")).toBe("true");
     expect(toast.success).not.toHaveBeenCalled();
 
@@ -489,6 +490,24 @@ describe("the Orders Module's actions on an Order's detail", () => {
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed with a ₱150.50 Delivery fee.");
+  });
+
+  it("shows Subtotal − Approved Discount + Delivery Fee = Total before Confirm Order on a Pickup Order", () => {
+    render(<OrderDetailView order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null, discount: 5_000, total: 95_000 })} modules={ORDERS} />);
+    const formula = screen.getByRole("group", { name: "Order total" });
+    expect(within(formula).getByText("− Approved discount").nextElementSibling?.textContent).toBe("₱50.00");
+    expect(within(formula).getByText("+ Delivery fee").nextElementSibling?.textContent).toBe("₱0.00");
+    expect(within(formula).getByText("= Total").nextElementSibling?.textContent).toBe("₱950.00");
+  });
+
+  it("sends the discounted total when quoting a Delivery fee", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, discount: 5_000, total: 95_000 })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "0" } });
+    expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱950.00");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Quote and confirm" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 95_000);
   });
 
   it("will not send a fee that is not an amount in pesos", () => {
@@ -531,7 +550,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed."));
-    expect(confirmPickup).toHaveBeenCalledWith(1042);
+    expect(confirmPickup).toHaveBeenCalledWith(1042, 100_000);
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });

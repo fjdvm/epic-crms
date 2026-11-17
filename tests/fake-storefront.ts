@@ -454,6 +454,14 @@ export class FakeStorefront {
       (!Number.isSafeInteger(update.deliveryFeeInCentavos) || update.deliveryFeeInCentavos < 0)) {
       return Response.json({ error: "A Delivery fee is required." }, { status: 400 });
     }
+    if (mayConfirm) {
+      const a = update.amounts;
+      const fee = update.deliveryFeeInCentavos ?? 0;
+      if (!a || a.subtotalInCentavos !== order.subtotal_in_centavos || a.deliveryFeeInCentavos !== fee ||
+        a.totalInCentavos !== a.subtotalInCentavos - a.discountInCentavos + fee || !a.staffId || !a.staffName) {
+        return Response.json({ error: "The amounts do not match the Order. Refresh it before confirming." }, { status: 409 });
+      }
+    }
     const [changed] = await this.sql`
       update orders set status = ${mayConfirm && order.status !== "placed" ? order.status : update.status},
         delivery_photo_file_id = ${mayDeliver ? update.deliveryPhotoFileId : order.delivery_photo_file_id},
