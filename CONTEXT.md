@@ -40,6 +40,10 @@ _Avoid_: Reminder, to-do, follow-up
 A Customer who deleted their account on the storefront. Their Customer Profile is soft-deleted: login is disabled and they vanish at once from the Customer List, Customer Details and the Dashboard's Customer figures for every role, while every Order, Ticket, Return and Feedback record is kept and shown with a "Deleted customer" tag, no contact details and no profile link. Sales and Total spent are unaffected. A Customer can delete only with no Order from `placed` to `dispatched`, no Requested or Approved Return and no Open or On hold Ticket. The data is kept, hidden, indefinitely: there is no purge. Staff cannot delete or restore a Customer.
 _Avoid_: Removed customer, purged customer
 
+**Welcome email**:
+The one email a new Customer gets when they sign up, in the shop's email design. It is claimed once per Customer id, so a retried or double-submitted sign-up never sends a second one, and a failed send never fails sign-up. A Returning Customer gets a welcome-back email instead.
+_Avoid_: Greeting email, onboarding email
+
 **Returning Customer**:
 A Deleted Customer who signs up again with the same email and verifies it. The same Customer Profile and history come back, the new password replaces the old one, Customer since is unchanged, and they get a welcome-back email instead of a second welcome. Not to be confused with a Returning Buyer, a Dashboard term about Orders.
 _Avoid_: Reactivated customer, new customer
