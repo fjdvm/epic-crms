@@ -1,3 +1,4 @@
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -19,7 +20,7 @@ export default async function FailedDeliveryPage({ params }: { params: Promise<{
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
 
-  const [result, history] = await Promise.all([loadOrder(ticketsDatabase, Number(id)), loadFailedDeliveryHistory(Number(id))]);
+  const [result, history] = await Promise.all([loadOrder(ticketsDatabase, Number(id), await currentAutomaticChecks()), loadFailedDeliveryHistory(Number(id))]);
   if (result.ok && !result.order) notFound();
 
   if (!result.ok || !result.order || !history.ok) {

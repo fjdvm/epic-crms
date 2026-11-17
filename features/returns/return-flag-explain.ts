@@ -4,7 +4,8 @@ import { z } from "zod";
 import { configuredStructuredModels, structuredOutput, type StructuredModel } from "@/lib/ai/structured";
 import { shopRole } from "@/lib/portal/roles";
 
-import { loadReturnFlags, type ReturnFlag, type ReturnFlagRule } from "./return-flags";
+import { loadAutomaticChecks } from "@/features/settings/automatic-checks";
+import { FREQUENT_RETURNS_DAYS, loadReturnFlags, type ReturnFlag, type ReturnFlagRule } from "./return-flags";
 
 type Deps = { reader: postgres.Sql; crms: postgres.Sql };
 export type FlagExplanation = { ok: true; explanation: string } | { ok: false; reason: "forbidden" | "not-flagged" | "unavailable" };
@@ -24,7 +25,7 @@ const NUMBER = /\d+/g;
  * Everything the model sees, and everything it may quote: counts, dates, Return reasons and RMA numbers.
  * No photo, no Customer or Order identity, no free-text note.
  */
-export async function flagRecord(reader: postgres.Sql, returnId: number, flag: ReturnFlag): Promise<Record_ | null> {
+export async function flagRecord(reader: postgres.Sql, returnId: number, flag: ReturnFlag, days = FREQUENT_RETURNS_DAYS): Promise<Record_ | null> {
   const ids = [returnId, ...flag.earlier.map(e => e.id)];
   const rows = await reader<{ id: number; requested_at: Date; reason: string; status: string }[]>`
     select id, requested_at, reason, status from public.order_returns where id in ${reader(ids)}`;
@@ -37,7 +38,7 @@ export async function flagRecord(reader: postgres.Sql, returnId: number, flag: R
     ...earlier.map(r => `Earlier Return: RMA-${r.id}, requested ${iso(r.requested_at)} (${Math.round((self.requested_at.getTime() - r.requested_at.getTime()) / DAY)} days before), reason: ${r.reason}, status: ${r.status}`),
     `Earlier Returns linked to this flag: ${earlier.length}`,
   ];
-  if (flag.rule === "frequent-returns") lines.push(`Returns by this Customer in the last 90 days, including this one: ${earlier.length + 1}`);
+  if (flag.rule === "frequent-returns") lines.push(`Returns by this Customer in the last ${days} days, including this one: ${earlier.length + 1}`);
   const text = lines.join("\n");
   return { text, held: new Set((text.match(NUMBER) ?? []).map(n => String(Number(n)))) };
 }
@@ -65,11 +66,12 @@ export async function explainReturnFlag(
 ): Promise<FlagExplanation> {
   if (shopRole(staff.role) !== "manager") return { ok: false, reason: "forbidden" };
   try {
-    const flag = (await loadReturnFlags(deps.reader, deps.crms, [returnId])).get(returnId)?.find(f => f.rule === rule);
+    const settings = (await loadAutomaticChecks(deps.crms)).returns;
+    const flag = (await loadReturnFlags(deps.reader, deps.crms, [returnId], settings)).get(returnId)?.find(f => f.rule === rule);
     if (!flag) return { ok: false, reason: "not-flagged" };
     const kept = await keptFlagExplanation(deps.crms, returnId, rule);
     if (kept) return { ok: true, explanation: kept };
-    const record = await flagRecord(deps.reader, returnId, flag);
+    const record = await flagRecord(deps.reader, returnId, flag, settings.frequentReturns.days);
     if (!record) return { ok: false, reason: "not-flagged" };
     const result = await structuredOutput({ schema, system: SYSTEM, prompt: record.text, models: models(), maxOutputTokens: 300 });
     if (!result.ok || !quotesOnlyRecord(result.output.explanation, record.held)) return { ok: false, reason: "unavailable" };

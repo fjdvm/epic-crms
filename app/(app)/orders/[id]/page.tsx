@@ -1,3 +1,4 @@
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { notFound } from "next/navigation";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -23,7 +24,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (!/^\d{1,9}$/.test(id)) notFound();
 
   const [result, modules] = await Promise.all([
-    loadOrder(ticketsDatabase, Number(id)),
+    loadOrder(ticketsDatabase, Number(id), await currentAutomaticChecks()),
     heldModules(ORDER_DETAIL_MODULES),
   ]);
 

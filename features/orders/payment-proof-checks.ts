@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 
+import { DEFAULT_AUTOMATIC_CHECKS, type AutomaticChecks } from "@/features/settings/automatic-checks";
+
 export interface PaymentProofChecks {
   confirmed: { amountInCentavos: number | null; paidAt: Date | null; recipient: string | null };
   expected: { amountInCentavos: number; placedAt: Date; recipient: string | null };
@@ -15,7 +17,7 @@ export interface PaymentProofChecks {
 const account = (value: string) => value.trim().toLowerCase().replace(/[\s-]/g, "");
 
 /** Read-only rules: a failed check never rejects a proof or changes an Order. */
-export async function paymentProofChecksForOrders(sql: postgres.Sql, orderIds: number[]): Promise<Map<number, PaymentProofChecks>> {
+export async function paymentProofChecksForOrders(sql: postgres.Sql, orderIds: number[], settings: AutomaticChecks = DEFAULT_AUTOMATIC_CHECKS): Promise<Map<number, PaymentProofChecks>> {
   if (orderIds.length === 0) return new Map();
   const rows = await sql<{
     id: number; other_order_ids: number[];
@@ -32,33 +34,36 @@ export async function paymentProofChecksForOrders(sql: postgres.Sql, orderIds: n
           and lower(trim(other.reference)) = lower(trim(p.reference)))) order by other_order.id) as other_order_ids
     from public.order_payment_proofs p join public.orders o on o.id = p.order_id
     where p.order_id in ${sql(orderIds)} order by p.submitted_at, p.id`;
-  return new Map(rows.map(p => [p.id, compare(p)]));
+  return new Map(rows.map(p => [p.id, compare(p, settings.paymentProof)]));
 }
+
+const OFF = { pass: true, reason: "This check is switched off in Settings." };
 
 function compare(p: {
   reference: string | null; confirmed_amount_in_centavos: number | null; confirmed_paid_at: Date | null;
   confirmed_recipient: string | null; expected_recipient: string | null; total: number; created_at: Date; other_order_ids: number[];
-}): PaymentProofChecks {
+}, on: AutomaticChecks["paymentProof"]): PaymentProofChecks {
   const amount = p.confirmed_amount_in_centavos !== null && p.confirmed_amount_in_centavos === p.total;
   const date = p.confirmed_paid_at !== null && p.confirmed_paid_at.getTime() > p.created_at.getTime();
   const recipient = Boolean(p.confirmed_recipient?.trim() && p.expected_recipient?.trim()
     && account(p.confirmed_recipient) === account(p.expected_recipient));
-  const otherOrderIds = p.other_order_ids;
+  // Reference reuse only ever flags. Switched off, it reports no other Orders, so Mark paid is not held either.
+  const otherOrderIds = on.reference.enabled ? p.other_order_ids : [];
   return {
     confirmed: { amountInCentavos: p.confirmed_amount_in_centavos, paidAt: p.confirmed_paid_at, recipient: p.confirmed_recipient },
     expected: { amountInCentavos: p.total, placedAt: p.created_at, recipient: p.expected_recipient },
     checks: {
-      amount: { pass: amount, reason: p.confirmed_amount_in_centavos === null ? "Customer-confirmed amount is missing." : amount ? "Amount matches the Order total." : "Amount does not match the Order total." },
-      date: { pass: date, reason: p.confirmed_paid_at === null ? "Customer-confirmed payment date is missing." : date ? "Payment date is after the Order was placed." : "Payment date is not after the Order was placed." },
-      recipient: { pass: recipient, reason: !p.confirmed_recipient?.trim() ? "Customer-confirmed recipient is missing." : !p.expected_recipient?.trim() ? "Shop account was not available when this proof was submitted. Check manually." : recipient ? "Recipient matches the shop account." : "Recipient does not match the shop account." },
-      reference: { pass: Boolean(p.reference?.trim()) && otherOrderIds.length === 0, otherOrderIds,
+      amount: !on.amount.enabled ? OFF : { pass: amount, reason: p.confirmed_amount_in_centavos === null ? "Customer-confirmed amount is missing." : amount ? "Amount matches the Order total." : "Amount does not match the Order total." },
+      date: !on.date.enabled ? OFF : { pass: date, reason: p.confirmed_paid_at === null ? "Customer-confirmed payment date is missing." : date ? "Payment date is after the Order was placed." : "Payment date is not after the Order was placed." },
+      recipient: !on.recipient.enabled ? OFF : { pass: recipient, reason: !p.confirmed_recipient?.trim() ? "Customer-confirmed recipient is missing." : !p.expected_recipient?.trim() ? "Shop account was not available when this proof was submitted. Check manually." : recipient ? "Recipient matches the shop account." : "Recipient does not match the shop account." },
+      reference: !on.reference.enabled ? { ...OFF, otherOrderIds } : { pass: Boolean(p.reference?.trim()) && otherOrderIds.length === 0, otherOrderIds,
         reason: !p.reference?.trim() ? "Payment reference is missing." : otherOrderIds.length ? `Reference also used on ${otherOrderIds.map(id => `Order #${id}`).join(", ")}.` : "Reference is not used on another Order." },
     },
   };
 }
 
 /** The other Orders that already used the latest proof's reference; empty when the reference is not reused. */
-export async function reusedReferenceOrderIds(sql: postgres.Sql, orderId: number): Promise<number[]> {
-  const checks = [...(await paymentProofChecksForOrders(sql, [orderId])).values()];
+export async function reusedReferenceOrderIds(sql: postgres.Sql, orderId: number, settings: AutomaticChecks = DEFAULT_AUTOMATIC_CHECKS): Promise<number[]> {
+  const checks = [...(await paymentProofChecksForOrders(sql, [orderId], settings)).values()];
   return checks.at(-1)?.checks.reference.otherOrderIds ?? [];
 }

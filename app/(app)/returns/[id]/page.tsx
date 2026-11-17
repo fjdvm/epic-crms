@@ -6,6 +6,7 @@ import { ReturnDetailView } from "@/features/returns/return-detail";
 import { loadReturnDetail } from "@/features/returns/returns";
 import { fetchReturnPhoto } from "@/features/returns/photo-bytes";
 import { keptFlagExplanation } from "@/features/returns/return-flag-explain";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { fingerprintReturnPhotos, loadReturnFlags } from "@/features/returns/return-flags";
 import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayFileStorage } from "@/lib/gateway";
@@ -70,7 +71,7 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
   const flags = await (async () => {
     await fingerprintReturnPhotos(ticketsDatabase(), crmsDatabase(), fetchReturnPhoto, [detail.id]);
 
-    return (await loadReturnFlags(ticketsDatabase(), crmsDatabase(), [detail.id])).get(detail.id);
+    return (await loadReturnFlags(ticketsDatabase(), crmsDatabase(), [detail.id], (await currentAutomaticChecks()).returns)).get(detail.id);
   })().catch((error) => {
     console.error("Return flags could not be read", error);
 

@@ -6,6 +6,7 @@ import { ReturnListView, type ReturnListParams } from "@/features/returns/return
 import { ReturnsSkeleton } from "@/features/returns/returns-skeleton";
 import { PageHeader } from "./page-header";
 import { loadReturns, loadReturnStats, RETURN_TABS } from "@/features/returns/returns";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { loadReturnFlags } from "@/features/returns/return-flags";
 import { crmsDatabase } from "@/lib/crms-db";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -59,7 +60,7 @@ async function ReturnsData({ params }: { params: ReturnListParams }) {
   }
 
   // A flag only informs Staff; if it cannot be read, the list is still usable without it.
-  const flags = await loadReturnFlags(ticketsDatabase(), crmsDatabase(), result.list.rows.map((row) => row.id)).catch((error) => {
+  const flags = await loadReturnFlags(ticketsDatabase(), crmsDatabase(), result.list.rows.map((row) => row.id), (await currentAutomaticChecks()).returns).catch((error) => {
     console.error("Return flags could not be read", error);
 
     return undefined;

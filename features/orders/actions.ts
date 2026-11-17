@@ -18,6 +18,7 @@ import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
 import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { reusedReferenceOrderIds } from "./payment-proof-checks";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
@@ -198,7 +199,7 @@ export async function loadPayments(): Promise<PaymentsResult> {
   await requireModule(PAYMENTS_MODULE);
   try {
     const now = new Date();
-    return { ok: true, rows: await paymentRows(database(), now), now };
+    return { ok: true, rows: await paymentRows(database(), now, await currentAutomaticChecks()), now };
   } catch {
     return { ok: false, reason: "Payments are temporarily unavailable." };
   }
@@ -221,7 +222,7 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
     }
     const rejections = Number(order.payment_proof_rejections ?? 0);
     // A reference already used on another Order stops Mark paid for everyone but a Manager, read on the server each time.
-    reusedOn = await reusedReferenceOrderIds(database(), id);
+    reusedOn = await reusedReferenceOrderIds(database(), id, await currentAutomaticChecks());
     if (rejections < MANAGER_AFTER_REJECTIONS && reusedOn.length === 0) {
       if (order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
       return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
@@ -377,7 +378,7 @@ export async function reconcileDeliveryPhoto(id: number): Promise<{ ok: true } |
 export async function loadPackingSlip(id: number) {
   await requireModule(FULFILMENT_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false as const, reason: "Invalid Order number." };
-  const result = await loadOrder(database, id);
+  const result = await loadOrder(database, id, await currentAutomaticChecks());
   if (!result.ok) return { ok: false as const, reason: "Packing slip is temporarily unavailable." };
   if (!result.order) return { ok: false as const, reason: "Order was not found." };
   const { id: orderId, createdAt, customer, fulfillmentMethod, lines, address } = result.order;
