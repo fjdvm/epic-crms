@@ -45,7 +45,7 @@ The one email a new Customer gets when they sign up, in the shop's email design.
 _Avoid_: Greeting email, onboarding email
 
 **Returning Customer**:
-A Deleted Customer who signs up again with the same email and verifies it. The same Customer Profile and history come back, the new password replaces the old one, Customer since is unchanged, and they get a welcome-back email instead of a second welcome. The profile is restored only after the email is verified, and only once the new password has replaced the old one; the audit trail records one "Customer returned" event with no email address. Not to be confused with a Returning Buyer, a Dashboard term about Orders.
+A Deleted Customer who signs up again with the same email and verifies it. The same Customer Profile and history come back, the new password replaces the old one, Customer since is unchanged, and they get a welcome-back email instead of a second welcome. Signing up again removes the old login through Neon's management API and creates a fresh one with the new password (needs `NEON_API_KEY`, `NEON_PROJECT_ID` and `NEON_BRANCH_ID` on the storefront). The profile is restored only after the email is verified, moving to the new login id with every record that pointed at the old one; the audit trail records one "Customer returned" event with no email address. Not to be confused with a Returning Buyer, a Dashboard term about Orders.
 _Avoid_: Reactivated customer, new customer
 
 **Customer since**:
