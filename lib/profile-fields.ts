@@ -83,3 +83,39 @@ export function validateProfileUpdate(input: unknown): ProfileFieldErrors {
   }
   return errors;
 }
+
+const NOT_NAME = /[^\p{L}\p{M} .'’-]/gu;
+const NOT_ADDRESS = /[^\p{L}\p{M}\p{N} .,'’#/&()-]/gu;
+const NOT_EMAIL = /[^A-Za-z0-9.!#$%&'*+/=?^_`{|}~@-]/g;
+
+const MASKS: Record<string, { clean: (v: string) => string; max: number }> = {
+  firstName: { clean: (v) => v.replace(NOT_NAME, ""), max: NAME_MAX },
+  lastName: { clean: (v) => v.replace(NOT_NAME, ""), max: NAME_MAX },
+  fullName: { clean: (v) => v.replace(NOT_NAME, ""), max: NAME_MAX },
+  contactNumber: {
+    clean: (v) => {
+      const kept = v.replace(/[^\d+]/g, "");
+      return (kept.startsWith("+") ? "+" : "") + kept.replace(/\+/g, "");
+    },
+    max: CONTACT_NUMBER_MAX + 1,
+  },
+  email: { clean: (v) => v.replace(NOT_EMAIL, ""), max: EMAIL_MAX },
+  street: { clean: (v) => v.replace(NOT_ADDRESS, ""), max: ADDRESS_MAX },
+  barangay: { clean: (v) => v.replace(NOT_ADDRESS, ""), max: ADDRESS_MAX },
+  city: { clean: (v) => v.replace(NOT_ADDRESS, ""), max: ADDRESS_MAX },
+  province: { clean: (v) => v.replace(NOT_ADDRESS, ""), max: ADDRESS_MAX },
+};
+
+/**
+ * The input mask: strips what a field never allows, so typing or pasting an invalid character has
+ * no effect. Allowed-character sets match the validators above; the validators stay the authority.
+ */
+export function maskProfileInput(field: string, value: string): string {
+  const mask = Object.hasOwn(MASKS, field) ? MASKS[field] : null;
+  return mask ? mask.clean(value).slice(0, mask.max) : value;
+}
+
+/** The message the server would return for one field, or null when valid. */
+export function validateProfileField(field: string, value: string): FieldError {
+  return validateProfileUpdate({ [field]: value })[field] ?? null;
+}
