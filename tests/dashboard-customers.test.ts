@@ -144,4 +144,30 @@ describe("Dashboard Customers", () => {
     expect((await figures(["Customer Profiles"], lastMonth, afterMidnight)).atRisk).toEqual({ ok: true, count: 1 });
   });
 
+  it("keeps Sales and Average order unchanged by a deletion, while Stage and At risk stop counting the Deleted Customer", async () => {
+    await customer("kept");
+    await customer("gone");
+    await order("kept", "2026-10-25T01:00:00Z", "paid");
+    await order("gone", "2026-08-26T07:00:00Z", "delivered");
+    await order("gone", "2026-10-25T02:00:00Z", "delivered");
+    await db.sql`update orders set subtotal_in_centavos = 50000`;
+    const modules = ["Customer Profiles", "Orders", "Payments"];
+
+    const before = await figures(modules);
+    expect(before.sales).toMatchObject({ ok: true, current: 100000 });
+    expect(before.customersByStage).toMatchObject({ ok: true, counts: { repeat: 1, "first-order": 1 } });
+
+    await db.sql`update customers set deleted_at = now() where id = 'gone'`;
+    clock += 300_001;
+    const after = await figures(modules);
+    expect(after.sales).toEqual(before.sales);
+    expect(after.averageOrder).toEqual(before.averageOrder);
+    expect(after.monthlySales).toEqual(before.monthlySales);
+    expect(after.customersByStage).toEqual({ ok: true, counts: { new: 0, "first-order": 1, repeat: 0, "at-risk": 0, lost: 0 } });
+
+    await db.sql`update customers set deleted_at = null where id = 'gone'`;
+    clock += 300_001;
+    expect((await figures(modules)).customersByStage).toEqual(before.customersByStage);
+  });
+
 });
