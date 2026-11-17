@@ -9,7 +9,7 @@ import type { ReturnRow } from "@/features/returns/returns";
 import { ReturnsTable } from "@/features/returns/returns-table";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
-import type { OrderDetail } from "./orders";
+import { SENIOR_PWD_WEEKLY_CAP, type OrderDetail } from "./orders";
 import type { LineReservation } from "./stock";
 import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
@@ -32,6 +32,25 @@ export function seniorPwdLabel(order: OrderDetail): string {
   if (!order.seniorPwd) return "Not verified";
   const kind = order.seniorPwd.idType === "senior" ? "Senior Citizen" : "PWD";
   return `${kind} · ${SENIOR_PWD_STATUS[order.seniorPwd.status]}`;
+}
+
+/** The approved Senior/PWD discount, how much of the ID's weekly allowance is used and why it was reduced. Never shows an ID number. */
+function SeniorPwdDiscount({ order }: { order: OrderDetail }) {
+  const used = order.discountDetail?.allowanceUsed ?? null;
+  const reason = order.discountDetail?.reductionReason ?? null;
+  return (
+    <section data-testid="senior-pwd-discount" className={CARD}>
+      <h2 className={CARD_TITLE}>Senior/PWD discount</h2>
+      <dl className="space-y-1 text-sm text-[#1f1a2e]">
+        <div className="flex justify-between"><dt className="text-[#6e6680]">Approved discount</dt><dd>{formatPesos(order.discount)}</dd></div>
+        <div className="flex justify-between">
+          <dt className="text-[#6e6680]">Weekly allowance used</dt>
+          <dd data-testid="allowance-used">{used === null ? "Not reported yet" : `${formatPesos(used)} of ${formatPesos(SENIOR_PWD_WEEKLY_CAP)}`}</dd>
+        </div>
+      </dl>
+      {reason && <p role="note" aria-label="Discount reduced" className="mt-2 text-xs text-[#6e6680]">Discount reduced: {reason}</p>}
+    </section>
+  );
 }
 
 /** "Reserved 4 · 18 left": what this line set aside, and what is still available online. */
@@ -239,6 +258,12 @@ export function OrderDetailView({
                 <dt className="text-[#6e6680]">Subtotal</dt>
                 <dd>{formatPesos(order.subtotal)}</dd>
               </div>
+              {order.discount > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-[#6e6680]">− Approved discount</dt>
+                  <dd data-testid="approved-discount">{formatPesos(order.discount)}</dd>
+                </div>
+              )}
               <DeliveryFee order={order} />
               <div className="flex justify-between font-medium">
                 <dt>Total</dt>
@@ -246,6 +271,8 @@ export function OrderDetailView({
               </div>
             </dl>
           </section>
+
+          {order.discount > 0 && <SeniorPwdDiscount order={order} />}
 
           {modules.includes(RETURNS_MODULE) && (
             <section className={CARD}>

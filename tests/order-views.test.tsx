@@ -185,6 +185,26 @@ describe("an Order's detail", () => {
     expect(screen.getByText(/original ID/)).toBeTruthy();
   });
 
+  it("shows no discount section on an Order without a discount", () => {
+    render(<OrderDetailView role="staff" order={detail({})} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.queryByTestId("senior-pwd-discount")).toBeNull();
+    expect(screen.queryByTestId("approved-discount")).toBeNull();
+  });
+
+  it("shows the approved discount and allowance used, with no reduction note when uncapped", () => {
+    render(<OrderDetailView role="staff" order={detail({ discount: 5_000, total: 110_000, seniorPwd: { id: 1, idType: "senior", status: "approved" }, discountDetail: { allowanceUsed: 5_000, reductionReason: null } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.getByTestId("approved-discount").textContent).toBe("₱50.00");
+    expect(screen.getByTestId("allowance-used").textContent).toBe("₱50.00 of ₱125.00");
+    expect(screen.queryByRole("note", { name: "Discount reduced" })).toBeNull();
+  });
+
+  it("shows the reduction reason when the weekly cap reduced the discount, and never an ID number", () => {
+    const { container } = render(<OrderDetailView role="staff" order={detail({ discount: 2_500, total: 112_500, seniorPwd: { id: 1, idType: "pwd", status: "approved" }, discountDetail: { allowanceUsed: 12_500, reductionReason: "Only ₱25.00 of this ID's ₱125.00 weekly allowance was left." } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.getByTestId("allowance-used").textContent).toBe("₱125.00 of ₱125.00");
+    expect(screen.getByRole("note", { name: "Discount reduced" }).textContent).toContain("weekly allowance was left");
+    expect(container.textContent).not.toMatch(/id[_ ]?(number|hash)/i);
+  });
+
   it("links to the review screen while the ID waits, and explains why Confirm and Quote are blocked", () => {
     render(<OrderDetailView role="staff" order={detail({ status: "placed", deliveryFee: null, seniorPwd: { id: 1, idType: "senior", status: "pending" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Senior Citizen · Waiting for review");

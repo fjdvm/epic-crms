@@ -188,7 +188,12 @@ export interface OrderDetail extends CustomerOrder {
   deliveryPhotoRemovedAt: Date | null;
   /** The Senior/PWD verification attached to this Order, as of now; null when the Order has none. */
   seniorPwd?: { id: number; idType: IdType; status: VerificationStatus } | null;
+  /** The storefront's weekly-cap facts for the approved discount; absent until the storefront saves them. Never holds an ID number. */
+  discountDetail?: { allowanceUsed: number | null; reductionReason: string | null };
 }
+
+/** One ID's Senior/PWD discount allowance per week (Monday to Sunday, Philippine Time), in centavos. */
+export const SENIOR_PWD_WEEKLY_CAP = 12_500;
 
 export type OrderResult = { ok: true; order: OrderDetail | null } | { ok: false };
 
@@ -216,12 +221,14 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number, se
 
     if (!order) return { ok: true, order: null };
 
-    const [customer] = await sql<{ id: string; full_name: string; deleted: boolean; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null; packed_by_id: string | null; packed_by_name: string | null; packed_at: string | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null }[]>`
+    const [customer] = await sql<{ id: string; full_name: string; deleted: boolean; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null; packed_by_id: string | null; packed_by_name: string | null; packed_at: string | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null; allowance_used: string | null; reduction_reason: string | null }[]>`
       select c.id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, o.paid_by_id, o.paid_by_name, o.paid_at,
         to_jsonb(o)->>'packed_by_id' as packed_by_id, to_jsonb(o)->>'packed_by_name' as packed_by_name,
         to_jsonb(o)->>'packed_at' as packed_at,
         to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,
-        to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at from public.orders o
+        to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at,
+        to_jsonb(o)->>'senior_pwd_allowance_used_in_centavos' as allowance_used,
+        to_jsonb(o)->>'discount_reduction_reason' as reduction_reason from public.orders o
       join public.customers c on c.id = o.customer_id
       where o.id = ${orderId}`;
 
@@ -237,6 +244,10 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number, se
         deliveryPhotoFileId: customer.delivery_photo_file_id,
         deliveryPhotoRemovedAt: customer.delivery_photo_removed_at ? new Date(customer.delivery_photo_removed_at) : null,
         seniorPwd: await orderVerification(sql, orderId),
+        discountDetail: {
+          allowanceUsed: customer.allowance_used === null || !Number.isSafeInteger(Number(customer.allowance_used)) ? null : Number(customer.allowance_used),
+          reductionReason: customer.reduction_reason?.trim() || null,
+        },
         customer: { id: customer.id, name: customer.full_name, deleted: customer.deleted },
         paidBy: customer.paid_by_id && customer.paid_by_name && customer.paid_at
           ? { id: customer.paid_by_id, name: customer.paid_by_name, at: customer.paid_at }
