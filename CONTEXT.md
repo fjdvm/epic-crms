@@ -41,7 +41,7 @@ A Customer who deleted their account on the storefront. Their Customer Profile i
 _Avoid_: Removed customer, purged customer
 
 **Welcome email**:
-The one email a new Customer gets when they sign up, in the shop's email design. It is claimed once per Customer id, so a retried or double-submitted sign-up never sends a second one, and a failed send never fails sign-up. A Returning Customer gets a welcome-back email instead.
+The one email a new Customer gets when they sign up, in the shop's email design. It is claimed once per Customer id, so a retried or double-submitted sign-up never sends a second one, and a failed send never fails sign-up. Each outcome, sent or failed, is recorded once in the audit trail as a `welcome_email` event; a failure carries its reason, and no event holds an email address. A Returning Customer gets a welcome-back email instead.
 _Avoid_: Greeting email, onboarding email
 
 **Returning Customer**:
@@ -234,7 +234,7 @@ Stock the IMS sets aside for an Order the moment it is placed, so no one else ca
 _Avoid_: Hold (a batch Hold is different)
 
 **Free delivery**:
-A Delivery Order whose subtotal, before any Senior/PWD discount, is strictly over ₱2,500 has a Delivery fee of ₱0 and is confirmed at placement. If cancelled items bring the subtotal to ₱2,500 or less, Staff must quote a Delivery fee.
+A Delivery Order whose Delivery fee Staff or a Manager entered as ₱0. There is no automatic free delivery: every Delivery Order waits for a Delivery fee entered by Staff or a Manager, and ₱0 is allowed.
 
 **Senior/PWD verified**:
 A Customer whose Senior Citizen or PWD ID Staff have checked and approved. They get 5% off one item per ID, for personal use. The ID photo is private and is deleted right after review; if nobody reviews it within 7 days it is removed anyway and the Customer uploads it again. Only the verified mark, a hash of the ID number, the approver's name and the ID's expiry date are kept: the ID number itself is never stored in plain text, shown in an email, or written to a log. Staff check the name against the one already on the account, and the Customer is never asked for a detail the system already holds. The same ID number cannot verify a second account. The discount stops on the expiry date and the Customer verifies again. For Pickup, Staff also see the original ID at collection.
