@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
 export const RETURN_STATUSES = ["requested", "approved", "goods received", "refunded", "replaced", "declined", "cancelled"] as const;
 export type ReturnResolution = "refund" | "replacement";
@@ -94,7 +95,7 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const page = Math.min(totalPages, positiveInteger(query.page, 1));
     const rows = await sql<Row[]>`
-      select r.id, r.order_id, o.customer_id, c.full_name, r.status, r.preferred_resolution, r.final_resolution, r.requested_at, r.amount_in_centavos
+      select r.id, r.order_id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, r.status, r.preferred_resolution, r.final_resolution, r.requested_at, r.amount_in_centavos
       from public.order_returns r join public.orders o on o.id = r.order_id
       join public.customers c on c.id = o.customer_id
       where true ${scope}
@@ -199,7 +200,7 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at,
       to_jsonb(o)->>'refund_window_extended_at' as window_extended_at,
       (select ro.id from public.orders ro where to_jsonb(ro)->>'replacement_for_return_id' = r.id::text limit 1) as replacement_order_id,
-      c.full_name from public.order_returns r
+      ${sql.unsafe(customerNameSql('c'))} as full_name from public.order_returns r
       join public.orders o on o.id = r.order_id join public.customers c on c.id = o.customer_id
       where r.id = ${id}`;
     if (!row) return { ok: true, detail: null };

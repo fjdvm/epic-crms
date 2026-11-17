@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
 import type { Sentiment } from "./analysis";
 
@@ -120,7 +121,7 @@ export async function listFeedback(sql: postgres.Sql, query: FeedbackQuery = {})
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);
 
   const rows = await sql<Record<string, unknown>[]>`
-    select f.order_id, f.rating, f.comment, f.created_at, f.sentiment, c.id as customer_id, c.full_name,
+    select f.order_id, f.rating, f.comment, f.created_at, f.sentiment, c.id as customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name,
       coalesce(
         (select array_agg(product_name order by first_line)
          from (select product_name, min(id) as first_line from order_lines
