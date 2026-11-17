@@ -67,3 +67,19 @@ describe("Deleted customers in Customer Profiles", () => {
     }
   });
 });
+
+describe("Orders of a Deleted Customer", () => {
+  it("stay workable: Order detail tags the Customer, and Sales and Total spent are unchanged", async () => {
+    const { loadOrder } = await import("@/features/orders/orders");
+    const [{ id }] = await db.sql`select id from orders where customer_id = 'gone'`;
+    await db.sql`update customers set deleted_at = now() where id = 'gone'`;
+    try {
+      const result = await loadOrder(() => db.sql, id as number);
+      expect(result).toMatchObject({ ok: true, order: { customer: { name: "Deleted customer", deleted: true } } });
+      const [{ total }] = await db.sql`select sum(subtotal_in_centavos)::int as total from orders where status = 'delivered'`;
+      expect(total).toBe(100000);
+    } finally {
+      await db.sql`update customers set deleted_at = null where id = 'gone'`;
+    }
+  });
+});

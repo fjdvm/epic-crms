@@ -347,12 +347,16 @@ export function OrderDetailView({
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>
-            <Link
-              href={`/customer-profiles/${order.customer.id}`}
-              className="text-sm font-medium text-[#5b2a86]"
-            >
-              {order.customer.name}
-            </Link>
+            {order.customer.deleted ? (
+              <p data-testid="deleted-customer-tag" className="text-sm font-medium text-[#6e6680]">{order.customer.name}</p>
+            ) : (
+              <Link
+                href={`/customer-profiles/${order.customer.id}`}
+                className="text-sm font-medium text-[#5b2a86]"
+              >
+                {order.customer.name}
+              </Link>
+            )}
             <p className="mt-2 text-xs text-[#6e6680]">Senior/PWD</p>
             <p data-testid="senior-pwd-status" className="text-sm text-[#1f1a2e]">{seniorPwdLabel(order)}</p>
             {order.seniorPwd?.status === "pending" && (

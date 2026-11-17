@@ -519,3 +519,12 @@ describe("the Delivery photo on an Order's detail", () => {
     expect(screen.getByText("No photo")).toBeTruthy();
   });
 });
+
+describe("Order detail for a Deleted Customer", () => {
+  it("tags the Customer without a profile link, and Staff can still move the Order forward", () => {
+    render(<OrderDetailView order={detail({ status: "paid", customer: { id: "c1", name: "Deleted customer", deleted: true } })} modules={FULFILMENT} />);
+    expect(screen.getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
+    expect(screen.queryByRole("link", { name: "Deleted customer" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Pack order" })).toBeTruthy();
+  });
+});
