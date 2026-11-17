@@ -161,3 +161,15 @@ delivery or throws. A failure leaves delivery pending; retrying the same action
 sends its original event with the same gateway idempotency key, without applying
 the change again. Concurrent delivery locks the receipt. No background polling is
 introduced.
+
+## Order placement and email outcomes (#572)
+
+The storefront places Orders and sends the confirmation email, so CREOMS records what it
+finds. `/api/cron/order-audit` (called every 10 minutes by `.github/workflows/order-audit.yml`
+with `CRON_SECRET`) sweeps Orders and `order_email_outcomes` saved in the last 48 hours and records
+`order.placed`, `order.email_sent` and `order.email_failed` under a `process` Actor.
+Operation ids are `order:<id>:order.placed` and `order:<id>:email:<kind>:<status>`, so a repeated
+sweep, or a repeated failure, adds nothing; failed then sent is two entries. Pending and retrying
+emails write nothing. Entries carry no ID number or Customer email address; email addresses are
+stripped from the failure reason. Refused Order actions write no entry because nothing here is
+written by an action. No schema migration is needed.
