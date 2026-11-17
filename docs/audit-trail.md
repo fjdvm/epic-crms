@@ -164,17 +164,15 @@ introduced.
 
 ## Order placement and email outcomes (#572)
 
-The storefront places Orders and sends the confirmation email, so CREOMS records what it
-finds. `/api/cron/order-audit` (called every 10 minutes by `.github/workflows/order-audit.yml`
-with `CRON_SECRET`) sweeps Orders and `order_email_outcomes` saved in the last 48 hours and records
-`order.placed`, `order.email_sent` and `order.email_failed` under a `process` Actor.
-Operation ids are `order:<id>:order.placed` and `order:<id>:email:<kind>:<status>`, so a repeated
-sweep, or a repeated failure, adds nothing; failed then sent is two entries. Pending and retrying
-emails write nothing. Entries carry no ID number or Customer email address; email addresses are
-stripped from the failure reason. Refused Order actions write no entry because nothing here is
-written by an action. No schema migration is needed.
-
-The sweep is a server-side scheduled job like Feedback analysis, not a client or tab refetch, so
-ADR-0005 (no polling) is read as not covering it. The storefront does not push placement or email
-events to CREOMS; if it ever does, replace the sweep with that. Orders and outcomes older than the
-48-hour window are not recorded if the schedule was down for longer.
+The storefront places Orders and sends the confirmation email, so CREOMS records what it finds. This
+runs inside the existing storefront-signal sync (`/api/notifications/signal`, and the Staff-requested
+sync): no timer and no polling (ADR-0005). `syncOrderAudit` reads Orders and `order_email_outcomes`,
+and delivers `order.placed`, `order.email_sent` and `order.email_failed` under a `process` Actor
+through the acknowledged gateway delivery. Operation ids are `order:<id>:order.placed` and
+`order:<id>:email:<kind>:<status>`; delivered ids go in `crms.seen_order_audit_events`
+(`docs/db/crms-order-audit-ledger.sql`, applied as creoms_writer), and the gateway's own idempotency key
+backs it up. A refused delivery is not marked and is retried at the next signal. Pending and retrying
+emails write nothing; failed then sent is two entries. Entries carry no ID number or Customer email
+address; addresses are stripped from the failure reason. A refused Order action writes nothing here.
+An email outcome change appears in the log at the next signal, so the storefront must signal CREOMS
+when it saves one.

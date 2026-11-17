@@ -1,5 +1,4 @@
 import type { AuditEvent, AuditTrail } from "@/lib/audit-trail";
-import { recordAudit } from "@/lib/audit-trail";
 import { ORDERS_MODULE } from "@/lib/portal/config";
 
 export interface PlacedOrderRow { id: number; created_at: Date }
@@ -39,11 +38,37 @@ export function emailEvent(row: EmailOutcomeRow): AuditEvent | null {
   };
 }
 
-/** Records what the storefront already saved. The stable operation ids make a repeated sweep add nothing. */
-export async function recordPlacementAudit(
-  audit: AuditTrail, orders: PlacedOrderRow[], outcomes: EmailOutcomeRow[],
-): Promise<{ placed: number; emails: number }> {
-  const emails = outcomes.map(emailEvent).filter((event): event is AuditEvent => event !== null);
-  for (const event of [...orders.map(placedEvent), ...emails]) await recordAudit(audit, event);
-  return { placed: orders.length, emails: emails.length };
+/** What the storefront saved, and which of it the Audit Logs already have. */
+export interface OrderAuditPorts {
+  orders(): Promise<PlacedOrderRow[]>;
+  outcomes(): Promise<EmailOutcomeRow[]>;
+  /** Which of these operation ids were already delivered. */
+  delivered(operationIds: string[]): Promise<Set<string>>;
+  markDelivered(operationId: string): Promise<void>;
+  /** Acknowledged delivery: it throws when the gateway refuses, so the event is tried again at the next signal. */
+  deliver: AuditTrail;
+}
+
+/**
+ * Runs when the storefront signals CREOMS (and on a Staff-requested sync), never on a timer. The ledger of
+ * delivered operation ids, and the gateway's own idempotency key, make a repeat add nothing.
+ */
+export async function syncOrderAudit(ports: OrderAuditPorts): Promise<{ delivered: number; failed: number }> {
+  const events = [
+    ...(await ports.orders()).map(placedEvent),
+    ...(await ports.outcomes()).map(emailEvent).filter((event): event is AuditEvent => event !== null),
+  ];
+  const done = await ports.delivered(events.map((event) => event.operationId));
+  let delivered = 0, failed = 0;
+  for (const event of events.filter((e) => !done.has(e.operationId))) {
+    try {
+      await ports.deliver(event);
+      await ports.markDelivered(event.operationId);
+      delivered += 1;
+    } catch (error) {
+      console.error("CREOMS Audit Event could not be recorded", error);
+      failed += 1;
+    }
+  }
+  return { delivered, failed };
 }

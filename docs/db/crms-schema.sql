@@ -209,3 +209,9 @@ CREATE TABLE IF NOT EXISTS crms.customer_task_operations (
 
 RESET ROLE;
 REVOKE creoms_writer FROM CURRENT_USER;
+
+-- Order placement and email outcome Audit Events already delivered to the gateway (#572).
+CREATE TABLE IF NOT EXISTS crms.seen_order_audit_events (
+  operation_id text PRIMARY KEY,
+  delivered_at timestamptz NOT NULL DEFAULT now()
+);

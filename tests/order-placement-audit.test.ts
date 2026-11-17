@@ -1,14 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { recordPlacementAudit, safeReason } from "@/features/orders/placement-audit";
+import { emailEvent, placedEvent, safeReason, syncOrderAudit } from "@/features/orders/placement-audit";
 import type { AuditEvent } from "@/lib/audit-trail";
 
 const at = new Date("2026-11-18T01:00:00Z");
-const run = async (orders: { id: number; created_at: Date }[], outcomes: { order_id: number; kind: string; status: string; reason: string | null; updated_at: Date }[]) => {
-  const events: AuditEvent[] = [];
-  await recordPlacementAudit(async (e) => { events.push(e); }, orders, outcomes);
-  return events;
-};
+type Outcome = { order_id: number; kind: string; status: string; reason: string | null; updated_at: Date };
+const run = async (orders: { id: number; created_at: Date }[], outcomes: Outcome[]) =>
+  [...orders.map(placedEvent), ...outcomes.map(emailEvent).filter((e): e is AuditEvent => e !== null)];
 
 describe("order placement audit", () => {
   it("records order.placed with a stable operation id per Order", async () => {
@@ -44,10 +42,38 @@ describe("order placement audit", () => {
     expect(JSON.stringify(events)).not.toContain("jane@example.com");
   });
 
-  it("a throwing audit port does not stop the sweep", async () => {
+  const ports = (orders: { id: number; created_at: Date }[], outcomes: Outcome[], ledger = new Set<string>(), deliver: (e: AuditEvent) => Promise<void> = vi.fn(async () => {})) => ({
+    orders: async () => orders, outcomes: async () => outcomes, deliver,
+    delivered: async (ids: string[]) => new Set(ids.filter((id) => ledger.has(id))),
+    markDelivered: async (id: string) => { ledger.add(id); },
+  });
+
+  it("delivers each event once, however often the storefront signals", async () => {
+    const deliver = vi.fn(async () => {});
+    const p = ports([{ id: 1, created_at: at }], [{ order_id: 1, kind: "confirmation", status: "sent", reason: null, updated_at: at }], new Set(), deliver);
+    expect(await syncOrderAudit(p)).toEqual({ delivered: 2, failed: 0 });
+    expect(await syncOrderAudit(p)).toEqual({ delivered: 0, failed: 0 });
+    expect(deliver).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a refused delivery for the next signal and does not stop the others", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const audit = vi.fn(async () => { throw new Error("down"); });
-    await expect(recordPlacementAudit(audit, [{ id: 1, created_at: at }, { id: 2, created_at: at }], [])).resolves.toEqual({ placed: 2, emails: 0 });
-    expect(audit).toHaveBeenCalledTimes(2);
+    const ledger = new Set<string>();
+    let refuse = true;
+    const deliver = vi.fn(async (e: AuditEvent) => { if (refuse && e.target.id === "1") throw new Error("down"); });
+    const p = ports([{ id: 1, created_at: at }, { id: 2, created_at: at }], [], ledger, deliver);
+    expect(await syncOrderAudit(p)).toEqual({ delivered: 1, failed: 1 });
+    refuse = false;
+    expect(await syncOrderAudit(p)).toEqual({ delivered: 1, failed: 0 });
+    expect(ledger.size).toBe(2);
+  });
+
+  it("a sent email recorded after a failed one is a second entry", async () => {
+    const deliver = vi.fn(async () => {});
+    const ledger = new Set<string>();
+    const row = { order_id: 1, kind: "confirmation", status: "failed", reason: "x", updated_at: at };
+    await syncOrderAudit(ports([], [row], ledger, deliver));
+    await syncOrderAudit(ports([], [{ ...row, status: "sent" }], ledger, deliver));
+    expect(deliver).toHaveBeenCalledTimes(2);
   });
 });
