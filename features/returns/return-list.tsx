@@ -7,6 +7,7 @@ import { orderLabel } from "@/features/customer-profiles/rules";
 import { Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
 
+import { returnLabel } from "./refund-record";
 import { returnAnchor } from "./anchor";
 import { ReturnFlagNotes } from "./return-flag-notes";
 import type { ReturnFlag } from "./return-flags";
@@ -19,7 +20,7 @@ export interface ReturnListParams {
 }
 
 export const TAB_LABELS: Record<ReturnTab, string> = Object.fromEntries(
-  RETURN_TABS.map((t) => [t, orderLabel(t)]),
+  RETURN_TABS.map((t) => [t, returnLabel(t)]),
 ) as Record<ReturnTab, string>;
 
 /** The Figma frame's columns; they share the table width in proportion. */
@@ -164,7 +165,7 @@ export function ReturnListView({
                   </div>
                   <div className={cn(CELL, COLUMNS[4].className)}>{orderLabel(row.finalResolution ?? row.preferredResolution)}</div>
                   <div className={cn(CELL, COLUMNS[5].className)}>
-                    <Pill className={STATUS_PILLS[row.status]}>{orderLabel(row.status)}</Pill>
+                    <Pill className={STATUS_PILLS[row.status]}>{returnLabel(row.status, row.goodsRequired)}</Pill>
                   </div>
                   <div className={cn(CELL, COLUMNS[6].className)}>{formatDate(row.requestedAt)}</div>
                 </div>

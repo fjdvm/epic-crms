@@ -2,12 +2,13 @@ import Link from "next/link";
 
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
-import { Pill } from "@/features/tickets/pill";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
 import type { ApprovalView } from "@/features/approvals/view";
 import type { ShopRole } from "@/lib/portal/roles";
 import { InspectReturn } from "./inspect-return";
+import { OptimisticReturn, ReturnStatusPill } from "./optimistic-status";
+import { refundMethodLabel, returnLabel } from "./refund-record";
 import { RefundDestinationCard } from "./refund-destination-card";
 import { mayChangeDestination } from "./refund-destination";
 import { RefundWindow } from "./refund-window";
@@ -15,7 +16,6 @@ import { ReturnActions } from "./return-actions";
 import { ReturnFlagNotes } from "./return-flag-notes";
 import type { ReturnFlag } from "./return-flags";
 import type { ReturnDetail } from "./returns";
-import { STATUS_PILLS } from "./returns-table";
 
 /** A short-lived address per image, null when that image exists but could not be reached. */
 export type ImageUrls = (string | null)[];
@@ -72,6 +72,7 @@ export function ReturnDetailView({
   const goods = goodsLine(detail);
 
   return (
+    <OptimisticReturn status={detail.status}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="shrink-0 space-y-2">
         <Link href="/returns" className="text-sm font-medium text-[#5b2a86]">
@@ -81,7 +82,7 @@ export function ReturnDetailView({
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">{detail.number}</h1>
-              <Pill className={STATUS_PILLS[detail.status]}>{orderLabel(detail.status)}</Pill>
+              <ReturnStatusPill status={detail.status} goodsRequired={detail.goodsRequired} />
             </div>
             <p className="text-sm leading-[normal] text-[#6e6680]">
               Requested {formatDate(detail.requestedAt)} · Order{" "}
@@ -99,7 +100,7 @@ export function ReturnDetailView({
             finalResolution={detail.finalResolution}
             role={role}
             requests={requests}
-            refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, deliveryFee: detail.deliveryFeeRefundable ? detail.orderDeliveryFee : 0, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
+            refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, destinationMethod: detail.refundDestination?.method ?? null, deliveryFee: detail.deliveryFeeRefundable ? detail.orderDeliveryFee : 0, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
           />
         </div>
       </div>
@@ -204,12 +205,23 @@ export function ReturnDetailView({
         </div>
 
         <div className="space-y-5">
+          {detail.refundRecord && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Refund sent</h2>
+              <dl className="space-y-1 text-sm text-[#1f1a2e]">
+                <div className="flex justify-between gap-3"><dt>Amount</dt><dd>{formatPesos(detail.refundRecord.amountInCentavos)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Sent by</dt><dd>{refundMethodLabel(detail.refundRecord.method)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Date</dt><dd>{formatDate(new Date(`${detail.refundRecord.refundedOn}T00:00:00+08:00`))}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Reference</dt><dd className="break-all text-right">{detail.refundRecord.reference}</dd></div>
+              </dl>
+            </section>
+          )}
           <section className={CARD}>
             <h2 className={CARD_TITLE}>History</h2>
             <ol className="space-y-3 text-sm text-[#1f1a2e]">
               {detail.history.map((step, i) => (
                 <li key={i} className="space-y-0.5">
-                  <p className="font-medium">{orderLabel(step.status)}</p>
+                  <p className="font-medium">{returnLabel(step.status)}</p>
                   <p className="text-xs text-[#6e6680]">
                     {step.actor.name}
                     {step.actor.type === "customer" ? " (Customer)" : ""} · {dateTime(step.at)}
@@ -287,5 +299,6 @@ export function ReturnDetailView({
         </div>
       </div>
     </div>
+    </OptimisticReturn>
   );
 }

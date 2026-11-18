@@ -1,3 +1,4 @@
+import { withRefundDetails } from "./refund-details";
 import { randomUUID } from "node:crypto";
 import { changeFailedDelivery, loadFailedDeliveryHistory } from "@/features/orders/failed-delivery-actions";
 import { requestDispatchedCancellation, settleDispatchedCancellation, loadDispatchedCancellations } from "@/features/orders/cancellation-actions";
@@ -82,13 +83,13 @@ async function returned(amount: number) {
     values (${r.id},${line.id},'Cake','',1,${amount})`;
   return Number(r.id);
 }
-function proof() { const f = new FormData(); f.set("proof", storage.readyEvidence("Returns", PNG, "ana")); return f; }
+function proof(pesos = "100.00") { const f = new FormData(); f.set("proof", storage.readyEvidence("Returns", PNG, "ana")); return withRefundDetails(f, { amount: pesos }); }
 
 it.each([500000, 500001])("requires the right steps for a refund selling at %i centavos, excluding delivery", async amount => {
   const id = await returned(amount);
   await signIn("mario"); expect(await approveReturn(id)).toMatchObject({ ok: true });
   await signIn("ana");
-  const pending = await markReturnRefunded(id, proof(), { reason: "Damaged cake" });
+  const pending = await markReturnRefunded(id, proof((amount / 100).toFixed(2)), { reason: "Damaged cake" });
   expect(pending).toMatchObject({ ok: false, status: "waiting-manager", reason: "Waiting for approval" });
   if (pending.ok || !("approvalId" in pending) || !pending.approvalId) throw new Error("Expected approval id");
   expect([...storage.files.values()].every(file => !file.returnId && file.retentionType === "temporary")).toBe(true);
@@ -102,13 +103,13 @@ it.each([500000, 500001])("requires the right steps for a refund selling at %i c
   const decision = await decideApproval("Returns", pending.approvalId, "approve");
   expect(decision).toMatchObject({ ok: true, request: { manager_name: "mario Person", manager_at: expect.any(Date), status: amount > 500000 ? "waiting-ceo" : "approved" } });
   if (amount > 500000) {
-    await signIn("ana"); expect(await markReturnRefunded(id, proof(), { approvalId: pending.approvalId })).toMatchObject({ ok: false });
+    await signIn("ana"); expect(await markReturnRefunded(id, proof((amount / 100).toFixed(2)), { approvalId: pending.approvalId })).toMatchObject({ ok: false });
     for (const actor of ["mario", "ada"]) { await signIn(actor); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false }); }
     await signIn("owner"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: true, request: { ceo_name: "owner Person", ceo_at: expect.any(Date) } });
   } else {
     await signIn("owner"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false });
   }
-  await signIn("ana"); expect(await markReturnRefunded(id, proof(), { approvalId: pending.approvalId })).toMatchObject({ ok: true });
+  await signIn("ana"); expect(await markReturnRefunded(id, proof((amount / 100).toFixed(2)), { approvalId: pending.approvalId })).toMatchObject({ ok: true });
   expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded" } });
   expect(audit.mock.calls.map(([e]) => e.action)).toEqual(expect.arrayContaining(["approval.requested", "approval.granted"]));
   expect(notices).toContainEqual(expect.objectContaining({ userIds: ["ana"] }));

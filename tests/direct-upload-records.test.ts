@@ -1,3 +1,4 @@
+import { withRefundDetails } from "./refund-details";
 import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -52,7 +53,7 @@ it("refunds with shared proof, links it and makes it Permanent after confirmatio
   await db.sql`update orders set status = 'delivered', delivered_at = now() where id = 1`;
   await db.sql`insert into order_returns (order_id, reason, amount_in_centavos) values (1, 'damaged', 10000)`;
   await approveReturn(1, false);
-  expect(await markReturnRefunded(1, await attachment("Returns", "proof"))).toMatchObject({ ok: true });
+  expect(await markReturnRefunded(1, withRefundDetails(await attachment("Returns", "proof")))).toMatchObject({ ok: true });
   expect(storage.files.get("direct-1")).toMatchObject({ visibility: "private", retentionType: "permanent", returnId: 1 });
 });
 it.each(["Fulfilment", "Returns"] as const)("leaves refused %s evidence Temporary without retrying", async module => {
@@ -62,7 +63,7 @@ it.each(["Fulfilment", "Returns"] as const)("leaves refused %s evidence Temporar
     await db.sql`insert into order_returns (order_id, reason, amount_in_centavos) values (1, 'damaged', 10000)`;
     await approveReturn(1, false);
   }
-  const form = await attachment(module, field);
+  const form = module === "Returns" ? withRefundDetails(await attachment(module, field)) : await attachment(module, field);
   storefront.refusal = "The record already changed. Refresh it.";
   const requests = storefront.requests;
   const act = module === "Fulfilment" ? deliverOrder : markReturnRefunded;

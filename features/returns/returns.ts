@@ -29,6 +29,8 @@ export interface ReturnRow {
   status: ReturnStatus;
   preferredResolution: ReturnResolution;
   finalResolution: ReturnResolution | null;
+  /** Whether the goods must come back; null until a Manager or Staff decides. Picks the on-screen label of an approved Return. */
+  goodsRequired?: boolean | null;
   requestedAt: Date;
   /** Centavos, captured by the storefront when the Customer requests the Return. */
   amount: number;
@@ -47,13 +49,13 @@ export type ReturnListResult = { ok: true; list: ReturnList } | { ok: false };
 type Row = {
   id: number; order_id: number; customer_id: string; full_name: string; deleted: boolean;
   preferred_resolution: ReturnResolution; final_resolution: ReturnResolution | null;
-  status: ReturnStatus; requested_at: Date; amount_in_centavos: number;
+  status: ReturnStatus; requested_at: Date; amount_in_centavos: number; goods_required: boolean | null;
 };
 function returnRow(row: Row, items: ReturnItem[]): ReturnRow {
   return {
     id: row.id, number: `RMA-${row.id}`, orderId: row.order_id,
     customer: { id: row.customer_id, name: row.full_name, deleted: row.deleted }, status: row.status,
-    preferredResolution: row.preferred_resolution, finalResolution: row.final_resolution,
+    preferredResolution: row.preferred_resolution, finalResolution: row.final_resolution, goodsRequired: row.goods_required ?? null,
     requestedAt: row.requested_at, amount: row.amount_in_centavos, items,
   };
 }
@@ -98,7 +100,7 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const page = Math.min(totalPages, positiveInteger(query.page, 1));
     const rows = await sql<Row[]>`
-      select r.id, r.order_id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, r.status, r.preferred_resolution, r.final_resolution, r.requested_at, r.amount_in_centavos
+      select r.id, r.order_id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, r.status, r.preferred_resolution, r.final_resolution, r.goods_required, r.requested_at, r.amount_in_centavos
       from public.order_returns r join public.orders o on o.id = r.order_id
       join public.customers c on c.id = o.customer_id
       where true ${scope}
@@ -187,6 +189,8 @@ export interface ReturnDetail extends ReturnRow {
   /** Where the Customer asked the refund to go, number masked; null on a Return that has none. Locked once a Manager approves. */
   refundDestination: MaskedRefundDestination | null;
   refundDestinationLocked: boolean;
+  /** What Staff recorded when they marked it Refunded (#613); null before that, and on a refund made before these details existed. */
+  refundRecord?: { amountInCentavos: number; method: string; refundedOn: string; reference: string } | null;
   /** What the Order charged for delivery; ₱0 for free delivery or pickup. */
   orderDeliveryFee: number;
   /** The Delivery fee included in this Return's refund (₱0 when only the items were refunded). */
@@ -208,9 +212,12 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       delivered_at: Date | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null;
       window_extended_at: string | null; replacement_order_id: number | null;
       dest_method: string | null; dest_name: string | null; dest_number: string | null; dest_bank: string | null;
+      paid_amount: string | null; paid_method: string | null; paid_on: string | null; paid_reference: string | null;
       fulfillment_method: string; order_delivery_fee: number | null; fee_refunded: string | null; fee_refunded_elsewhere: boolean;
     })[]>`select r.*, o.fulfillment_method, o.delivery_fee_in_centavos as order_delivery_fee,
       to_jsonb(r)->>'refund_delivery_fee_in_centavos' as fee_refunded,
+      to_jsonb(r)->>'refund_amount_in_centavos' as paid_amount, to_jsonb(r)->>'refund_paid_method' as paid_method,
+      to_jsonb(r)->>'refund_paid_on' as paid_on, to_jsonb(r)->>'refund_reference' as paid_reference,
       exists (select 1 from public.order_returns x where x.order_id = r.order_id and x.id <> r.id and x.status = 'refunded'
         and coalesce((to_jsonb(x)->>'refund_delivery_fee_in_centavos')::int, 0) > 0) as fee_refunded_elsewhere,
       to_jsonb(r)->>'refund_method' as dest_method, to_jsonb(r)->>'refund_account_name' as dest_name,
@@ -242,6 +249,8 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       // Masked here, so the full number never reaches a page or a browser from this read.
       refundDestination: (() => { const full = readDestination({ refund_method: row.dest_method, refund_account_name: row.dest_name, refund_account_number: row.dest_number, refund_bank_name: row.dest_bank }); return full ? maskDestination(full) : null; })(),
       refundDestinationLocked: (DESTINATION_LOCKED_STATUSES as readonly string[]).includes(row.status),
+      refundRecord: row.paid_amount !== null && row.paid_method && row.paid_on && row.paid_reference
+        ? { amountInCentavos: Number(row.paid_amount), method: row.paid_method, refundedOn: row.paid_on.slice(0, 10), reference: row.paid_reference } : null,
       orderDeliveryFee: row.fulfillment_method === "delivery" ? row.order_delivery_fee ?? 0 : 0,
       deliveryFeeRefunded: Number(row.fee_refunded ?? 0),
       deliveryFeeRefundable: row.fulfillment_method === "delivery" && (row.order_delivery_fee ?? 0) > 0 && !row.fee_refunded_elsewhere &&

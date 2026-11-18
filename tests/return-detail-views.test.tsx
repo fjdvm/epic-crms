@@ -287,8 +287,16 @@ describe("goods received and refunded", () => {
   });
 
   const refundable = () => detail({ status: "goods received", goodsRequired: true, finalResolution: "refund" });
-  const attach = (file: File) =>
-    fireEvent.change(within(screen.getByRole("alertdialog")).getByLabelText("Refund proof"), { target: { files: [file] } });
+  /** Fills what Staff record with a refund (#613), then attaches the proof. The amount is left as the dialog pre-fills it. */
+  const fillDetails = (dialog: ReturnType<typeof within>, reference = "GC-2026-0001") => {
+    fireEvent.change(dialog.getByLabelText(/Sent by/), { target: { value: "gcash" } });
+    fireEvent.change(dialog.getByLabelText(/Reference/), { target: { value: reference } });
+  };
+  const attach = (file: File) => {
+    const dialog = within(screen.getByRole("alertdialog"));
+    fillDetails(dialog);
+    fireEvent.change(dialog.getByLabelText("Refund proof"), { target: { files: [file] } });
+  };
   const confirmRefund = () =>
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }));
 

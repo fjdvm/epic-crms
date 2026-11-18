@@ -78,7 +78,7 @@ describe("Returns on the Order detail page", () => {
 
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("RMA-15")).toBeTruthy();
-    expect(within(rows[0]).getByText("Requested")).toBeTruthy();
+    expect(within(rows[0]).getByText("Pending Review")).toBeTruthy();
     expect(within(rows[0]).getByText("₱219.00")).toBeTruthy();
     expect(within(rows[1]).getByText("RMA-16")).toBeTruthy();
     expect(within(rows[1]).getByText("Refunded")).toBeTruthy();
@@ -177,9 +177,9 @@ describe("Returns on the Customer Profile", () => {
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("RMA-15")).toBeTruthy();
     expect(within(rows[0]).getByRole("link", { name: "#1042" }).getAttribute("href")).toBe("/orders/1042");
-    expect(within(rows[0]).getByText("Requested")).toBeTruthy();
+    expect(within(rows[0]).getByText("Pending Review")).toBeTruthy();
     expect(within(rows[0]).getByText("₱219.00")).toBeTruthy();
-    expect(within(rows[1]).getByText("Declined")).toBeTruthy();
+    expect(within(rows[1]).getByText("Rejected")).toBeTruthy();
   });
 
   it("does not link to Orders the viewer cannot open", () => {
