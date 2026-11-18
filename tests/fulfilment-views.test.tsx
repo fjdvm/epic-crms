@@ -332,20 +332,18 @@ describe("moving an Order on the board", () => {
     expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 
-  it("waits for packing confirmation with a spinner and leaves the card ready on refusal", async () => {
+  it("shows the Order packed at once, and rolls it back with the reason on refusal", async () => {
     const pending = deferred<Awaited<ReturnType<typeof startPreparing>>>();
     vi.mocked(startPreparing).mockReturnValue(pending.promise);
     board({ ready: [card({})] });
-    const readyCard = cardFor(1042);
-    fireEvent.click(within(readyCard).getByRole("button", { name: "Pack order" }));
-    const dialog = screen.getByRole("alertdialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Pack order" }));
-    expect(within(dialog).getByRole("button", { name: "Packing…" }).getAttribute("aria-busy")).toBe("true");
-    expect(within(readyCard).queryByText("Mark as dispatched")).toBeNull();
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Pack order" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Pack order" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(within(cardFor(1042)).getByRole("button", { name: "Mark as dispatched" })).toBeTruthy();
     expect(toast.success).not.toHaveBeenCalled();
     await act(async () => pending.settle({ ok: false, reason: "IMS deduction could not be confirmed. Refresh before retrying." }));
     expect(toast.error).toHaveBeenCalledWith("IMS deduction could not be confirmed. Refresh before retrying.");
-    expect(within(cardFor(1042)).getByRole("button", { name: "Pack order" })).toBeTruthy();
+    await waitFor(() => expect(within(cardFor(1042)).getByRole("button", { name: "Pack order" })).toBeTruthy());
   });
 
   it("shows who packed an Order on its board card", () => {
@@ -374,7 +372,7 @@ describe("moving an Order on the board", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(reason));
     expect(toast.success).not.toHaveBeenCalled();
     tab("Out for delivery");
-    expect(screen.getByRole("link", { name: "#1042" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("link", { name: "#1042" })).toBeTruthy());
     expect(refresh).toHaveBeenCalled();
   });
 });
