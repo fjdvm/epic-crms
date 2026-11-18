@@ -10,8 +10,11 @@ import { deliverOrder, dispatchOrder, markPickedUp, markReadyForPickup, startPre
 import { DeliveryPhotoPicker } from "./delivery-photo-picker";
 import { readyToPrepare } from "./fulfilment";
 
+/** The status an Order shows at once after Staff confirm a move. */
+export type MoveStatus = "preparing" | "dispatched" | "delivered" | "ready for pickup" | "collected";
+
 /** Marking delivered needs the Delivery photo, so this keeps the chosen file for the dialog. */
-function MarkDelivered({ id, triggerClassName }: { id: number; triggerClassName?: string }) {
+function MarkDelivered({ id, triggerClassName, onMove }: { id: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
   const [photo, setPhoto] = useState<File | null>(null);
 
   return (
@@ -31,6 +34,7 @@ function MarkDelivered({ id, triggerClassName }: { id: number; triggerClassName?
 
         return deliverOrder(id, form);
       }}
+      onOptimistic={onMove && (() => onMove("delivered"))}
       successMessage={`Order #${id} delivered.`}
     >
       <DeliveryPhotoPicker photo={photo} onChange={setPhoto} />
@@ -49,7 +53,7 @@ const COURIERS = ["Lalamove", "Grab"] as const;
  * A Delivery Order needs the courier and the booking's https share link, so Staff fill them in here. It emails the
  * Customer and sends the link outside the app, so it waits for the server instead of updating the screen first.
  */
-function DispatchDelivery({ id, triggerClassName }: { id: number; triggerClassName?: string }) {
+function DispatchDelivery({ id, triggerClassName, onMove }: { id: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
   const [courier, setCourier] = useState<string>("");
   const [link, setLink] = useState("");
   const [riderName, setRiderName] = useState("");
@@ -67,6 +71,7 @@ function DispatchDelivery({ id, triggerClassName }: { id: number; triggerClassNa
       busy="Dispatching…"
       disabled={!COURIERS.some(name => name === courier) || !linkOk}
       run={() => dispatchOrder(id, { courier, trackingUrl: link, riderName, riderPlate, riderPhone })}
+      onOptimistic={onMove && (() => onMove("dispatched"))}
       successMessage={`Order #${id} dispatched.`}
     >
       <div className="space-y-1.5">
@@ -112,7 +117,7 @@ function DispatchDelivery({ id, triggerClassName }: { id: number; triggerClassNa
 /**
  * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. A Delivery Order is
  * dispatched with its courier booking and delivered; a Pickup Order is marked Ready for pickup and then Picked up.
- * The pickup moves show at once and roll back with the reason if the server refuses; Delivery moves wait for the server.
+ * Every move shows at once and rolls back with the reason if the server refuses.
  */
 export function FulfilmentMove({
   order,
@@ -121,8 +126,8 @@ export function FulfilmentMove({
 }: {
   order: { id: number; status: string; paymentMethod: string; fulfillmentMethod: string };
   triggerClassName?: string;
-  /** Shows the Order in its next status at once; the pickup moves call it, and a refusal rolls it back. */
-  onMove?: (status: "ready for pickup" | "collected") => void;
+  /** Shows the Order in its next status at once; every move calls it, and a refusal rolls it back. */
+  onMove?: (status: MoveStatus) => void;
 }) {
   const { id } = order;
   const pickup = order.fulfillmentMethod === "pickup";
@@ -137,6 +142,7 @@ export function FulfilmentMove({
         confirm="Pack order"
         busy="Packing…"
         run={() => startPreparing(id)}
+        onOptimistic={onMove && (() => onMove("preparing"))}
         successMessage={`Order #${id} packed.`}
       />
     );
@@ -157,7 +163,7 @@ export function FulfilmentMove({
     );
   }
   if (order.status === "preparing") {
-    return <DispatchDelivery id={id} triggerClassName={triggerClassName} />;
+    return <DispatchDelivery id={id} triggerClassName={triggerClassName} onMove={onMove} />;
   }
   // A legacy Pickup Order already dispatched is completed the same way.
   if (pickup && (order.status === "ready for pickup" || order.status === "dispatched")) {
@@ -176,7 +182,7 @@ export function FulfilmentMove({
     );
   }
   if (order.status === "dispatched") {
-    return <MarkDelivered id={id} triggerClassName={triggerClassName} />;
+    return <MarkDelivered id={id} triggerClassName={triggerClassName} onMove={onMove} />;
   }
   return null;
 }

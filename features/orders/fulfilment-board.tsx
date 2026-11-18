@@ -8,9 +8,9 @@ import { orderLabel } from "@/features/customer-profiles/rules";
 
 import { ordersOnTab, TABS, type FulfilmentBoard, type FulfilmentOrder, type FulfilmentTab } from "./fulfilment";
 import { boardStatusLabel, RULES } from "./fulfilment-layout";
-import { FulfilmentMove } from "./fulfilment-moves";
+import { FulfilmentMove, type MoveStatus } from "./fulfilment-moves";
 
-function FulfilmentCard({ order, onMove }: { order: FulfilmentOrder; onMove: (id: number, status: "ready for pickup" | "collected") => void }) {
+function FulfilmentCard({ order, onMove }: { order: FulfilmentOrder; onMove: (id: number, status: MoveStatus) => void }) {
   return (
     <li
       data-fulfilment-card
@@ -47,8 +47,8 @@ function FulfilmentCard({ order, onMove }: { order: FulfilmentOrder; onMove: (id
 }
 
 /** The board with one Order moved to a status, as it will be once the server confirms. */
-function moved(board: FulfilmentBoard, { id, status }: { id: number; status: "ready for pickup" | "collected" }): FulfilmentBoard {
-  return { orders: board.orders.map((o) => (o.id === id ? { ...o, status, ...(status === "collected" ? { deliveredAt: new Date() } : {}) } : o)) };
+function moved(board: FulfilmentBoard, { id, status }: { id: number; status: MoveStatus }): FulfilmentBoard {
+  return { orders: board.orders.map((o) => (o.id === id ? { ...o, status, ...(status === "collected" || status === "delivered" ? { deliveredAt: new Date() } : {}) } : o)) };
 }
 
 /** Tabs filter the same Orders; none of them is a status. */
