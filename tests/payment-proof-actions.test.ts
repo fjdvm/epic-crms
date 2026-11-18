@@ -141,6 +141,25 @@ it("refuses rejection and payment for Cash on Delivery and non-Staff roles, and 
   expect(storefront.reuploadEmails).toEqual([]);
 });
 
+it("reports an uncertain storefront outcome once, never retries it, and audits nothing", async () => {
+  const id = await proofOrder();
+  await signIn("ana");
+  const working = globalThis.fetch;
+  let storefrontCalls = 0;
+  const failWith = (respond: () => Response | never) => vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (new Request(input, init).url.startsWith(FAKE_STOREFRONT_URL)) { storefrontCalls++; return respond(); }
+    return working(input, init);
+  });
+  audit.mockClear();
+  failWith(() => { throw new Error("socket closed"); });
+  expect(await markPaid(id)).toEqual({ ok: false, reason: "Storefront could not confirm the change. Refresh the Order before trying again." });
+  expect(await rejectPaymentProof(id, "Blurry")).toEqual({ ok: false, reason: "Storefront could not confirm the change. Refresh the Order before trying again." });
+  failWith(() => Response.json({ id: 999, status: "paid", deliveryFeeInCentavos: null }));
+  expect(await markPaid(id)).toEqual({ ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." });
+  expect(storefrontCalls).toBe(3);
+  expect(audit.mock.calls.filter(([event]) => event.action.startsWith("payment"))).toEqual([]);
+});
+
 describe("after 3 rejections", () => {
   it("makes Staff request approval with a reason and lets a Manager approve anyway", async () => {
     const id = await proofOrder();
