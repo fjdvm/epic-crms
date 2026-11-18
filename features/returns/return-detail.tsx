@@ -8,6 +8,7 @@ import type { ApprovalView } from "@/features/approvals/view";
 import type { ShopRole } from "@/lib/portal/roles";
 import { ProofReadFindings } from "@/features/orders/proof-read-view";
 import type { ProofReadView } from "@/features/orders/proof-read";
+import { EmailNotSent } from "@/features/orders/email-not-sent";
 import { InspectReturn } from "./inspect-return";
 import { OptimisticReturn, ReturnStatusPill, type SavedProof } from "./optimistic-status";
 import { correctRefundReading, proceedDespiteRefundFlag } from "./refund-proof-actions";
@@ -128,6 +129,10 @@ export function ReturnDetailView({
           />
         </div>
       </div>
+
+      {detail.emailFailures && detail.emailFailures.length > 0 && (
+        <div className="shrink-0"><EmailNotSent orderId={detail.orderId} failures={detail.emailFailures} role={role} /></div>
+      )}
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
         <div className="space-y-5">

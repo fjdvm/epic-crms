@@ -1,5 +1,7 @@
 import type postgres from "postgres";
 import { customerNameSql } from "@/lib/deleted-customer";
+import { failedEmails } from "@/features/orders/orders";
+import { RETURN_REFUNDED_EMAIL, type FailedEmail } from "@/features/orders/status-emails";
 import { DELIVERY_FEE_REASONS } from "./refund-rules";
 import { DESTINATION_LOCKED_STATUSES, maskDestination, readDestination, type MaskedRefundDestination } from "./refund-destination";
 
@@ -197,6 +199,8 @@ export interface ReturnDetail extends ReturnRow {
   deliveryFeeRefunded: number;
   /** A Manager may include the Delivery fee: a wrong or defective item, a fee was charged, and none was refunded on the Order yet. */
   deliveryFeeRefundable: boolean;
+  /** The Refunded email, when it failed after retries. A failed email never reverses the refund (#617). */
+  emailFailures?: FailedEmail[];
   images: { fileId: string; position: number }[];
   history: { status: ReturnStatus; actor: { type: "staff" | "customer"; id: string; name: string }; at: Date; note: string | null }[];
 }
@@ -236,8 +240,10 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
     const history = await sql<{
       status: ReturnStatus; actor_type: "staff" | "customer"; actor_id: string; actor_name: string; occurred_at: Date; note: string | null;
     }[]>`select * from public.order_return_history where return_id = ${id} order by occurred_at, id`;
+    const emailFailures = row.status === "refunded"
+      ? (await failedEmails(sql, row.order_id)).filter((email) => email.kind === RETURN_REFUNDED_EMAIL && email.occurrence === String(id)) : [];
     return { ok: true, detail: {
-      ...returnRow(row, items.get(id) ?? []), reason: row.reason, note: row.note,
+      ...returnRow(row, items.get(id) ?? []), emailFailures, reason: row.reason, note: row.note,
       videoFileId: row.video_file_id, refundProofFileId: row.refund_proof_file_id, replacedAt: row.replaced_at,
       goodsRequired: row.goods_required, declineReason: row.decline_reason, refundedAt: row.refunded_at,
       orderStatus: row.order_status, paymentMethod: row.payment_method, deliveredAt: row.delivered_at,

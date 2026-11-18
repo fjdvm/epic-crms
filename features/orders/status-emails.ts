@@ -1,4 +1,4 @@
-import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
+import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 
 /**
  * The nine Status emails the storefront sends (#575). CREOMS never sends one; it only shows "Email not sent"
@@ -19,6 +19,8 @@ export const STATUS_EMAILS = {
   dispatched: { label: "Out for delivery", module: FULFILMENT_MODULE },
   "ready-for-pickup": { label: "Ready for pickup", module: FULFILMENT_MODULE },
   completed: { label: "Delivered or Picked up", module: FULFILMENT_MODULE },
+  // The Refunded email (#616): one per Return, its occurrence is the Return's id. A failed send never reverses the refund.
+  "return-refunded": { label: "refund", module: RETURNS_MODULE },
 } as const;
 
 export type StatusEmailKind = keyof typeof STATUS_EMAILS;
@@ -30,6 +32,9 @@ export const isStatusEmailKind = (kind: unknown): kind is StatusEmailKind =>
 export const MAX_OCCURRENCE_LENGTH = 40;
 export const isOccurrence = (value: unknown): value is string | null =>
   value === null || (typeof value === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(value));
+
+/** The kind whose occurrence is a Return's id, not an Order event. */
+export const RETURN_REFUNDED_EMAIL = "return-refunded";
 
 export interface FailedEmail { kind: StatusEmailKind; occurrence: string | null; reason: string }
 

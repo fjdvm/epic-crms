@@ -57,6 +57,16 @@ describe("Returns read model", () => {
     expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { refundProofFileId: 'proof' } });
   });
 
+  it("lists a failed Refunded email on its own Return only, and never changes the refund", async () => {
+    const id = await request('refunded', '2026-10-20T01:00:00Z');
+    const other = await request('refunded', '2026-10-21T01:00:00Z');
+    await db.sql`delete from order_email_outcomes`;
+    await db.sql`insert into order_email_outcomes (order_id, kind, occurrence, status, reason) values
+      (1, 'return-refunded', ${String(id)}, 'failed', 'mailbox full'), (1, 'return-refunded', ${String(other)}, 'sent', null), (1, 'confirmation', '', 'failed', 'x')`;
+    expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { status: 'refunded', emailFailures: [{ kind: 'return-refunded', occurrence: String(id), reason: 'mailbox full' }] } });
+    expect(await loadReturnDetail(() => db.sql, other)).toMatchObject({ ok: true, detail: { emailFailures: [] } });
+  });
+
   it("reads legacy Order context even before the Delivery photo column is deployed", async () => {
     const id = await request('requested', '2026-10-20T01:00:00Z');
     await db.sql`alter table orders drop column delivery_photo_file_id`;
