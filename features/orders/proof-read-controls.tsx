@@ -10,13 +10,21 @@ import { OrderActionDialog } from "./action-dialog";
 import { correctProofReading, proceedDespiteFlag } from "./proof-read-actions";
 import type { Field } from "./proof-reader";
 
+/** Where a correction or a decision to proceed is recorded, when it is not a payment proof (a refund proof, #615). */
+export interface ProofChanges {
+  correct: (field: string, value: string, reason: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  proceed: (field: string, reason: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
+}
+
 const SMALL = "h-auto rounded-md bg-white px-2.5 py-1 text-xs text-[#5b2a86] border border-[#d9cce8] hover:bg-[#f6f2fa]";
 
 /**
  * Correct one detail, or proceed despite its flag. Each asks for a reason behind a confirm dialog and only adds a record;
  * neither marks the Order paid. Reversible and with no outside effect, but the server is the one that checks the reader has run, so it waits.
  */
-export function ProofReadControls({ proofId, field, label, flagged }: { proofId: number; field: Field; label: string; flagged: boolean }) {
+export function ProofReadControls({ proofId, field, label, flagged, changes }: { proofId: number; field: Field; label: string; flagged: boolean; changes?: ProofChanges }) {
+  const correct = changes?.correct ?? ((f: string, v: string, r: string) => correctProofReading(proofId, f, v, r));
+  const proceed = changes?.proceed ?? ((f: string, r: string) => proceedDespiteFlag(proofId, f, r));
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");
   const [why, setWhy] = useState("");
@@ -30,7 +38,7 @@ export function ProofReadControls({ proofId, field, label, flagged }: { proofId:
         confirm="Save correction"
         busy="Saving…"
         disabled={!value.trim() || !reason.trim()}
-        run={() => correctProofReading(proofId, field, value, reason)}
+        run={() => correct(field, value, reason)}
         successMessage="Correction recorded."
       >
         <div className="space-y-1.5">
@@ -47,11 +55,11 @@ export function ProofReadControls({ proofId, field, label, flagged }: { proofId:
           trigger="Proceed anyway"
           triggerClassName={SMALL}
           title={`Proceed despite the ${label.toLowerCase()} flag?`}
-          description="This records that you looked at it and went ahead. It does not mark the Order paid, and a reused reference or a third rejected proof still needs a Manager."
+          description="This records that you looked at it and went ahead. It does not mark anything paid or refunded, and a reused reference or a third rejected proof still needs a Manager."
           confirm="Record and proceed"
           busy="Saving…"
           disabled={!why.trim()}
-          run={() => proceedDespiteFlag(proofId, field, why)}
+          run={() => proceed(field, why)}
           successMessage="Recorded."
         >
           <div className="space-y-1.5">

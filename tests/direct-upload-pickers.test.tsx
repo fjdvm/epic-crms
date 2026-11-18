@@ -6,7 +6,7 @@ import { requestFileUpload, confirmFileUpload } from "@/features/files/actions";
 import { FulfilmentMove } from "@/features/orders/fulfilment-moves";
 import { deliverOrder } from "@/features/orders/actions";
 import { ReturnActions } from "@/features/returns/return-actions";
-import { markReturnRefunded } from "@/features/returns/actions";
+import { saveRefundProof } from "@/features/returns/refund-proof-actions";
 
 vi.mock("@/features/files/actions", () => ({ requestFileUpload: vi.fn(), confirmFileUpload: vi.fn() }));
 vi.mock("@/features/orders/actions", () => ({ deliverOrder: vi.fn(), dispatchOrder: vi.fn(), startPreparing: vi.fn() }));
@@ -14,6 +14,7 @@ vi.mock("@/features/returns/actions", () => ({
   approveReturn: vi.fn(), declineReturn: vi.fn(), markReturnGoodsReceived: vi.fn(), markReturnRefunded: vi.fn(), markReturnReplaced: vi.fn(),
 }));
 const { toast, refresh, push } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() }, refresh: vi.fn(), push: vi.fn() }));
+vi.mock("@/features/returns/refund-proof-actions", () => ({ saveRefundProof: vi.fn(), correctRefundReading: vi.fn(), proceedDespiteRefundFlag: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, push }) }));
 
@@ -32,7 +33,7 @@ beforeEach(() => {
   vi.mocked(requestFileUpload).mockResolvedValue({ ok: true, reference: "pending-reference", uploadUrl: storageUrl });
   vi.mocked(confirmFileUpload).mockResolvedValue({ ok: true, reference: "ready-reference", filename: "door.png", contentType: "image/png", size: 4 });
   vi.mocked(deliverOrder).mockResolvedValue({ ok: true, order: { id: 1042, status: "delivered", deliveryFeeInCentavos: null } });
-  vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true, return: { id: 15, status: "refunded" } });
+  vi.mocked(saveRefundProof).mockResolvedValue({ ok: true });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -43,9 +44,9 @@ const evidence = [
     submit: deliverOrder,
   },
   {
-    module: "Returns", label: "Refund proof", trigger: "Issue refund", confirmLabel: "Mark refunded", field: "proof", id: 15,
+    module: "Returns", label: "Refund proof", trigger: "Save refund proof", confirmLabel: "Save proof", field: "proof", id: 15,
     render: () => render(<ReturnActions id={15} number="RMA-15" status="goods received" goodsRequired preferredResolution="refund" finalResolution="refund" />),
-    submit: markReturnRefunded,
+    submit: saveRefundProof,
   },
 ] as const;
 

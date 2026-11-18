@@ -9,7 +9,8 @@ import type { ShopRole } from "@/lib/portal/roles";
 import { ProofReadFindings } from "@/features/orders/proof-read-view";
 import type { ProofReadView } from "@/features/orders/proof-read";
 import { InspectReturn } from "./inspect-return";
-import { OptimisticReturn, ReturnStatusPill } from "./optimistic-status";
+import { OptimisticReturn, ReturnStatusPill, type SavedProof } from "./optimistic-status";
+import { correctRefundReading, proceedDespiteRefundFlag } from "./refund-proof-actions";
 import { refundMethodLabel, returnLabel } from "./refund-record";
 import { RefundDestinationCard } from "./refund-destination-card";
 import { mayChangeDestination } from "./refund-destination";
@@ -32,6 +33,21 @@ function Photo({ url, alt }: { url: string | null; alt: string }) {
   return <img src={url} alt={alt} className="max-h-64 rounded-md border border-[#e6e1ee]" />;
 }
 
+/** The details Staff saved with the proof, shown until the Return is marked Refunded. */
+function SavedProofDetails({ proof }: { proof: SavedProof | null }) {
+  if (!proof) return null;
+
+  return (
+    <dl className="space-y-1 text-sm text-[#1f1a2e]">
+      <div className="flex justify-between gap-3"><dt>Amount sent</dt><dd>{formatPesos(proof.amountInCentavos)}</dd></div>
+      <div className="flex justify-between gap-3"><dt>Sent by</dt><dd>{refundMethodLabel(proof.method)}</dd></div>
+      <div className="flex justify-between gap-3"><dt>Date</dt><dd>{proof.refundedOn}</dd></div>
+      <div className="flex justify-between gap-3"><dt>Reference</dt><dd className="break-all text-right">{proof.reference}</dd></div>
+      <p className="text-xs text-[#6e6680]">Saved, not marked Refunded yet. Check the findings below, then mark the Return refunded.</p>
+    </dl>
+  );
+}
+
 function goodsLine(detail: ReturnDetail): string | null {
   if (detail.goodsRequired === null) return null;
 
@@ -46,6 +62,7 @@ export function ReturnDetailView({
   videoUrl,
   refundProofUrl,
   refundRead,
+  savedProof = null,
   role,
   requests,
   windowRequest,
@@ -63,6 +80,8 @@ export function ReturnDetailView({
   refundProofUrl?: string | null;
   /** The Proof reader's stored result for the refund proof (#614); display only. */
   refundRead?: ProofReadView | null;
+  /** The refund proof and details Staff saved before marking the Return Refunded, with what still needs settling (#615). */
+  savedProof?: SavedProof | null;
   role?: ShopRole | null;
   requests?: ApprovalView[];
   /** The Staff request to extend this Order's Refund window, if any. */
@@ -105,7 +124,7 @@ export function ReturnDetailView({
             finalResolution={detail.finalResolution}
             role={role}
             requests={requests}
-            refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, destinationMethod: detail.refundDestination?.method ?? null, deliveryFee: detail.deliveryFeeRefundable ? detail.orderDeliveryFee : 0, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
+            refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, destinationMethod: detail.refundDestination?.method ?? null, saved: savedProof, deliveryFee: detail.deliveryFeeRefundable ? detail.orderDeliveryFee : 0, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
           />
         </div>
       </div>
@@ -284,11 +303,13 @@ export function ReturnDetailView({
             </section>
           )}
 
-          {detail.refundProofFileId && (
+          {(detail.refundProofFileId || savedProof) && (
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Refund proof</h2>
               <Photo url={refundProofUrl ?? null} alt={`Refund proof for ${detail.number}`} />
-              <ProofReadFindings read={refundRead} role={role ?? null} subject="refund" />
+              {!detail.refundRecord && <SavedProofDetails proof={savedProof} />}
+              <ProofReadFindings read={refundRead} role={role ?? null} subject="refund"
+                changes={savedProof && detail.status !== "refunded" ? { correct: correctRefundReading.bind(null, detail.id), proceed: proceedDespiteRefundFlag.bind(null, detail.id) } : undefined} />
             </section>
           )}
 

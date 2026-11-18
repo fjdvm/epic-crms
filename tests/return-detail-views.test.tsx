@@ -23,8 +23,10 @@ vi.mock("@/features/returns/actions", () => ({
   changeRefundDestination: vi.fn(),
   revealRefundDestination: vi.fn(),
 }));
+vi.mock("@/features/returns/refund-proof-actions", () => ({ saveRefundProof: vi.fn(), correctRefundReading: vi.fn(), proceedDespiteRefundFlag: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
+import { saveRefundProof } from "@/features/returns/refund-proof-actions";
 import { approveReturn, changeRefundDestination, declineReturn, extendRefundWindow, revealRefundDestination, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
 
 beforeEach(() => vi.clearAllMocks());
@@ -122,8 +124,8 @@ describe("the Return detail", () => {
   it.each([
     ["requested", null, ["Decline", "Approve"]],
     ["approved", true, ["Mark goods received"]],
-    ["approved", false, ["Issue refund"]],
-    ["goods received", true, ["Issue refund", "Save inspection"]],
+    ["approved", false, ["Save refund proof"]],
+    ["goods received", true, ["Save refund proof", "Save inspection"]],
     ["refunded", true, []],
     ["replaced", true, []],
     ["declined", null, []],
@@ -298,48 +300,48 @@ describe("goods received and refunded", () => {
     fireEvent.change(dialog.getByLabelText("Refund proof"), { target: { files: [file] } });
   };
   const confirmRefund = () =>
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save proof" }));
 
   it("cannot mark refunded until a refund proof is attached", () => {
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
-    const confirm = within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }) as HTMLButtonElement;
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
+    const confirm = within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save proof" }) as HTMLButtonElement;
 
     expect(confirm.disabled).toBe(true);
-    expect(markReturnRefunded).not.toHaveBeenCalled();
+    expect(saveRefundProof).not.toHaveBeenCalled();
   });
 
   it("refuses a proof that is not a JPG or PNG", () => {
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture("proof.gif", "image/gif"));
 
     expect(within(screen.getByRole("alertdialog")).getByRole("alert")).toBeTruthy();
-    expect((within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save proof" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("asks before marking refunded, and sends the proof", async () => {
-    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true, return: { id: 15, status: "refunded" } });
+    vi.mocked(saveRefundProof).mockResolvedValue({ ok: true });
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture());
-    expect(markReturnRefunded).not.toHaveBeenCalled();
+    expect(saveRefundProof).not.toHaveBeenCalled();
     confirmRefund();
 
-    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledTimes(1));
-    const [id, form] = vi.mocked(markReturnRefunded).mock.calls[0];
+    await waitFor(() => expect(saveRefundProof).toHaveBeenCalledTimes(1));
+    const [id, form] = vi.mocked(saveRefundProof).mock.calls[0];
     expect(id).toBe(15);
     expect((form as FormData).get("proof")).toBe("confirmed-image");
   });
 
   it("offers a Manager the Delivery fee for a wrong or defective item, needing a reason, and sends it with the proof", async () => {
-    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true, return: { id: 15, status: "refunded" } });
+    vi.mocked(saveRefundProof).mockResolvedValue({ ok: true });
     view({ ...refundable(), reason: "wrong item", orderDeliveryFee: 15_000, deliveryFeeRefundable: true });
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture());
     const dialog = within(screen.getByRole("alertdialog"));
     expect(dialog.getByText(/The Delivery fee is not included/)).toBeTruthy();
@@ -347,12 +349,12 @@ describe("goods received and refunded", () => {
     expect(dialog.getByText("Items").nextSibling?.textContent).toBe("₱219.00");
     expect(dialog.getByText("Delivery fee").nextSibling?.textContent).toBe("₱150.00");
     expect(dialog.getByText("Total").nextSibling?.textContent).toBe("₱369.00");
-    expect((dialog.getByRole("button", { name: /^Refund ₱/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((dialog.getByRole("button", { name: "Save proof" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(dialog.getByLabelText(/Reason/), { target: { value: "Shop sent the wrong flavour" } });
-    fireEvent.click(dialog.getByRole("button", { name: /^Refund ₱/ }));
+    fireEvent.click(dialog.getByRole("button", { name: "Save proof" }));
 
-    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledTimes(1));
-    const form = vi.mocked(markReturnRefunded).mock.calls[0][1] as FormData;
+    await waitFor(() => expect(saveRefundProof).toHaveBeenCalledTimes(1));
+    const form = vi.mocked(saveRefundProof).mock.calls[0][1] as FormData;
     expect(form.get("includeDeliveryFee")).toBe("true");
     expect(form.get("deliveryFeeReason")).toBe("Shop sent the wrong flavour");
   });
@@ -366,7 +368,7 @@ describe("goods received and refunded", () => {
 
   it("offers no Delivery fee when it cannot be refunded", () => {
     view(refundable());
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     expect(screen.queryByRole("checkbox", { name: /Delivery fee/ })).toBeNull();
   });
 
@@ -383,10 +385,10 @@ describe("goods received and refunded", () => {
   });
 
   it("shows a refusal as an error and never as success", async () => {
-    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: false, reason: "Return already changed; refresh it before trying again." });
+    vi.mocked(saveRefundProof).mockResolvedValue({ ok: false, reason: "Return already changed; refresh it before trying again." });
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture());
     confirmRefund();
 
@@ -395,10 +397,10 @@ describe("goods received and refunded", () => {
   });
 
   it("treats an action that never answers as a failure", async () => {
-    vi.mocked(markReturnRefunded).mockRejectedValue(new Error("offline"));
+    vi.mocked(saveRefundProof).mockRejectedValue(new Error("offline"));
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture());
     confirmRefund();
 
@@ -411,12 +413,12 @@ describe("Issue refund dialog", () => {
   it("shows the Figma dialog: items, where the money goes back, the amount and the proof", () => {
     render(<ReturnActions id={15} number="RMA-15" status="goods received" goodsRequired preferredResolution="refund" finalResolution="refund"
       refund={{ customerName: "Maria Santos", amount: 39_900, paymentMethod: "maya", items: [{ name: "Ube Halaya · Tub", quantity: 1 }] }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
-    const dialog = screen.getByRole("alertdialog", { name: "Issue refund" });
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Save refund proof" });
     expect(within(dialog).getByText(/RMA-15 · Maria Santos · paid ₱399\.00 via Maya/)).toBeTruthy();
     expect(within(dialog).getByText("Send back by Maya")).toBeTruthy();
     expect(within(dialog).getByText("Refund amount")).toBeTruthy();
-    expect((within(dialog).getByRole("button", { name: "Refund ₱399.00" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(dialog).getByRole("button", { name: "Save proof" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

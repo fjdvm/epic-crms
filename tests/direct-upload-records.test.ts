@@ -4,7 +4,8 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { uploadFile } from "@/features/files/client";
 import { deliverOrder } from "@/features/orders/actions";
-import { approveReturn, markReturnRefunded } from "@/features/returns/actions";
+import { approveReturn } from "@/features/returns/actions";
+import { refundVia, REFUND_PROOF_SQL, REFUND_PROOF_TABLES } from "./refund-via";
 import { requireModule } from "@/lib/portal/staff";
 import { FakeFileStorage } from "./fake-file-storage";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
@@ -17,9 +18,10 @@ let db: TestDatabase;
 let storage: FakeFileStorage;
 let storefront: FakeStorefront;
 let photo: File;
-beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); }, 60_000);
+beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); for (const file of REFUND_PROOF_SQL) await db.sql.unsafe(readFileSync(file, "utf8")); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
+  await db.sql.unsafe(`truncate ${REFUND_PROOF_TABLES}`);
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria', 'maria@example.com')`;
   await db.sql`insert into orders (customer_id, status, payment_method, subtotal_in_centavos) values ('c1', 'dispatched', 'gcash', 10000000)`;
@@ -53,7 +55,7 @@ it("refunds with shared proof, links it and makes it Permanent after confirmatio
   await db.sql`update orders set status = 'delivered', delivered_at = now() where id = 1`;
   await db.sql`insert into order_returns (order_id, reason, amount_in_centavos) values (1, 'damaged', 10000)`;
   await approveReturn(1, false);
-  expect(await markReturnRefunded(1, withRefundDetails(await attachment("Returns", "proof")))).toMatchObject({ ok: true });
+  expect(await refundVia(db.sql, 1, withRefundDetails(await attachment("Returns", "proof")))).toMatchObject({ ok: true });
   expect(storage.files.get("direct-1")).toMatchObject({ visibility: "private", retentionType: "permanent", returnId: 1 });
 });
 it.each(["Fulfilment", "Returns"] as const)("leaves refused %s evidence Temporary without retrying", async module => {
@@ -66,7 +68,7 @@ it.each(["Fulfilment", "Returns"] as const)("leaves refused %s evidence Temporar
   const form = module === "Returns" ? withRefundDetails(await attachment(module, field)) : await attachment(module, field);
   storefront.refusal = "The record already changed. Refresh it.";
   const requests = storefront.requests;
-  const act = module === "Fulfilment" ? deliverOrder : markReturnRefunded;
+  const act = module === "Fulfilment" ? deliverOrder : (id: number, f: FormData) => refundVia(db.sql, id, f);
   expect(await act(1, form)).toEqual({ ok: false, reason: storefront.refusal });
   expect(storefront.requests).toBe(requests + 1);
   expect(storage.files.get("direct-1")?.retentionType).toBe("temporary");
@@ -84,7 +86,7 @@ it.each(["Fulfilment", "Returns"] as const)("rechecks %s access after upload and
   const form = await attachment(module, module === "Fulfilment" ? "photo" : "proof");
   const calls = storage.calls.length;
   vi.mocked(requireModule).mockRejectedValue(new Error("Module revoked"));
-  const action = module === "Fulfilment" ? () => deliverOrder(1, form) : () => markReturnRefunded(1, form);
+  const action = module === "Fulfilment" ? () => deliverOrder(1, form) : () => refundVia(db.sql, 1, form);
   await expect(action()).rejects.toThrow("Module revoked");
   expect(storage.calls).toHaveLength(calls);
   expect(storefront.requests).toBe(0);
@@ -102,3 +104,4 @@ it.each(["Fulfilment", "Returns"] as const)("preserves JPG/PNG and 5 MB refusals
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
 
 vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));
+vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));

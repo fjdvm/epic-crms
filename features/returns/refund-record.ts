@@ -13,6 +13,9 @@ export interface RefundRecord { amountInCentavos: number; method: RefundMethod; 
 /** Form field names, kept off the words the destination guard refuses (Staff never type where the money goes). */
 export const REFUND_FIELDS = { amount: "sentAmount", method: "sentVia", date: "sentOn", reference: "sentReference" } as const;
 
+/** The form field that says Staff verified the real transfer with the payment provider before marking the Return Refunded. */
+export const TRANSFER_VERIFIED = "transferVerified";
+
 const manila = (at: Date) => new Date(at.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 export const todayInManila = (now = new Date()) => manila(now);
 

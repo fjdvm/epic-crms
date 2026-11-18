@@ -5,6 +5,7 @@ import { approveReturn, getReturnDetail, markReturnRefunded } from "@/features/r
 import { checkRefundRecord, REFUND_FIELDS, returnLabel, todayInManila } from "@/features/returns/refund-record";
 import { requireModule } from "@/lib/portal/staff";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
+import { refundVia, REFUND_PROOF_SQL, REFUND_PROOF_TABLES } from "./refund-via";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 import { FakeFileStorage, PNG } from "./fake-file-storage";
 
@@ -13,6 +14,7 @@ const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(asy
 vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: vi.fn((id: string) => storage.view(id)) } }));
 vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn() }));
+vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: vi.fn(() => db.sql) }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
@@ -57,9 +59,10 @@ describe("the refund record rules (#613)", () => {
 });
 
 describe("Mark Refunded records the details (#613)", () => {
-  beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); }, 60_000);
+  beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); for (const file of REFUND_PROOF_SQL) await db.sql.unsafe(readFileSync(file, "utf8")); }, 60_000);
   afterAll(async () => { await db.close(); });
   beforeEach(async () => {
+  await db.sql.unsafe(`truncate ${REFUND_PROOF_TABLES}`);
     await db.sql`truncate order_returns, orders, customers restart identity cascade`;
     await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria Santos', 'maria@example.com')`;
     await db.sql`insert into orders (customer_id, status, delivered_at, payment_method, subtotal_in_centavos) values ('c1', 'delivered', '2026-10-20T00:00:00Z', 'gcash', 10000000)`;
@@ -83,14 +86,14 @@ describe("Mark Refunded records the details (#613)", () => {
   it("refuses until every detail and the proof exist, and contacts the storefront for none of them", async () => {
     const id = await approved();
     const requests = storefront.requests;
-    expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: "Enter the amount sent, in pesos." });
+    expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: false, reason: "Enter the amount sent, in pesos." });
     for (const missing of Object.values(REFUND_FIELDS)) {
       const form = withRefundDetails(proof(), { amount: "250.00" });
       form.delete(missing);
-      expect(await markReturnRefunded(id, form)).toMatchObject({ ok: false });
+      expect(await refundVia(db.sql, id, form)).toMatchObject({ ok: false });
     }
     const noProof = withRefundDetails(new FormData(), { amount: "250.00" });
-    expect(await markReturnRefunded(id, noProof)).toEqual({ ok: false, reason: "Choose exactly one refund proof screenshot." });
+    expect(await refundVia(db.sql, id, noProof)).toEqual({ ok: false, reason: "Choose exactly one refund proof screenshot." });
     expect(storefront.requests).toBe(requests);
     expect(await stored(id)).toMatchObject({ status: "approved", amount: null, reference: null });
   });
@@ -98,15 +101,15 @@ describe("Mark Refunded records the details (#613)", () => {
   it("refuses an amount that is not the refund, and a method other than the Customer's confirmed one", async () => {
     const id = await approved();
     const requests = storefront.requests;
-    expect(await markReturnRefunded(id, withRefundDetails(proof(), { amount: "249.00" }))).toMatchObject({ ok: false, reason: expect.stringContaining("must match the refund") });
+    expect(await refundVia(db.sql, id, withRefundDetails(proof(), { amount: "249.00" }))).toMatchObject({ ok: false, reason: expect.stringContaining("must match the refund") });
     await db.sql`update order_returns set refund_method = 'maya' where id = ${id}`;
-    expect(await markReturnRefunded(id, withRefundDetails(proof(), { amount: "250.00", via: "gcash" }))).toMatchObject({ ok: false, reason: expect.stringContaining("Customer confirmed Maya") });
+    expect(await refundVia(db.sql, id, withRefundDetails(proof(), { amount: "250.00", via: "gcash" }))).toMatchObject({ ok: false, reason: expect.stringContaining("Customer confirmed Maya") });
     expect(storefront.requests).toBe(requests);
   });
 
   it("saves the details with the status, shows them on the Return and audits them", async () => {
     const id = await approved();
-    expect(await markReturnRefunded(id, withRefundDetails(proof(), { amount: "250.00", via: "gcash", reference: "GC-9981" }))).toMatchObject({ ok: true });
+    expect(await refundVia(db.sql, id, withRefundDetails(proof(), { amount: "250.00", via: "gcash", reference: "GC-9981" }))).toMatchObject({ ok: true });
     expect(await stored(id)).toEqual({ status: "refunded", amount: 25000, method: "gcash", on: todayInManila(), reference: "GC-9981" });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { refundRecord: { amountInCentavos: 25000, method: "gcash", refundedOn: todayInManila(), reference: "GC-9981" } } });
     expect(audit.mock.calls.at(-1)![0]).toMatchObject({ action: "return.refund_approved", metadata: { amountInCentavos: 25000, method: "gcash", reference: "GC-9981" } });
@@ -115,6 +118,6 @@ describe("Mark Refunded records the details (#613)", () => {
   it("does not trust a storefront answer that records different details", async () => {
     const id = await approved();
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id, status: "refunded", refundProofFileId: "file-1", refundAmountInCentavos: 1, refundPaidMethod: "gcash", refundedOn: todayInManila(), refundReference: "GC-9981", actedBy: { id: "ana", name: "Ana Reyes", at: new Date().toISOString() } })));
-    expect(await markReturnRefunded(id, withRefundDetails(proof(), { amount: "250.00", reference: "GC-9981" }))).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
+    expect(await refundVia(db.sql, id, withRefundDetails(proof(), { amount: "250.00", reference: "GC-9981" }))).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
   });
 });

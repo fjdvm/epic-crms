@@ -7,6 +7,7 @@ import { requireModule } from "@/lib/portal/staff";
 import { database } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
+import { refundVia, REFUND_PROOF_SQL, REFUND_PROOF_TABLES } from "./refund-via";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 import { FakeFileStorage, PNG } from "./fake-file-storage";
@@ -24,16 +25,17 @@ function proof(bytes: Uint8Array = PNG, staffId = "ana") {
 }
 
 vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn() }));
+vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: vi.fn(() => db.sql) }));
 let db: TestDatabase;
 let storefront: FakeStorefront;
 const now = new Date("2026-10-23T08:00:00Z");
 const ana = { id: "ana", username: "ana", name: "Ana Reyes", email: "ana@example.com", role: "CRMS Manager" };
-beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); }, 60_000);
+beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); for (const file of REFUND_PROOF_SQL) await db.sql.unsafe(readFileSync(file, "utf8")); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.sql`truncate order_returns, orders, customers restart identity cascade`;
+  await db.sql.unsafe(`truncate ${REFUND_PROOF_TABLES}`); await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria Santos', 'maria@example.com')`;
   await db.sql`insert into orders (customer_id, status, delivered_at, payment_method, subtotal_in_centavos) values ('c1', 'delivered', '2026-10-20T00:00:00Z', 'gcash', 10000000)`;
   storage.reset();
@@ -58,11 +60,11 @@ describe("Staff Return decisions", () => {
     expect(await reconcileRefundProof(0)).toEqual({ ok: false, reason: "Invalid Return number." });
     await approveReturn(id);
     storefront.refusal = "Refund refused.";
-    await markReturnRefunded(id, proof());
+    await refundVia(db.sql, id, proof());
     expect((await reconcileRefundProof(id)).ok).toBe(false);
     storefront.refusal = null;
     storage.failPromote = true;
-    expect((await markReturnRefunded(id, proof())).ok).toBe(false);
+    expect((await refundVia(db.sql, id, proof())).ok).toBe(false);
     expect((await reconcileRefundProof(id)).ok).toBe(false);
     expect(storage.files.get("file-2")?.retentionType).toBe("temporary");
     storage.failPromote = false;
@@ -82,7 +84,7 @@ describe("Staff Return decisions", () => {
     for (const reply of replies) {
       const send = vi.fn(async () => reply());
       vi.stubGlobal("fetch", send);
-      expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
+      expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
       expect(send).toHaveBeenCalledTimes(1);
     }
     expect([...storage.files.values()].map(file => file.retentionType)).toEqual(["temporary", "temporary", "temporary", "temporary"]);
@@ -93,7 +95,7 @@ describe("Staff Return decisions", () => {
     const id = await requested();
     await approveReturn(id);
     storage.failPromote = true;
-    expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("The Return was marked refunded") });
+    expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("The Return was marked refunded") });
     expect(storefront.requests).toBe(2);
     expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary", returnId: id });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded", refundProofFileId: "file-1" } });
@@ -104,7 +106,7 @@ describe("Staff Return decisions", () => {
     await approveReturn(id);
     vi.mocked(revalidatePath).mockClear();
     storefront.refusal = "The Return already changed.";
-    expect(await markReturnRefunded(id, proof())).toEqual({ ok: false, reason: storefront.refusal });
+    expect(await refundVia(db.sql, id, proof())).toEqual({ ok: false, reason: storefront.refusal });
     expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary", returnId: id });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved", refundProofFileId: null } });
     expect(storefront.requests).toBe(2);
@@ -133,7 +135,7 @@ describe("Staff Return decisions", () => {
         expect(await markReturnReplaced(id)).toMatchObject({ ok: false });
         expect(await markReturnGoodsReceived(id)).toMatchObject({ ok: true });
       }
-      expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false });
+      expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: false });
       expect([...storage.files.values()].every(file => file.retentionType === "temporary" && !file.returnId)).toBe(true);
       expect(await markReturnReplaced(id)).toMatchObject({ ok: true, return: { id, status: "replaced" } });
       expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: {
@@ -161,7 +163,7 @@ describe("Staff Return decisions", () => {
     const bare = withRefundDetails(new FormData()); bare.set("proof", "file-from-another-return");
     const duplicate = proof(); duplicate.append("proof", "another-reference");
     for (const form of [undefined, withRefundDetails(new FormData()), raw, bare, duplicate]) {
-      expect(await markReturnRefunded(id, form)).toMatchObject({ ok: false, reason: expect.any(String) });
+      expect(await refundVia(db.sql, id, form)).toMatchObject({ ok: false, reason: expect.any(String) });
     }
     expect(storefront.requests).toBe(1);
   });
@@ -171,7 +173,7 @@ describe("Staff Return decisions", () => {
     await approveReturn(id);
     const form = proof();
     form.set("staffId", "forged"); form.set("refundProofFileId", "forged");
-    expect(await markReturnRefunded(id, form)).toMatchObject({ ok: true });
+    expect(await refundVia(db.sql, id, form)).toMatchObject({ ok: true });
     expect(storage.files.get("file-1")).toMatchObject({ returnId: id, retentionType: "permanent" });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { refundProofFileId: "file-1" } });
   });
@@ -183,7 +185,7 @@ describe("Staff Return decisions", () => {
     for (const failure of ["failUpload", "failLink"] as const) {
       storage.reset();
       storage[failure] = true;
-      expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("could not be stored") });
+      expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("could not be stored") });
       expect(storefront.requests).toBe(1);
     }
     expect(revalidatePath).not.toHaveBeenCalled();
@@ -199,7 +201,7 @@ describe("Staff Return decisions", () => {
       await send(input, init);
       throw new Error("Response lost after commit");
     });
-    expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
+    expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
     expect(storefront.requests).toBe(2);
     expect(storage.files.get("file-1")).toMatchObject({ returnId: id, retentionType: "temporary" });
     expect(revalidatePath).not.toHaveBeenCalled();
@@ -217,12 +219,12 @@ describe("Staff Return decisions", () => {
       const send = vi.fn(async () => Response.json({ id, status: "refunded", refundProofFileId,
         actedBy: { id: "ana", name: "Ana Reyes", at: now.toISOString() } }));
       vi.stubGlobal("fetch", send);
-      expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
+      expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("Refresh the Return") });
       expect(send).toHaveBeenCalledTimes(1);
     }
     storefront.refusal = "The Return already changed.";
     vi.stubGlobal("fetch", storefrontFetch(storefront));
-    expect(await markReturnRefunded(id, proof())).toEqual({ ok: false, reason: storefront.refusal });
+    expect(await refundVia(db.sql, id, proof())).toEqual({ ok: false, reason: storefront.refusal });
     expect([...storage.files.values()].map(file => file.retentionType)).toEqual(["temporary", "temporary", "temporary"]);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
@@ -242,7 +244,7 @@ describe("Staff Return decisions", () => {
       approved: (id: number) => approveReturn(id, true),
       declined: (id: number) => declineReturn(id, "Wrong Order"),
       "goods received": markReturnGoodsReceived,
-      refunded: (id: number) => markReturnRefunded(id, proof()),
+      refunded: (id: number) => refundVia(db.sql, id, proof()),
       replaced: markReturnReplaced,
     };
     for (const step of steps) {
@@ -260,7 +262,7 @@ describe("Staff Return decisions", () => {
 
   it("refuses missing or invalid Return numbers, bad goods decisions and an unavailable database", async () => {
     const actions = [(id: number) => approveReturn(id, true), (id: number) => declineReturn(id, "Wrong Order"),
-      markReturnGoodsReceived, (id: number) => markReturnRefunded(id, proof()), markReturnReplaced];
+      markReturnGoodsReceived, (id: number) => refundVia(db.sql, id, proof()), markReturnReplaced];
     for (const act of actions) {
       for (const id of [0, -1, 1.5, NaN, Infinity, "1", null]) {
         expect(await act(id as number)).toEqual({ ok: false, reason: "Invalid Return number." });
@@ -284,7 +286,7 @@ describe("Staff Return decisions", () => {
       ["requested", null, () => approveReturn(id, true)],
       ["requested", null, () => declineReturn(id, "Wrong Order")],
       ["approved", true, () => markReturnGoodsReceived(id)],
-      ["approved", false, () => markReturnRefunded(id, proof())],
+      ["approved", false, () => refundVia(db.sql, id, proof())],
     ] as const;
     for (const [status, goods, act] of cases) {
       await db.sql`update order_returns set status = ${status}, goods_required = ${goods}, final_resolution = 'refund' where id = ${id}`;
@@ -354,11 +356,11 @@ describe("Staff Return decisions", () => {
   it("records goods received before refunding when goods must come back, with a different Staff member at each step", async () => {
     const id = await requested();
     await approveReturn(id, true);
-    expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
+    expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
     vi.mocked(requireModule).mockResolvedValue({ ...ana, id: "ben", username: "ben", name: "Ben Cruz" });
     expect(await markReturnGoodsReceived(id)).toMatchObject({ ok: true, return: { status: "goods received" } });
     vi.mocked(requireModule).mockResolvedValue({ ...ana, id: "carla", username: "carla", name: "Carla Diaz" });
-    expect(await markReturnRefunded(id, proof(PNG, "carla"))).toMatchObject({ ok: true, return: { status: "refunded" } });
+    expect(await refundVia(db.sql, id, proof(PNG, "carla"))).toMatchObject({ ok: true, return: { status: "refunded" } });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: {
       status: "refunded", refundedAt: now, orderStatus: "delivered", amount: 10000,
       history: [
@@ -373,7 +375,7 @@ describe("Staff Return decisions", () => {
     const id = await requested();
     await approveReturn(id, false);
     expect(await markReturnGoodsReceived(id)).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
-    expect(await markReturnRefunded(id, proof())).toMatchObject({ ok: true, return: { status: "refunded" } });
+    expect(await refundVia(db.sql, id, proof())).toMatchObject({ ok: true, return: { status: "refunded" } });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: {
       goodsRequired: false, refundedAt: now, history: [{ status: "approved" }, { status: "refunded" }],
     } });
@@ -414,7 +416,7 @@ describe("Return Audit Events", () => {
     { status: "requested", next: "approved", run: (id: number) => approveReturn(id, true) },
     { status: "requested", next: "declined", run: (id: number) => declineReturn(id, "Wrong item") },
     { status: "approved", next: "goods received", run: markReturnGoodsReceived },
-    { status: "goods received", next: "refunded", run: (id: number) => markReturnRefunded(id, proof()) },
+    { status: "goods received", next: "refunded", run: (id: number) => refundVia(db.sql, id, proof()) },
     { status: "goods received", next: "replaced", run: markReturnReplaced },
   ];
   async function ready(test: typeof cases[number]) {
@@ -436,7 +438,7 @@ describe("Return Audit Events", () => {
         ? `Ana Reyes marked Return RMA-${id} (Order #1) refunded: items ₱100.00, Delivery fee not included; ₱100.00 sent by GCash on ${todayInManila()}, reference GC-2026-0001.`
         : `Ana Reyes marked Return RMA-${id} (Order #1) ${test.next}.`,
       occurred_at: expect.any(String), operationId: `return:${id}:${action}`,
-      ...(test.next === "refunded" ? { metadata: { amountInCentavos: 10000, method: "gcash", refundedOn: todayInManila(), reference: "GC-2026-0001", itemsInCentavos: 10000, deliveryFeeIncluded: false, deliveryFeeInCentavos: 0 } } : {}),
+      ...(test.next === "refunded" ? { metadata: { amountInCentavos: 10000, method: "gcash", refundedOn: todayInManila(), reference: "GC-2026-0001", itemsInCentavos: 10000, deliveryFeeIncluded: false, deliveryFeeInCentavos: 0, transferVerified: true, proofChanges: [] } } : {}),
     };
     // Sending a replacement also records the linked Replacement Order, once.
     const calls = test.next === "replaced" ? 2 : 1;
@@ -464,11 +466,11 @@ describe("Return Audit Events", () => {
   it("audits a confirmed refund before proof promotion, without duplicating on reconciliation", async () => {
     const id = await ready(cases[3]);
     storage.failPromote = true;
-    expect((await markReturnRefunded(id, proof())).ok).toBe(false);
+    expect((await refundVia(db.sql, id, proof())).ok).toBe(false);
     expect(audit).toHaveBeenCalledTimes(1);
     storage.failPromote = false;
     expect(await reconcileRefundProof(id)).toEqual({ ok: true });
-    expect((await markReturnRefunded(id, proof())).ok).toBe(false);
+    expect((await refundVia(db.sql, id, proof())).ok).toBe(false);
     expect(audit).toHaveBeenCalledTimes(1);
   });
 });

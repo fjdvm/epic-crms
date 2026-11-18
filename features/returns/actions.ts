@@ -14,10 +14,15 @@ import { RETURNS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { checkDestination, describeMasked, destinationDigest, maskDestination, mayChangeDestination, readDestination, sameDestination, type DestinationInput, type MaskedRefundDestination, type RefundDestination } from "./refund-destination";
 import { formatPesos } from "@/features/customer-profiles/format";
-import { checkRefund, type RefundOrder } from "./refund-rules";
-import { checkRefundRecord, refundMethodLabel, type RefundRecord } from "./refund-record";
+import { checkRefund } from "./refund-rules";
+import { crmsDatabase } from "@/lib/crms-db";
+import { loadRefundCorrections, loadRefundDraft } from "./refund-draft";
+import { refundProofRow } from "./refund-proof-reader";
+import { reviewRefundProof, type RefundDraft } from "./refund-review";
+import { refundMethodLabel, TRANSFER_VERIFIED } from "./refund-record";
+import type { ProofCorrection } from "@/features/orders/proof-read";
+import { refundFacts } from "./refund-facts";
 import { randomUUID } from "node:crypto";
-import { startRefundProofRead } from "./refund-proof-start";
 import { loadReturns, loadReturnDetail, loadReturnStats, type ReturnQuery } from "./returns";
 
 /** Each endpoint proves Returns access itself, before opening a database connection. */
@@ -32,32 +37,6 @@ export async function getReturnStats() {
 export async function getReturnDetail(id: number) {
   await requireModule(RETURNS_MODULE);
   return loadReturnDetail(database, id);
-}
-
-/** The Order and earlier refunds the refund rules need (#611). Optional storefront columns are read defensively. */
-async function refundFacts(id: number, orderId: number): Promise<{ order: RefundOrder; reason: string; itemsInCentavos: number; requestedAt: Date; destinationMethod: string | null; prior: { itemsInCentavos: number; deliveryFeeInCentavos: number }[] } | null> {
-  const sql = database();
-  const [row] = await sql<{ reason: string; amount: number; gross: string; payment_method: string; fulfillment_method: string; subtotal: number;
-    discount: string | null; fee: number | null; total: string | null; cod_amount: number | null; cod_at: Date | null; requested_at: Date; dest_method: string | null }[]>`
-    select r.reason, r.amount_in_centavos as amount, r.requested_at, to_jsonb(r)->>'refund_method' as dest_method,
-      (select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text from public.order_return_items where return_id = r.id) as gross,
-      o.payment_method, o.fulfillment_method, o.subtotal_in_centavos as subtotal, o.delivery_fee_in_centavos as fee,
-      to_jsonb(o)->>'approved_discount_in_centavos' as discount, to_jsonb(o)->>'total_in_centavos' as total,
-      o.cod_collected_amount_in_centavos as cod_amount, o.cod_collected_at as cod_at
-    from public.order_returns r join public.orders o on o.id = r.order_id where r.id = ${id}`;
-  if (!row) return null;
-  const others = await sql<{ amount: number; fee: string | null }[]>`
-    select amount_in_centavos as amount, to_jsonb(order_returns)->>'refund_delivery_fee_in_centavos' as fee
-    from public.order_returns where order_id = ${orderId} and id <> ${id} and status = 'refunded'`;
-  return {
-    reason: row.reason, requestedAt: row.requested_at, destinationMethod: row.dest_method,
-    // Items only. A Return recorded before this rule may carry the Delivery fee inside its amount, so it never exceeds its own lines.
-    itemsInCentavos: Number(row.gross) > 0 ? Math.min(row.amount, Number(row.gross)) : row.amount,
-    prior: others.map(other => ({ itemsInCentavos: other.amount, deliveryFeeInCentavos: Number(other.fee ?? 0) })),
-    order: { paymentMethod: row.payment_method, fulfillmentMethod: row.fulfillment_method, subtotalInCentavos: row.subtotal,
-      approvedDiscountInCentavos: row.discount === null ? null : Number(row.discount), deliveryFeeInCentavos: row.fee,
-      totalInCentavos: row.total === null ? null : Number(row.total), codCollectedAmountInCentavos: row.cod_amount, codCollectedAt: row.cod_at },
-  };
 }
 
 /** Identity comes only from the Portal; CREOMS only reads the storefront-owned tables. */
@@ -102,17 +81,15 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
     let deliveryFeeReason: string | undefined;
     let refundItems = 0;
     let refundFee = 0;
-    let record: RefundRecord | undefined;
-    let facts: Awaited<ReturnType<typeof refundFacts>> = null;
+    let draft: RefundDraft | null = null;
+    let corrections: ProofCorrection[] = [];
     if (decision.status === "refunded") {
-      facts = await refundFacts(id, orderId);
+      const facts = await refundFacts(id, orderId);
       if (!facts) return { ok: false, reason: "Return was not found." };
-      const wanted = form instanceof FormData && form.get("includeDeliveryFee") === "true";
-      const typed = form instanceof FormData ? form.get("deliveryFeeReason") : null;
-      if (wanted) {
-        if (shopRole(staff.role) !== "manager") return { ok: false, reason: "Only a Manager can include the Delivery fee in a refund." };
-        deliveryFeeReason = typeof typed === "string" ? typed.trim() : "";
-      }
+      // The proof and details were saved first (#615), so the Proof reader's findings could be checked before this step.
+      // Asking for approval needs none of it; carrying the refund out needs all of it (checked in `execute`).
+      draft = await loadRefundDraft(crmsDatabase(), id);
+      deliveryFeeReason = draft?.deliveryFeeReason ?? undefined;
       const checked = checkRefund({ ...facts, deliveryFeeReason });
       if (!checked.ok) return { ok: false, reason: checked.error };
       refundItems = facts.itemsInCentavos;
@@ -121,24 +98,21 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
     if (decision.status === "approved") decision = { ...decision, finalResolution: decision.finalResolution ?? current.preferred_resolution };
     const execute = async (): Promise<ReturnChangeResult> => {
     if (decision.status === "refunded") {
-      // Asking for approval needs none of this; carrying the refund out needs every detail and the proof, checked before anything is stored.
-      const details = checkRefundRecord(form, { expectedInCentavos: refundItems + refundFee, destinationMethod: facts!.destinationMethod, requestedAt: facts!.requestedAt });
-      if (!details.ok) return { ok: false, reason: details.reason };
-      record = details.record;
-      if (!(form instanceof FormData) || form.getAll("proof").length !== 1) {
-        return { ok: false, reason: "Choose exactly one refund proof screenshot." };
+      if (!draft) return { ok: false, reason: "Save the refund proof and details first, then check the Proof reader's findings." };
+      if (draft.expectedInCentavos !== refundItems + refundFee || draft.amountInCentavos !== draft.expectedInCentavos) {
+        return { ok: false, reason: "The refund amount changed after the proof was saved. Save the refund proof again." };
       }
-      try {
-        const upload = await recordUpload(RETURNS_MODULE, form.get("proof"), staff.username);
-        if (!upload) return { ok: false, reason: "Choose exactly one refund proof screenshot." };
-        const fileId = upload.fileId;
-        await gatewayFileStorage.linkRefundProof(fileId, id);
-        // The money goes to the destination the Customer confirmed, so no payment method travels here.
-        decision = { status: "refunded", refundProofFileId: fileId, ...(deliveryFeeReason ? { deliveryFeeReason } : {}),
-          refundAmountInCentavos: record!.amountInCentavos, refundPaidMethod: record!.method, refundedOn: record!.refundedOn, refundReference: record!.reference };
-      } catch {
-        return { ok: false, reason: "Refund proof could not be stored. The Return was not marked refunded." };
+      if (!(form instanceof FormData) || form.get(TRANSFER_VERIFIED) !== "true") {
+        return { ok: false, reason: "Verify the real transfer with the payment provider, then confirm that you did." };
       }
+      const row = await refundProofRow(crmsDatabase(), draft.fileId);
+      corrections = await loadRefundCorrections(crmsDatabase(), draft.fileId);
+      const review = reviewRefundProof(row ? { status: row.status === "none" ? "pending" : row.status, findings: row.findings } : null, corrections, draft.savedAt);
+      if (review.reading) return { ok: false, reason: "The Proof reader is still checking the refund proof. Wait for its findings." };
+      if (review.unresolved.length > 0) return { ok: false, reason: `Correct or proceed past the flagged details first: ${review.unresolved.join(", ")}.` };
+      // The proof is already stored and linked to this Return; the details are the ones Staff saved and the findings were checked against.
+      decision = { status: "refunded", refundProofFileId: draft.fileId, ...(deliveryFeeReason ? { deliveryFeeReason } : {}),
+        refundAmountInCentavos: draft.amountInCentavos, refundPaidMethod: draft.method, refundedOn: draft.refundedOn, refundReference: draft.reference };
     }
     if (decision.status === "replaced") {
       // Approving the replacement sends it as a linked ₱0 Order with its own Reservation. The Return id keeps this safe to repeat.
@@ -173,7 +147,8 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
           ? `${staff.name} marked Return RMA-${id} (Order #${orderId}) refunded: items ${formatPesos(refundItems)}, Delivery fee ${update.deliveryFeeReason ? `${formatPesos(refundFee)} (${update.deliveryFeeReason})` : "not included"}; ${formatPesos(update.refundAmountInCentavos)} sent by ${refundMethodLabel(update.refundPaidMethod)} on ${update.refundedOn}, reference ${update.refundReference}.`
           : `${staff.name} marked Return RMA-${id} (Order #${orderId}) ${update.status}.`,
         occurred_at: new Date().toISOString(), operationId: `return:${id}:${action}`,
-        ...(update.status === "refunded" ? { metadata: { amountInCentavos: update.refundAmountInCentavos, method: update.refundPaidMethod, refundedOn: update.refundedOn, reference: update.refundReference, itemsInCentavos: refundItems, deliveryFeeIncluded: Boolean(update.deliveryFeeReason), deliveryFeeInCentavos: refundFee, ...(update.deliveryFeeReason ? { deliveryFeeReason: update.deliveryFeeReason } : {}) } } : {}),
+        ...(update.status === "refunded" ? { metadata: { amountInCentavos: update.refundAmountInCentavos, method: update.refundPaidMethod, refundedOn: update.refundedOn, reference: update.refundReference, itemsInCentavos: refundItems, deliveryFeeIncluded: Boolean(update.deliveryFeeReason), deliveryFeeInCentavos: refundFee, transferVerified: true, ...(update.deliveryFeeReason ? { deliveryFeeReason: update.deliveryFeeReason } : {}),
+          proofChanges: corrections.map(c => ({ kind: c.kind, field: c.field, reason: c.reason, by: c.by, originalValue: c.originalValue, originalFinding: c.originalFinding, ...(c.kind === "correction" ? { correctedValue: c.value } : {}) })) } } : {}),
       });
     }
     if (result.ok && update.status === "refunded") {
@@ -182,8 +157,6 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       } catch {
         return { ok: false, reason: "The Return was marked refunded, but its refund proof could not be made Permanent. Refresh the Return; do not repeat the refund." };
       }
-      // The Proof reader reads it in the background (#614); this response never waits for it, and a failure is picked up by the schedule.
-      startRefundProofRead(id);
     }
     return result;
     };
