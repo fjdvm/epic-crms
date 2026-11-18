@@ -3,9 +3,9 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { accessFor } from "./access";
 import type { Staff } from "./client";
-import { LOGIN_PATH, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
+import { LOGIN_PATH, MANAGEMENT_MODULE, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
 import { safeReturnTo } from "./return-to";
-import { shopRole } from "./roles";
+import { canManage, shopRole } from "./roles";
 
 /** One access checker per page load, so the Portal is asked once however many callers there are. */
 const requestAccess = cache(async () =>
@@ -43,6 +43,18 @@ export async function requireModule(module: string): Promise<Staff> {
   }
 
   return result.staff;
+}
+
+/** The Management pages: the Module and a Manager or CEO Role, refused here and not only hidden. */
+export async function requireManagement(): Promise<Staff> {
+  const staff = await requireModule(MANAGEMENT_MODULE);
+
+  if (!canManage(staff)) {
+    await (await requestAccess()).recordDenial(MANAGEMENT_MODULE);
+    redirect(NO_ACCESS_PATH);
+  }
+
+  return staff;
 }
 
 /** Like requireModule, for a page that opens with any one of several Modules. */

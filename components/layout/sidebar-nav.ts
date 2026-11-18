@@ -15,6 +15,7 @@ import {
   Package,
   ClipboardCheck,
   ListChecks,
+  Landmark,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -116,6 +117,20 @@ export const feedbackItem: NavItem = {
   icon: Star,
 };
 
+export const paymentManagementItem: NavItem = {
+  group: "MANAGEMENT",
+  name: "Payment Management",
+  href: "/management/payment-management",
+  icon: Landmark,
+};
+
+export const deliveryManagementItem: NavItem = {
+  group: "MANAGEMENT",
+  name: "Delivery Management",
+  href: "/management/delivery-management",
+  icon: Truck,
+};
+
 /** The Figma sidebar, top to bottom. */
 export const sidebarItems: NavItem[] = [
   dashboardItem,
@@ -129,6 +144,8 @@ export const sidebarItems: NavItem[] = [
   ticketsItem,
   conversationsItem,
   feedbackItem,
+  paymentManagementItem,
+  deliveryManagementItem,
 ];
 
 export const systems: SystemItem[] = [

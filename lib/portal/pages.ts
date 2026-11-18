@@ -3,6 +3,7 @@ import {
   DASHBOARD_MODULE,
   FEEDBACK_MODULE,
   FULFILMENT_MODULE,
+  MANAGEMENT_MODULE,
   ORDERS_MODULE,
   PAYMENTS_MODULE,
   RETURNS_MODULE,
@@ -21,4 +22,6 @@ export const pages = [
   { href: "/tickets", module: TICKETS_MODULE },
   { href: "/conversations", module: TICKETS_MODULE },
   { href: "/feedback", module: FEEDBACK_MODULE },
+  { href: "/management/payment-management", module: MANAGEMENT_MODULE },
+  { href: "/management/delivery-management", module: MANAGEMENT_MODULE },
 ] as const;
