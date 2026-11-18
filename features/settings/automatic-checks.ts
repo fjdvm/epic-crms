@@ -56,6 +56,10 @@ export const AUTOMATIC_CHECK_GROUPS: Record<string, { label: string; rules: Reco
         label: "Orders not confirmed in time",
         fields: { hours: { min: 1, max: 8760, default: 48, label: "Hours after placement" } },
       },
+      paymentReviews: {
+        label: "Manager payment reviews not settled in time",
+        fields: { hours: { min: 1, max: 8760, default: 48, label: "Hours after the third rejection" } },
+      },
     },
   },
 };
@@ -75,6 +79,7 @@ export interface AutomaticChecks {
     returnSpike: Switch & { count: number; days: number };
     unresolvedFailedDeliveries: Switch & { count: number };
     unconfirmedOrders: Switch & { hours: number };
+    paymentReviews: Switch & { hours: number };
   };
 }
 

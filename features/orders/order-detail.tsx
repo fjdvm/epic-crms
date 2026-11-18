@@ -14,6 +14,8 @@ import { SENIOR_PWD_WEEKLY_CAP, type OrderDetail } from "./orders";
 import type { LineReservation } from "./stock";
 import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
+import { PaymentReviewPanel } from "./payment-review-panel";
+import type { PaymentReview } from "./payment-review";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PaymentPill } from "./status-pill";
 import { EmailNotSent } from "./email-not-sent";
@@ -155,6 +157,7 @@ export function OrderDetailView({
   waitingApproval,
   cancellation = null,
   codFlags = [],
+  paymentReview = null,
 }: {
   /** The viewer's role; omitted means Staff, so the buttons that need a Manager read "Request approval". */
   role?: ShopRole | null;
@@ -174,6 +177,8 @@ export function OrderDetailView({
   deliveryPhotoUrl?: string | null;
   /** This Order's Returns, shown read-only to Staff with the Returns Module; null when CREOMS could not read them. */
   returns?: ReturnRow[] | null;
+  /** The Manager payment review when the Order has one (3 rejected proofs, still awaiting payment). */
+  paymentReview?: PaymentReview | null;
 }) {
   const address = order.address;
   const backToReturns = modules.includes(RETURNS_MODULE) && !modules.includes(ORDERS_MODULE);
@@ -215,7 +220,7 @@ export function OrderDetailView({
           </div>
         </div>
         <CancellationNote state={cancellation} />
-        {order.emailFailure && modules.includes(ORDERS_MODULE) && <EmailNotSent orderId={order.id} reason={order.emailFailure.reason} role={role} />}
+        {order.emailFailure && modules.includes(ORDERS_MODULE) && <EmailNotSent orderId={order.id} reason={order.emailFailure.reason} role={role ?? null} />}
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
@@ -341,6 +346,7 @@ export function OrderDetailView({
                 </div>
               )}
             </dl>
+            {paymentReview && <PaymentReviewPanel id={order.id} review={paymentReview} role={role ?? null} />}
             <PaymentProof order={order} />
             {codFlags.length > 0 && (
               <div data-testid="cod-flags" className="space-y-1 rounded-lg bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">

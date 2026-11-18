@@ -25,6 +25,12 @@ export async function currentUnconfirmedHours(): Promise<number | null> {
   return enabled ? hours : null;
 }
 
+/** The Admin's target for a Manager payment review (null when switched off). Past it the review is Overdue; nothing is cancelled. */
+export async function currentPaymentReviewHours(): Promise<number | null> {
+  const { enabled, hours } = (await currentAutomaticChecks()).dashboard.paymentReviews;
+  return enabled ? hours : null;
+}
+
 type Staff = { id: string; name: string; role: string };
 
 /** The rules whose switch or numbers differ between two sets, as plain labels. */
