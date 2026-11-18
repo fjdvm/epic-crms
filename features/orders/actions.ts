@@ -415,8 +415,9 @@ function codCollection(order: CurrentOrder, staff: Staff, collectedInCentavos: n
   return { ok: true, collection: { amountInCentavos: total, staffId: staff.username, staffName: staff.name } };
 }
 
-const collectionAudit = (collection: CodCollection | undefined) =>
-  collection ? { cod_collected_in_centavos: collection.amountInCentavos, cod_collected_by: collection.staffName } : undefined;
+/** The one audit event holds the transition, the amount, the time and the responsible Staff member. */
+const collectionAudit = (collection: CodCollection | undefined, from: string, to: string) =>
+  collection ? { cod_collected_in_centavos: collection.amountInCentavos, cod_collected_by: collection.staffName, cod_collected_at: new Date().toISOString(), from_status: from, to_status: to } : undefined;
 
 /** A Pickup Order is packed and waiting at the shop; the storefront tells the Customer it can be collected. */
 export async function markReadyForPickup(id: number): Promise<OrderChangeResult> {
@@ -434,11 +435,13 @@ export async function markReadyForPickup(id: number): Promise<OrderChangeResult>
 /** The Customer collected it. The storefront records collected_at, which counts like delivered_at. A legacy Pickup Order still `dispatched` can be completed too. */
 export async function markPickedUp(id: number, collectedInCentavos?: number): Promise<OrderChangeResult> {
   let collection: CodCollection | undefined;
+  let from = "ready for pickup";
   return act(id, async (order, staff) => {
     if (order.fulfillment_method !== "pickup") return { ok: false, reason: DELIVERY_ONLY };
     if (order.status !== "ready for pickup" && order.status !== "dispatched") {
       return { ok: false, reason: "Only a Pickup Order that is Ready for pickup can be marked Picked up; it may have already changed. Refresh it before trying again." };
     }
+    from = order.status;
     const checked = codCollection(order, staff, collectedInCentavos);
     if (!checked.ok) return checked;
     collection = checked.collection;
@@ -447,7 +450,7 @@ export async function markPickedUp(id: number, collectedInCentavos?: number): Pr
     action: "order.picked_up",
     description: staff => `${staff.name} marked Pickup Order #${id} Picked up${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`,
     // Read when the audit is written, after the move saved.
-    get metadata() { return collectionAudit(collection); },
+    get metadata() { return collectionAudit(collection, from, "collected"); },
   });
 }
 
@@ -476,7 +479,7 @@ export async function deliverOrder(id: number, form?: FormData, collectedInCenta
     const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId, ...(collection && { codCollection: collection }) });
     if (result.ok) {
       await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered",
-        `${staff.name} marked Order #${id} delivered${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`, collectionAudit(collection));
+        `${staff.name} marked Order #${id} delivered${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`, collectionAudit(collection, "dispatched", "delivered"));
       await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivery_photo_attached", `${staff.name} attached a Delivery photo to Order #${id}.`);
       try {
         await gatewayFileStorage.promote(deliveryPhotoFileId);

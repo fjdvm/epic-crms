@@ -990,14 +990,14 @@ describe("COD collection", () => {
     expect(await markPickedUp(id, 155000)).toMatchObject({ ok: true, order: { status: "collected" } });
     expect(await collection(id)).toMatchObject({ status: "collected", amount: 155000, by: "Ana", at: expect.any(Date) });
     expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({
-      action: "order.picked_up", description: expect.stringContaining("₱1550.00"), metadata: { cod_collected_in_centavos: 155000, cod_collected_by: "Ana" },
+      action: "order.picked_up", description: expect.stringContaining("₱1550.00"), metadata: expect.objectContaining({ cod_collected_in_centavos: 155000, cod_collected_by: "Ana", from_status: "ready for pickup", to_status: "collected" }),
     }));
   });
   it("saves the amount, time and Staff member with the delivery", async () => {
     const id = await codOrder("delivery", "dispatched");
     expect(await deliverOrder(id, deliveryPhoto(), 155000)).toMatchObject({ ok: true, order: { status: "delivered" } });
     expect(await collection(id)).toMatchObject({ status: "delivered", amount: 155000, by: "Ana" });
-    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.delivered", metadata: { cod_collected_in_centavos: 155000, cod_collected_by: "Ana" } }));
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.delivered", metadata: expect.objectContaining({ cod_collected_in_centavos: 155000, cod_collected_by: "Ana", cod_collected_at: expect.any(String), from_status: expect.any(String), to_status: expect.any(String) }) }));
   });
   it("refuses any other amount, or none, with the reason, before the storefront, keeping the status", async () => {
     for (const method of ["pickup", "delivery"] as const) {
