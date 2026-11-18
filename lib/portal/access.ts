@@ -2,6 +2,8 @@ import { validateSession, type Staff, type Validation } from "./client";
 import { DEV_STAFF, devBypassEnabled } from "./dev-bypass";
 import { auditAccessDenied } from "./access-audit";
 import { pages } from "./pages";
+import { MANAGEMENT_MODULE } from "./config";
+import { canManage } from "./roles";
 
 export type Overview =
   | { decision: "allowed"; staff: Staff; pages: string[] }
@@ -61,8 +63,11 @@ export function accessFor(
       }
     }
 
+    // Management also needs the Manager or CEO Role, so a Module that reached anyone else opens nothing.
     const allowed = results.flatMap((result, i) =>
-      result.decision === "allowed" ? [{ staff: result.staff, href: pages[i].href }] : [],
+      result.decision === "allowed" && (pages[i].module !== MANAGEMENT_MODULE || canManage(result.staff))
+        ? [{ staff: result.staff, href: pages[i].href }]
+        : [],
     );
 
     return allowed.length === 0

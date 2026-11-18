@@ -15,6 +15,8 @@ export const SENIOR_PWD_MODULE = "Senior/PWD";
 export const PAYMENTS_MODULE = "Payments";
 export const FULFILMENT_MODULE = "Fulfilment";
 export const RETURNS_MODULE = "Returns";
+/** Payment Management and Delivery Management. Only a Manager or the CEO can hold it; the Portal grants it to no one else. */
+export const MANAGEMENT_MODULE = "Management";
 /** The Ticket reports page. Manager, Admin and CEO; the Portal seeds no Staff default. */
 export const REPORTS_MODULE = "Reports";
 /** The Order detail page opens for Staff with any of these. */
