@@ -33,7 +33,7 @@ afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria Santos', 'maria@example.com')`;
-  await db.sql`insert into orders (customer_id, status, delivered_at) values ('c1', 'delivered', '2026-10-20T00:00:00Z')`;
+  await db.sql`insert into orders (customer_id, status, delivered_at, payment_method, subtotal_in_centavos) values ('c1', 'delivered', '2026-10-20T00:00:00Z', 'gcash', 10000000)`;
   storage.reset();
   storefront = new FakeStorefront(db.sql, () => now, storage);
   vi.stubGlobal("fetch", storefrontFetch(storefront));
@@ -430,8 +430,11 @@ describe("Return Audit Events", () => {
       action, module: "Returns", outcome: "success",
       actor: { type: "user", id: "portal-user-123", display_name: "Ana Reyes" },
       target: { type: "return", id: String(id), display_name: `RMA-${id}` },
-      description: `Ana Reyes marked Return RMA-${id} (Order #1) ${test.next}.`,
+      description: test.next === "refunded"
+        ? `Ana Reyes marked Return RMA-${id} (Order #1) refunded: items ₱100.00, Delivery fee not included.`
+        : `Ana Reyes marked Return RMA-${id} (Order #1) ${test.next}.`,
       occurred_at: expect.any(String), operationId: `return:${id}:${action}`,
+      ...(test.next === "refunded" ? { metadata: { itemsInCentavos: 10000, deliveryFeeIncluded: false } } : {}),
     };
     // Sending a replacement also records the linked Replacement Order, once.
     const calls = test.next === "replaced" ? 2 : 1;

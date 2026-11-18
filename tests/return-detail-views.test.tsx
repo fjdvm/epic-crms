@@ -31,7 +31,7 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
-  replacedAt: null, videoFileId: null, refundProofFileId: null, refundWindowExtendedAt: null, replacementOrderId: null, refundDestination: null, refundDestinationLocked: false,
+  replacedAt: null, videoFileId: null, refundProofFileId: null, refundWindowExtendedAt: null, replacementOrderId: null, refundDestination: null, refundDestinationLocked: false, orderDeliveryFee: 0, deliveryFeeRefunded: 0, deliveryFeeRefundable: false,
   preferredResolution: "refund", finalResolution: null,
   id: 15,
   number: "RMA-15",
@@ -91,7 +91,7 @@ describe("the Return detail", () => {
     expect(screen.getByText("Damaged")).toBeTruthy();
     expect(screen.getByText("Lid was cracked on arrival")).toBeTruthy();
     expect(screen.getByText("Smooth tub")).toBeTruthy();
-    expect(screen.getByText("₱219.00")).toBeTruthy();
+    expect(screen.getAllByText("₱219.00")).toHaveLength(2); // Items and the refund amount: no Delivery fee was refunded
     expect(screen.getByText("GCash")).toBeTruthy();
     expect(screen.getByAltText("Defect image 1 for RMA-15").getAttribute("src")).toBe("https://files/img-1");
     expect(screen.getByAltText("Delivery photo for Order #1042").getAttribute("src")).toBe("https://files/photo-1");
@@ -325,6 +325,32 @@ describe("goods received and refunded", () => {
     const [id, form] = vi.mocked(markReturnRefunded).mock.calls[0];
     expect(id).toBe(15);
     expect((form as FormData).get("proof")).toBe("confirmed-image");
+  });
+
+  it("offers a Manager the Delivery fee for a wrong or defective item, needing a reason, and sends it with the proof", async () => {
+    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true, return: { id: 15, status: "refunded" } });
+    view({ ...refundable(), reason: "wrong item", orderDeliveryFee: 15_000, deliveryFeeRefundable: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    attach(picture());
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(dialog.getByText(/The Delivery fee is not included/)).toBeTruthy();
+    fireEvent.click(dialog.getByRole("checkbox", { name: /Also refund the Delivery fee/ }));
+    expect(dialog.getByText(/plus ₱150\.00 Delivery fee/)).toBeTruthy();
+    expect((dialog.getByRole("button", { name: /^Refund ₱/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(dialog.getByLabelText(/Reason/), { target: { value: "Shop sent the wrong flavour" } });
+    fireEvent.click(dialog.getByRole("button", { name: /^Refund ₱/ }));
+
+    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledTimes(1));
+    const form = vi.mocked(markReturnRefunded).mock.calls[0][1] as FormData;
+    expect(form.get("includeDeliveryFee")).toBe("true");
+    expect(form.get("deliveryFeeReason")).toBe("Shop sent the wrong flavour");
+  });
+
+  it("offers no Delivery fee when it cannot be refunded", () => {
+    view(refundable());
+    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    expect(screen.queryByRole("checkbox", { name: /Delivery fee/ })).toBeNull();
   });
 
   it("asks before marking replaced", async () => {

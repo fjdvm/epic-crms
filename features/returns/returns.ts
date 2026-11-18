@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 import { customerNameSql } from "@/lib/deleted-customer";
+import { DELIVERY_FEE_REASONS } from "./refund-rules";
 import { DESTINATION_LOCKED_STATUSES, maskDestination, readDestination, type MaskedRefundDestination } from "./refund-destination";
 
 export const RETURN_STATUSES = ["requested", "approved", "goods received", "refunded", "replaced", "declined", "cancelled"] as const;
@@ -150,7 +151,7 @@ export async function loadReturnStats(connect: () => postgres.Sql, now = new Dat
     const [totals] = await sql<{ open: number; requested: number; refunded: number; replaced: number }[]>`
       select count(*) filter (where status in ('requested','approved','goods received'))::int as open,
         count(*) filter (where requested_at >= ${start} and requested_at < ${end})::int as requested,
-        coalesce(sum(amount_in_centavos) filter (where status = 'refunded' and refunded_at >= ${start} and refunded_at < ${end}), 0)::bigint as refunded,
+        coalesce(sum(amount_in_centavos + coalesce((to_jsonb(order_returns)->>'refund_delivery_fee_in_centavos')::int, 0)) filter (where status = 'refunded' and refunded_at >= ${start} and refunded_at < ${end}), 0)::bigint as refunded,
         count(*) filter (where status = 'replaced' and replaced_at >= ${start} and replaced_at < ${end})::int as replaced
       from public.order_returns`;
     const [delivered] = await sql<{ count: number }[]>`select count(*)::int as count from public.orders
@@ -186,6 +187,12 @@ export interface ReturnDetail extends ReturnRow {
   /** Where the Customer asked the refund to go, number masked; null on a Return that has none. Locked once a Manager approves. */
   refundDestination: MaskedRefundDestination | null;
   refundDestinationLocked: boolean;
+  /** What the Order charged for delivery; ₱0 for free delivery or pickup. */
+  orderDeliveryFee: number;
+  /** The Delivery fee included in this Return's refund (₱0 when only the items were refunded). */
+  deliveryFeeRefunded: number;
+  /** A Manager may include the Delivery fee: a wrong or defective item, a fee was charged, and none was refunded on the Order yet. */
+  deliveryFeeRefundable: boolean;
   images: { fileId: string; position: number }[];
   history: { status: ReturnStatus; actor: { type: "staff" | "customer"; id: string; name: string }; at: Date; note: string | null }[];
 }
@@ -201,7 +208,11 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       delivered_at: Date | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null;
       window_extended_at: string | null; replacement_order_id: number | null;
       dest_method: string | null; dest_name: string | null; dest_number: string | null; dest_bank: string | null;
-    })[]>`select r.*,
+      fulfillment_method: string; order_delivery_fee: number | null; fee_refunded: string | null; fee_refunded_elsewhere: boolean;
+    })[]>`select r.*, o.fulfillment_method, o.delivery_fee_in_centavos as order_delivery_fee,
+      to_jsonb(r)->>'refund_delivery_fee_in_centavos' as fee_refunded,
+      exists (select 1 from public.order_returns x where x.order_id = r.order_id and x.id <> r.id and x.status = 'refunded'
+        and coalesce((to_jsonb(x)->>'refund_delivery_fee_in_centavos')::int, 0) > 0) as fee_refunded_elsewhere,
       to_jsonb(r)->>'refund_method' as dest_method, to_jsonb(r)->>'refund_account_name' as dest_name,
       to_jsonb(r)->>'refund_account_number' as dest_number, to_jsonb(r)->>'refund_bank_name' as dest_bank, o.customer_id, o.status as order_status, o.payment_method, o.delivered_at,
       to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,
@@ -231,6 +242,10 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       // Masked here, so the full number never reaches a page or a browser from this read.
       refundDestination: (() => { const full = readDestination({ refund_method: row.dest_method, refund_account_name: row.dest_name, refund_account_number: row.dest_number, refund_bank_name: row.dest_bank }); return full ? maskDestination(full) : null; })(),
       refundDestinationLocked: (DESTINATION_LOCKED_STATUSES as readonly string[]).includes(row.status),
+      orderDeliveryFee: row.fulfillment_method === "delivery" ? row.order_delivery_fee ?? 0 : 0,
+      deliveryFeeRefunded: Number(row.fee_refunded ?? 0),
+      deliveryFeeRefundable: row.fulfillment_method === "delivery" && (row.order_delivery_fee ?? 0) > 0 && !row.fee_refunded_elsewhere &&
+        (DELIVERY_FEE_REASONS as readonly string[]).includes(row.reason) && row.status !== "refunded",
       images: images.map(image => ({ fileId: image.file_id, position: image.position })),
       history: history.map(step => ({ status: step.status, actor: { type: step.actor_type, id: step.actor_id, name: step.actor_name },
         at: step.occurred_at, note: step.note })),

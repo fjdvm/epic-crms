@@ -123,13 +123,21 @@ function Decline({ id, number, approvalId }: { id: number; number: string; appro
 }
 
 /** What the Figma "Issue refund" dialog shows about the Return being refunded. */
-export interface RefundContext { customerName: string; amount: number; paymentMethod: string; items: { name: string; quantity: number }[] }
+export interface RefundContext {
+  customerName: string; amount: number; paymentMethod: string; items: { name: string; quantity: number }[];
+  /** The Order's Delivery fee when a Manager may include it in this refund (wrong or defective item, not refunded yet); 0 otherwise. */
+  deliveryFee?: number;
+}
 
-function Refund({ id, number, approvalId, context }: { id: number; number: string; approvalId?: string; context?: RefundContext }) {
+function Refund({ id, number, approvalId, context, canIncludeFee = false }: { id: number; number: string; approvalId?: string; context?: RefundContext; canIncludeFee?: boolean }) {
   const [proof, setProof] = useState<File | null>(null);
   const [note, setNote] = useState("");
+  const [withFee, setWithFee] = useState(false);
+  const [feeReason, setFeeReason] = useState("");
   const destination = context ? refundDestination(context.paymentMethod) : null;
-  const amount = context ? formatPesos(context.amount) : null;
+  const feeOffered = canIncludeFee && (context?.deliveryFee ?? 0) > 0;
+  const fee = feeOffered && withFee ? context!.deliveryFee! : 0;
+  const amount = context ? formatPesos(context.amount + fee) : null;
 
   return (
     <OrderActionDialog
@@ -140,12 +148,13 @@ function Refund({ id, number, approvalId, context }: { id: number; number: strin
         : "Only confirm once the money has been paid back to the Customer outside CREOMS. The Customer can see the proof."}
       confirm={amount ? `Refund ${amount}` : "Mark refunded"}
       busy="Saving…"
-      disabled={proof === null}
+      disabled={proof === null || (feeOffered && withFee && !feeReason.trim())}
       run={async () => {
         const uploaded = await uploadFile("Returns", proof as File);
         if (!uploaded.ok) return uploaded;
         const form = new FormData();
         form.set("proof", uploaded.reference);
+        if (feeOffered && withFee) { form.set("includeDeliveryFee", "true"); form.set("deliveryFeeReason", feeReason.trim()); }
 
         return approvalId || note.trim() ? markReturnRefunded(id, form, { approvalId, reason: note }) : markReturnRefunded(id, form);
       }}
@@ -174,8 +183,24 @@ function Refund({ id, number, approvalId, context }: { id: number; number: strin
           <div className="space-y-1">
             <p className="text-[13px] font-medium text-[#27272a]">Refund amount</p>
             <p className="rounded-lg border border-[#e4e4e7] px-3 py-2.5 text-sm text-[#18181b]">{amount}</p>
-            <p className="text-xs text-[#71717a]">The amount paid for these items.</p>
+            <p className="text-xs text-[#71717a]">
+              {fee > 0 ? `${formatPesos(context.amount)} for these items plus ${formatPesos(fee)} Delivery fee.` : "The amount paid for these items, after discounts. The Delivery fee is not included."}
+            </p>
           </div>
+          {feeOffered && (
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-[13px] font-medium text-[#27272a]">
+                <input type="checkbox" checked={withFee} onChange={(e) => setWithFee(e.target.checked)} />
+                Also refund the Delivery fee ({formatPesos(context!.deliveryFee!)})
+              </label>
+              {withFee && (
+                <>
+                  <Label htmlFor={`fee-reason-${id}`} className="text-[13px] font-medium text-foreground">Reason <span className="text-[#dc2626]">*</span></Label>
+                  <Textarea id={`fee-reason-${id}`} value={feeReason} onChange={(e) => setFeeReason(e.target.value)} placeholder="Why the shop is refunding the Delivery fee" />
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
       <DeliveryPhotoPicker photo={proof} onChange={setProof} label="Refund proof" />
@@ -257,7 +282,7 @@ export function ReturnActions({
           successMessage={`${number} marked goods received.`}
         />
       )}
-      {steps.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} />}
+      {steps.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} canIncludeFee />}
       {steps.includes("replace") && (
         <OrderActionDialog
           trigger="Mark replaced"

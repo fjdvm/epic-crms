@@ -52,7 +52,7 @@ beforeEach(async () => {
   vi.stubEnv("CREOMS_DEV_BYPASS", "false");
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria Santos', 'maria@example.com')`;
-  await db.sql`insert into orders (customer_id) values ('c1')`;
+  await db.sql`insert into orders (customer_id, payment_method, subtotal_in_centavos) values ('c1', 'gcash', 10000000)`;
   await db.sql`insert into order_returns (order_id, reason, amount_in_centavos) values (1, 'damaged', 10000)`;
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });

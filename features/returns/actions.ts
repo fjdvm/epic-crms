@@ -2,7 +2,7 @@
 
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalOptions, ApprovalResult } from "@/features/approvals/workflow";
-import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
+import { canWork, READ_ONLY_REASON, shopRole } from "@/lib/portal/roles";
 import { revalidatePath } from "next/cache";
 import { changeReturnStatus, changeStorefrontRefundDestination, createStorefrontReplacementOrder, extendStorefrontRefundWindow, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
@@ -13,6 +13,8 @@ import { database } from "@/lib/db";
 import { RETURNS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { checkDestination, describeMasked, destinationDigest, maskDestination, mayChangeDestination, readDestination, sameDestination, type DestinationInput, type MaskedRefundDestination, type RefundDestination } from "./refund-destination";
+import { formatPesos } from "@/features/customer-profiles/format";
+import { checkRefund, type RefundOrder } from "./refund-rules";
 import { randomUUID } from "node:crypto";
 import { loadReturns, loadReturnDetail, loadReturnStats, type ReturnQuery } from "./returns";
 
@@ -28,6 +30,32 @@ export async function getReturnStats() {
 export async function getReturnDetail(id: number) {
   await requireModule(RETURNS_MODULE);
   return loadReturnDetail(database, id);
+}
+
+/** The Order and earlier refunds the refund rules need (#611). Optional storefront columns are read defensively. */
+async function refundFacts(id: number, orderId: number): Promise<{ order: RefundOrder; reason: string; itemsInCentavos: number; prior: { itemsInCentavos: number; deliveryFeeInCentavos: number }[] } | null> {
+  const sql = database();
+  const [row] = await sql<{ reason: string; amount: number; gross: string; payment_method: string; fulfillment_method: string; subtotal: number;
+    discount: string | null; fee: number | null; total: string | null; cod_amount: number | null; cod_at: Date | null }[]>`
+    select r.reason, r.amount_in_centavos as amount,
+      (select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text from public.order_return_items where return_id = r.id) as gross,
+      o.payment_method, o.fulfillment_method, o.subtotal_in_centavos as subtotal, o.delivery_fee_in_centavos as fee,
+      to_jsonb(o)->>'approved_discount_in_centavos' as discount, to_jsonb(o)->>'total_in_centavos' as total,
+      o.cod_collected_amount_in_centavos as cod_amount, o.cod_collected_at as cod_at
+    from public.order_returns r join public.orders o on o.id = r.order_id where r.id = ${id}`;
+  if (!row) return null;
+  const others = await sql<{ amount: number; fee: string | null }[]>`
+    select amount_in_centavos as amount, to_jsonb(order_returns)->>'refund_delivery_fee_in_centavos' as fee
+    from public.order_returns where order_id = ${orderId} and id <> ${id} and status = 'refunded'`;
+  return {
+    reason: row.reason,
+    // Items only. A Return recorded before this rule may carry the Delivery fee inside its amount, so it never exceeds its own lines.
+    itemsInCentavos: Number(row.gross) > 0 ? Math.min(row.amount, Number(row.gross)) : row.amount,
+    prior: others.map(other => ({ itemsInCentavos: other.amount, deliveryFeeInCentavos: Number(other.fee ?? 0) })),
+    order: { paymentMethod: row.payment_method, fulfillmentMethod: row.fulfillment_method, subtotalInCentavos: row.subtotal,
+      approvedDiscountInCentavos: row.discount === null ? null : Number(row.discount), deliveryFeeInCentavos: row.fee,
+      totalInCentavos: row.total === null ? null : Number(row.total), codCollectedAmountInCentavos: row.cod_amount, codCollectedAt: row.cod_at },
+  };
 }
 
 /** Identity comes only from the Portal; CREOMS only reads the storefront-owned tables. */
@@ -69,6 +97,21 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
     if (decision.status === "refunded" && form instanceof FormData && [...form.keys()].some(key => /destination|account|bank|number|method/i.test(key))) {
       return { ok: false, reason: "The refund goes to the destination the Customer confirmed. It cannot be changed here; a Manager changes it first." };
     }
+    let deliveryFeeReason: string | undefined;
+    let refundItems = 0;
+    if (decision.status === "refunded") {
+      const facts = await refundFacts(id, orderId);
+      if (!facts) return { ok: false, reason: "Return was not found." };
+      const wanted = form instanceof FormData && form.get("includeDeliveryFee") === "true";
+      const typed = form instanceof FormData ? form.get("deliveryFeeReason") : null;
+      if (wanted) {
+        if (shopRole(staff.role) !== "manager") return { ok: false, reason: "Only a Manager can include the Delivery fee in a refund." };
+        deliveryFeeReason = typeof typed === "string" ? typed.trim() : "";
+      }
+      const checked = checkRefund({ ...facts, deliveryFeeReason });
+      if (!checked.ok) return { ok: false, reason: checked.error };
+      refundItems = facts.itemsInCentavos;
+    }
     if (decision.status === "approved") decision = { ...decision, finalResolution: decision.finalResolution ?? current.preferred_resolution };
     const execute = async (): Promise<ReturnChangeResult> => {
     if (decision.status === "refunded") {
@@ -80,9 +123,8 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
         if (!upload) return { ok: false, reason: "Choose exactly one refund proof screenshot." };
         const fileId = upload.fileId;
         await gatewayFileStorage.linkRefundProof(fileId, id);
-        const [paid] = await database()<{ payment_method: string }[]>`select payment_method from public.orders where id = ${orderId}`;
-        // The refund goes back the way the Customer paid; the storefront checks this against the Order.
-        decision = { status: "refunded", refundProofFileId: fileId, refundMethod: paid?.payment_method };
+        // The money goes to the destination the Customer confirmed, so no payment method travels here.
+        decision = { status: "refunded", refundProofFileId: fileId, ...(deliveryFeeReason ? { deliveryFeeReason } : {}) };
       } catch {
         return { ok: false, reason: "Refund proof could not be stored. The Return was not marked refunded." };
       }
@@ -106,7 +148,7 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       : decision.status === "declined"
         ? { ...actor, status: "declined", declineReason: decision.declineReason.trim() }
         : decision.status === "refunded"
-          ? { ...actor, status: "refunded", refundProofFileId: decision.refundProofFileId, refundMethod: decision.refundMethod }
+          ? { ...actor, status: "refunded", refundProofFileId: decision.refundProofFileId, ...(decision.deliveryFeeReason ? { deliveryFeeReason: decision.deliveryFeeReason } : {}) }
           : { ...actor, status: decision.status };
     result = await changeReturnStatus(id, update);
     if (result.ok) {
@@ -115,8 +157,11 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       await recordAudit(gatewayAuditTrail, {
         action, module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
         target: { type: "return", id: String(id), display_name: `RMA-${id}` },
-        description: `${staff.name} marked Return RMA-${id} (Order #${orderId}) ${update.status}.`,
+        description: update.status === "refunded"
+          ? `${staff.name} marked Return RMA-${id} (Order #${orderId}) refunded: items ${formatPesos(refundItems)}, Delivery fee ${update.deliveryFeeReason ? "included" : "not included"}${update.deliveryFeeReason ? ` (${update.deliveryFeeReason})` : ""}.`
+          : `${staff.name} marked Return RMA-${id} (Order #${orderId}) ${update.status}.`,
         occurred_at: new Date().toISOString(), operationId: `return:${id}:${action}`,
+        ...(update.status === "refunded" ? { metadata: { itemsInCentavos: refundItems, deliveryFeeIncluded: Boolean(update.deliveryFeeReason), ...(update.deliveryFeeReason ? { deliveryFeeReason: update.deliveryFeeReason } : {}) } } : {}),
       });
     }
     if (result.ok && update.status === "refunded") {
@@ -131,13 +176,13 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
     if (decision.status === "goods received") {
       result = await execute();
     } else {
-      // Selling price alone determines the Approval limit; delivery fees are excluded.
+      // The items alone determine the Approval limit; the Delivery fee never counts toward it.
       const [amount] = await database()`select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text as selling
         from public.order_return_items where return_id = ${id}`;
       const action = decision.status === "approved" ? "return.approve" : decision.status === "declined" ? "return.decline"
         : decision.status === "refunded" ? "return.refund" : "return.replace";
       const approved = await approvals().run(staff, { module: RETURNS_MODULE, action, targetId: String(id),
-        payload: decision.status === "refunded" ? { status: "refunded" } : { ...decision }, amountInCentavos: Number(amount.selling) }, options, execute);
+        payload: decision.status === "refunded" ? { status: "refunded", ...(deliveryFeeReason ? { deliveryFee: true } : {}) } : { ...decision }, amountInCentavos: Number(amount.selling) }, options, execute);
       if (!approved.ok) return approved;
       result = approved;
     }

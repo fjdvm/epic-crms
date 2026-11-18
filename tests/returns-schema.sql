@@ -11,6 +11,8 @@ create table order_returns (
   final_resolution text check (final_resolution in ('refund','replacement')),
   video_file_id text,
   refund_proof_file_id text,
+  refund_delivery_fee_in_centavos integer,
+  refund_delivery_fee_reason text,
   refund_method text,
   refund_account_name text,
   refund_account_number text,
