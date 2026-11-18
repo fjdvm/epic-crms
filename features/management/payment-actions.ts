@@ -43,11 +43,15 @@ async function guarded(what: string, run: (staff: Awaited<ReturnType<typeof requ
     return { ok: false, reason: `CREOMS could not ${what}. Try again in a moment.` };
   }
 }
-export const updatePaymentAccount = (id: string, input: PaymentAccountInput) =>
-  guarded("save the Payment account", (s) => editPaymentAccount(crmsDatabase(), gatewayAuditTrail, s, id, input));
-export const switchPaymentAccount = (id: string, active: boolean) =>
-  guarded("change the Payment account", (s) => setPaymentAccountActive(crmsDatabase(), gatewayAuditTrail, s, id, active));
-export const switchPaymentMethod = (method: string, enabled: boolean) =>
-  guarded("change the payment method", (s) => setPaymentMethodEnabled(crmsDatabase(), gatewayAuditTrail, s, method, enabled));
-export const removePaymentAccount = (id: string) =>
-  guarded("delete the Payment account", (s) => deletePaymentAccount(crmsDatabase(), gatewayAuditTrail, { remove: (f) => directFileStorage.remove(f) }, s, id));
+export async function updatePaymentAccount(id: string, input: PaymentAccountInput): Promise<Result> {
+  return guarded("save the Payment account", (s) => editPaymentAccount(crmsDatabase(), gatewayAuditTrail, s, id, input));
+}
+export async function switchPaymentAccount(id: string, active: boolean): Promise<Result> {
+  return guarded("change the Payment account", (s) => setPaymentAccountActive(crmsDatabase(), gatewayAuditTrail, s, id, active));
+}
+export async function switchPaymentMethod(method: string, enabled: boolean): Promise<Result> {
+  return guarded("change the payment method", (s) => setPaymentMethodEnabled(crmsDatabase(), gatewayAuditTrail, s, method, enabled));
+}
+export async function removePaymentAccount(id: string): Promise<Result> {
+  return guarded("delete the Payment account", (s) => deletePaymentAccount(crmsDatabase(), gatewayAuditTrail, { remove: (f) => directFileStorage.remove(f) }, s, id));
+}
