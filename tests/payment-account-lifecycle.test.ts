@@ -14,7 +14,8 @@ describe("Payment account lifecycle", () => {
   const audit = vi.fn(async () => {});
   const manager = { id: "m", name: "Mario", role: "CRMS Manager" };
   const events = () => audit.mock.calls.map((c) => (c as unknown as [import("@/lib/audit-trail").AuditEvent])[0]);
-  const ids = async () => (await listPaymentAccounts(db.sql)).map((a) => a.id);
+  // Ordered by label, not creation time: two accounts added in one millisecond tie on created_at and come back in random order.
+  const ids = async () => (await listPaymentAccounts(db.sql)).sort((x, y) => x.label.localeCompare(y.label)).map((a) => a.id);
   const files = { remove: vi.fn(async () => {}) };
 
   beforeAll(async () => {
