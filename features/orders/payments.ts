@@ -3,6 +3,7 @@ import { customerNameSql } from "@/lib/deleted-customer";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
 import type postgres from "postgres";
 
+import { proofAccount, type ProofAccount, type ProofAccountRow } from "./proof-account";
 import { paymentScreenshotSource } from "./payment-screenshot";
 import { isPrepaid, PREPAID_METHODS, type PaymentMethod } from "./payment-methods";
 
@@ -53,7 +54,7 @@ export interface PaymentRow {
   /** Centavos, including the Delivery fee. */
   total: number;
   /** Null for Cash on Delivery, which has no proof. */
-  proof: { reference: string | null; screenshot: string | null; submittedAt: Date } | null;
+  proof: { reference: string | null; screenshot: string | null; submittedAt: Date; account?: ProofAccount | null } | null;
   /** When the latest proof was rejected; null while it waits for a check or after a new one arrives. */
   proofRejectedAt: Date | null;
   /** Proofs rejected so far; at 3 only a Manager can approve. */
@@ -88,16 +89,17 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), set
 
   const byProof = await paymentProofChecksForOrders(sql, rows.filter(o => o.payment_proof_submitted_at !== null).map(o => o.id), settings);
   // The query orders proofs oldest first; retain only the most recent for each Order below.
-  const latestProofs = rows.length ? await sql<{ id: number; order_id: number }[]>`
-    select distinct on (order_id) id, order_id from public.order_payment_proofs
+  const latestProofs = rows.length ? await sql<({ id: number; order_id: number } & ProofAccountRow)[]>`
+    select distinct on (order_id) id, order_id, account_id, account_method, account_bank_name, account_label, account_name, account_number from public.order_payment_proofs
     where order_id in ${sql(rows.map(o => o.id))} order by order_id, submitted_at desc, id desc` : [];
   const byOrder = new Map(latestProofs.map(p => [p.order_id, byProof.get(p.id)]));
+  const accounts = new Map(latestProofs.map(p => [p.order_id, proofAccount(p)]));
   return rows.map(o => ({
     proofChecks: byOrder.get(o.id),
     id: o.id, customer: { id: o.customer_id, name: o.full_name }, method: o.payment_method, status: o.status,
     total: o.total,
     proof: o.payment_proof_submitted_at
-      ? { reference: o.gcash_reference_number, screenshot: paymentScreenshotSource(o.id, o.payment_proof_file_id, o.payment_proof_screenshot_pathname), submittedAt: o.payment_proof_submitted_at }
+      ? { reference: o.gcash_reference_number, screenshot: paymentScreenshotSource(o.id, o.payment_proof_file_id, o.payment_proof_screenshot_pathname), submittedAt: o.payment_proof_submitted_at, account: accounts.get(o.id) ?? null }
       : null,
     proofRejectedAt: o.payment_proof_rejected_at, rejections: o.payment_proof_rejections,
   }));

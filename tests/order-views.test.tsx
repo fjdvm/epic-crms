@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { proofOutcome } from "@/features/orders/proof-account";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -1060,5 +1061,41 @@ describe("Email not sent notice", () => {
     render(<OrderDetailView order={failed()} modules={ORDERS} role="admin" />);
     expect(screen.getByTestId("email-not-sent")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Resend confirmation email" })).toBeNull();
+  });
+});
+
+describe("the proof review panel", () => {
+  const account = { method: "gcash", label: "Shop GCash", bankName: null, name: "Bren Raphael", number: "09171234567" };
+  const review = (overrides: Partial<PaymentRow> = {}, role: "staff" | "manager" = "staff") => {
+    render(<PaymentsView rows={[queued(overrides)]} now={NOW} role={role} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    return screen.getByRole("dialog");
+  };
+
+  it("shows the saved account snapshot beside the proof", () => {
+    const dialog = review({ proof: { ...queued().proof!, account } });
+    const panel = within(dialog).getByRole("region", { name: "Account paid" });
+    expect(within(panel).getByText("Shop GCash")).toBeTruthy();
+    expect(within(panel).getByText("Bren Raphael")).toBeTruthy();
+    expect(within(panel).getByText("09171234567")).toBeTruthy();
+  });
+
+  it("says so when the proof has no account", () => {
+    const dialog = review();
+    expect(within(dialog).getByText("The Customer did not pick an account with this proof.")).toBeTruthy();
+  });
+
+  it("badges a waiting proof Pending and reminds Staff to verify the real transfer", () => {
+    const dialog = review();
+    expect(dialog.querySelector("[data-proof-badge]")?.textContent).toBe("Pending");
+    expect(within(dialog).getByRole("note").textContent).toContain("Verify the real transfer with the payment provider");
+  });
+});
+
+describe("the proof badge", () => {
+  it("is Verified once the Order is past awaiting payment, Rejected when turned down, Pending otherwise", () => {
+    expect(proofOutcome({ rejected: false }, "paid")).toBe("Verified");
+    expect(proofOutcome({ rejected: true }, "awaiting payment")).toBe("Rejected");
+    expect(proofOutcome({ rejected: false }, "awaiting payment")).toBe("Pending");
   });
 });
