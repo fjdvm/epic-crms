@@ -1,15 +1,14 @@
 "use client";
 
-import { useOptimistic } from "react";
+import { useOptimistic, useState } from "react";
 import Link from "next/link";
 
 import { formatDate } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
 
-import { readyToPrepare, type FulfilmentBoard, type FulfilmentOrder } from "./fulfilment";
-import { COLUMNS, RULES } from "./fulfilment-layout";
+import { ordersOnTab, TABS, type FulfilmentBoard, type FulfilmentOrder, type FulfilmentTab } from "./fulfilment";
+import { boardStatusLabel, RULES } from "./fulfilment-layout";
 import { FulfilmentMove } from "./fulfilment-moves";
-import { StatusPill } from "./status-pill";
 
 function FulfilmentCard({
   order,
@@ -27,17 +26,24 @@ function FulfilmentCard({
         <Link href={`/orders/${order.id}`} className="min-w-0 flex-1 text-sm font-semibold text-[#5b2a86]">
           #{order.id}
         </Link>
-        <StatusPill status={order.status} />
+        <span className="rounded-full bg-[#efe6f8] px-2.5 py-[3px] text-xs font-medium text-[#5b2a86]">
+          {boardStatusLabel(order.status)}
+        </span>
       </div>
       <p className="truncate text-[13px] font-medium text-[#1f1a2e]">{order.customerName}</p>
       <p className="truncate text-xs text-[#6e6680]">
         {order.lines.map((l) => `${l.product} ×${l.quantity}`).join(", ")}
       </p>
       <p className="truncate text-xs text-[#6e6680]">
-        {["delivered", "received"].includes(order.status) && order.deliveredAt
-          ? `Delivered ${formatDate(order.deliveredAt)}`
+        {["delivered", "collected", "received"].includes(order.status) && order.deliveredAt
+          ? `${order.status === "collected" || order.fulfillmentMethod === "pickup" ? "Picked up" : "Delivered"} ${formatDate(order.deliveredAt)}`
           : `${orderLabel(order.fulfillmentMethod)} · ${orderLabel(order.paymentMethod)}`}
       </p>
+      {order.failedOpen && (
+        <Link href={`/orders/${order.id}/failed-delivery`} className="text-xs font-medium text-[#b42318]">
+          Failed delivery · resolve
+        </Link>
+      )}
       {order.packedBy && <p className="truncate text-xs text-[#6e6680]">Packed by {order.packedBy.name}</p>}
       <div className="mt-1 empty:hidden">
         <FulfilmentMove
@@ -52,54 +58,52 @@ function FulfilmentCard({
 
 /** The board with one Order moved to a status, as it will be once the server confirms. */
 function moved(board: FulfilmentBoard, { id, status }: { id: number; status: "preparing" | "dispatched" }): FulfilmentBoard {
-  const all = Object.values(board).flat();
-  const order = all.find((o) => o.id === id);
-  if (!order) return board;
-  const next = all.map((o) => (o.id === id ? { ...order, status } : o));
-  return {
-    ready: next.filter(readyToPrepare),
-    preparing: next.filter((o) => o.status === "preparing"),
-    dispatched: next.filter((o) => o.status === "dispatched"),
-    delivered: next.filter((o) => ["delivered", "received"].includes(o.status)),
-  };
+  return { orders: board.orders.map((o) => (o.id === id ? { ...o, status } : o)) };
 }
 
-/** Orders move left to right; each card offers only its next move. */
+/** Tabs filter the same Orders; none of them is a status. */
 export function FulfilmentBoardView({ board: served }: { board: FulfilmentBoard }) {
   const [board, move] = useOptimistic(served, moved);
+  const [tab, setTab] = useState<FulfilmentTab>("all-active");
+  const orders = ordersOnTab(board, tab);
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {COLUMNS.map(({ key, title }) => {
-          const orders = board[key];
-          const heading = `fulfilment-${key}`;
-
+      <div role="tablist" aria-label="Fulfilment" className="flex flex-wrap gap-1">
+        {TABS.map(({ key, label }) => {
+          const active = key === tab;
           return (
-            <section
+            <button
               key={key}
-              aria-labelledby={heading}
-              className="flex flex-col gap-2.5 rounded-xl bg-[#efebf4] px-3 py-3.5 leading-[normal]"
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTab(key)}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-[7px] text-[13px] leading-[normal] ${active ? "bg-[#efe8f7] font-semibold text-[#5b2a86]" : "font-medium text-[#52525b]"}`}
             >
-              <div className="flex items-center">
-                <h2 id={heading} className="flex-1 text-sm font-semibold text-[#1f1a2e]">
-                  {title}
-                </h2>
-                <span className="text-[13px] font-medium text-[#6e6680]">{orders.length}</span>
-              </div>
-              {orders.length === 0 ? (
-                <p className="px-1 py-4 text-center text-xs text-[#6e6680]">No Orders here.</p>
-              ) : (
-                <ul className="flex flex-col gap-2.5">
-                  {orders.map((order) => (
-                    <FulfilmentCard key={order.id} order={order} onMove={(id, status) => move({ id, status })} />
-                  ))}
-                </ul>
-              )}
-            </section>
+              {label}
+              <span className={`rounded-full px-1.5 py-px text-[11px] font-semibold ${active ? "bg-[#5b2a86] text-white" : "bg-[#e4e4e7] text-[#52525b]"}`}>
+                {ordersOnTab(board, key).length}
+              </span>
+            </button>
           );
         })}
       </div>
+
+      <section role="tabpanel" aria-label={TABS.find((t) => t.key === tab)?.label} className="rounded-xl bg-[#efebf4] px-3 py-3.5 leading-[normal]">
+        {tab === "completed" || tab === "all" ? (
+          <p className="px-1 pb-2.5 text-xs text-[#6e6680]">Completed shows the last 7 days.</p>
+        ) : null}
+        {orders.length === 0 ? (
+          <p className="px-1 py-4 text-center text-xs text-[#6e6680]">No Orders here.</p>
+        ) : (
+          <ul className="grid grid-cols-[minmax(0,1fr)] gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+            {orders.map((order) => (
+              <FulfilmentCard key={order.id} order={order} onMove={(id, status) => move({ id, status })} />
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="flex flex-col gap-3.5 rounded-xl border border-[#e6e1ee] bg-white p-5 leading-[normal]">
         <h2 className="text-base font-semibold text-[#1f1a2e]">What each move does</h2>

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { getCustomerProfile } from "@/features/customer-profiles/profile";
 import { listCustomers } from "@/features/customer-profiles/customers";
 import { paymentStatusOf } from "@/features/customer-profiles/rules";
-import { loadFulfilmentBoard } from "@/features/orders/fulfilment";
+import { loadFulfilmentBoard, ordersOnTab } from "@/features/orders/fulfilment";
 import { paymentRows, summarize } from "@/features/orders/payments";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -48,8 +48,8 @@ describe('Customer Profile Total spent', () => {
     expect(payments.paid).toEqual({ count: 2, centavos: 230000 });
     expect(payments.collected).toEqual({ count: 1, centavos: 115000 });
     const board = await loadFulfilmentBoard(() => db.sql, { now });
-    expect(board.ok && board.board.delivered.map(row => row.id)).toEqual([cod, gcash]);
-    expect(board.ok && board.board.ready).toEqual([]);
+    expect(board.ok && board.board.orders.filter(row => row.status === 'received').map(row => row.id)).toEqual([cod, gcash]);
+    expect(board.ok && ordersOnTab(board.board, 'to-pack')).toEqual([]);
   });
   it.each(['requested', 'approved', 'goods received', 'replaced', 'declined', 'cancelled'])('%s Returns leave Total spent unchanged', async status => {
     const id = await order('received');
