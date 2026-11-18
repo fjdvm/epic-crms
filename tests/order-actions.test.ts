@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, confirmPickup as realConfirm, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
-  resendConfirmationEmail, loadPackingSlip, startPreparing, dispatchOrder, updateDispatchRecord, deliverOrder, markReadyForPickup, markPickedUp, getFulfilmentBoard, reconcileDeliveryPhoto,
+  resendStatusEmail, loadPackingSlip, startPreparing, dispatchOrder, updateDispatchRecord, deliverOrder, markReadyForPickup, markPickedUp, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { loadDispatchRecord } from "@/features/orders/dispatch-record-read";
@@ -977,49 +977,95 @@ describe("Fulfilment Audit Events", () => {
   });
 });
 
-describe("resendConfirmationEmail", () => {
-  async function failedEmail(reason = "mailbox full") {
+describe("resendStatusEmail", () => {
+  async function failedEmail(kind = "confirmation", reason = "mailbox full", occurrence: string | null = null) {
     const id = await order("delivery", "confirmed");
-    await db.sql`insert into order_email_outcomes (order_id, kind, status, reason) values (${id}, 'confirmation', 'failed', ${reason})`;
+    await db.sql`insert into order_email_outcomes (order_id, kind, occurrence, status, reason) values (${id}, ${kind}, ${occurrence}, 'failed', ${reason})`;
     return id;
   }
-  const outcome = async (id: number) => (await db.sql`select status, reason from order_email_outcomes where order_id = ${id}`)[0];
+  const outcomes = async (id: number) => await db.sql`select kind, occurrence, status, reason from order_email_outcomes where order_id = ${id} order by occurrence nulls first`;
+  const asRole = (role: string) => vi.mocked(requireModule).mockResolvedValue({ id: "z", username: "z", name: "Zed", email: "z@example.com", role } as never);
 
   it("resends, clears the failure and audits the person's name", async () => {
     const id = await failedEmail();
-    expect(await resendConfirmationEmail(id)).toEqual({ ok: true });
-    expect(await outcome(id)).toMatchObject({ status: "sent", reason: null });
-    expect(storefront.resentEmails).toEqual([{ orderId: id, kind: "confirmation", staffName: "Ana" }]);
+    expect(await resendStatusEmail(id, "confirmation")).toEqual({ ok: true });
+    expect((await outcomes(id))[0]).toMatchObject({ status: "sent", reason: null });
+    expect(storefront.resentEmails).toEqual([{ orderId: id, kind: "confirmation", occurrence: null, staffName: "Ana" }]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.email_resent", description: expect.stringContaining("Ana") }));
-    expect((await loadOrder(() => db.sql, id) as { order: { emailFailure: unknown } }).order.emailFailure).toBeNull();
+    expect((await loadOrder(() => db.sql, id) as { order: { emailFailures: unknown } }).order.emailFailures).toEqual([]);
   });
 
-  it("shows the failure reason without an email address", async () => {
-    const id = await failedEmail("rejected maria@example.com");
+  it("lists every failed Status email with its reason and no email address", async () => {
+    const id = await failedEmail("paid", "rejected maria@example.com");
+    await db.sql`insert into order_email_outcomes (order_id, kind, status, reason) values (${id}, 'dispatched', 'sent', null), (${id}, 'preparing', 'retrying', 'later')`;
     const result = await loadOrder(() => db.sql, id);
-    expect(result.ok && result.order?.emailFailure).toEqual({ reason: "rejected [email removed]" });
+    expect(result.ok && result.order?.emailFailures).toEqual([{ kind: "paid", occurrence: null, reason: "rejected [email removed]" }]);
+  });
+
+  it("resends one rejection without touching the other", async () => {
+    const id = await failedEmail("rejected", "bounced", "1");
+    await db.sql`insert into order_email_outcomes (order_id, kind, occurrence, status, reason) values (${id}, 'rejected', '2', 'failed', 'bounced again')`;
+    expect(await resendStatusEmail(id, "rejected", "2")).toEqual({ ok: true });
+    expect((await outcomes(id)).map((o) => [o.occurrence, o.status])).toEqual([["1", "failed"], ["2", "sent"]]);
+    expect(storefront.resentEmails).toEqual([{ orderId: id, kind: "rejected", occurrence: "2", staffName: "Ana" }]);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ kind: "rejected", occurrence: "2" }) }));
+  });
+
+  it("sends nothing when Notification already accepted it, and still clears the notice and audits", async () => {
+    const id = await failedEmail("dispatched");
+    storefront.acceptedEmails.add("dispatched");
+    expect(await resendStatusEmail(id, "dispatched")).toEqual({ ok: true });
+    expect(storefront.resentEmails).toEqual([]);
+    expect((await outcomes(id))[0].status).toBe("sent");
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ reconciled: true }) }));
+  });
+
+  it("a second Resend of the same event is refused and sends nothing more", async () => {
+    const id = await failedEmail();
+    await resendStatusEmail(id, "confirmation");
+    expect((await resendStatusEmail(id, "confirmation")).ok).toBe(false);
+    expect(storefront.resentEmails).toHaveLength(1);
+    expect(audit).toHaveBeenCalledTimes(1);
   });
 
   it("refuses when the storefront refuses, keeping the failure and writing no audit", async () => {
     const id = await failedEmail();
     storefront.refusal = "Resend is not available right now.";
-    expect(await resendConfirmationEmail(id)).toEqual({ ok: false, reason: "Resend is not available right now." });
-    expect((await outcome(id)).status).toBe("failed");
+    expect(await resendStatusEmail(id, "confirmation")).toEqual({ ok: false, reason: "Resend is not available right now." });
+    expect((await outcomes(id))[0].status).toBe("failed");
     expect(audit).not.toHaveBeenCalled();
   });
 
-  it("refuses an email that is not failed, without calling the storefront", async () => {
+  it("refuses an email that is not failed, or the wrong occurrence, without calling the storefront", async () => {
     const id = await order("delivery", "confirmed");
     await db.sql`insert into order_email_outcomes (order_id, kind, status) values (${id}, 'confirmation', 'sent')`;
-    expect((await resendConfirmationEmail(id)).ok).toBe(false);
+    expect((await resendStatusEmail(id, "confirmation")).ok).toBe(false);
+    const other = await failedEmail("rejected", "bounced", "1");
+    expect((await resendStatusEmail(other, "rejected", "2")).ok).toBe(false);
+    expect((await resendStatusEmail(other, "rejected")).ok).toBe(false);
     expect(storefront.resentEmails).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
 
+  it("refuses an unknown email or a malformed occurrence", async () => {
+    const id = await failedEmail();
+    expect(await resendStatusEmail(id, "refund")).toEqual({ ok: false, reason: "Unknown email." });
+    expect(await resendStatusEmail(id, "confirmation", "1; drop table")).toEqual({ ok: false, reason: "Unknown email." });
+    expect(storefront.resentEmails).toEqual([]);
+  });
+
+  it("asks for the email's owning Module", async () => {
+    const id = await failedEmail("expired");
+    await resendStatusEmail(id, "expired");
+    expect(requireModule).toHaveBeenLastCalledWith("Payments");
+    await resendStatusEmail(id, "preparing");
+    expect(requireModule).toHaveBeenLastCalledWith("Fulfilment");
+  });
+
   it("refuses Admin and the CEO", async () => {
     const id = await failedEmail();
-    vi.mocked(requireModule).mockResolvedValue({ id: "z", username: "z", name: "Zed", email: "z@example.com", role: "CEO" });
-    expect(await resendConfirmationEmail(id)).toEqual({ ok: false, reason: expect.stringContaining("view") });
+    asRole("CEO");
+    expect(await resendStatusEmail(id, "confirmation")).toEqual({ ok: false, reason: expect.stringContaining("view") });
     expect(storefront.resentEmails).toEqual([]);
   });
 });

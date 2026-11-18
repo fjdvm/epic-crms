@@ -13,7 +13,9 @@ export class FakeStorefront {
   packedEvents: { action: string; actor: { id: string; name: string }; at: string }[] = [];
   /** Courier bookings the fake storefront has recorded, by Order id. */
   couriers = new Map<number, Record<string, string>>();
-  resentEmails: { orderId: number; kind: string; staffName: string }[] = [];
+  resentEmails: { orderId: number; kind: string; occurrence: string | null; staffName: string }[] = [];
+  /** Emails (`kind` or `kind:occurrence`) Notification already accepted: a resend reconciles them and sends nothing. */
+  acceptedEmails = new Set<string>();
   /** Re-upload emails the fake storefront sent, one per rejection. */
   reuploadEmails: { orderId: number; reason: string; link: string }[] = [];
 
@@ -441,11 +443,13 @@ export class FakeStorefront {
     if (resend && request.method === "POST") {
       if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
       const id = Number(resend[1]), body = await request.json();
-      const [outcome] = await this.sql`select status from order_email_outcomes where order_id = ${id} and kind = ${body.kind}`;
+      const occurrence: string | null = body.occurrence ?? null;
+      const [outcome] = await this.sql`select status from order_email_outcomes where order_id = ${id} and kind = ${body.kind} and coalesce(occurrence, '') = ${occurrence ?? ""}`;
       if (outcome?.status !== "failed") return Response.json({ error: "That email is not marked as failed." }, { status: 409 });
-      await this.sql`update order_email_outcomes set status = 'sent', reason = null, updated_at = now() where order_id = ${id} and kind = ${body.kind}`;
-      this.resentEmails.push({ orderId: id, kind: body.kind, staffName: body.staffName });
-      return Response.json({ id, kind: body.kind, status: "sent" });
+      await this.sql`update order_email_outcomes set status = 'sent', reason = null, updated_at = now() where order_id = ${id} and kind = ${body.kind} and coalesce(occurrence, '') = ${occurrence ?? ""}`;
+      const accepted = this.acceptedEmails.has(occurrence ? `${body.kind}:${occurrence}` : body.kind);
+      if (!accepted) this.resentEmails.push({ orderId: id, kind: body.kind, occurrence, staffName: body.staffName });
+      return Response.json({ id, kind: body.kind, occurrence, status: accepted ? "reconciled" : "sent" });
     }
     const reject = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/payment-proof\/reject$/);
     if (reject && request.method === "POST") return this.rejectProof(request, Number(reject[1]));

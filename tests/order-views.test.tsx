@@ -3,7 +3,7 @@ import { proofOutcome } from "@/features/orders/proof-account";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee, rejectPaymentProof, resendConfirmationEmail } from "@/features/orders/actions";
+import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee, rejectPaymentProof, resendStatusEmail } from "@/features/orders/actions";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
@@ -20,7 +20,7 @@ vi.mock("@/features/orders/actions", () => ({
   cancelPaymentOrder: vi.fn(),
   markPaid: vi.fn(),
   rejectPaymentProof: vi.fn(),
-  resendConfirmationEmail: vi.fn(),
+  resendStatusEmail: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
@@ -1055,7 +1055,8 @@ describe("payment proof history, reject, ask for a new proof and approve anyway"
 });
 
 describe("Email not sent notice", () => {
-  const failed = () => detail({ emailFailure: { reason: "mailbox full" } });
+  const failed = (...extra: { kind: string; occurrence?: string | null; reason: string }[]) =>
+    detail({ emailFailures: [{ kind: "confirmation", occurrence: null, reason: "mailbox full" }, ...extra.map((e) => ({ occurrence: null, ...e }))] as never });
   const ORDERS = ["Orders"];
 
   it("shows only on a failed outcome, with the reason", () => {
@@ -1067,21 +1068,43 @@ describe("Email not sent notice", () => {
   });
 
   it("confirms first, then resends and reports success", async () => {
-    vi.mocked(resendConfirmationEmail).mockResolvedValue({ ok: true });
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: true });
     render(<OrderDetailView order={failed()} modules={ORDERS} role="manager" />);
     fireEvent.click(screen.getByRole("button", { name: "Resend confirmation email" }));
-    expect(resendConfirmationEmail).not.toHaveBeenCalled();
+    expect(resendStatusEmail).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
-    await waitFor(() => expect(resendConfirmationEmail).toHaveBeenCalledWith(1042));
+    await waitFor(() => expect(resendStatusEmail).toHaveBeenCalledWith(1042, "confirmation", null));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Confirmation email sent."));
   });
 
   it("says why when the server refuses", async () => {
-    vi.mocked(resendConfirmationEmail).mockResolvedValue({ ok: false, reason: "Resend is not available right now." });
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: false, reason: "Resend is not available right now." });
     render(<OrderDetailView order={failed()} modules={ORDERS} role="staff" />);
     fireEvent.click(screen.getByRole("button", { name: "Resend confirmation email" }));
     fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Resend is not available right now."));
+  });
+
+  it("shows each failed email with its own Resend, passing the occurrence", async () => {
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: true });
+    const order = detail({ emailFailures: [
+      { kind: "rejected", occurrence: "1", reason: "first bounce" }, { kind: "rejected", occurrence: "2", reason: "second bounce" },
+    ] as never });
+    render(<OrderDetailView order={order} modules={["Payments"]} role="staff" />);
+    expect(screen.getByText(/first bounce/)).toBeTruthy();
+    expect(screen.getByText(/second bounce/)).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Resend payment rejected email" })[1]);
+    fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(resendStatusEmail).toHaveBeenCalledWith(1042, "rejected", "2"));
+  });
+
+  it("shows an email only to people holding its owning Module", () => {
+    render(<OrderDetailView order={failed({ kind: "dispatched", reason: "bounced" })} modules={ORDERS} role="staff" />);
+    expect(screen.getByRole("button", { name: "Resend confirmation email" })).toBeTruthy();
+    expect(screen.queryByText(/bounced/)).toBeNull();
+    cleanup();
+    render(<OrderDetailView order={failed({ kind: "dispatched", reason: "bounced" })} modules={["Orders", "Fulfilment"]} role="staff" />);
+    expect(screen.getByRole("button", { name: "Resend Out for delivery email" })).toBeTruthy();
   });
 
   it("is read-only for Admin and the CEO", () => {

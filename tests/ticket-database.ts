@@ -106,11 +106,12 @@ const SCHEMA = `
   create table order_email_outcomes (
     order_id integer not null references orders (id) on delete cascade,
     kind text not null,
+    occurrence text,
     status text not null,
     reason text,
-    updated_at timestamptz not null default now(),
-    primary key (order_id, kind)
+    updated_at timestamptz not null default now()
   );
+  create unique index order_email_outcomes_event on order_email_outcomes (order_id, kind, coalesce(occurrence, ''));
   create table order_delivery_addresses (
     order_id integer primary key references orders (id) on delete cascade,
     label text not null default 'Home',

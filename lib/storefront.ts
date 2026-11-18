@@ -55,8 +55,12 @@ export async function cancelStorefrontItems(id: number, lineIds: number[], staff
   return orderRequest(id, { lineIds, staffId: staff.id, staffName: staff.name, expectedStatus }, "items/cancel");
 }
 
-/** The storefront resends under the email's stable id, so asking twice never sends two; CREOMS only says who asked. */
-export async function resendOrderEmail(id: number, kind: "confirmation", staff: { id: string; name: string }): Promise<{ ok: true } | { ok: false; reason: string }> {
+/**
+ * The storefront resends under the email's stable id, so asking twice never sends two, and first reconciles the
+ * delivery status when Notification already accepted it (then it answers "reconciled" and sends nothing).
+ * CREOMS only says who asked and which occurrence.
+ */
+export async function resendOrderEmail(id: number, email: { kind: string; occurrence: string | null }, staff: { id: string; name: string }): Promise<{ ok: true; reconciled: boolean } | { ok: false; reason: string }> {
   const origin = process.env.CREOMS_STOREFRONT_URL;
   const secret = process.env.CREOMS_SERVICE_SECRET;
   if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
@@ -65,13 +69,13 @@ export async function resendOrderEmail(id: number, kind: "confirmation", staff: 
     const response = await fetch(new URL(`/api/internal/orders/${id}/email/resend`, origin), {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret)}` },
-      body: JSON.stringify({ kind, staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify({ kind: email.kind, occurrence: email.occurrence, staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
     });
     const body = await response.json();
     if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the resend." };
-    if (body?.id !== id || body.kind !== kind) return { ok: false, reason: uncertain };
-    if (body.status !== "sent") return { ok: false, reason: "The email could not be sent again. Try again later." };
-    return { ok: true };
+    if (body?.id !== id || body.kind !== email.kind || (body.occurrence ?? null) !== email.occurrence) return { ok: false, reason: uncertain };
+    if (body.status !== "sent" && body.status !== "reconciled") return { ok: false, reason: "The email could not be sent again. Try again later." };
+    return { ok: true, reconciled: body.status === "reconciled" };
   } catch {
     return { ok: false, reason: uncertain };
   }

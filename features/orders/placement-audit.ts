@@ -2,7 +2,7 @@ import type { AuditEvent, AuditTrail } from "@/lib/audit-trail";
 import { ORDERS_MODULE } from "@/lib/portal/config";
 
 export interface PlacedOrderRow { id: number; created_at: Date }
-export interface EmailOutcomeRow { order_id: number; kind: string; status: "sent" | "failed" | (string & {}); reason: string | null; updated_at: Date }
+export interface EmailOutcomeRow { order_id: number; kind: string; occurrence?: string | null; status: "sent" | "failed" | (string & {}); reason: string | null; updated_at: Date }
 
 const ACTOR: AuditEvent["actor"] = { type: "process", id: "creoms", display_name: "CREOMS" };
 const REASON_MAX = 200;
@@ -33,8 +33,8 @@ export function emailEvent(row: EmailOutcomeRow): AuditEvent | null {
     module: ORDERS_MODULE, action: failed ? "order.email_failed" : "order.email_sent", outcome: failed ? "failure" : "success",
     actor: ACTOR, target: target(row.order_id),
     description: `The ${row.kind} email for Order #${row.order_id} ${failed ? `failed: ${reason}` : "was sent."}`,
-    metadata: { kind: row.kind, ...(reason ? { reason } : {}) },
-    occurred_at: row.updated_at.toISOString(), operationId: `order:${row.order_id}:email:${row.kind}:${row.status}`,
+    metadata: { kind: row.kind, ...(row.occurrence ? { occurrence: row.occurrence } : {}), ...(reason ? { reason } : {}) },
+    occurred_at: row.updated_at.toISOString(), operationId: `order:${row.order_id}:email:${row.kind}${row.occurrence ? `:${row.occurrence}` : ""}:${row.status}`,
   };
 }
 
