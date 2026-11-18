@@ -1,3 +1,4 @@
+import { PaymentAccountQr } from "./payment-account-qr";
 import { methodLabel } from "./payment-account-format";
 import type { PaymentAccountRow } from "./payment-accounts";
 
@@ -17,7 +18,10 @@ export function PaymentAccountList({ accounts, failed }: { accounts: PaymentAcco
                 <p className="font-medium text-[#1f1a2e]">{a.label}</p>
                 <p className="text-[#6e6680]">{methodLabel(a.method)}{a.bankName ? ` · ${a.bankName}` : ""} · {a.accountName} · {a.maskedNumber}</p>
               </div>
-              <span className="text-xs text-[#6e6680]">{a.active ? "Active" : "Inactive"}</span>
+              <div className="flex items-start gap-4">
+                <PaymentAccountQr accountId={a.id} label={a.label} hasQr={a.hasQr} />
+                <span className="text-xs text-[#6e6680]">{a.active ? "Active" : "Inactive"}</span>
+              </div>
             </li>
           ))}
         </ul>
