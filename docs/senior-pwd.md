@@ -42,6 +42,10 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
   the foundation node. Never optimistic: the Customer is emailed.
 - Order detail's Customer card shows Senior/PWD status ("Not verified" by default) and, for an approved Pickup,
   a reminder to see the original ID at collection.
+- Order detail (#571) shows a "Senior/PWD discount" card only when the Order has an approved discount: the discount,
+  "₱X of ₱125.00" weekly allowance used, and the reduction reason when the cap cut it. CREOMS reads two optional
+  `public.orders` columns the storefront saves at confirmation: `senior_pwd_allowance_used_in_centavos` (this ID's week
+  total including this Order) and `discount_reduction_reason`. Missing columns show "Not reported yet". No ID number.
 - The checkout step (photo front/back, number) is Storefront work in the Ecommerce repo, not CREOMS.
 
 ## ID reading in the review screen (#476)

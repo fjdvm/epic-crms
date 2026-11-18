@@ -9,6 +9,8 @@ import { readCustomers, syncNewCustomers, type SyncResult } from "./notification
 import { syncTicketEvents } from "./ticket-events";
 import { syncFeedbackEvents } from "./feedback-events";
 import { syncOrderEvents } from "./order-events";
+import { syncOrderAudit } from "@/features/orders/placement-audit";
+import { deliverGatewayAuditEvent } from "@/lib/gateway";
 import { fetchReturnPhoto } from "@/features/returns/photo-bytes";
 import { fingerprintReturnPhotos } from "@/features/returns/return-flags";
 import { syncReturnEvents } from "./return-events";
@@ -20,7 +22,7 @@ export async function fingerprintNewReturnPhotos(writer: postgres.Sql, reader: p
   await fingerprintReturnPhotos(reader, writer, fetchReturnPhoto, undefined, 10)
     .catch((error) => console.error("Return photo fingerprinting failed", error));
 }
-export type SyncBatch = Record<"customers" | "tickets" | "feedback" | "orders" | "returns" | "cancellations", SyncResult | { error: string }>;
+export type SyncBatch = Record<"customers" | "tickets" | "feedback" | "orders" | "returns" | "cancellations" | "orderAudit", SyncResult | { error: string }>;
 
 /** The poll, scheduler and signal use the same truth and ledgers. Each feed fails independently. */
 export async function syncNotifications({ writer = crmsDatabase, reader = database, tickets = ticketsDatabase, copies = true }: {
@@ -36,6 +38,18 @@ export async function syncNotifications({ writer = crmsDatabase, reader = databa
     tickets: await attempt("Ticket", () => syncTicketEvents(writer(), tickets())),
     feedback: await attempt("Feedback", () => syncFeedbackEvents(writer(), tickets())),
     orders: await attempt("Order", () => syncOrderEvents(writer(), tickets())),
+    orderAudit: await attempt("Order audit", async () => {
+      await syncOrderAudit({
+        orders: () => reader()`select id, created_at from public.orders`,
+        outcomes: () => reader()`select order_id, kind, status, reason, updated_at from public.order_email_outcomes`,
+        delivered: async (ids) => new Set((await writer()<{ operation_id: string }[]>`
+          select operation_id from crms.seen_order_audit_events where operation_id = any(${ids}::text[])`).map((r) => r.operation_id)),
+        markDelivered: async (id) => { await writer()`insert into crms.seen_order_audit_events (operation_id) values (${id}) on conflict do nothing`; },
+        deliver: deliverGatewayAuditEvent,
+      });
+      // Audit deliveries are not Staff notifications, so they never count as created.
+      return { baselined: false, created: 0 };
+    }),
     returns: await attempt("Return", async () => {
       const result = await syncReturnEvents(writer(), reader());
       await fingerprintNewReturnPhotos(writer(), reader());

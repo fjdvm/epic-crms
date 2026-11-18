@@ -7,7 +7,7 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "ticket-escalated" | "ticket-sent-back" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "return-requested";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "ticket-escalated" | "ticket-sent-back" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "order-overdue" | "return-requested";
 
 /** What a Reassign alert says. `side` is whether the reader was the previous or the new Claimer. */
 export interface ReassignDetail {
@@ -67,6 +67,8 @@ export interface Viewer {
   orders: boolean;
   payments: boolean;
   returns: boolean;
+  /** A Manager: alerts for Orders left unconfirmed past the limit go to Managers with the Orders Module only. */
+  manager?: boolean;
 }
 
 const NEW_CUSTOMER_VIEWER: Viewer = { customerProfiles: true, ticketsStaffId: null, feedback: false, orders: false, payments: false, returns: false };
@@ -78,6 +80,7 @@ export function visibleTo(sql: postgres.Sql | postgres.TransactionSql, viewer: V
     or (kind = 'feedback-low' and ${viewer.feedback})
     or (kind in ('order-delivery-fee', 'order-placed', 'order-free-delivery') and ${viewer.orders})
     or (kind = 'order-payment-proof' and ${viewer.payments})
+    or (kind = 'order-overdue' and ${viewer.orders && viewer.manager === true})
     or (kind = 'return-requested' and ${viewer.returns})
     or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned', 'ticket-escalated', 'ticket-sent-back') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))

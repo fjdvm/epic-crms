@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, confirmPickup, loadPaymentQueue, markPaid, quoteDeliveryFee,
-  loadPackingSlip, startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
+  cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, confirmPickup as realConfirm, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
+  resendConfirmationEmail, loadPackingSlip, startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
@@ -34,6 +34,14 @@ vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: vi.fn(() => db.sql) }));
 let db: TestDatabase;
+
+/** The total Staff would have seen on screen: what the database holds for the Order. */
+async function shownTotal(id: number, fee: number) {
+  const [row] = Number.isSafeInteger(id) ? await db.sql`select subtotal_in_centavos as s, coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as d from orders o where id = ${id}` : [];
+  return row ? row.s - row.d + fee : 0;
+}
+const quoteDeliveryFee = async (id: number, fee: number, choice?: Parameters<typeof realQuote>[3]) => realQuote(id, fee, await shownTotal(id, fee), choice);
+const confirmPickup = async (id: number, choice?: Parameters<typeof realConfirm>[2]) => realConfirm(id, await shownTotal(id, 0), choice);
 let storefront: FakeStorefront;
 beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
 afterAll(async () => { await db.close(); });
@@ -121,10 +129,45 @@ describe("Order actions", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 
-  it("refuses a quote on Free delivery, including a legacy placed Order", async () => {
+  it("accepts a ₱0 Delivery fee on any subtotal and audits it as free delivery", async () => {
     const id = await order();
     await db.sql`update orders set subtotal_in_centavos = 250001 where id = ${id}`;
-    expect(await quoteDeliveryFee(id, 100)).toEqual({ ok: false, reason: "Free delivery applies to this Order. No Delivery fee quote is needed." });
+    expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: true, order: { status: "confirmed", deliveryFeeInCentavos: 0 } });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.confirmed", description: expect.stringContaining("free delivery") }));
+  });
+
+  it("quotes a Delivery fee on a subtotal over ₱2,500 instead of refusing", async () => {
+    const id = await order();
+    await db.sql`update orders set subtotal_in_centavos = 300000 where id = ${id}`;
+    expect(await quoteDeliveryFee(id, 15000)).toMatchObject({ ok: true, order: { deliveryFeeInCentavos: 15000 } });
+  });
+
+  it("refuses a confirmation whose total no longer matches and saves nothing", async () => {
+    const pickup = await order("pickup");
+    await db.sql`update orders set subtotal_in_centavos = 100000 where id = ${pickup}`;
+    expect(await realConfirm(pickup, 90_000)).toMatchObject({ ok: false, reason: expect.stringContaining("The total is now ₱1000.00") });
+    const delivery = await order();
+    await db.sql`update orders set subtotal_in_centavos = 100000 where id = ${delivery}`;
+    expect(await realQuote(delivery, 15_000, 100_000)).toMatchObject({ ok: false, reason: expect.stringContaining("₱1150.00") });
+    expect(storefront.requests).toBe(0);
+    expect(audit).not.toHaveBeenCalled();
+    expect(await db.sql`select status from orders where id in ${db.sql([pickup, delivery])}`).toEqual([{ status: "placed" }, { status: "placed" }]);
+  });
+
+  it("confirms with subtotal, discount, fee and total, and audits order.confirmed with the amounts and Staff", async () => {
+    const id = await order();
+    await db.sql`update orders set subtotal_in_centavos = 100000 where id = ${id}`;
+    expect(await realQuote(id, 15_000, 115_000)).toMatchObject({ ok: true, order: { status: "confirmed", deliveryFeeInCentavos: 15_000 } });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "order.confirmed", actor: { type: "user", id: "ana", display_name: "Ana" },
+      metadata: { subtotal_in_centavos: 100000, discount_in_centavos: 0, delivery_fee_in_centavos: 15_000, total_in_centavos: 115_000 },
+    }));
+    expect(await realQuote(id, 15_000, 115_000)).toMatchObject({ ok: false, reason: expect.stringMatching(/already changed/) });
+  });
+
+  it("refuses a Delivery fee quote on a Pickup Order", async () => {
+    const id = await order("pickup");
+    expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: false });
     expect(storefront.requests).toBe(0);
   });
 
@@ -712,7 +755,7 @@ describe("Payments Module access", () => {
 
 describe("Order and Payment Audit Events", () => {
   const cases = [
-    { action: "order.delivery_fee_quoted", module: "Orders", method: "delivery", status: "placed", run: (id: number) => quoteDeliveryFee(id, 15000), description: "Ana quoted a Delivery fee of ₱150.00 and confirmed Order #" },
+    { action: "order.confirmed", module: "Orders", method: "delivery", status: "placed", run: (id: number) => quoteDeliveryFee(id, 15000), description: "Ana quoted a Delivery fee of ₱150.00 and confirmed Order #" },
     { action: "order.confirmed", module: "Orders", method: "pickup", status: "placed", run: confirmPickup, description: "Ana confirmed Order #" },
     { action: "order.cancelled", module: "Orders", method: "delivery", status: "confirmed", run: cancelOrder, description: "Ana cancelled Order #" },
     { action: "order.cancelled", module: "Payments", method: "delivery", status: "awaiting payment", run: cancelPaymentOrder, description: "Ana cancelled Order #" },
@@ -733,6 +776,7 @@ describe("Order and Payment Audit Events", () => {
       target: { type: "order", id: String(id), display_name: `Order #${id}` },
       description: `${test.description}${id}${test.action === "payment.marked_paid" ? " paid" : ""}.`,
       occurred_at: expect.any(String), operationId: `order:${id}:${test.action}`,
+      ...(test.action === "order.confirmed" ? { metadata: expect.objectContaining({ total_in_centavos: expect.any(Number) }) } : {}),
     });
     expect((await test.run(id)).ok).toBe(false);
     expect(audit).toHaveBeenCalledTimes(1);
@@ -816,5 +860,52 @@ describe("Fulfilment Audit Events", () => {
     expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
     expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
     expect(audit).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("resendConfirmationEmail", () => {
+  async function failedEmail(reason = "mailbox full") {
+    const id = await order("delivery", "confirmed");
+    await db.sql`insert into order_email_outcomes (order_id, kind, status, reason) values (${id}, 'confirmation', 'failed', ${reason})`;
+    return id;
+  }
+  const outcome = async (id: number) => (await db.sql`select status, reason from order_email_outcomes where order_id = ${id}`)[0];
+
+  it("resends, clears the failure and audits the person's name", async () => {
+    const id = await failedEmail();
+    expect(await resendConfirmationEmail(id)).toEqual({ ok: true });
+    expect(await outcome(id)).toMatchObject({ status: "sent", reason: null });
+    expect(storefront.resentEmails).toEqual([{ orderId: id, kind: "confirmation", staffName: "Ana" }]);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.email_resent", description: expect.stringContaining("Ana") }));
+    expect((await loadOrder(() => db.sql, id) as { order: { emailFailure: unknown } }).order.emailFailure).toBeNull();
+  });
+
+  it("shows the failure reason without an email address", async () => {
+    const id = await failedEmail("rejected maria@example.com");
+    const result = await loadOrder(() => db.sql, id);
+    expect(result.ok && result.order?.emailFailure).toEqual({ reason: "rejected [email removed]" });
+  });
+
+  it("refuses when the storefront refuses, keeping the failure and writing no audit", async () => {
+    const id = await failedEmail();
+    storefront.refusal = "Resend is not available right now.";
+    expect(await resendConfirmationEmail(id)).toEqual({ ok: false, reason: "Resend is not available right now." });
+    expect((await outcome(id)).status).toBe("failed");
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("refuses an email that is not failed, without calling the storefront", async () => {
+    const id = await order("delivery", "confirmed");
+    await db.sql`insert into order_email_outcomes (order_id, kind, status) values (${id}, 'confirmation', 'sent')`;
+    expect((await resendConfirmationEmail(id)).ok).toBe(false);
+    expect(storefront.resentEmails).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("refuses Admin and the CEO", async () => {
+    const id = await failedEmail();
+    vi.mocked(requireModule).mockResolvedValue({ id: "z", username: "z", name: "Zed", email: "z@example.com", role: "CEO" });
+    expect(await resendConfirmationEmail(id)).toEqual({ ok: false, reason: expect.stringContaining("view") });
+    expect(storefront.resentEmails).toEqual([]);
   });
 });

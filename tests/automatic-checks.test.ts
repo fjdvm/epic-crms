@@ -47,7 +47,7 @@ describe("defaults", () => {
       returns: { frequentReturns: { enabled: true, count: 3, days: 90 }, reusedPhoto: { enabled: true } },
       dashboard: {
         unverifiedPayments: { enabled: true, count: 5, waitHours: 24 }, returnSpike: { enabled: true, count: 3, days: 7 },
-        unresolvedFailedDeliveries: { enabled: true, count: 3 },
+        unresolvedFailedDeliveries: { enabled: true, count: 3 }, unconfirmedOrders: { enabled: true, hours: 48 },
       },
     });
   });

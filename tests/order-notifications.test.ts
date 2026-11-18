@@ -237,3 +237,67 @@ it.each([
   expect(feed.unread).toBe(1);
   expect((await listNotifications(db.sql, "crms", 20, viewerFor(staff, ['/payments'])!)).unread).toBe(0);
 });
+
+describe("Overdue Order alerts", () => {
+  const managers = () => ({ ...viewerFor({ username: "mia", role: "CREOMS Manager" }, ["/orders"])! });
+  const setHours = async (settings: unknown) => {
+    await db.sql`insert into crms.automatic_checks (singleton, settings) values (true, ${db.sql.json(settings as never)})
+      on conflict (singleton) do update set settings = excluded.settings`;
+  };
+  const placedAgo = async (hours: number, status = "placed") => {
+    const [row] = await db.sql<{ id: number }[]>`insert into orders (customer_id, status, created_at)
+      values ('c1', ${status}, now() - ${hours} * interval '1 hour') returning id`;
+    return row.id;
+  };
+  const overdue = async (viewer = managers()) => (await listNotifications(db.sql, "crms", 50, viewer)).notifications.filter((n) => n.kind === "order-overdue");
+
+  beforeAll(async () => {
+    await db.sql.unsafe(readFileSync("docs/db/crms-automatic-checks.sql", "utf8"));
+    await db.sql.unsafe(readFileSync("docs/db/crms-order-overdue.sql", "utf8"));
+  });
+  beforeEach(async () => { await db.sql`truncate crms.automatic_checks`; });
+
+  it("alerts Managers once when an Order passes 48 hours unconfirmed, with a link to the Order", async () => {
+    await sync();
+    const id = await placedAgo(49);
+    await sync();
+    await sync();
+    const alerts = await overdue();
+    expect(alerts).toHaveLength(1);
+    expect(describeNotification(alerts[0])).toEqual({ text: `Order #${id} from Jane Doe is Overdue to confirm`, href: `/orders/${id}` });
+  });
+
+  it("raises nothing inside the limit, and nothing for an Order that was confirmed", async () => {
+    await sync();
+    await placedAgo(47);
+    await placedAgo(100, "confirmed");
+    await sync();
+    expect(await overdue()).toHaveLength(0);
+  });
+
+  it("goes only to Managers with the Orders Module, never to Staff", async () => {
+    await sync();
+    await placedAgo(60);
+    await sync();
+    expect(await overdue(viewerFor({ username: "ada", role: "Staff" }, ["/orders"])!)).toHaveLength(0);
+    expect(await overdue(viewerFor({ username: "mia", role: "CREOMS Manager" }, ["/payments"])!)).toHaveLength(0);
+    expect(await overdue()).toHaveLength(1);
+  });
+
+  it("follows the Admin's limit: a lower limit alerts newly overdue Orders once, and off alerts none", async () => {
+    await sync();
+    await placedAgo(30);
+    await sync();
+    expect(await overdue()).toHaveLength(0);
+    await setHours({ dashboard: { unconfirmedOrders: { enabled: true, hours: 24 } } });
+    await sync();
+    await sync();
+    expect(await overdue()).toHaveLength(1);
+
+    await db.sql`truncate crms.notifications, crms.seen_order_events restart identity cascade`;
+    await setHours({ dashboard: { unconfirmedOrders: { enabled: false, hours: 24 } } });
+    await placedAgo(99);
+    await sync();
+    expect(await overdue()).toHaveLength(0);
+  });
+});

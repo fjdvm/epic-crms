@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { confirmPickup, quoteDeliveryFee } from "@/features/orders/actions";
+import { confirmPickup as realConfirm, quoteDeliveryFee as realQuote } from "@/features/orders/actions";
 import { approveVerification, declineVerification, loadVerificationPhoto, loadVerifications, overrideVerification, revokeVerification } from "@/features/senior-pwd/actions";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
@@ -19,6 +19,14 @@ vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }))
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
 let db: TestDatabase;
+
+/** The total Staff would have seen on screen: what the database holds for the Order. */
+async function shownTotal(id: number, fee: number) {
+  const [row] = Number.isSafeInteger(id) ? await db.sql`select subtotal_in_centavos as s, coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as d from orders o where id = ${id}` : [];
+  return row ? row.s - row.d + fee : 0;
+}
+const quoteDeliveryFee = async (id: number, fee: number, choice?: Parameters<typeof realQuote>[3]) => realQuote(id, fee, await shownTotal(id, fee), choice);
+const confirmPickup = async (id: number, choice?: Parameters<typeof realConfirm>[2]) => realConfirm(id, await shownTotal(id, 0), choice);
 let portal: FakePortal;
 let storefront: FakeStorefront;
 let oldDirectory = false;
@@ -215,14 +223,13 @@ it("does not confirm an Order while its Senior/PWD ID waits for review, and conf
   expect(await quoteDeliveryFee(delivery.id, 15000)).toMatchObject({ ok: true });
 });
 
-it("checks free delivery against the subtotal before the discount", async () => {
+it("accepts a Delivery fee on a large subtotal once the ID is reviewed", async () => {
   const { id } = await upload();
   await signIn("ana");
   await approveVerification(id, future(30));
-  // ₱2,600 gross is ₱2,470 after 5% off; free delivery still applies, so no fee can be quoted.
   const [order] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, delivery_fee_in_centavos, senior_pwd_verification_id)
     values ('c1','placed','delivery',260000,null,${id}) returning id`;
-  expect(await quoteDeliveryFee(order.id, 15000)).toMatchObject({ ok: false, reason: expect.stringContaining("Free delivery") });
+  expect(await quoteDeliveryFee(order.id, 15000)).toMatchObject({ ok: true });
 });
 
 it("leaves the verification unchanged and the photo in place when the storefront refuses or is unreachable", async () => {

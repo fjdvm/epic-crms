@@ -214,6 +214,17 @@ describe("an Order's detail", () => {
     expect(JSON.stringify(b)).not.toContain('"h"');
   });
 
+  it("reads the weekly allowance used and the reduction reason when the storefront saved them, and tolerates their absence", async () => {
+    const before = await order();
+    const none = await loadOrder(() => db.sql, before);
+    expect(none.ok && none.order?.discountDetail).toEqual({ allowanceUsed: null, reductionReason: null });
+    await db.sql`alter table orders add column if not exists senior_pwd_allowance_used_in_centavos integer, add column if not exists discount_reduction_reason text`;
+    const id = await order();
+    await db.sql`update orders set senior_pwd_allowance_used_in_centavos = 12500, discount_reduction_reason = 'Only ₱25.00 was left this week.' where id = ${id}`;
+    const result = await loadOrder(() => db.sql, id);
+    expect(result.ok && result.order?.discountDetail).toEqual({ allowanceUsed: 12_500, reductionReason: "Only ₱25.00 was left this week." });
+  });
+
   it("keeps legacy paid Orders readable without Staff attribution", async () => {
     const id = await order({ status: "paid" });
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "paid", paidBy: null } });

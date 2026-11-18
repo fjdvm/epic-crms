@@ -29,6 +29,8 @@ export function describeNotification(n: Notification): { text: string; href: str
       return { text: `${n.customerName} placed Order #${n.orderId}, which needs a Delivery fee`, href: `/orders/${n.orderId}` };
     case "order-payment-proof":
       return { text: `${n.customerName} submitted Payment proof for Order #${n.orderId}`, href: `/orders/${n.orderId}` };
+    case "order-overdue":
+      return { text: `Order #${n.orderId} from ${n.customerName} is Overdue to confirm`, href: `/orders/${n.orderId}` };
     case "return-requested":
       return { text: `${n.customerName} requested Return RMA-${n.returnId}`, href: `/returns#${returnAnchor(n.returnId!)}` };
     case "ticket-reassigned": {

@@ -12,6 +12,7 @@ vi.mock("@/lib/portal/staff", () => ({ requireModule: mocks.requireModule, heldM
 vi.mock("@/lib/tickets-db", () => ({ ticketsDatabase: mocks.database }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => "crms" }));
 vi.mock("@/features/tickets/service-level-store", () => ({ readServiceLevels: async () => ({ history: [] }) }));
+vi.mock("@/features/settings/automatic-checks-server", () => ({ currentUnconfirmedHours: async () => 48 }));
 vi.mock("@/features/dashboard/figures", () => ({ loadDashboardFigures: mocks.figures }));
 
 import { GET } from "@/app/api/dashboard/pdf/route";
@@ -53,7 +54,7 @@ describe("Dashboard PDF export", () => {
     expect(response.headers.get("content-disposition")).toBe('attachment; filename="dashboard-today-2026-10-25.pdf"');
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.figures).toHaveBeenCalledWith(mocks.database, {
-      period: resolvePeriod("today", now), modules: ["Payments"], now, targets: [],
+      period: resolvePeriod("today", now), modules: ["Payments"], now, targets: [], unconfirmedHours: 48,
     });
     const text = await readPdf(response);
     expect(text).toContain("Dashboard");
@@ -73,7 +74,7 @@ describe("Dashboard PDF export", () => {
     } satisfies DashboardFigures);
     const text = await readPdf(await GET(request("last-month")));
     expect(mocks.figures).toHaveBeenCalledWith(mocks.database, {
-      period: resolvePeriod("last-month", now), modules: ["Payments"], now, targets: [],
+      period: resolvePeriod("last-month", now), modules: ["Payments"], now, targets: [], unconfirmedHours: 48,
     });
     expect(text).toContain("Sep 1, 2026 - Sep 30, 2026");
     expect(text).toContain("Average order");
@@ -148,7 +149,7 @@ describe("Dashboard PDF export", () => {
     await GET(request(value));
     const preset = value === "this-month" || value === "90-days" ? value : "7-days";
     expect(mocks.figures).toHaveBeenCalledWith(mocks.database, {
-      period: resolvePeriod(preset, now), modules: ["Payments"], now, targets: [],
+      period: resolvePeriod(preset, now), modules: ["Payments"], now, targets: [], unconfirmedHours: 48,
     });
   });
 

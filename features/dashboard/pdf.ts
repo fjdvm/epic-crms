@@ -90,7 +90,7 @@ export async function dashboardPdf(
   }
 
   const queueLabels: Record<keyof Attention, string> = {
-    paymentProofs: "Payment proofs to check", deliveryFees: "Delivery fees to quote",
+    paymentProofs: "Payment proofs to check", deliveryFees: "Delivery fees to quote", overdueOrders: "Orders Overdue to confirm",
     ordersToPack: "Orders to pack", codToCollect: "COD to collect", openTickets: "Open Tickets",
     returns: "Returns to decide", lowFeedback: "Low Feedback to review",
   };

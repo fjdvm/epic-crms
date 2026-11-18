@@ -52,6 +52,10 @@ export const AUTOMATIC_CHECK_GROUPS: Record<string, { label: string; rules: Reco
       },
       returnSpike: { label: "Returns on one product", fields: { count: count(3, "Returns"), days: days(7, "Days") } },
       unresolvedFailedDeliveries: { label: "Unresolved failed deliveries", fields: { count: count(3, "Deliveries") } },
+      unconfirmedOrders: {
+        label: "Orders not confirmed in time",
+        fields: { hours: { min: 1, max: 8760, default: 48, label: "Hours after placement" } },
+      },
     },
   },
 };
@@ -70,6 +74,7 @@ export interface AutomaticChecks {
     unverifiedPayments: Switch & { count: number; waitHours: number };
     returnSpike: Switch & { count: number; days: number };
     unresolvedFailedDeliveries: Switch & { count: number };
+    unconfirmedOrders: Switch & { hours: number };
   };
 }
 

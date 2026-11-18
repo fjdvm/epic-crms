@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee, rejectPaymentProof } from "@/features/orders/actions";
+import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee, rejectPaymentProof, resendConfirmationEmail } from "@/features/orders/actions";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
@@ -19,6 +19,7 @@ vi.mock("@/features/orders/actions", () => ({
   cancelPaymentOrder: vi.fn(),
   markPaid: vi.fn(),
   rejectPaymentProof: vi.fn(),
+  resendConfirmationEmail: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
@@ -156,6 +157,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   paymentMethod: "gcash",
   lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }],
   subtotal: 100_000,
+  discount: 0,
   deliveryFee: 15_000,
   total: 115_000,
   address: {
@@ -184,6 +186,26 @@ describe("an Order's detail", () => {
     expect(screen.getByText(/original ID/)).toBeTruthy();
   });
 
+  it("shows no discount section on an Order without a discount", () => {
+    render(<OrderDetailView role="staff" order={detail({})} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.queryByTestId("senior-pwd-discount")).toBeNull();
+    expect(screen.queryByTestId("approved-discount")).toBeNull();
+  });
+
+  it("shows the approved discount and allowance used, with no reduction note when uncapped", () => {
+    render(<OrderDetailView role="staff" order={detail({ discount: 5_000, total: 110_000, seniorPwd: { id: 1, idType: "senior", status: "approved" }, discountDetail: { allowanceUsed: 5_000, reductionReason: null } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.getByTestId("approved-discount").textContent).toBe("₱50.00");
+    expect(screen.getByTestId("allowance-used").textContent).toBe("₱50.00 of ₱125.00");
+    expect(screen.queryByRole("note", { name: "Discount reduced" })).toBeNull();
+  });
+
+  it("shows the reduction reason when the weekly cap reduced the discount, and never an ID number", () => {
+    const { container } = render(<OrderDetailView role="staff" order={detail({ discount: 2_500, total: 112_500, seniorPwd: { id: 1, idType: "pwd", status: "approved" }, discountDetail: { allowanceUsed: 12_500, reductionReason: "Only ₱25.00 of this ID's ₱125.00 weekly allowance was left." } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.getByTestId("allowance-used").textContent).toBe("₱125.00 of ₱125.00");
+    expect(screen.getByRole("note", { name: "Discount reduced" }).textContent).toContain("weekly allowance was left");
+    expect(container.textContent).not.toMatch(/id[_ ]?(number|hash)/i);
+  });
+
   it("links to the review screen while the ID waits, and explains why Confirm and Quote are blocked", () => {
     render(<OrderDetailView role="staff" order={detail({ status: "placed", deliveryFee: null, seniorPwd: { id: 1, idType: "senior", status: "pending" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Senior Citizen · Waiting for review");
@@ -192,22 +214,15 @@ describe("an Order's detail", () => {
     expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
   });
 
-  it("shows the Free delivery rule, the locked ₱0 fee and the quote-again note on a Free delivery Order", () => {
-    render(<OrderDetailView order={detail({ subtotal: 266_900, deliveryFee: 0, total: 266_900 })} />);
-
+  it("shows a ₱0 fee as free delivery on any subtotal, with no subtotal rule note", () => {
+    render(<OrderDetailView order={detail({ subtotal: 100_000, deliveryFee: 0, total: 100_000 })} />);
     expect(screen.getAllByText("Free delivery").length).toBeGreaterThan(0);
     expect(screen.getByText("Free · ₱0")).toBeTruthy();
-    expect(screen.getByRole("note", { name: "Free delivery rule" }).textContent).toContain("locked at ₱0");
-    expect(screen.getByRole("note", { name: "Quote again" }).textContent).toContain("quote a");
-  });
-
-  it("shows no Free delivery rule at exactly ₱2,500 or on a quoted fee", () => {
-    render(<OrderDetailView order={detail({ subtotal: 250_000, deliveryFee: 0, total: 250_000 })} />);
-    expect(screen.queryByRole("note", { name: "Free delivery rule" })).toBeNull();
-    cleanup();
-    render(<OrderDetailView order={detail({})} />);
     expect(screen.queryByRole("note", { name: "Free delivery rule" })).toBeNull();
     expect(screen.queryByRole("note", { name: "Quote again" })).toBeNull();
+    cleanup();
+    render(<OrderDetailView order={detail({})} />);
+    expect(screen.queryByText("Free · ₱0")).toBeNull();
   });
 
   it("shows the items, Delivery fee, total, address and a link to the Customer Profile", () => {
@@ -219,6 +234,22 @@ describe("an Order's detail", () => {
     expect(screen.getByText("Total").nextElementSibling?.textContent).toBe("₱1,150.00");
     expect(screen.getByText(/1 Rizal St, Poblacion, Makati/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Maria Santos" }).getAttribute("href")).toBe("/customer-profiles/c1");
+  });
+
+  it("shows Country, Region, Province, City, Barangay and Street for an Order with a Region", () => {
+    const base = detail({}).address!;
+    render(<OrderDetailView order={detail({ address: { ...base, region: "NCR" } })} />);
+
+    for (const [label, value] of [["Country", "Philippines"], ["Region", "NCR"], ["Province", "Metro Manila"], ["City", "Makati"], ["Barangay", "Poblacion"], ["Street", "1 Rizal St"]]) {
+      expect(screen.getByText(label).nextElementSibling?.textContent).toBe(value);
+    }
+  });
+
+  it("shows an older Order's address as the original plain text", () => {
+    render(<OrderDetailView order={detail({})} />);
+
+    expect(screen.queryByLabelText("Structured delivery address")).toBeNull();
+    expect(screen.getByText("1 Rizal St, Poblacion, Makati, Metro Manila 1210, Philippines")).toBeTruthy();
   });
 
   it("shows no Delivery fee row and no address for a Pickup Order", () => {
@@ -455,7 +486,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee to charge/), { target: { value: "190" } });
     fireEvent.click(submit);
 
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000);
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000, 119_000);
   });
 
   it("quotes a Delivery fee in pesos, sends centavos, and confirms once the server does", async () => {
@@ -469,10 +500,10 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(submit.disabled).toBe(true);
 
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150.50" } });
-    expect(within(dialog).getByText("New total").nextElementSibling?.textContent).toBe("₱1,150.50");
+    expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱1,150.50");
     fireEvent.click(submit);
 
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050);
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050, 115_050);
     expect(within(dialog).getByRole("button", { name: "Confirming…" }).getAttribute("aria-busy")).toBe("true");
     expect(toast.success).not.toHaveBeenCalled();
 
@@ -480,6 +511,24 @@ describe("the Orders Module's actions on an Order's detail", () => {
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed with a ₱150.50 Delivery fee.");
+  });
+
+  it("shows Subtotal − Approved Discount + Delivery Fee = Total before Confirm Order on a Pickup Order", () => {
+    render(<OrderDetailView order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null, discount: 5_000, total: 95_000 })} modules={ORDERS} />);
+    const formula = screen.getByRole("group", { name: "Order total" });
+    expect(within(formula).getByText("− Approved discount").nextElementSibling?.textContent).toBe("₱50.00");
+    expect(within(formula).getByText("+ Delivery fee").nextElementSibling?.textContent).toBe("₱0.00");
+    expect(within(formula).getByText("= Total").nextElementSibling?.textContent).toBe("₱950.00");
+  });
+
+  it("sends the discounted total when quoting a Delivery fee", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, discount: 5_000, total: 95_000 })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "0" } });
+    expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱950.00");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Quote and confirm" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 95_000);
   });
 
   it("will not send a fee that is not an amount in pesos", () => {
@@ -522,7 +571,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed."));
-    expect(confirmPickup).toHaveBeenCalledWith(1042);
+    expect(confirmPickup).toHaveBeenCalledWith(1042, 100_000);
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });
@@ -942,5 +991,42 @@ describe("payment proof history, reject, ask for a new proof and approve anyway"
   it("gives Admin and the CEO no payment buttons", () => {
     render(<OrderDetailView order={awaiting()} modules={PAYMENTS} role="ceo" />);
     expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+  });
+});
+
+describe("Email not sent notice", () => {
+  const failed = () => detail({ emailFailure: { reason: "mailbox full" } });
+  const ORDERS = ["Orders"];
+
+  it("shows only on a failed outcome, with the reason", () => {
+    render(<OrderDetailView order={detail({})} modules={ORDERS} role="staff" />);
+    expect(screen.queryByTestId("email-not-sent")).toBeNull();
+    cleanup();
+    render(<OrderDetailView order={failed()} modules={ORDERS} role="staff" />);
+    expect(within(screen.getByTestId("email-not-sent")).getByText(/mailbox full/)).toBeTruthy();
+  });
+
+  it("confirms first, then resends and reports success", async () => {
+    vi.mocked(resendConfirmationEmail).mockResolvedValue({ ok: true });
+    render(<OrderDetailView order={failed()} modules={ORDERS} role="manager" />);
+    fireEvent.click(screen.getByRole("button", { name: "Resend confirmation email" }));
+    expect(resendConfirmationEmail).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(resendConfirmationEmail).toHaveBeenCalledWith(1042));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Confirmation email sent."));
+  });
+
+  it("says why when the server refuses", async () => {
+    vi.mocked(resendConfirmationEmail).mockResolvedValue({ ok: false, reason: "Resend is not available right now." });
+    render(<OrderDetailView order={failed()} modules={ORDERS} role="staff" />);
+    fireEvent.click(screen.getByRole("button", { name: "Resend confirmation email" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Resend is not available right now."));
+  });
+
+  it("is read-only for Admin and the CEO", () => {
+    render(<OrderDetailView order={failed()} modules={ORDERS} role="admin" />);
+    expect(screen.getByTestId("email-not-sent")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resend confirmation email" })).toBeNull();
   });
 });

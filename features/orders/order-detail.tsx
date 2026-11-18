@@ -9,20 +9,19 @@ import type { ReturnRow } from "@/features/returns/returns";
 import { ReturnsTable } from "@/features/returns/returns-table";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
-import type { OrderDetail } from "./orders";
+import { SENIOR_PWD_WEEKLY_CAP, type OrderDetail } from "./orders";
 import type { LineReservation } from "./stock";
 import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PaymentPill } from "./status-pill";
+import { EmailNotSent } from "./email-not-sent";
 import { CancelDispatched, CancellationNote } from "./cancel-dispatched";
 import type { CancellationState } from "./cancellation-state";
 
-/** A Delivery Order whose subtotal is strictly over ₱2,500 (250,000 centavos) ships free. */
-export const FREE_DELIVERY_THRESHOLD = 250_000;
-
+/** A Delivery Order whose entered Delivery fee is ₱0 ships free, whatever the subtotal. */
 export function hasFreeDelivery(order: OrderDetail): boolean {
-  return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0 && order.subtotal > FREE_DELIVERY_THRESHOLD;
+  return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0;
 }
 
 const SENIOR_PWD_STATUS: Record<string, string> = {
@@ -34,6 +33,25 @@ export function seniorPwdLabel(order: OrderDetail): string {
   if (!order.seniorPwd) return "Not verified";
   const kind = order.seniorPwd.idType === "senior" ? "Senior Citizen" : "PWD";
   return `${kind} · ${SENIOR_PWD_STATUS[order.seniorPwd.status]}`;
+}
+
+/** The approved Senior/PWD discount, how much of the ID's weekly allowance is used and why it was reduced. Never shows an ID number. */
+function SeniorPwdDiscount({ order }: { order: OrderDetail }) {
+  const used = order.discountDetail?.allowanceUsed ?? null;
+  const reason = order.discountDetail?.reductionReason ?? null;
+  return (
+    <section data-testid="senior-pwd-discount" className={CARD}>
+      <h2 className={CARD_TITLE}>Senior/PWD discount</h2>
+      <dl className="space-y-1 text-sm text-[#1f1a2e]">
+        <div className="flex justify-between"><dt className="text-[#6e6680]">Approved discount</dt><dd>{formatPesos(order.discount)}</dd></div>
+        <div className="flex justify-between">
+          <dt className="text-[#6e6680]">Weekly allowance used</dt>
+          <dd data-testid="allowance-used">{used === null ? "Not reported yet" : `${formatPesos(used)} of ${formatPesos(SENIOR_PWD_WEEKLY_CAP)}`}</dd>
+        </div>
+      </dl>
+      {reason && <p role="note" aria-label="Discount reduced" className="mt-2 text-xs text-[#6e6680]">Discount reduced: {reason}</p>}
+    </section>
+  );
 }
 
 /** "Reserved 4 · 18 left": what this line set aside, and what is still available online. */
@@ -63,34 +81,6 @@ function DeliveryFee({ order }: { order: OrderDetail }) {
       <dt className="text-[#6e6680]">Delivery fee</dt>
       <dd className={hasFreeDelivery(order) ? "font-medium text-[#16a34a]" : undefined}>{text}</dd>
     </div>
-  );
-}
-
-function FreeDeliveryRule({ order }: { order: OrderDetail }) {
-  if (!hasFreeDelivery(order)) return null;
-
-  return (
-    <div role="note" aria-label="Free delivery rule" className="flex gap-2.5 rounded-[10px] bg-[#e3f4e8] p-3 text-[#1e6b3a]">
-      <span aria-hidden className="text-sm leading-none">✓</span>
-      <div className="space-y-0.5">
-        <p className="text-[13px] font-semibold">Free delivery rule</p>
-        <p className="text-xs">
-          Subtotal is over {formatPesos(FREE_DELIVERY_THRESHOLD)}, so delivery is free and the order was confirmed at
-          placement. The delivery fee is locked at ₱0 — saving any other amount is refused.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function QuoteAgainNote({ order }: { order: OrderDetail }) {
-  if (!hasFreeDelivery(order)) return null;
-
-  return (
-    <p role="note" aria-label="Quote again" className="rounded-[10px] bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">
-      If items are cancelled and the subtotal drops to {formatPesos(FREE_DELIVERY_THRESHOLD)} or less, staff must quote a
-      delivery fee again.
-    </p>
   );
 }
 
@@ -223,6 +213,7 @@ export function OrderDetailView({
           </div>
         </div>
         <CancellationNote state={cancellation} />
+        {order.emailFailure && modules.includes(ORDERS_MODULE) && <EmailNotSent orderId={order.id} reason={order.emailFailure.reason} role={role} />}
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
@@ -269,14 +260,21 @@ export function OrderDetailView({
                 <dt className="text-[#6e6680]">Subtotal</dt>
                 <dd>{formatPesos(order.subtotal)}</dd>
               </div>
+              {order.discount > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-[#6e6680]">− Approved discount</dt>
+                  <dd data-testid="approved-discount">{formatPesos(order.discount)}</dd>
+                </div>
+              )}
               <DeliveryFee order={order} />
               <div className="flex justify-between font-medium">
                 <dt>Total</dt>
                 <dd>{formatPesos(order.total)}</dd>
               </div>
             </dl>
-            <FreeDeliveryRule order={order} />
           </section>
+
+          {order.discount > 0 && <SeniorPwdDiscount order={order} />}
 
           {modules.includes(RETURNS_MODULE) && (
             <section className={CARD}>
@@ -289,11 +287,31 @@ export function OrderDetailView({
             <h2 className={CARD_TITLE}>
               {address ? "Delivery address" : "Pickup"}
             </h2>
-            <p className="text-sm text-[#1f1a2e]">
-              {address
-                ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
-                : "The Customer collects this Order; there is nothing to deliver."}
-            </p>
+            {address?.region ? (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-[#1f1a2e]" aria-label="Structured delivery address">
+                {(
+                  [
+                    ["Country", address.country],
+                    ["Region", address.region],
+                    ["Province", address.province],
+                    ["City", address.city],
+                    ["Barangay", address.barangay],
+                    ["Street", address.street],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-[#6b6580]">{label}</dt>
+                    <dd>{value || "—"}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-[#1f1a2e]">
+                {address
+                  ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
+                  : "The Customer collects this Order; there is nothing to deliver."}
+              </p>
+            )}
           </section>
         </div>
 
@@ -342,8 +360,6 @@ export function OrderDetailView({
               </p>
             </section>
           )}
-
-          <QuoteAgainNote order={order} />
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>

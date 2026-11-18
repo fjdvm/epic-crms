@@ -161,3 +161,29 @@ delivery or throws. A failure leaves delivery pending; retrying the same action
 sends its original event with the same gateway idempotency key, without applying
 the change again. Concurrent delivery locks the receipt. No background polling is
 introduced.
+
+## Order placement and email outcomes (#572)
+
+The storefront places Orders and sends the confirmation email, so CREOMS records what it finds. This
+runs inside the existing storefront-signal sync (`/api/notifications/signal`, and the Staff-requested
+sync): no timer and no polling (ADR-0005). `syncOrderAudit` reads Orders and `order_email_outcomes`,
+and delivers `order.placed`, `order.email_sent` and `order.email_failed` under a `process` Actor
+through the acknowledged gateway delivery. Operation ids are `order:<id>:order.placed` and
+`order:<id>:email:<kind>:<status>`; delivered ids go in `crms.seen_order_audit_events`
+(`docs/db/crms-order-audit-ledger.sql`, applied as creoms_writer), and the gateway's own idempotency key
+backs it up. A refused delivery is not marked and is retried at the next signal. Pending and retrying
+emails write nothing; failed then sent is two entries. Entries carry no ID number or Customer email
+address; addresses are stripped from the failure reason. A refused Order action writes nothing here.
+An email outcome change appears in the log at the next signal, so the storefront must signal CREOMS
+when it saves one.
+
+## Resent confirmation email (#573)
+
+Order Details shows "Email not sent" with the reason while `order_email_outcomes` holds a failed
+`confirmation` row. Staff and Managers can resend it after a confirm dialog; Admin and the CEO only read.
+`resendConfirmationEmail` asks the storefront (`POST /api/internal/orders/:id/email/resend`, body `{kind, staffId,
+staffName}`; the storefront must resend under the email's stable id and record the outcome as `sent`, which
+clears the notice) and waits for the answer. That endpoint is the storefront's to provide. Each success writes `order.email_resent` with the
+person's name and a fresh operation id (a second resend is a second entry). A refusal changes and audits nothing.
+The #572 sync will also record the failed-to-sent change as a system `order.email_sent`, so one resend can show two
+entries: who asked, and what the storefront then recorded.

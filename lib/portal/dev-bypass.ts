@@ -25,10 +25,6 @@ export function devBypassEnabled(env: Record<string, string | undefined> = proce
     throw new Error("CREOMS_DEV_BYPASS must not be set in production");
   }
 
-  if (env.VERCEL_ENV || env.VERCEL_URL) {
-    throw new Error("CREOMS_DEV_BYPASS must not be set on a Vercel deployment");
-  }
-
   const appUrl = env.CREOMS_APP_URL;
 
   if (appUrl && !LOCAL_HOSTS.has(new URL(appUrl).hostname)) {

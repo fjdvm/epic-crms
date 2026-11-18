@@ -1,4 +1,4 @@
-import { Banknote, ChevronRight, FileCheck, Package, RotateCcw, Star, Tag, Ticket, type LucideIcon } from "lucide-react";
+import { AlarmClock, Banknote, ChevronRight, FileCheck, Package, RotateCcw, Star, Tag, Ticket, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,6 +39,7 @@ interface Row {
 const ROWS: Row[] = [
   { key: "paymentProofs", icon: FileCheck, tone: "text-[#b45309]", title: "Payment proofs to check", href: "/payments" },
   { key: "deliveryFees", icon: Tag, tone: "text-[#5b2a86]", title: "Delivery fees to quote", href: "/orders?tab=placed" },
+  { key: "overdueOrders", icon: AlarmClock, tone: "text-[#b91c1c]", title: "Orders Overdue to confirm", href: "/orders?tab=placed" },
   { key: "ordersToPack", icon: Package, tone: "text-[#5b2a86]", title: "Orders to pack", href: "/fulfilment" },
   { key: "codToCollect", icon: Banknote, tone: "text-[#1d4ed8]", title: "COD to collect", href: "/fulfilment", extra: (q) => pesos.format(q.centavos / 100) },
   { key: "openTickets", icon: Ticket, tone: "text-[#b91c1c]", title: "Open Tickets", href: "/tickets?tab=open", extra: (q) => `${q.overdue} Overdue` },

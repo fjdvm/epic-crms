@@ -40,7 +40,7 @@ describe("COD confirm dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm order" }));
     fireEvent.click(screen.getByLabelText("Call to confirm, then confirm the order"));
     fireEvent.click(screen.getByRole("button", { name: "Save & continue" }));
-    await waitFor(() => expect(confirmPickup).toHaveBeenCalledWith(1058, "call-first"));
+    await waitFor(() => expect(confirmPickup).toHaveBeenCalledWith(1058, expect.any(Number), "call-first"));
     expect(toast.success).toHaveBeenCalledWith("Order #1058 confirmed.");
   });
 
