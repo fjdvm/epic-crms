@@ -18,6 +18,13 @@ export function configuredStructuredModels(env: Record<string, string | undefine
   return models;
 }
 
+/** Models that can read a picture. Groq's configured model is text-only, so an image only ever goes to Gemini. */
+export function configuredVisionModels(env: Record<string, string | undefined> = process.env): StructuredModel[] {
+  return env.GOOGLE_GENERATIVE_AI_API_KEY && env.GEMINI_MODEL
+    ? [{ name: env.GEMINI_MODEL, model: createGoogle({ apiKey: env.GOOGLE_GENERATIVE_AI_API_KEY })(env.GEMINI_MODEL) }]
+    : [];
+}
+
 /** Each provider gets one bounded attempt; invalid structured output also falls back. Never log prompts or provider errors. */
 export async function structuredOutput<T>({ schema, system, prompt, models, maxOutputTokens = 600, image, timeoutMs = 20_000 }: {
   schema: z.ZodType<T>;

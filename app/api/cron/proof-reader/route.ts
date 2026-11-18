@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { configuredStructuredModels } from "@/lib/ai/structured";
+import { configuredVisionModels } from "@/lib/ai/structured";
 import { cronAuthorised } from "@/lib/cron-auth";
 import { crmsDatabase } from "@/lib/crms-db";
 import { reportLiveError } from "@/lib/error-monitor";
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await readPendingProofs({
-      crms: crmsDatabase(), storefront: ticketsDatabase(), models: configuredStructuredModels(),
+      crms: crmsDatabase(), storefront: ticketsDatabase(), models: configuredVisionModels(),
       fetchImage: fetchReturnPhoto, audit: gatewayAuditTrail,
     }, Number.isSafeInteger(proof) && proof > 0 ? proof : undefined);
 
