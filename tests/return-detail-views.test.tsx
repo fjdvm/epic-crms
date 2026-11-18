@@ -20,16 +20,18 @@ vi.mock("@/features/returns/actions", () => ({
   markReturnRefunded: vi.fn(),
   markReturnReplaced: vi.fn(),
   extendRefundWindow: vi.fn(),
+  changeRefundDestination: vi.fn(),
+  revealRefundDestination: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast }));
 
-import { approveReturn, declineReturn, extendRefundWindow, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
+import { approveReturn, changeRefundDestination, declineReturn, extendRefundWindow, revealRefundDestination, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
-  replacedAt: null, videoFileId: null, refundProofFileId: null, refundWindowExtendedAt: null, replacementOrderId: null,
+  replacedAt: null, videoFileId: null, refundProofFileId: null, refundWindowExtendedAt: null, replacementOrderId: null, refundDestination: null, refundDestinationLocked: false,
   preferredResolution: "refund", finalResolution: null,
   id: 15,
   number: "RMA-15",
@@ -424,5 +426,107 @@ describe("Return detail for a Deleted Customer", () => {
     expect(screen.getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
     expect(screen.queryByRole("link", { name: "Deleted customer" })).toBeNull();
     expect(screen.getByRole("button", { name: /approve/i })).toBeTruthy();
+  });
+});
+
+describe("Refund destination", () => {
+  const masked = { method: "gcash" as const, accountName: "Maria Santos", maskedNumber: "•••••••4567", bankName: null };
+  const view = (role: "staff" | "manager" | "admin" | "ceo", overrides: Partial<ReturnDetail> = {}, request?: import("@/features/approvals/view").ApprovalView) =>
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund", refundDestination: masked, refundDestinationLocked: true, ...overrides })}
+      imageUrls={[]} role={role} destinationRequest={request} />);
+  const card = () => within(screen.getByRole("heading", { name: "Refund destination" }).closest("section")!);
+
+  it("shows the number masked and says it is locked", () => {
+    view("staff");
+    expect(card().getByTestId("destination-number").textContent).toBe("•••••••4567");
+    expect(card().getByText(/Locked when the Return was approved/)).toBeTruthy();
+  });
+
+  it("opens the full number at once with a pending label, hides it again, and never shows it when not ready", async () => {
+    vi.mocked(revealRefundDestination).mockResolvedValue({ ok: true, destination: { method: "gcash", accountName: "Maria Santos", accountNumber: "09171234567", bankName: null } });
+    view("staff");
+    fireEvent.click(card().getByRole("button", { name: "Show full number to send the refund" }));
+    expect(card().getByRole("button", { name: "Opening…" })).toBeTruthy();
+    await waitFor(() => expect(card().getByTestId("destination-number").textContent).toBe("09171234567"));
+    await waitFor(() => expect(card().getByRole("button", { name: "Hide full number" })).toBeTruthy());
+    fireEvent.click(card().getByRole("button", { name: "Hide full number" }));
+    expect(card().getByTestId("destination-number").textContent).toBe("•••••••4567");
+    cleanup();
+    view("staff", { status: "approved", goodsRequired: true });
+    expect(card().queryByRole("button", { name: /full number/ })).toBeNull();
+  });
+
+  it("says why when the full number is refused", async () => {
+    vi.mocked(revealRefundDestination).mockResolvedValue({ ok: false, reason: "The full number is shown only when the refund is ready to be sent." });
+    view("manager");
+    fireEvent.click(card().getByRole("button", { name: "Show full number to send the refund" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The full number is shown only when the refund is ready to be sent."));
+    expect(card().getByTestId("destination-number").textContent).toBe("•••••••4567");
+  });
+
+  it("lets a Manager change it only with every field, a reason and the Customer's confirmation, waiting for the server", async () => {
+    vi.mocked(changeRefundDestination).mockResolvedValue({ ok: true, destination: { ...masked, method: "maya" } });
+    view("manager");
+    fireEvent.click(card().getByRole("button", { name: "Change destination…" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    const confirm = () => dialog.getByRole("button", { name: "Change destination" }) as HTMLButtonElement;
+    expect(confirm().disabled).toBe(true);
+    fireEvent.change(dialog.getByLabelText(/Refund method/), { target: { value: "maya" } });
+    fireEvent.change(dialog.getByLabelText(/Account name/), { target: { value: "Maria S. Santos" } });
+    fireEvent.change(dialog.getByLabelText(/Account number/), { target: { value: "09189876543" } });
+    fireEvent.change(dialog.getByLabelText(/Reason/), { target: { value: "Her GCash was closed" } });
+    expect(confirm().disabled).toBe(true);
+    fireEvent.click(dialog.getByLabelText(/Customer confirmed/));
+    fireEvent.click(confirm());
+    expect(dialog.getByRole("button", { name: "Changing…" })).toBeTruthy();
+    await waitFor(() => expect(changeRefundDestination).toHaveBeenCalledWith(15, { method: "maya", accountName: "Maria S. Santos", accountNumber: "09189876543", bankName: null, reason: "Her GCash was closed", customerConfirmed: true }, { reason: "Her GCash was closed" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("The refund destination was changed."));
+  });
+
+  it("tells a Manager why when the server refuses, and the number stays masked", async () => {
+    vi.mocked(changeRefundDestination).mockResolvedValue({ ok: false, reason: "Money was already sent." });
+    view("manager");
+    fireEvent.click(card().getByRole("button", { name: "Change destination…" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    fireEvent.change(dialog.getByLabelText(/Account name/), { target: { value: "Maria" } });
+    fireEvent.change(dialog.getByLabelText(/Account number/), { target: { value: "09189876543" } });
+    fireEvent.change(dialog.getByLabelText(/Reason/), { target: { value: "Closed" } });
+    fireEvent.click(dialog.getByLabelText(/Customer confirmed/));
+    fireEvent.click(dialog.getByRole("button", { name: "Change destination" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Money was already sent."));
+    expect(card().getByTestId("destination-number").textContent).toBe("•••••••4567");
+  });
+
+  it("asks for a bank name only for a bank transfer", () => {
+    view("manager");
+    fireEvent.click(card().getByRole("button", { name: "Change destination…" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(dialog.queryByLabelText(/Bank name/)).toBeNull();
+    fireEvent.change(dialog.getByLabelText(/Refund method/), { target: { value: "bank-transfer" } });
+    expect(dialog.getByLabelText(/Bank name/)).toBeTruthy();
+  });
+
+  it("shows Staff Request approval, then Waiting", () => {
+    view("staff");
+    expect(card().queryByRole("button", { name: "Change destination…" })).toBeNull();
+    expect(card().getByRole("button", { name: "Request approval to change…" })).toBeTruthy();
+    cleanup();
+    view("staff", {}, { id: "d1", action: "return.change-destination", targetId: "15", status: "waiting-manager" } as never);
+    expect(card().getByText("Waiting for approval")).toBeTruthy();
+  });
+
+  it("offers nothing to change to Admin or CEO, nor after the money was sent", () => {
+    view("admin"); expect(card().queryByRole("button", { name: /Change|Request approval|full number/ })).toBeNull(); cleanup();
+    view("ceo"); expect(card().queryByRole("button", { name: /Change|Request approval|full number/ })).toBeNull(); cleanup();
+    view("manager", { status: "refunded" });
+    expect(card().queryByRole("button", { name: /Change destination/ })).toBeNull();
+  });
+
+  it("says when the Customer gave none, and hides the card on a replacement", () => {
+    view("manager", { refundDestination: null });
+    expect(card().getByText(/has not confirmed a refund destination/)).toBeTruthy();
+    cleanup();
+    view("manager", { preferredResolution: "replacement", finalResolution: "replacement" });
+    expect(screen.queryByRole("heading", { name: "Refund destination" })).toBeNull();
   });
 });

@@ -177,6 +177,22 @@ export class FakeStorefront {
     });
   }
 
+  private async changeDestination(request: Request, id: number): Promise<Response> {
+    if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+    const input = await request.json();
+    if (!input.staffId || !input.staffName) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    if (input.customerConfirmed !== true || typeof input.reason !== "string" || !input.reason.trim()) return Response.json({ error: "A reason and the Customer's confirmation are required." }, { status: 400 });
+    return this.sql.begin(async tx => {
+      const [ret] = await tx`select * from order_returns where id = ${id} for update`;
+      if (!ret) return Response.json({ error: "Return was not found." }, { status: 404 });
+      if (!["approved", "goods received"].includes(ret.status) || ret.final_resolution !== "refund") return Response.json({ error: "Money was already sent or the refund is not approved." }, { status: 409 });
+      const changedAt = this.now();
+      await tx`update order_returns set refund_method = ${input.method}, refund_account_name = ${input.accountName}, refund_account_number = ${input.accountNumber},
+        refund_bank_name = ${input.bankName}, refund_destination_changed_at = ${changedAt} where id = ${id}`;
+      return Response.json({ returnId: id, changedAt: changedAt.toISOString() });
+    });
+  }
+
   private async decideReturn(request: Request, id: number): Promise<Response> {
     if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
     const update = await request.json();
@@ -333,7 +349,7 @@ export class FakeStorefront {
     if (returnRequest && request.method === "POST") return this.requestReturn(request, Number(returnRequest[1]));
     const returnDecision = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/status$/);
     const verificationDecision = new URL(request.url).pathname.match(/^\/api\/internal\/senior-pwd\/(\d+)\/(approve|decline|revoke)$/);
-    const resource = returnDecision || /^\/api\/internal\/returns\/\d+\/(inspection|replacement-order)$/.test(new URL(request.url).pathname) || /^\/api\/internal\/orders\/\d+\/refund-window\/extend$/.test(new URL(request.url).pathname) ? "returns" : verificationDecision ? "senior-pwd" : "orders";
+    const resource = returnDecision || /^\/api\/internal\/returns\/\d+\/(inspection|replacement-order)$/.test(new URL(request.url).pathname) || /^\/api\/internal\/orders\/\d+\/refund-window\/extend$/.test(new URL(request.url).pathname) || /^\/api\/internal\/returns\/\d+\/refund-destination$/.test(new URL(request.url).pathname) ? "returns" : verificationDecision ? "senior-pwd" : "orders";
     const parts = request.headers.get("authorization")?.replace(/^Bearer /, "").split(".");
     if (!parts || parts.length !== 3) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const [header, payload, signature] = parts;
@@ -350,6 +366,8 @@ export class FakeStorefront {
     if (verificationDecision && request.method === "POST") return this.decideVerification(request, Number(verificationDecision[1]), verificationDecision[2]);
     const replacement = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/replacement-order$/);
     if (replacement && request.method === "POST") return this.createReplacementOrder(request, Number(replacement[1]));
+    const destination = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/refund-destination$/);
+    if (destination && request.method === "POST") return this.changeDestination(request, Number(destination[1]));
     const extension = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/refund-window\/extend$/);
     if (extension && request.method === "POST") return this.extendWindow(request, Number(extension[1]));
     const cancellation = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/cancellation$/);

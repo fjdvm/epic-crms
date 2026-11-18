@@ -38,6 +38,7 @@ export const ACTION_LABELS: Record<ApprovalAction, string> = {
   "return.refund": "Refund",
   "return.replace": "Replacement",
   "return.extend-window": "Extend return window",
+  "return.change-destination": "Change refund destination",
   "write-off": "Write-off",
 };
 

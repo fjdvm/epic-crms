@@ -359,3 +359,29 @@ export async function extendStorefrontRefundWindow(orderId: number, reason: stri
     return { ok: true, endsAt: new Date(body.endsAt) };
   } catch { return { ok: false, reason: uncertain }; }
 }
+
+export type RefundDestinationChangeResult = { ok: true; changedAt: Date } | { ok: false; reason: string };
+
+/**
+ * A Manager's change to a locked Refund destination, after the Customer confirmed the new one and before money is sent.
+ * The storefront keeps the destination and records the change; CREOMS never writes the storefront's tables itself. The
+ * request carries the full number because the storefront must store it; nothing here is logged or audited unmasked.
+ */
+export async function changeStorefrontRefundDestination(returnId: number, change: {
+  method: string; accountName: string; accountNumber: string; bankName: string | null; reason: string; customerConfirmed: true;
+}, staff: { id: string; name: string }): Promise<RefundDestinationChangeResult> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the change. Refresh the Return before trying again.";
+  try {
+    const response = await fetch(new URL(`/api/internal/returns/${returnId}/refund-destination`, origin), {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret, "returns")}` },
+      body: JSON.stringify({ ...change, staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the change." };
+    if (body?.returnId !== returnId || typeof body.changedAt !== "string" || !Number.isFinite(Date.parse(body.changedAt))) return { ok: false, reason: uncertain };
+    return { ok: true, changedAt: new Date(body.changedAt) };
+  } catch { return { ok: false, reason: uncertain }; }
+}

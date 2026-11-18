@@ -58,8 +58,9 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
   const requests = (await approvals().list(staff, RETURNS_MODULE).catch(() => []))
     .map((row) => toView(row as unknown as Record<string, unknown>));
   // A window request targets the Order, not the Return.
-  const returnRequests = requests.filter((r) => r.action !== "return.extend-window" && r.targetId === id);
+  const returnRequests = requests.filter((r) => r.action !== "return.extend-window" && r.action !== "return.change-destination" && r.targetId === id);
   const windowRequest = requests.find((r) => r.action === "return.extend-window" && r.targetId === String(detail.orderId) && r.status !== "completed" && r.status !== "declined");
+  const destinationRequest = requests.find((r) => r.action === "return.change-destination" && r.targetId === id && r.status !== "completed" && r.status !== "declined");
   const [imageUrls, deliveryPhotoUrl, videoUrl, refundProofUrl] = await Promise.all([
     Promise.all(detail.images.map((image) => viewUrl(image.fileId))),
     detail.deliveryPhotoFileId ? viewUrl(detail.deliveryPhotoFileId) : undefined,
@@ -101,6 +102,7 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
         role={role}
         requests={returnRequests}
         windowRequest={windowRequest}
+        destinationRequest={destinationRequest}
       />
     </>
   );
