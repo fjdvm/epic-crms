@@ -168,7 +168,7 @@ describe("Order actions", () => {
   describe("free delivery locked at confirmation (#580)", () => {
     const qualifying = async (threshold = 250_000) => {
       const id = await order();
-      await db.sql`update orders set subtotal_in_centavos = 300000, free_delivery_applied = true, free_delivery_threshold_in_centavos = ${threshold} where id = ${id}`;
+      await db.sql`update orders set subtotal_in_centavos = 300000, free_delivery = true, free_delivery_threshold_in_centavos = ${threshold} where id = ${id}`;
       return id;
     };
 
@@ -198,7 +198,7 @@ describe("Order actions", () => {
 
     it("does not lock an Order saved as not qualifying: a fee is needed, and ₱0 by hand is accepted", async () => {
       const id = await order();
-      await db.sql`update orders set subtotal_in_centavos = 300000, free_delivery_applied = false, free_delivery_threshold_in_centavos = 500000 where id = ${id}`;
+      await db.sql`update orders set subtotal_in_centavos = 300000, free_delivery = false, free_delivery_threshold_in_centavos = 500000 where id = ${id}`;
       expect(await quoteDeliveryFee(id, Number.NaN)).toMatchObject({ ok: false });
       expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: true, order: { deliveryFeeInCentavos: 0 } });
       expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.confirmed", metadata: expect.not.objectContaining({ free_delivery_applied: true }) }));

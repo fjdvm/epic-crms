@@ -2,8 +2,8 @@ import type postgres from "postgres";
 
 import { loadFreeDeliveryThreshold } from "@/features/management/free-delivery-threshold";
 
-/** What the Order itself says about free delivery, as saved when it was placed (#579). Null columns mean nothing was saved. */
-export interface SavedFreeDelivery { applied: boolean | null; thresholdInCentavos: number | null }
+/** What the Order itself says about free delivery, as saved when it was placed (#579). The storefront saves `free_delivery` with the threshold in force; a null threshold means the rule was not judged yet. */
+export interface SavedFreeDelivery { freeDelivery: boolean; thresholdInCentavos: number | null }
 
 export type FreeDeliveryRule = { qualifies: boolean; thresholdInCentavos: number | null };
 
@@ -12,7 +12,7 @@ export type FreeDeliveryRule = { qualifies: boolean; thresholdInCentavos: number
  * judged now, once, against the current threshold, with the subtotal after discounts strictly over it.
  */
 export async function freeDeliveryRule(sql: postgres.Sql, saved: SavedFreeDelivery, subtotalAfterDiscountsInCentavos: number): Promise<FreeDeliveryRule> {
-  if (saved.applied !== null) return { qualifies: saved.applied, thresholdInCentavos: saved.thresholdInCentavos };
+  if (saved.thresholdInCentavos !== null) return { qualifies: saved.freeDelivery, thresholdInCentavos: saved.thresholdInCentavos };
   const threshold = await loadFreeDeliveryThreshold(sql).catch(() => null);
   return { qualifies: threshold !== null && subtotalAfterDiscountsInCentavos > threshold, thresholdInCentavos: threshold };
 }
