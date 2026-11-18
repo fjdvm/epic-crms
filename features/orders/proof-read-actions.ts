@@ -44,9 +44,10 @@ async function record(proofId: number, field: string, kind: "correction" | "over
     const original = row.findings[f];
     if (kind === "override" && original.finding === "Match") return { ok: false, reason: "That detail has no flag to proceed past." };
 
-    await crms`insert into crms.payment_proof_corrections (proof_id, order_id, kind, field, original_value, corrected_value, original_finding, reason, by_id, by_name)
-      values (${proofId}, ${row.order_id}, ${kind}, ${f}, ${original.read}, ${kind === "correction" ? typed : null}, ${original.finding}, ${why}, ${staff.username}, ${staff.name})`;
-    await recordAudit(gatewayAuditTrail, {
+    const [made] = await crms<{ id: string }[]>`insert into crms.payment_proof_corrections (proof_id, order_id, kind, field, original_value, corrected_value, original_finding, reason, by_id, by_name)
+      values (${proofId}, ${row.order_id}, ${kind}, ${f}, ${original.read}, ${kind === "correction" ? typed : null}, ${original.finding}, ${why}, ${staff.username}, ${staff.name}) returning id`;
+    // A change with no audit entry must not stay: take it back so a retry never leaves a duplicate.
+    try { await recordAudit(gatewayAuditTrail, {
       module: PAYMENTS_MODULE, action: kind === "correction" ? "payment_proof.corrected" : "payment_proof.flag_overridden", outcome: "success",
       actor: staffAuditActor(staff), target: { type: "order", id: String(row.order_id), display_name: `Order #${row.order_id}` },
       description: kind === "correction"
@@ -54,7 +55,7 @@ async function record(proofId: number, field: string, kind: "correction" | "over
         : `${staff.name} proceeded despite the ${original.finding} ${f} on payment proof ${proofId} of Order #${row.order_id}: ${why}`,
       occurred_at: new Date().toISOString(), operationId: `proof-change:${proofId}:${randomUUID()}`,
       metadata: { proofId, field: f, reason: why, originalValue: original.read, originalFinding: original.finding, ...(kind === "correction" ? { correctedValue: typed } : {}) },
-    });
+    }); } catch (error) { await crms`delete from crms.payment_proof_corrections where id = ${made.id}`; throw error; }
     revalidatePath(`/orders/${row.order_id}`);
     revalidatePath("/payments");
     return { ok: true };
