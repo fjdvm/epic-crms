@@ -1,11 +1,18 @@
 import { PaymentAccountQr } from "./payment-account-qr";
-import { methodLabel } from "./payment-account-format";
+import { PaymentAccountControls, PaymentMethodToggle } from "./payment-account-controls";
+import { methodLabel, PAYMENT_METHODS } from "./payment-account-format";
 import type { PaymentAccountRow } from "./payment-accounts";
 
-export function PaymentAccountList({ accounts, failed }: { accounts: PaymentAccountRow[]; failed?: boolean }) {
+export function PaymentAccountList({ accounts, failed, disabledMethods = [] }: { accounts: PaymentAccountRow[]; failed?: boolean; disabledMethods?: string[] }) {
   return (
     <section className="space-y-3">
       <h2 className="text-base font-semibold text-[#1f1a2e]">Payment accounts</h2>
+      {!failed && (
+        <div className="flex flex-wrap items-center gap-2">
+          {PAYMENT_METHODS.map((m) => <PaymentMethodToggle key={m.value} method={m.value} enabled={!disabledMethods.includes(m.value)} />)}
+          {disabledMethods.length > 0 && <span className="text-xs text-[#6e6680]">Disabled: {disabledMethods.map(methodLabel).join(", ")}</span>}
+        </div>
+      )}
       {failed ? (
         <p role="status" className="text-sm text-[#8a5a00]">The Payment accounts could not be loaded. Reload the page.</p>
       ) : accounts.length === 0 ? (
@@ -20,7 +27,10 @@ export function PaymentAccountList({ accounts, failed }: { accounts: PaymentAcco
               </div>
               <div className="flex items-start gap-4">
                 <PaymentAccountQr accountId={a.id} label={a.label} hasQr={a.hasQr} />
-                <span className="text-xs text-[#6e6680]">{a.active ? "Active" : "Inactive"}</span>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="text-xs text-[#6e6680]">{a.active ? "Active" : "Inactive"}</span>
+                  <PaymentAccountControls account={a} />
+                </div>
               </div>
             </li>
           ))}
