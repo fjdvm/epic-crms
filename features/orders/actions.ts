@@ -14,7 +14,9 @@ import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
-import { cancelStorefrontItems, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { cancelStorefrontItems, changeOrderCourier, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { checkBooking, type CourierInput, type DispatchRecord } from "./dispatch-record";
+import { loadDispatchRecord } from "./dispatch-record-read";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
@@ -366,27 +368,12 @@ export async function startPreparing(id: number): Promise<OrderChangeResult> {
   }, FULFILMENT_MODULE);
 }
 
-/** What Staff typed in the dispatch dialog; only the Courier and https link are required, and only for Delivery. */
-export interface CourierInput { courier: string; trackingUrl: string; riderName?: string; riderPlate?: string; riderPhone?: string }
-
-function courierBooking(input: CourierInput | undefined): { ok: true; booking: CourierBooking } | { ok: false; reason: string } {
-  const name = input?.courier;
-  if (name !== "Lalamove" && name !== "Grab") return { ok: false, reason: "Choose Lalamove or Grab to dispatch a Delivery Order." };
-  let url: URL;
-  try { url = new URL(String(input?.trackingUrl ?? "").trim()); } catch { return { ok: false, reason: "Enter the booking's share link, starting with https://." }; }
-  if (url.protocol !== "https:") return { ok: false, reason: "Enter the booking's share link, starting with https://." };
-  const optional = (value: string | undefined) => value?.trim() || undefined;
-  return { ok: true, booking: {
-    name, trackingUrl: url.href,
-    ...(optional(input?.riderName) && { riderName: optional(input?.riderName) }),
-    ...(optional(input?.riderPlate) && { riderPlate: optional(input?.riderPlate) }),
-    ...(optional(input?.riderPhone) && { riderPhone: optional(input?.riderPhone) }),
-  } };
-}
-
 const DELIVERY_ONLY = "That step is for a Delivery Order. A Pickup Order is marked Ready for pickup and then Picked up.";
 
-/** A Delivery Order needs its courier booking and its storefront emails the link once. A Pickup Order is never dispatched. */
+/** A booking's audit values: the courier and link, never the rider's name, phone or plate. */
+const bookingAudit = (booking: CourierBooking | undefined) => ({ courier: booking?.name ?? null, tracking_url: booking?.trackingUrl ?? null });
+
+/** A Delivery Order needs its courier; the https link and rider details are optional and its storefront emails the link once. A Pickup Order is never dispatched. */
 export async function dispatchOrder(id: number, courier?: CourierInput): Promise<OrderChangeResult> {
   let booking: CourierBooking | undefined;
   return act(id, async (order) => {
@@ -394,14 +381,44 @@ export async function dispatchOrder(id: number, courier?: CourierInput): Promise
     if (order.status !== "preparing") {
       return { ok: false, reason: "Only a preparing Order can be dispatched; it may have already changed. Refresh it before trying again." };
     }
-    const checked = courierBooking(courier);
+    const checked = checkBooking(courier);
     if (!checked.ok) return checked;
     booking = checked.booking;
     return changeOrderStatus(id, { status: "dispatched", courier: booking });
   }, FULFILMENT_MODULE, {
     action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}${booking ? ` with ${booking.name}` : ""}.`,
-    // The courier's name only; never the rider's phone or plate.
-    get metadata() { return booking ? { courier: booking.name } : undefined; },
+    get metadata() { return { old: bookingAudit(undefined), new: bookingAudit(booking) }; },
+  });
+}
+
+/** Staff add or fix the courier, link or rider details while the Order is still dispatched. Audited with the old and new values. */
+export async function updateDispatchRecord(id: number, courier?: CourierInput): Promise<OrderChangeResult> {
+  let before: DispatchRecord | null = null;
+  let booking: CourierBooking | undefined;
+  let riderChanged = false;
+  return act(id, async (order, staff) => {
+    if (order.fulfillment_method !== "delivery") return { ok: false, reason: DELIVERY_ONLY };
+    if (order.status !== "dispatched") {
+      return { ok: false, reason: "The booking can only be changed while the Order is dispatched; it may have already changed. Refresh it before trying again." };
+    }
+    const checked = checkBooking(courier);
+    if (!checked.ok) return checked;
+    // Staff and Managers do this work, so they may read the rider details to compare them.
+    before = await loadDispatchRecord(database(), id, true);
+    const next = checked.booking;
+    const rider = (b: { riderName?: string; riderPlate?: string; riderPhone?: string } | null) => [b?.riderName, b?.riderPlate, b?.riderPhone].map(value => value ?? null);
+    const old = before ? [before.rider?.name, before.rider?.plate, before.rider?.phone].map(value => value ?? null) : [null, null, null];
+    riderChanged = JSON.stringify(old) !== JSON.stringify(rider(next));
+    if (before && before.courier === next.name && (before.trackingUrl ?? undefined) === next.trackingUrl && !riderChanged) {
+      return { ok: false, reason: "Nothing changed. Edit the courier, link or rider details first." };
+    }
+    booking = next;
+    return changeOrderCourier(id, { courier: next, staffId: staff.username, staffName: staff.name });
+  }, FULFILMENT_MODULE, {
+    action: "order.dispatch_updated", description: staff => `${staff.name} changed the dispatch details of Order #${id}.`,
+    get metadata() {
+      return { old: bookingAudit(before ? { name: before.courier, trackingUrl: before.trackingUrl ?? undefined } : undefined), new: bookingAudit(booking), rider_details_changed: riderChanged };
+    },
   });
 }
 

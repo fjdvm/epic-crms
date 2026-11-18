@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { uploadFile } from "@/features/files/client";
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { OrderActionDialog } from "./action-dialog";
 import { deliverOrder, dispatchOrder, markPickedUp, markReadyForPickup, startPreparing } from "./actions";
+import { CourierFields, useCourierForm } from "./courier-fields";
 import { DeliveryPhotoPicker } from "./delivery-photo-picker";
 import { formatPesos } from "@/features/customer-profiles/format";
 import { readyToPrepare } from "./fulfilment";
@@ -73,69 +75,27 @@ function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: numbe
   );
 }
 
-const COURIERS = ["Lalamove", "Grab"] as const;
-
 /**
- * A Delivery Order needs the courier and the booking's https share link, so Staff fill them in here. It emails the
- * Customer and sends the link outside the app, so it waits for the server instead of updating the screen first.
+ * A Delivery Order needs the courier; the booking's https share link and rider details are optional and can be added later.
+ * Dispatching shows the move at once and rolls back with the reason if the server refuses.
  */
 function DispatchDelivery({ id, triggerClassName, onMove }: { id: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
-  const [courier, setCourier] = useState<string>("");
-  const [link, setLink] = useState("");
-  const [riderName, setRiderName] = useState("");
-  const [riderPhone, setRiderPhone] = useState("");
-  const [riderPlate, setRiderPlate] = useState("");
-  const linkOk = /^https:\/\/\S+$/i.test(link.trim());
+  const form = useCourierForm();
 
   return (
     <OrderActionDialog
       trigger="Mark as dispatched"
       triggerClassName={triggerClassName}
       title={`Mark Order #${id} as dispatched?`}
-      description="Record the courier booking. The Customer is emailed once with the tracking link. A dispatched Order can no longer be cancelled."
+      description="Record the courier booking. The Customer is emailed once, with the tracking link if you add one. A dispatched Order can no longer be cancelled."
       confirm="Mark as dispatched"
       busy="Dispatching…"
-      disabled={!COURIERS.some(name => name === courier) || !linkOk}
-      run={() => dispatchOrder(id, { courier, trackingUrl: link, riderName, riderPlate, riderPhone })}
+      disabled={!form.valid}
+      run={() => dispatchOrder(id, form.input)}
       onOptimistic={onMove && (() => onMove("dispatched"))}
       successMessage={`Order #${id} dispatched.`}
     >
-      <div className="space-y-1.5">
-        <Label htmlFor="courier" className="text-[13px] font-medium text-foreground">Courier</Label>
-        <div id="courier" role="radiogroup" aria-label="Courier" className="flex gap-2">
-          {COURIERS.map(name => (
-            <button
-              key={name}
-              type="button"
-              role="radio"
-              aria-checked={courier === name}
-              onClick={() => setCourier(name)}
-              className={`h-9 flex-1 rounded-lg border text-[13px] ${courier === name ? "border-[#5b2a86] bg-[#f4effa] font-medium text-[#5b2a86]" : "border-[#e6e1ee]"}`}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="tracking-link" className="text-[13px] font-medium text-foreground">Booking share link</Label>
-        <Input id="tracking-link" type="url" autoComplete="off" placeholder="https://…" value={link} onChange={e => setLink(e.target.value)} />
-        {link.trim() && !linkOk ? <p className="text-xs text-[#dc2626]">The link must start with https://</p> : null}
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="rider-name" className="text-[13px] font-medium text-foreground">Rider name (optional)</Label>
-        <Input id="rider-name" autoComplete="off" value={riderName} onChange={e => setRiderName(e.target.value)} />
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="rider-contact" className="text-[13px] font-medium text-foreground">Rider contact (optional)</Label>
-          <Input id="rider-contact" type="tel" autoComplete="off" value={riderPhone} onChange={e => setRiderPhone(e.target.value)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="rider-plate" className="text-[13px] font-medium text-foreground">Plate no. (optional)</Label>
-          <Input id="rider-plate" autoComplete="off" value={riderPlate} onChange={e => setRiderPlate(e.target.value)} />
-        </div>
-      </div>
+      <CourierFields form={form} />
     </OrderActionDialog>
   );
 }
