@@ -278,4 +278,16 @@ describe("Correcting what the Proof reader read (#597)", () => {
     const [o] = await db.sql`select status from orders where id = ${id}`;
     expect(o.status).toBe("awaiting payment");
   });
+
+  it("never lets a correction bypass a Manager on a reused reference", async () => {
+    await proofOrder("gcash", "REF-SAME");
+    const { id, proof } = await readOrder(async () => {});
+    await db.sql`update order_payment_proofs set reference = 'REF-SAME' where order_id = ${id}`;
+    await signIn("ana");
+    expect(await correctProofReading(proof, "reference", `REF-${id}-new`, "Typo on the receipt")).toEqual({ ok: true });
+    expect(await proceedDespiteFlag(proof, "amount", "Looks right to me")).toEqual({ ok: true });
+    expect(await markPaid(id)).toMatchObject({ ok: false });
+    const [o] = await db.sql`select status from orders where id = ${id}`;
+    expect(o.status).toBe("awaiting payment");
+  });
 });
