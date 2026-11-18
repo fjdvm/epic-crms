@@ -85,7 +85,13 @@ const SCHEMA = `
     rejected_at timestamptz,
     rejected_by_id text,
     rejected_by_name text,
-    rejection_reason text
+    rejection_reason text,
+    account_id text,
+    account_method text,
+    account_bank_name text,
+    account_label text,
+    account_name text,
+    account_number text
   );
   create table order_email_outcomes (
     order_id integer not null references orders (id) on delete cascade,

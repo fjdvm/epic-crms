@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-profiles/format";
 
+import { ProofAccountView, ProofBadge, proofOutcome } from "./proof-account";
 import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
 import type { ShopRole } from "@/lib/portal/roles";
@@ -52,7 +53,7 @@ export type ProofApproval = { approvalId?: string; waiting?: boolean };
 /** A money step that stays disabled until Staff have found the payment in the shop's GCash history. */
 function GatedButton({ label, open, children }: { label: string; open: boolean; children: React.ReactNode }) {
   return open ? <>{children}</> : (
-    <Button type="button" disabled title="Tick the GCash history check first" className="h-auto rounded-lg px-3 py-1.5 text-[13px] leading-[normal] shadow-none">{label}</Button>
+    <Button type="button" disabled title="Tick the payment history check first" className="h-auto rounded-lg px-3 py-1.5 text-[13px] leading-[normal] shadow-none">{label}</Button>
   );
 }
 
@@ -80,10 +81,12 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
           </DialogTitle>
           <DialogDescription className="text-[13px] leading-[normal] text-[#71717a]">
             {order.customer.name} · {METHOD[order.method]} · uploaded {formatDate(submittedAt)} · order total {formatPesos(order.total)}
+            {" "}<ProofBadge outcome={proofOutcome({ rejected: order.proofRejectedAt !== null }, order.status)} />
           </DialogDescription>
         </div>
         <div className="grid min-h-0 gap-6 overflow-y-auto px-6 py-5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="space-y-4 text-sm text-[#1f1a2e]">
+            <ProofAccountView account={order.proof?.account ?? null} method={order.method} />
             {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} reference={reference} />}
             {reusedOn.length > 0 && (
               <p role="alert" className="rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
@@ -93,10 +96,11 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
             )}
             <section className="space-y-2 rounded-lg border border-[#e4e4e7] px-4 py-3">
               <h3 className="font-semibold">Before you mark it paid</h3>
+              <p role="note" className="rounded-md bg-[#fdf1d8] px-2.5 py-2 text-[13px] text-[#8a5a00]">Verify the real transfer with the payment provider first. A matching screenshot is not proof of payment.</p>
               <label className="flex items-start gap-2">
                 <input type="checkbox" checked={found} disabled={!canWork} onChange={(e) => setFound(e.target.checked)} className="mt-1" />
                 <span>
-                  I found {formatPesos(order.total)}{last4 && <> with reference …{last4}</>} in the shop&apos;s GCash history
+                  I found {formatPesos(order.total)}{last4 && <> with reference …{last4}</>} in the shop&apos;s {METHOD[order.method]} history
                   <span className="block text-xs text-[#71717a]">Required · a screenshot can be edited</span>
                 </span>
               </label>

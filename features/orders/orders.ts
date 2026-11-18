@@ -1,5 +1,6 @@
 import { DEFAULT_AUTOMATIC_CHECKS, type AutomaticChecks } from "@/features/settings/automatic-checks";
 import { customerNameSql } from "@/lib/deleted-customer";
+import { proofAccount, type ProofAccount, type ProofAccountRow } from "./proof-account";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
 import type postgres from "postgres";
 
@@ -156,20 +157,22 @@ export interface PaymentProofEntry {
   reference: string | null;
   screenshot: string | null;
   submittedAt: Date;
+  account?: ProofAccount | null;
   rejection: { at: Date; by: { id: string; name: string }; reason: string } | null;
 }
 
 /** Every proof the Customer submitted, oldest first, so the history reads in the order it happened. */
 export async function paymentProofHistory(sql: postgres.Sql, orderId: number, settings: AutomaticChecks = DEFAULT_AUTOMATIC_CHECKS): Promise<PaymentProofEntry[]> {
-  const rows = await sql<{
+  const rows = await sql<({
     id: number; reference: string | null; screenshot_file_id: string | null; screenshot_pathname: string | null; submitted_at: Date;
     rejected_at: Date | null; rejected_by_id: string | null; rejected_by_name: string | null; rejection_reason: string | null;
-  }[]>`select id, reference, screenshot_file_id, screenshot_pathname, submitted_at, rejected_at, rejected_by_id, rejected_by_name, rejection_reason
+  } & ProofAccountRow)[]>`select id, reference, screenshot_file_id, screenshot_pathname, submitted_at, rejected_at, rejected_by_id, rejected_by_name, rejection_reason,
+    account_id, account_method, account_bank_name, account_label, account_name, account_number
     from public.order_payment_proofs where order_id = ${orderId} order by submitted_at, id`;
   const checks = await paymentProofChecksForOrders(sql, [orderId], settings);
   return rows.map(p => ({
     ...checks.get(p.id),
-    id: p.id, reference: p.reference, screenshot: paymentScreenshotSource(orderId, p.screenshot_file_id, p.screenshot_pathname), submittedAt: p.submitted_at,
+    id: p.id, reference: p.reference, screenshot: paymentScreenshotSource(orderId, p.screenshot_file_id, p.screenshot_pathname), submittedAt: p.submitted_at, account: proofAccount(p),
     rejection: p.rejected_at ? { at: p.rejected_at, by: { id: p.rejected_by_id ?? "", name: p.rejected_by_name ?? "" }, reason: p.rejection_reason ?? "" } : null,
   }));
 }
