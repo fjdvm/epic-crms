@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cancelPaymentOrder, markPaid, rejectPaymentProof } from "@/features/orders/actions";
+import { correctProofReading, proceedDespiteFlag } from "@/features/orders/proof-read-actions";
+import { proofReadsFor } from "@/features/orders/proof-read";
 import { claimPaymentReview, loadReviewManagers, reassignPaymentReview } from "@/features/orders/payment-review-actions";
 import { loadPaymentReview, reviewTiming } from "@/features/orders/payment-review";
 import { paymentRows } from "@/features/orders/payments";
@@ -33,6 +35,7 @@ beforeAll(async () => {
   await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
   await db.sql.unsafe(readFileSync("docs/db/crms-payment-allocations.sql", "utf8"));
   await db.sql.unsafe(readFileSync("docs/db/crms-payment-proof-reads.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-payment-proof-corrections.sql", "utf8"));
   // The migration widens the existing notifications kind check, so give it the table it widens.
   await db.sql`create table crms.notifications (id bigint generated always as identity primary key, kind text not null constraint notifications_kind_check check (kind in ('new-customer')))`;
   await db.sql.unsafe(readFileSync("docs/db/crms-payment-reviews.sql", "utf8"));
@@ -41,7 +44,7 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.sql`truncate crms.payment_review_claims, crms.payment_reference_allocations, crms.approval_requests, crms.approval_events, order_payment_proofs, order_returns, orders, customers restart identity cascade`;
+  await db.sql`truncate crms.payment_proof_corrections, crms.payment_proof_reads, crms.payment_review_claims, crms.payment_reference_allocations, crms.approval_requests, crms.approval_events, order_payment_proofs, order_returns, orders, customers restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
     portal = new FakePortal(); storefront = new FakeStorefront(db.sql, undefined, storage); storage.reset(); notices.length = 0; oldDirectory = false; audit.mockClear();
@@ -208,5 +211,71 @@ describe("Manager payment review", () => {
     expect(await keys(null)).toEqual([`payment-review:${id}`]);
     await db.sql`update orders set status = 'cancelled' where id = ${id}`;
     expect(await keys(48)).toEqual([]);
+  });
+});
+
+describe("Correcting what the Proof reader read (#597)", () => {
+  const miss = { finding: "Mismatch", read: "1000", expected: "₱1,250.00" };
+  const ok = { finding: "Match", read: "x", expected: "x" };
+  async function readOrder(extra?: (id: number) => Promise<void>) {
+    const id = await proofOrder("gcash", "REF-DUP");
+    const [p] = await db.sql`select id from order_payment_proofs where order_id = ${id}`;
+    const findings = { amount: miss, date: ok, reference: ok, recipient: ok, accountNumber: ok };
+    await db.sql`insert into crms.payment_proof_reads (proof_id, order_id, status, findings) values (${p.id}, ${id}, 'read', ${db.sql.json(findings)})`;
+    await extra?.(id);
+    return { id, proof: Number(p.id), findings };
+  }
+  const changes = () => db.sql`select kind, field, original_value, corrected_value, original_finding, reason, by_name from crms.payment_proof_corrections order by id`;
+
+  it("needs a reason, keeps the original reading, and audits the correction with the person's name", async () => {
+    const { proof, findings } = await readOrder();
+    await signIn("ana");
+    expect(await correctProofReading(proof, "amount", "1250", "  ")).toEqual({ ok: false, reason: "Enter a reason for the correction." });
+    expect(await correctProofReading(proof, "amount", "", "Read the digits wrong")).toEqual({ ok: false, reason: "Enter the corrected value." });
+    expect(await changes()).toHaveLength(0);
+    expect(await correctProofReading(proof, "amount", "1250", "The 2 was cut off in the preview")).toEqual({ ok: true });
+    expect(await changes()).toEqual([expect.objectContaining({ kind: "correction", field: "amount", original_value: "1000", corrected_value: "1250", original_finding: "Mismatch", by_name: "ana Person" })]);
+    const [row] = await db.sql`select findings from crms.payment_proof_reads where proof_id = ${proof}`;
+    expect(row.findings).toEqual(findings);
+    const view = (await proofReadsFor(db.sql, [proof]))[proof];
+    expect(view.findings!.amount.read).toBe("1000");
+    expect(view.corrections).toEqual([expect.objectContaining({ kind: "correction", field: "amount", value: "1250", reason: "The 2 was cut off in the preview", by: "ana Person" })]);
+    expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "payment_proof.corrected", module: "Payments", description: expect.stringContaining("ana Person") })]);
+  });
+
+  it("lets a flag be proceeded past with a reason, but not a detail that already matches", async () => {
+    const { proof } = await readOrder();
+    await signIn("mario");
+    expect(await proceedDespiteFlag(proof, "amount", "")).toEqual({ ok: false, reason: "Enter a reason to proceed." });
+    expect(await proceedDespiteFlag(proof, "date", "Fine")).toEqual({ ok: false, reason: "That detail has no flag to proceed past." });
+    expect(await proceedDespiteFlag(proof, "amount", "Customer paid the rest in cash")).toEqual({ ok: true });
+    expect(await changes()).toEqual([expect.objectContaining({ kind: "override", field: "amount", corrected_value: null, original_finding: "Mismatch", by_name: "mario Person" })]);
+    expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "payment_proof.flag_overridden" })]);
+  });
+
+  it("is view-only for Admin and the CEO, and refuses a proof the reader has not read", async () => {
+    const { proof } = await readOrder();
+    for (const who of ["ada", "owner"]) {
+      await signIn(who);
+      expect(await correctProofReading(proof, "amount", "1250", "Because")).toEqual({ ok: false, reason: "Your Role can only view shop work." });
+      expect(await proceedDespiteFlag(proof, "amount", "Because")).toMatchObject({ ok: false });
+    }
+    await signIn("ana");
+    expect(await correctProofReading(9999, "amount", "1", "Because")).toEqual({ ok: false, reason: "The Proof reader has not read this proof yet." });
+    expect(await correctProofReading(proof, "colour", "1", "Because")).toEqual({ ok: false, reason: "Unknown detail." });
+    expect(await changes()).toHaveLength(0);
+  });
+
+  it("never lets a correction bypass a Manager on a third rejection", async () => {
+    const id = await reviewOrder();
+    const [p] = await db.sql`select id from order_payment_proofs where order_id = ${id} order by id desc limit 1`;
+    await db.sql`insert into crms.payment_proof_reads (proof_id, order_id, status, findings) values (${p.id}, ${id}, 'read', ${db.sql.json({ amount: miss, date: ok, reference: miss, recipient: ok, accountNumber: ok })})`;
+    await signIn("ana");
+    expect(await correctProofReading(Number(p.id), "reference", `REF-${id}-3`, "Looks right to me")).toEqual({ ok: true });
+    expect(await proceedDespiteFlag(Number(p.id), "amount", "Looks right to me")).toEqual({ ok: true });
+    const paid = await markPaid(id, { reason: "Corrected it" });
+    expect(paid).toMatchObject({ ok: false });
+    const [o] = await db.sql`select status from orders where id = ${id}`;
+    expect(o.status).toBe("awaiting payment");
   });
 });

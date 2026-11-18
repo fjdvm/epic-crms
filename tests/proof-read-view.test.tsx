@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { ProofReadFindings } from "@/features/orders/proof-read-view";
 import type { ProofReadView } from "@/features/orders/proof-read";
@@ -11,6 +11,7 @@ const f = (finding: "Match" | "Mismatch" | "Missing" | "Needs Review", read: str
 const read: ProofReadView = {
   status: "read",
   flags: { reusedReferenceOrderIds: [42], reusedImageProofIds: [] },
+  corrections: [],
   findings: {
     amount: f("Mismatch", "1000", "₱1,250.00"),
     date: f("Match", "2026-11-18", "after 2026-11-18"),
@@ -38,7 +39,7 @@ it.each(["staff", "manager", "admin", "ceo"] as const)("%s sees the findings and
 });
 
 it("shows Needs Review when the read failed", () => {
-  render(<ProofReadFindings role="manager" read={{ status: "needs-review", flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] },
+  render(<ProofReadFindings role="manager" read={{ status: "needs-review", flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, corrections: [],
     findings: { amount: f("Needs Review", null, null), date: f("Needs Review", null, null), reference: f("Needs Review", null, null), recipient: f("Needs Review", null, null), accountNumber: f("Needs Review", null, null) } }} />);
   expect(screen.getByRole("note").textContent).toMatch(/Needs Review\. The proof could not be read/);
   expect(screen.getAllByText("Needs Review", { selector: "li span span" })).toHaveLength(5);
@@ -49,4 +50,35 @@ it("says the proof is not read yet when there is no result, and shows nothing wi
   expect(screen.getByText(/Not read yet/)).toBeTruthy();
   rerender(<ProofReadFindings read={read} role={null} />);
   expect(container.textContent).toBe("");
+});
+
+vi.mock("@/features/orders/proof-read-actions", () => ({ correctProofReading: vi.fn(), proceedDespiteFlag: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
+it("offers Correct and Proceed anyway only to Staff and Managers; Admin and the CEO only view", () => {
+  for (const role of ["staff", "manager"] as const) {
+    const { unmount } = render(<ProofReadFindings read={read} role={role} proofId={7} />);
+    expect(screen.getAllByRole("button", { name: "Correct" })).toHaveLength(5);
+    // Only the three flagged details can be proceeded past.
+    expect(screen.getAllByRole("button", { name: "Proceed anyway" })).toHaveLength(3);
+    unmount();
+  }
+  for (const role of ["admin", "ceo"] as const) {
+    const { unmount } = render(<ProofReadFindings read={read} role={role} proofId={7} />);
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    unmount();
+  }
+});
+
+it("shows a correction beside the preserved original, re-judged, and a recorded override", () => {
+  const at = new Date();
+  render(<ProofReadFindings role="staff" proofId={7} read={{ ...read, corrections: [
+    { kind: "correction", field: "amount", value: "1250", originalValue: "1000", originalFinding: "Mismatch", reason: "2 was cut off", by: "Ana", at },
+    { kind: "override", field: "reference", value: null, originalValue: null, originalFinding: "Missing", reason: "Checked with GCash", by: "Ana", at },
+  ] }} />);
+  const amount = screen.getByTestId("change-amount");
+  expect(amount.textContent).toMatch(/Corrected by Ana \(original read: 1000\)\. Reason: 2 was cut off/);
+  expect(amount.closest("li")!.getAttribute("data-finding")).toBe("Match");
+  expect(screen.getByTestId("change-reference").textContent).toMatch(/Ana proceeded despite Missing\. Reason: Checked with GCash/);
+  expect(screen.getByTestId("change-reference").closest("li")!.querySelectorAll("button")).toHaveLength(1);
 });

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { formatPesos } from "@/features/customer-profiles/format";
 import type { ShopRole } from "@/lib/portal/roles";
 import type { Field, Finding } from "./proof-reader";
-import type { ProofReadView } from "./proof-read";
+import { rejudge, type ProofCorrection, type ProofReadView } from "./proof-read";
+import { ProofReadControls } from "./proof-read-controls";
 
 const LABEL: Record<Field, string> = {
   amount: "Amount", date: "Date", reference: "Reference no.", recipient: "Sent to", accountNumber: "Account number",
@@ -43,7 +44,7 @@ export function explain(field: Field, f: { finding: Finding; read: string | null
  * there is no control here, so no role (Admin and the CEO included) can start a read by looking.
  * Findings are evidence, never proof of payment: Staff still verify the real transfer.
  */
-export function ProofReadFindings({ read, role }: { read: ProofReadView | null | undefined; role: ShopRole | null }) {
+export function ProofReadFindings({ read, role, proofId }: { read: ProofReadView | null | undefined; role: ShopRole | null; proofId?: number }) {
   if (!role) return null;
   const heading = <h3 className="font-semibold">Proof reader findings</h3>;
   const shell = "space-y-2 rounded-lg border border-[#e4e4e7] px-4 py-3 text-sm";
@@ -65,14 +66,27 @@ export function ProofReadFindings({ read, role }: { read: ProofReadView | null |
           {ORDER.map(field => {
             const f = read.findings![field];
             if (!f) return null;
-            const { badge, Icon } = STYLE[f.finding];
+            const latest = read.corrections.findLast((c: ProofCorrection) => c.field === field);
+            const fixed = latest?.kind === "correction" && latest.value ? latest : null;
+            const shownFinding = fixed ? rejudge(field, fixed.value!, f.expected) : f.finding;
+            const { badge, Icon } = STYLE[shownFinding];
             return (
-              <li key={field} data-finding={f.finding} className="flex flex-col gap-1 py-2">
+              <li key={field} data-finding={shownFinding} className="flex flex-col gap-1 py-2">
                 <span className="flex items-center gap-2 text-[13px] font-medium">
                   {LABEL[field]}
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${badge}`}><Icon aria-hidden className="size-3" />{f.finding}</span>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${badge}`}><Icon aria-hidden className="size-3" />{shownFinding}</span>
                 </span>
-                <span className="text-xs text-[#71717a]">{explain(field, f)}</span>
+                <span className="text-xs text-[#71717a]">{explain(field, { ...f, finding: shownFinding, read: fixed ? fixed.value : f.read })}</span>
+                {latest && (
+                  <span data-testid={`change-${field}`} className="text-xs text-[#5b2a86]">
+                    {latest.kind === "correction"
+                      ? <>Corrected by {latest.by} (original read: {latest.originalValue ?? "nothing"}). Reason: {latest.reason}</>
+                      : <>{latest.by} proceeded despite {latest.originalFinding}. Reason: {latest.reason}</>}
+                  </span>
+                )}
+                {proofId !== undefined && (role === "staff" || role === "manager") && (
+                  <ProofReadControls proofId={proofId} field={field} label={LABEL[field]} flagged={shownFinding !== "Match" && latest?.kind !== "override"} />
+                )}
               </li>
             );
           })}
