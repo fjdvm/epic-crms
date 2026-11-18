@@ -949,6 +949,20 @@ describe("payment proof history, reject, ask for a new proof and approve anyway"
     expect(screen.queryByRole("button", { name: "Approve anyway" })).toBeNull();
   });
 
+  it("a Manager on a reused reference names which Order the transfer pays", async () => {
+    vi.mocked(markPaid).mockResolvedValue({ ok: false, reason: "Transfer allocated to Order #7. It does not pay this Order: reject the proof or ask for a new one." });
+    render(<OrderDetailView order={reused()} modules={PAYMENTS} role="manager" />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve anyway" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByLabelText("Order #1042 (this Order)")).toHaveProperty("checked", true);
+    fireEvent.click(within(dialog).getByLabelText("Order #7"));
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "It belongs to the first order" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve anyway" }));
+
+    await waitFor(() => expect(markPaid).toHaveBeenCalledWith(1042, { reason: "It belongs to the first order", approvalId: undefined, allocateToOrderId: 7 }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Transfer allocated to Order #7")));
+  });
+
   it("lists every proof with who rejected it and why", () => {
     render(<OrderDetailView order={capped()} modules={PAYMENTS} role="manager" />);
 
