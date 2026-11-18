@@ -21,7 +21,7 @@ export default async function FulfilmentPage() {
        <div className="flex-1 space-y-1">
         <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Fulfilment</h1>
         <p className="text-sm leading-[normal] text-[#6e6680]">
-          Every Order ready to prepare moves left to right. Each move updates the Order&apos;s status on the store.
+          Pick a tab to see what needs packing, what is out with a courier and what failed. Each move updates the Order&apos;s status on the store.
         </p>
        </div>
        {mayReadFulfilmentReport(staff.role) && (

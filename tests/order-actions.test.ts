@@ -612,7 +612,7 @@ describe("Fulfilment Order actions", () => {
   it("loads the board only with the Fulfilment Module", async () => {
     const id = await order("delivery", "confirmed");
     const result = await getFulfilmentBoard();
-    expect(result.ok && result.board.ready).toEqual([expect.objectContaining({ id })]);
+    expect(result.ok && result.board.orders).toEqual([expect.objectContaining({ id })]);
     expect(requireModule).toHaveBeenCalledWith("Fulfilment");
   });
   it("marks a dispatched Order delivered through the storefront and records its Delivery time", async () => {
@@ -620,7 +620,7 @@ describe("Fulfilment Order actions", () => {
     expect(await deliverOrder(id, deliveryPhoto())).toEqual({ ok: true, order: { id, status: "delivered", deliveryFeeInCentavos: null } });
     const { loadFulfilmentBoard } = await import("@/features/orders/fulfilment");
     const result = await loadFulfilmentBoard(() => db.sql);
-    expect(result.ok && result.board.delivered).toEqual([expect.objectContaining({ id, deliveredAt: expect.any(Date) })]);
+    expect(result.ok && result.board.orders).toEqual([expect.objectContaining({ id, deliveredAt: expect.any(Date) })]);
     expect(requireModule).toHaveBeenCalledWith("Fulfilment");
     expect(storage.files.get("file-1")).toMatchObject({ retentionType: "permanent" });
   });

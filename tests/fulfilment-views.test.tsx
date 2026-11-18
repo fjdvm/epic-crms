@@ -46,50 +46,79 @@ const card = (overrides: Partial<FulfilmentOrder>): FulfilmentOrder => ({
   paymentMethod: "gcash",
   deliveredAt: null,
   packedBy: null,
+  failedOpen: false,
   ...overrides,
 });
 
-const EMPTY: FulfilmentBoard = { ready: [], preparing: [], dispatched: [], delivered: [] };
+type Columns = Partial<Record<"ready" | "preparing" | "dispatched" | "delivered", FulfilmentOrder[]>>;
 
-function board(columns: Partial<FulfilmentBoard>) {
-  return render(<FulfilmentBoardView board={{ ...EMPTY, ...columns }} />);
+/** Renders the board on its default All active tab; the keys only group Orders for readability. */
+function board(columns: Columns) {
+  const value: FulfilmentBoard = { orders: Object.values(columns).flat() };
+  return render(<FulfilmentBoardView board={value} />);
 }
 
 const png = (name = "delivered.png") => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: "image/png" });
 const choosePhoto = (dialog: HTMLElement, file: File) =>
   fireEvent.change(within(dialog).getByLabelText("Delivery photo"), { target: { files: [file] } });
 
-const column = (name: string) => screen.getByRole("region", { name });
+const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name: new RegExp(`^${name}\\d`) }));
 const cardFor = (id: number) => screen.getByRole("link", { name: `#${id}` }).closest("[data-fulfilment-card]") as HTMLElement;
 
 describe("the Fulfilment board", () => {
-  it("has a column per status with its count, named after the storefront's statuses", () => {
+  it("has the eight tabs with their counts, named in screen wording", () => {
     board({
       ready: [card({ id: 1 }), card({ id: 2, status: "confirmed", paymentMethod: "cash-on-delivery", paymentLabel: "Unpaid" })],
       preparing: [card({ id: 3, status: "preparing" })],
     });
 
-    expect(within(column("Ready to prepare")).getByText("2")).toBeTruthy();
-    expect(within(column("Preparing")).getByText("1")).toBeTruthy();
-    expect(within(column("Dispatched")).getByText("0")).toBeTruthy();
-    expect(within(column("Delivered (7 days)")).getByText("0")).toBeTruthy();
-    for (const design of ["To pack", "Packed", "Shipped"]) {
-      expect(screen.queryByText(design)).toBeNull();
+    const names = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(names).toEqual(["All active3", "To pack2", "Preparing1", "Ready for pickup0", "Out for delivery0", "Failed0", "Completed0", "All3"]);
+    for (const old of ["Waiting for rider", "Packed", "Shipped"]) {
+      expect(screen.queryByRole("tab", { name: new RegExp(`^${old}`) })).toBeNull();
     }
   });
 
-  it("puts each card in the column the board gives it", () => {
+  it("filters the same Orders by tab: Failed apart from Out for delivery, Completed apart from the rest", () => {
     board({
       ready: [card({ id: 1 })],
-      preparing: [card({ id: 2, status: "preparing" })],
-      dispatched: [card({ id: 3, status: "dispatched" })],
+      dispatched: [card({ id: 3, status: "dispatched" }), card({ id: 5, status: "dispatched", failedOpen: true })],
       delivered: [card({ id: 4, status: "delivered", deliveredAt: new Date("2026-10-21T00:00:00Z") })],
     });
 
-    expect(within(column("Ready to prepare")).getByRole("link", { name: "#1" })).toBeTruthy();
-    expect(within(column("Preparing")).getByRole("link", { name: "#2" })).toBeTruthy();
-    expect(within(column("Dispatched")).getByRole("link", { name: "#3" })).toBeTruthy();
-    expect(within(column("Delivered (7 days)")).getByRole("link", { name: "#4" })).toBeTruthy();
+    tab("To pack");
+    expect(screen.getByRole("link", { name: "#1" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "#3" })).toBeNull();
+    tab("Out for delivery");
+    expect(screen.getByRole("link", { name: "#3" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "#5" })).toBeNull();
+    tab("Failed");
+    expect(screen.getByRole("link", { name: "#5" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Failed delivery/ }).getAttribute("href")).toBe("/orders/5/failed-delivery");
+    tab("Completed");
+    expect(screen.getByRole("link", { name: "#4" })).toBeTruthy();
+    tab("All active");
+    expect(screen.queryByRole("link", { name: "#4" })).toBeNull();
+    tab("All");
+    expect(screen.getByRole("link", { name: "#4" })).toBeTruthy();
+  });
+
+  it("uses the screen wording Out for delivery, Ready for pickup and Picked up", () => {
+    board({
+      dispatched: [card({ id: 3, status: "dispatched" })],
+      ready: [card({ id: 6, status: "ready for pickup", fulfillmentMethod: "pickup" })],
+    });
+    expect(within(cardFor(3)).getByText("Out for delivery")).toBeTruthy();
+    expect(within(cardFor(6)).getByText("Ready for pickup")).toBeTruthy();
+    expect(screen.queryByText("Dispatched")).toBeNull();
+    tab("Ready for pickup");
+    expect(screen.getByRole("link", { name: "#6" })).toBeTruthy();
+  });
+
+  it("shows a collected Pickup Order as Picked up on Completed", () => {
+    board({ delivered: [card({ id: 7, status: "collected", fulfillmentMethod: "pickup", deliveredAt: new Date("2026-10-21T03:00:00Z") })] });
+    tab("Completed");
+    expect(within(cardFor(7)).getByText("Picked up 21 Oct 2026")).toBeTruthy();
   });
 
   it("shows each card's number, status, Customer, items and how it is fulfilled and paid, and links to its Order", () => {
@@ -105,6 +134,7 @@ describe("the Fulfilment board", () => {
 
   it("shows when a delivered Order was delivered", () => {
     board({ delivered: [card({ status: "delivered", deliveredAt: new Date("2026-10-21T03:00:00Z") })] });
+    tab("Completed");
 
     expect(within(cardFor(1042)).getByText("Delivered 21 Oct 2026")).toBeTruthy();
   });
@@ -117,6 +147,7 @@ describe("the Fulfilment board", () => {
       delivered: [card({ id: 4, status: "delivered", deliveredAt: new Date("2026-10-21T00:00:00Z") })],
     });
 
+    tab("All");
     const buttons = (id: number) => within(cardFor(id)).queryAllByRole("button").map((b) => b.textContent);
     expect(buttons(1)).toEqual(["Pack order"]);
     expect(buttons(2)).toEqual(["Mark as dispatched"]);
@@ -126,8 +157,9 @@ describe("the Fulfilment board", () => {
 
   it("says so when a column is empty", () => {
     board({});
+    tab("Preparing");
 
-    expect(within(column("Preparing")).getByText("No Orders here.")).toBeTruthy();
+    expect(screen.getByText("No Orders here.")).toBeTruthy();
   });
 
   it("asks for no courier on a Pickup dispatch or a delivery, but a Delivery dispatch asks for the booking", () => {
@@ -311,7 +343,8 @@ describe("moving an Order on the board", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(reason));
     expect(toast.success).not.toHaveBeenCalled();
-    expect(within(column("Dispatched")).getByRole("link", { name: "#1042" })).toBeTruthy();
+    tab("Out for delivery");
+    expect(screen.getByRole("link", { name: "#1042" })).toBeTruthy();
     expect(refresh).toHaveBeenCalled();
   });
 });
