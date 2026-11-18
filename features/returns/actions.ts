@@ -4,7 +4,7 @@ import { approvals } from "@/features/approvals/server";
 import type { ApprovalOptions, ApprovalResult } from "@/features/approvals/workflow";
 import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { revalidatePath } from "next/cache";
-import { changeReturnStatus, createStorefrontReplacementOrder, extendStorefrontRefundWindow, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
+import { changeReturnStatus, changeStorefrontRefundDestination, createStorefrontReplacementOrder, extendStorefrontRefundWindow, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
@@ -12,6 +12,8 @@ import type { ReturnResolution } from "./returns";
 import { database } from "@/lib/db";
 import { RETURNS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
+import { checkDestination, describeMasked, destinationDigest, maskDestination, mayChangeDestination, readDestination, sameDestination, type DestinationInput, type MaskedRefundDestination, type RefundDestination } from "./refund-destination";
+import { randomUUID } from "node:crypto";
 import { loadReturns, loadReturnDetail, loadReturnStats, type ReturnQuery } from "./returns";
 
 /** Each endpoint proves Returns access itself, before opening a database connection. */
@@ -62,6 +64,10 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
         and coalesce(to_jsonb(order_return_items)->>'condition', '') = ''`;
       const [lines] = await database()`select count(*)::int as count from public.order_return_items where return_id = ${id}`;
       if (lines.count > 0 && pending.count > 0) return { ok: false, reason: "Inspect the returned items first." };
+    }
+    // Staff never type a destination at refund time: the money goes where the Customer confirmed, and only a Manager changes that.
+    if (decision.status === "refunded" && form instanceof FormData && [...form.keys()].some(key => /destination|account|bank|number|method/i.test(key))) {
+      return { ok: false, reason: "The refund goes to the destination the Customer confirmed. It cannot be changed here; a Manager changes it first." };
     }
     if (decision.status === "approved") decision = { ...decision, finalResolution: decision.finalResolution ?? current.preferred_resolution };
     const execute = async (): Promise<ReturnChangeResult> => {
@@ -295,4 +301,90 @@ export async function extendRefundWindow(orderId: number, reason: string, option
     }
     return result;
   } catch { return { ok: false, reason: "The Refund window is temporarily unavailable. Refresh the Return before retrying." }; }
+}
+
+const DESTINATION_ROW = `to_jsonb(r)->>'refund_method' as refund_method, to_jsonb(r)->>'refund_account_name' as refund_account_name,
+  to_jsonb(r)->>'refund_account_number' as refund_account_number, to_jsonb(r)->>'refund_bank_name' as refund_bank_name`;
+type DestinationRow = { status: string; order_id: number; goods_required: boolean | null; final_resolution: ReturnResolution | null;
+  refund_method: string | null; refund_account_name: string | null; refund_account_number: string | null; refund_bank_name: string | null };
+async function destinationRow(id: number): Promise<DestinationRow | undefined> {
+  const sql = database();
+  const [row] = await sql<DestinationRow[]>`select r.status, r.order_id, r.goods_required, r.final_resolution, ${sql.unsafe(DESTINATION_ROW)} from public.order_returns r where r.id = ${id}`;
+
+  return row;
+}
+
+/**
+ * The full account number, only where refund processing needs it: an approved refund whose goods are back (or not required) and
+ * that is not yet Refunded. Staff and Managers only (Admin and CEO view it masked). Every look is audited, with the number masked.
+ */
+export async function revealRefundDestination(id: number): Promise<{ ok: true; destination: RefundDestination } | { ok: false; reason: string }> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
+  try {
+    const row = await destinationRow(id);
+    if (!row) return { ok: false, reason: "Return was not found." };
+    const ready = row.final_resolution === "refund" && (row.status === "goods received" || (row.status === "approved" && row.goods_required === false));
+    if (!ready) return { ok: false, reason: "The full number is shown only when the refund is ready to be sent." };
+    const destination = readDestination(row);
+    if (!destination) return { ok: false, reason: "This Return has no confirmed refund destination." };
+    await recordAudit(gatewayAuditTrail, {
+      action: "return.refund_destination_viewed", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+      target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+      description: `${staff.name} opened the full Refund destination on Return RMA-${id} (Order #${row.order_id}): ${describeMasked(maskDestination(destination))}.`,
+      occurred_at: new Date().toISOString(), operationId: `return:${id}:refund_destination_viewed:${randomUUID()}`,
+    });
+
+    return { ok: true, destination };
+  } catch { return { ok: false, reason: "The refund destination is temporarily unavailable. Try again." }; }
+}
+
+/**
+ * A Manager changes a locked Refund destination, with a reason and the Customer's confirmation, before money is sent. Staff see
+ * "Request approval". Never optimistic: it decides where money goes. The approval request holds only the masked form and a digest,
+ * never the full number, and the Audit Event records the number masked.
+ */
+export async function changeRefundDestination(
+  id: number,
+  input: DestinationInput & { reason: string; customerConfirmed: boolean },
+  options: ApprovalOptions = {},
+): Promise<{ ok: true; destination: MaskedRefundDestination } | { ok: false; reason: string } | ApprovalResult> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
+  const checked = checkDestination(input);
+  if (!checked.ok) return checked;
+  const why = typeof input.reason === "string" ? input.reason.trim() : "";
+  if (!why) return { ok: false, reason: "Enter a reason for changing the destination." };
+  if (input.customerConfirmed !== true) return { ok: false, reason: "The Customer must confirm the new destination before it can change." };
+  const next = checked.destination;
+  try {
+    const row = await destinationRow(id);
+    if (!row) return { ok: false, reason: "Return was not found." };
+    if (!mayChangeDestination(row.status, row.final_resolution)) return { ok: false, reason: "The destination can change only on an approved refund that has not been sent yet." };
+    const current = readDestination(row);
+    if (current && sameDestination(current, next)) return { ok: false, reason: "That is already the confirmed destination." };
+    const from = current ? describeMasked(maskDestination(current)) : "none";
+    const to = describeMasked(maskDestination(next));
+    const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "return.change-destination", targetId: String(id),
+      payload: { to, digest: destinationDigest(next) }, amountInCentavos: 0 }, { ...options, reason: options.reason ?? why }, async () => {
+      const done = await changeStorefrontRefundDestination(id, { ...next, reason: why, customerConfirmed: true }, { id: staff.username, name: staff.name });
+      if (done.ok) {
+        await recordAudit(gatewayAuditTrail, {
+          action: "return.refund_destination_changed", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+          target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+          description: `${staff.name} changed the Refund destination on Return RMA-${id} (Order #${row.order_id}) from ${from} to ${to}, with the Customer's confirmation: ${why}`,
+          occurred_at: new Date().toISOString(), operationId: `return:${id}:refund_destination_changed:${done.changedAt.getTime()}`,
+          metadata: { from, to, reason: why, customerConfirmed: true },
+        });
+      }
+      return done.ok ? { ok: true as const, destination: maskDestination(next) } : done;
+    });
+    if (result.ok) {
+      revalidatePath("/(app)/returns", "layout");
+      revalidatePath("/approvals");
+    }
+    return result;
+  } catch { return { ok: false, reason: "The refund destination is temporarily unavailable. Refresh the Return before retrying." }; }
 }

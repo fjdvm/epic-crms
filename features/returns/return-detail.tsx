@@ -8,6 +8,8 @@ import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 import type { ApprovalView } from "@/features/approvals/view";
 import type { ShopRole } from "@/lib/portal/roles";
 import { InspectReturn } from "./inspect-return";
+import { RefundDestinationCard } from "./refund-destination-card";
+import { mayChangeDestination } from "./refund-destination";
 import { RefundWindow } from "./refund-window";
 import { ReturnActions } from "./return-actions";
 import { ReturnFlagNotes } from "./return-flag-notes";
@@ -44,6 +46,7 @@ export function ReturnDetailView({
   role,
   requests,
   windowRequest,
+  destinationRequest,
   flags,
   flagExplanations,
 }: {
@@ -59,6 +62,8 @@ export function ReturnDetailView({
   requests?: ApprovalView[];
   /** The Staff request to extend this Order's Refund window, if any. */
   windowRequest?: ApprovalView;
+  /** The Staff request to change this Return's Refund destination, if any. */
+  destinationRequest?: ApprovalView;
   /** Why this Return is flagged, for Staff to double-check. Nothing here blocks the Return. */
   flags?: ReturnFlag[];
   /** Kept explanations by rule, for Managers, Admin and CEO; absent for Staff. */
@@ -225,6 +230,15 @@ export function ReturnDetailView({
               </div>
             </dl>
           </section>
+
+          {(detail.preferredResolution === "refund" || detail.finalResolution === "refund") && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Refund destination</h2>
+              <RefundDestinationCard returnId={detail.id} destination={detail.refundDestination} locked={detail.refundDestinationLocked}
+                canReveal={detail.finalResolution === "refund" && (detail.status === "goods received" || (detail.status === "approved" && detail.goodsRequired === false))}
+                canChange={mayChangeDestination(detail.status, detail.finalResolution)} role={role} request={destinationRequest} />
+            </section>
+          )}
 
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Refund window</h2>

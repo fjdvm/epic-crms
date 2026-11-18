@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 import { customerNameSql } from "@/lib/deleted-customer";
+import { DESTINATION_LOCKED_STATUSES, maskDestination, readDestination, type MaskedRefundDestination } from "./refund-destination";
 
 export const RETURN_STATUSES = ["requested", "approved", "goods received", "refunded", "replaced", "declined", "cancelled"] as const;
 export type ReturnResolution = "refund" | "replacement";
@@ -182,6 +183,9 @@ export interface ReturnDetail extends ReturnRow {
   refundWindowExtendedAt: Date | null;
   /** The ₱0 Replacement Order sent for this Return, once a Manager approved the replacement. */
   replacementOrderId: number | null;
+  /** Where the Customer asked the refund to go, number masked; null on a Return that has none. Locked once a Manager approves. */
+  refundDestination: MaskedRefundDestination | null;
+  refundDestinationLocked: boolean;
   images: { fileId: string; position: number }[];
   history: { status: ReturnStatus; actor: { type: "staff" | "customer"; id: string; name: string }; at: Date; note: string | null }[];
 }
@@ -196,7 +200,10 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       refunded_at: Date | null; replaced_at: Date | null; video_file_id: string | null; refund_proof_file_id: string | null; order_status: string; payment_method: string;
       delivered_at: Date | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null;
       window_extended_at: string | null; replacement_order_id: number | null;
-    })[]>`select r.*, o.customer_id, o.status as order_status, o.payment_method, o.delivered_at,
+      dest_method: string | null; dest_name: string | null; dest_number: string | null; dest_bank: string | null;
+    })[]>`select r.*,
+      to_jsonb(r)->>'refund_method' as dest_method, to_jsonb(r)->>'refund_account_name' as dest_name,
+      to_jsonb(r)->>'refund_account_number' as dest_number, to_jsonb(r)->>'refund_bank_name' as dest_bank, o.customer_id, o.status as order_status, o.payment_method, o.delivered_at,
       to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,
       to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at,
       to_jsonb(o)->>'refund_window_extended_at' as window_extended_at,
@@ -221,6 +228,9 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       refundWindowEndsAt: row.delivered_at ? new Date(row.delivered_at.getTime() + (row.window_extended_at ? 48 : 24) * 60 * 60 * 1000) : null,
       refundWindowExtendedAt: row.window_extended_at ? new Date(row.window_extended_at) : null,
       replacementOrderId: row.replacement_order_id,
+      // Masked here, so the full number never reaches a page or a browser from this read.
+      refundDestination: (() => { const full = readDestination({ refund_method: row.dest_method, refund_account_name: row.dest_name, refund_account_number: row.dest_number, refund_bank_name: row.dest_bank }); return full ? maskDestination(full) : null; })(),
+      refundDestinationLocked: (DESTINATION_LOCKED_STATUSES as readonly string[]).includes(row.status),
       images: images.map(image => ({ fileId: image.file_id, position: image.position })),
       history: history.map(step => ({ status: step.status, actor: { type: step.actor_type, id: step.actor_id, name: step.actor_name },
         at: step.occurred_at, note: step.note })),
