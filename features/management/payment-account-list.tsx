@@ -1,0 +1,27 @@
+import { methodLabel } from "./payment-account-format";
+import type { PaymentAccountRow } from "./payment-accounts";
+
+export function PaymentAccountList({ accounts, failed }: { accounts: PaymentAccountRow[]; failed?: boolean }) {
+  return (
+    <section className="space-y-3">
+      <h2 className="text-base font-semibold text-[#1f1a2e]">Payment accounts</h2>
+      {failed ? (
+        <p role="status" className="text-sm text-[#8a5a00]">The Payment accounts could not be loaded. Reload the page.</p>
+      ) : accounts.length === 0 ? (
+        <p className="text-sm text-[#6e6680]">No Payment accounts yet.</p>
+      ) : (
+        <ul className="divide-y divide-[#f0f0f2] rounded-lg border border-[#e6e1ee]">
+          {accounts.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+              <div>
+                <p className="font-medium text-[#1f1a2e]">{a.label}</p>
+                <p className="text-[#6e6680]">{methodLabel(a.method)}{a.bankName ? ` · ${a.bankName}` : ""} · {a.accountName} · {a.maskedNumber}</p>
+              </div>
+              <span className="text-xs text-[#6e6680]">{a.active ? "Active" : "Inactive"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
