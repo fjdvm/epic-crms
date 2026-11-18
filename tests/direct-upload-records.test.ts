@@ -21,7 +21,7 @@ afterAll(async () => { await db.close(); });
 beforeEach(async () => {
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria', 'maria@example.com')`;
-  await db.sql`insert into orders (customer_id, status) values ('c1', 'dispatched')`;
+  await db.sql`insert into orders (customer_id, status, payment_method) values ('c1', 'dispatched', 'gcash')`;
   storage = new FakeFileStorage();
   storefront = new FakeStorefront(db.sql, undefined, storage);
   const send = storefrontFetch(storefront);

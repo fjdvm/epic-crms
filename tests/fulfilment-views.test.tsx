@@ -235,7 +235,43 @@ describe("moving an Order on the board", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as picked up" }));
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 picked up."));
-    expect(markPickedUp).toHaveBeenCalledWith(1042);
+    expect(markPickedUp).toHaveBeenCalledWith(1042, undefined);
+  });
+
+  it("records the collected cash with a COD pickup at once: pre-filled with the total, passes the amount, and rolls back with the reason on refusal", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof markPickedUp>>>();
+    vi.mocked(markPickedUp).mockReturnValue(pending.promise);
+    board({ preparing: [card({ status: "ready for pickup", fulfillmentMethod: "pickup", paymentMethod: "cash-on-delivery", total: 115_050 })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as picked up" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 as picked up?" });
+    const amount = within(dialog).getByLabelText("Payment collected (₱)") as HTMLInputElement;
+    expect(amount.value).toBe("1150.50");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark as picked up" }));
+
+    expect(markPickedUp).toHaveBeenCalledWith(1042, 115_050);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mark as picked up" })).toBeNull();
+    expect(toast.success).not.toHaveBeenCalled();
+    await act(async () => pending.settle({ ok: false, reason: "The collected amount must equal the Order total of ₱1150.50." }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The collected amount must equal the Order total of ₱1150.50."));
+    await waitFor(() => expect(within(cardFor(1042)).getByRole("button", { name: "Mark as picked up" })).toBeTruthy());
+  });
+
+  it("sends the typed COD amount with a delivery, and cannot confirm an unreadable one", async () => {
+    vi.mocked(deliverOrder).mockResolvedValue(moved(1042, "delivered"));
+    board({ dispatched: [card({ status: "dispatched", paymentMethod: "cash-on-delivery", total: 115_000 })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+    const amount = within(dialog).getByLabelText("Payment collected (₱)") as HTMLInputElement;
+    expect(amount.value).toBe("1150.00");
+    fireEvent.change(amount, { target: { value: "abc" } });
+    expect((within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("asks for no amount on an Order that is not Cash on Delivery", () => {
+    board({ preparing: [card({ status: "ready for pickup", fulfillmentMethod: "pickup" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as picked up" }));
+    expect(screen.queryByLabelText("Payment collected (₱)")).toBeNull();
   });
 
   it("offers Picked up, not Delivered, for a legacy Pickup Order that is already dispatched", () => {
@@ -383,6 +419,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
+  codCollection: null,
   packedBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),

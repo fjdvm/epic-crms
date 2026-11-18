@@ -15,13 +15,17 @@ export interface ProofRejection { reason: string; staffId: string; staffName: st
 /** The final amounts Staff saw when confirming, in centavos; the storefront checks them against its own figures. */
 export interface ConfirmedAmounts { subtotalInCentavos: number; discountInCentavos: number; deliveryFeeInCentavos: number; totalInCentavos: number; staffId: string; staffName: string }
 
+/** Cash a Cash on Delivery Order's courier or the shop collected; the storefront saves it with the status in one transaction. */
+export interface CodCollection { amountInCentavos: number; staffId: string; staffName: string }
+
 export type OrderStatusUpdate =
   | { status: "preparing"; staffId: string; staffName: string; courier?: never }
   | { status: "confirmed"; amounts: ConfirmedAmounts; deliveryFeeInCentavos?: number; courier?: never }
   | { status: "cancelled"; deliveryFeeInCentavos?: never; courier?: never; amounts?: never }
   | { status: "dispatched"; courier?: CourierBooking; deliveryFeeInCentavos?: never }
-  | { status: "ready for pickup" | "collected"; staffId: string; staffName: string; courier?: never; deliveryFeeInCentavos?: never }
-  | { status: "delivered"; deliveryPhotoFileId: string; deliveryFeeInCentavos?: never; courier?: never }
+  | { status: "ready for pickup"; staffId: string; staffName: string; courier?: never; deliveryFeeInCentavos?: never; codCollection?: never }
+  | { status: "collected"; staffId: string; staffName: string; codCollection?: CodCollection; courier?: never; deliveryFeeInCentavos?: never }
+  | { status: "delivered"; deliveryPhotoFileId: string; codCollection?: CodCollection; deliveryFeeInCentavos?: never; courier?: never }
   | { status: "paid"; staffId: string; staffName: string; approvedAnyway?: { reason: string }; deliveryFeeInCentavos?: never; courier?: never };
 export type OrderChangeResult =
   | { ok: true; order: { id: number; status: string; deliveryFeeInCentavos: number | null } }

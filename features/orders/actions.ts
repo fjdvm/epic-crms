@@ -14,7 +14,7 @@ import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
-import { cancelStorefrontItems, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { cancelStorefrontItems, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
@@ -405,6 +405,19 @@ export async function dispatchOrder(id: number, courier?: CourierInput): Promise
   });
 }
 
+const COD_AMOUNT_REASON = (total: number) => `The collected amount must equal the Order total of ${pesos(total)}. Enter that amount to record the payment.`;
+
+/** A COD Order's completion carries the cash collected, and only the saved total is accepted; any other kind of Order records none. */
+function codCollection(order: CurrentOrder, staff: Staff, collectedInCentavos: number | undefined): { ok: true; collection?: CodCollection } | { ok: false; reason: string } {
+  if (order.payment_method !== "cash-on-delivery") return { ok: true };
+  const total = order.subtotal_in_centavos - (order.discount_in_centavos ?? 0) + (order.delivery_fee_in_centavos ?? 0);
+  if (collectedInCentavos !== total) return { ok: false, reason: COD_AMOUNT_REASON(total) };
+  return { ok: true, collection: { amountInCentavos: total, staffId: staff.username, staffName: staff.name } };
+}
+
+const collectionAudit = (collection: CodCollection | undefined) =>
+  collection ? { cod_collected_in_centavos: collection.amountInCentavos, cod_collected_by: collection.staffName } : undefined;
+
 /** A Pickup Order is packed and waiting at the shop; the storefront tells the Customer it can be collected. */
 export async function markReadyForPickup(id: number): Promise<OrderChangeResult> {
   return act(id, async (order, staff) => {
@@ -419,20 +432,27 @@ export async function markReadyForPickup(id: number): Promise<OrderChangeResult>
 }
 
 /** The Customer collected it. The storefront records collected_at, which counts like delivered_at. A legacy Pickup Order still `dispatched` can be completed too. */
-export async function markPickedUp(id: number): Promise<OrderChangeResult> {
+export async function markPickedUp(id: number, collectedInCentavos?: number): Promise<OrderChangeResult> {
+  let collection: CodCollection | undefined;
   return act(id, async (order, staff) => {
     if (order.fulfillment_method !== "pickup") return { ok: false, reason: DELIVERY_ONLY };
     if (order.status !== "ready for pickup" && order.status !== "dispatched") {
       return { ok: false, reason: "Only a Pickup Order that is Ready for pickup can be marked Picked up; it may have already changed. Refresh it before trying again." };
     }
-    return changeOrderStatus(id, { status: "collected", staffId: staff.username, staffName: staff.name });
+    const checked = codCollection(order, staff, collectedInCentavos);
+    if (!checked.ok) return checked;
+    collection = checked.collection;
+    return changeOrderStatus(id, { status: "collected", staffId: staff.username, staffName: staff.name, ...(collection && { codCollection: collection }) });
   }, FULFILMENT_MODULE, {
-    action: "order.picked_up", description: staff => `${staff.name} marked Pickup Order #${id} Picked up.`,
+    action: "order.picked_up",
+    description: staff => `${staff.name} marked Pickup Order #${id} Picked up${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`,
+    // Read when the audit is written, after the move saved.
+    get metadata() { return collectionAudit(collection); },
   });
 }
 
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
-export async function deliverOrder(id: number, form?: FormData): Promise<OrderChangeResult> {
+export async function deliverOrder(id: number, form?: FormData, collectedInCentavos?: number): Promise<OrderChangeResult> {
   return act(id, async (order, staff) => {
     if (order.fulfillment_method !== "delivery") return { ok: false, reason: DELIVERY_ONLY };
     if (order.status !== "dispatched") {
@@ -441,6 +461,9 @@ export async function deliverOrder(id: number, form?: FormData): Promise<OrderCh
     if (!(form instanceof FormData) || form.getAll("photo").length !== 1) {
       return { ok: false, reason: "Choose exactly one Delivery photo." };
     }
+    const checked = codCollection(order, staff, collectedInCentavos);
+    if (!checked.ok) return checked;
+    const collection = checked.collection;
     let deliveryPhotoFileId: string;
     try {
       const upload = await recordUpload(FULFILMENT_MODULE, form.get("photo"), staff.username);
@@ -450,9 +473,10 @@ export async function deliverOrder(id: number, form?: FormData): Promise<OrderCh
       return { ok: false, reason: "Delivery photo could not be stored. The Order was not marked delivered." };
     }
     // Refused or uncertain writes leave Temporary evidence for file-storage's seven-day cleanup.
-    const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId });
+    const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId, ...(collection && { codCollection: collection }) });
     if (result.ok) {
-      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered", `${staff.name} marked Order #${id} delivered.`);
+      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered",
+        `${staff.name} marked Order #${id} delivered${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`, collectionAudit(collection));
       await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivery_photo_attached", `${staff.name} attached a Delivery photo to Order #${id}.`);
       try {
         await gatewayFileStorage.promote(deliveryPhotoFileId);

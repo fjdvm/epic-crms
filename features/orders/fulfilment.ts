@@ -76,7 +76,7 @@ export async function loadFulfilmentBoard(
         to_jsonb(o)->>'packed_by_name' as packed_by_name,
         exists (select 1 from public.failed_deliveries f where f.order_id = o.id and f.rebooked_at is null) as failed_open,
         o.created_at, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name,
-        o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0) as total
+        o.subtotal_in_centavos - coalesce((to_jsonb(o)->>'discount_in_centavos')::int, 0) + coalesce(o.delivery_fee_in_centavos, 0) as total
       from public.orders o join public.customers c on c.id = o.customer_id
       where o.status in ('confirmed', 'paid', 'preparing', 'ready for pickup', 'dispatched')
         or (o.status in ('delivered', 'collected', 'received')
