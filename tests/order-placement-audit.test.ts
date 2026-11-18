@@ -77,3 +77,13 @@ describe("order placement audit", () => {
     expect(deliver).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("emailEvent occurrences", () => {
+  it("gives two rejections their own operation ids", () => {
+    const row = { order_id: 7, kind: "rejected", status: "failed", reason: "bounced", updated_at: new Date("2026-01-01T00:00:00Z") };
+    const first = emailEvent({ ...row, occurrence: "1" })!, second = emailEvent({ ...row, occurrence: "2" })!;
+    expect(first.operationId).not.toBe(second.operationId);
+    expect(second.metadata).toMatchObject({ kind: "rejected", occurrence: "2" });
+    expect(emailEvent(row)!.operationId).toBe("order:7:email:rejected:failed");
+  });
+});

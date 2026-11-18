@@ -14,13 +14,14 @@ import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
+import { isOccurrence, isStatusEmailKind, STATUS_EMAILS } from "./status-emails";
 import { cancelStorefrontItems, changeOrderCourier, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
 import { checkBooking, type CourierInput, type DispatchRecord } from "./dispatch-record";
 import { loadDispatchRecord } from "./dispatch-record-read";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
-import { CANCELLABLE_STATUSES, confirmationEmailFailure, loadOrder } from "./orders";
+import { CANCELLABLE_STATUSES, failedEmails, loadOrder } from "./orders";
 import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { feeRefusal, freeDeliveryRule, type FreeDeliveryRule } from "./free-delivery";
 import { reusedReferenceOrderIds } from "./payment-proof-checks";
@@ -552,26 +553,29 @@ export async function loadPackingSlip(id: number) {
 }
 
 /**
- * Staff and Managers resend a confirmation email that failed after retries. It reaches a Customer, so it waits
- * for the server and is never optimistic. Each resend is its own Audit Event (a fresh operation id), with the
- * person's name, and the notice clears only because the storefront now records the email as sent.
+ * Staff and Managers with the email's owning Module resend a Status email that failed after retries. It reaches
+ * a Customer, so it waits for the server and is never optimistic. The storefront resends under the email's
+ * stable id (reconciling first if Notification already accepted it), so a repeat never sends twice. Each Resend
+ * is its own Audit Event (a fresh operation id) with the person's name; a refusal changes and audits nothing.
  */
-export async function resendConfirmationEmail(id: number): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const staff = await requireModule(ORDERS_MODULE);
+export async function resendStatusEmail(id: number, kind: string, occurrence: string | null = null): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
+  if (!isStatusEmailKind(kind) || !isOccurrence(occurrence)) return { ok: false, reason: "Unknown email." };
+  const staff = await requireModule(STATUS_EMAILS[kind].module);
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
-    if (!(await confirmationEmailFailure(database(), id))) return { ok: false, reason: "That email is not marked as failed. Refresh the Order." };
+    const failed = await failedEmails(database(), id);
+    if (!failed.some((email) => email.kind === kind && email.occurrence === occurrence)) return { ok: false, reason: "That email is not marked as failed. Refresh the Order." };
   } catch {
     return { ok: false, reason: "Order is temporarily unavailable." };
   }
-  const result = await resendOrderEmail(id, "confirmation", { id: staff.id, name: staff.name });
+  const result = await resendOrderEmail(id, { kind, occurrence }, { id: staff.id, name: staff.name });
   if (!result.ok) return result;
   await recordAudit(gatewayAuditTrail, {
-    action: "order.email_resent", module: ORDERS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+    action: "order.email_resent", module: STATUS_EMAILS[kind].module, outcome: "success", actor: staffAuditActor(staff),
     target: { type: "order", id: String(id), display_name: `Order #${id}` },
-    description: `${staff.name} resent the confirmation email for Order #${id}.`,
-    metadata: { kind: "confirmation" }, occurred_at: new Date().toISOString(), operationId: `order:${id}:email-resend:${randomUUID()}`,
+    description: `${staff.name} resent the ${STATUS_EMAILS[kind].label} email for Order #${id}.`,
+    metadata: { kind, ...(occurrence ? { occurrence } : {}), reconciled: result.reconciled }, occurred_at: new Date().toISOString(), operationId: `order:${id}:email-resend:${randomUUID()}`,
   });
   revalidatePath(`/orders/${id}`);
   return { ok: true };

@@ -231,7 +231,7 @@ export function OrderDetailView({
           </div>
         </div>
         <CancellationNote state={cancellation} />
-        {order.emailFailure && modules.includes(ORDERS_MODULE) && <EmailNotSent orderId={order.id} reason={order.emailFailure.reason} role={role} />}
+        {order.emailFailures && order.emailFailures.length > 0 && <EmailNotSent orderId={order.id} failures={order.emailFailures} modules={modules} role={role} />}
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">

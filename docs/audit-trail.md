@@ -177,13 +177,24 @@ address; addresses are stripped from the failure reason. A refused Order action 
 An email outcome change appears in the log at the next signal, so the storefront must signal CREOMS
 when it saves one.
 
-## Resent confirmation email (#573)
+## Resent Status emails (#573, #605)
 
-Order Details shows "Email not sent" with the reason while `order_email_outcomes` holds a failed
-`confirmation` row. Staff and Managers can resend it after a confirm dialog; Admin and the CEO only read.
-`resendConfirmationEmail` asks the storefront (`POST /api/internal/orders/:id/email/resend`, body `{kind, staffId,
-staffName}`; the storefront must resend under the email's stable id and record the outcome as `sent`, which
-clears the notice) and waits for the answer. That endpoint is the storefront's to provide. Each success writes `order.email_resent` with the
-person's name and a fresh operation id (a second resend is a second entry). A refusal changes and audits nothing.
-The #572 sync will also record the failed-to-sent change as a system `order.email_sent`, so one resend can show two
-entries: who asked, and what the storefront then recorded.
+Order Details shows "Email not sent" with the reason for every `order_email_outcomes` row whose status is
+`failed`, for any of the nine Status emails (`confirmation`, `paid`, `rejected`, `expired`, `manager_review`,
+`preparing`, `dispatched`, `ready_for_pickup`, `completed`; `features/orders/status-emails.ts`). A row is one event
+occurrence: the storefront adds a nullable `occurrence` text column (for example the rejection number) so two
+rejections are two rows, and CREOMS reads it defensively (`to_jsonb(e)->>'occurrence'`), so no CREOMS migration is
+needed. Staff and Managers holding the email's owning Module (confirmation: Orders; paid, rejected, expired,
+Manager review: Payments; Preparing, dispatched, Ready for pickup, completed: Fulfilment) can resend it after a
+confirm dialog; Admin and the CEO only read.
+`resendStatusEmail` asks the storefront (`POST /api/internal/orders/:id/email/resend`, body `{kind, occurrence,
+staffId, staffName}`). The storefront resends under the email's stable id, so a repeat never sends twice; when
+Notification already accepted the email it reconciles the delivery status first, sends nothing and answers
+`status: "reconciled"` (otherwise `"sent"`), echoing `kind` and `occurrence`. Either answer records the outcome as
+`sent`, which clears the notice. A Resend reaches a Customer, so it waits for the server and is never optimistic.
+That endpoint is the storefront's to provide. Each success writes `order.email_resent` (module = the owning
+Module) with the person's name, the kind, the occurrence, whether it was reconciled, and a fresh operation id
+(a second Resend of a different event is a second entry). A refusal changes and audits nothing, and a failed
+email never reverses the saved update. The #572 sync records the failed-to-sent change as a system
+`order.email_sent` (operation id includes the occurrence), so one resend can show two entries: who asked, and what
+the storefront then recorded.
