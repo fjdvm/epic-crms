@@ -165,6 +165,52 @@ describe("Order actions", () => {
     expect(await realQuote(id, 15_000, 115_000)).toMatchObject({ ok: false, reason: expect.stringMatching(/already changed/) });
   });
 
+  describe("free delivery locked at confirmation (#580)", () => {
+    const qualifying = async (threshold = 250_000) => {
+      const id = await order();
+      await db.sql`update orders set subtotal_in_centavos = 300000, free_delivery_applied = true, free_delivery_threshold_in_centavos = ${threshold} where id = ${id}`;
+      return id;
+    };
+
+    it("refuses a fee on a qualifying Order in plain words, with no event and no storefront call", async () => {
+      const id = await qualifying();
+      expect(await quoteDeliveryFee(id, 15_000)).toEqual({ ok: false, reason: expect.stringContaining("locked at ₱0.00") });
+      expect(storefront.requests).toBe(0);
+      expect(audit).not.toHaveBeenCalled();
+      expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "placed" } });
+    });
+
+    it("confirms a qualifying Order at ₱0 and audits the benefit with the threshold that applied", async () => {
+      const id = await qualifying();
+      expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: true, order: { status: "confirmed", deliveryFeeInCentavos: 0 } });
+      expect(audit).toHaveBeenCalledWith(expect.objectContaining({
+        action: "order.confirmed",
+        metadata: { subtotal_in_centavos: 300000, discount_in_centavos: 0, delivery_fee_in_centavos: 0, total_in_centavos: 300000, free_delivery_applied: true, free_delivery_threshold_in_centavos: 250_000 },
+      }));
+    });
+
+    it("lets the saved rule decide, not the current threshold", async () => {
+      const id = await qualifying(250_000);
+      await db.sql`update orders set subtotal_in_centavos = 100000 where id = ${id}`;
+      expect(await quoteDeliveryFee(id, 15_000)).toMatchObject({ ok: false });
+      expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: true });
+    });
+
+    it("does not lock an Order saved as not qualifying: a fee is needed, and ₱0 by hand is accepted", async () => {
+      const id = await order();
+      await db.sql`update orders set subtotal_in_centavos = 300000, free_delivery_applied = false, free_delivery_threshold_in_centavos = 500000 where id = ${id}`;
+      expect(await quoteDeliveryFee(id, Number.NaN)).toMatchObject({ ok: false });
+      expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: true, order: { deliveryFeeInCentavos: 0 } });
+      expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.confirmed", metadata: expect.not.objectContaining({ free_delivery_applied: true }) }));
+    });
+
+    it("has no fee for a Pickup Order", async () => {
+      const id = await order("pickup");
+      expect(await confirmPickup(id)).toMatchObject({ ok: true, order: { status: "confirmed" } });
+      expect(await quoteDeliveryFee(await order("pickup"), 0)).toMatchObject({ ok: false });
+    });
+  });
+
   it("refuses a Delivery fee quote on a Pickup Order", async () => {
     const id = await order("pickup");
     expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: false });
