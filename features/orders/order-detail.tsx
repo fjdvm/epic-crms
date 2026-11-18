@@ -1,5 +1,7 @@
 import { ProofAccountView, ProofBadge, proofOutcome } from "./proof-account";
 import { PaymentProofChecksView } from "./payment-proof-checks-view";
+import { ProofReadFindings } from "./proof-read-view";
+import type { ProofReadView } from "./proof-read";
 import Link from "next/link";
 import { FULFILMENT_MODULE, ORDERS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 
@@ -94,7 +96,7 @@ function Screenshot({ source, alt }: { source: string | null; alt: string }) {
 }
 
 /** Every proof the Customer sent, oldest first, with who rejected each and why. */
-function PaymentProof({ order }: { order: OrderDetail }) {
+function PaymentProof({ order, reads, role }: { order: OrderDetail; reads: Record<number, ProofReadView>; role: ShopRole | null }) {
   const method = orderLabel(order.paymentMethod);
   if (!isPrepaid(order.paymentMethod)) return <p className="text-sm text-[#6e6680]">Cash on delivery: no proof needed.</p>;
   const history = order.paymentProofs;
@@ -112,6 +114,7 @@ function PaymentProof({ order }: { order: OrderDetail }) {
           {proof.account && <ProofAccountView account={proof.account} method={order.paymentMethod} />}
           {proof.confirmed && proof.expected && proof.checks && <PaymentProofChecksView confirmed={proof.confirmed} expected={proof.expected} checks={proof.checks} />}
           <Screenshot source={proof.screenshot} alt={`Payment proof ${index + 1} for order ${order.id}`} />
+          <ProofReadFindings read={reads[proof.id]} role={role} />
           {proof.rejection && (
             <p className="text-xs text-[#6e6680]">
               Rejected by {proof.rejection.by.name || "Staff"} on {formatDate(proof.rejection.at)}: {proof.rejection.reason}
@@ -158,6 +161,7 @@ export function OrderDetailView({
   cancellation = null,
   codFlags = [],
   paymentReview = null,
+  proofReads = {},
 }: {
   /** The viewer's role; omitted means Staff, so the buttons that need a Manager read "Request approval". */
   role?: ShopRole | null;
@@ -179,6 +183,8 @@ export function OrderDetailView({
   returns?: ReturnRow[] | null;
   /** The Manager payment review when the Order has one (3 rejected proofs, still awaiting payment). */
   paymentReview?: PaymentReview | null;
+  /** The Proof reader's stored findings by proof id (#596); read-only. */
+  proofReads?: Record<number, ProofReadView>;
 }) {
   const address = order.address;
   const backToReturns = modules.includes(RETURNS_MODULE) && !modules.includes(ORDERS_MODULE);
@@ -347,7 +353,7 @@ export function OrderDetailView({
               )}
             </dl>
             {paymentReview && <PaymentReviewPanel id={order.id} review={paymentReview} role={role ?? null} />}
-            <PaymentProof order={order} />
+            <PaymentProof order={order} reads={proofReads} role={role ?? "staff"} />
             {codFlags.length > 0 && (
               <div data-testid="cod-flags" className="space-y-1 rounded-lg bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">
                 <p className="font-medium">Double-check before confirming</p>

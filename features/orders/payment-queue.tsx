@@ -10,6 +10,7 @@ import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-p
 
 import { ProofAccountView, ProofBadge, proofOutcome } from "./proof-account";
 import { PaymentProofChecksView } from "./payment-proof-checks-view";
+import { ProofReadFindings } from "./proof-read-view";
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
 import type { ShopRole } from "@/lib/portal/roles";
 import { ApproveAnywayDialog, AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
@@ -90,6 +91,7 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
           <div className="space-y-4 text-sm text-[#1f1a2e]">
             <ProofAccountView account={order.proof?.account ?? null} method={order.method} />
             {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} reference={reference} />}
+            <ProofReadFindings read={order.proofRead} role={role} />
             {reusedOn.length > 0 && (
               <p role="alert" className="rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
                 Reference already used on {reusedOn.map((n, i) => <span key={n}>{i > 0 && ", "}<Link href={`/orders/${n}`} className="font-medium underline">Order #{n}</Link></span>)}.

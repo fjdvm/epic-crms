@@ -7,6 +7,7 @@ import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadCodFlags } from "@/features/orders/cod-actions";
 import { loadOrder } from "@/features/orders/orders";
 import { loadCancellationState } from "@/features/orders/cancellation-state";
+import { proofReadsOrEmpty } from "@/features/orders/proof-read";
 import { loadPaymentReview } from "@/features/orders/payment-review";
 import { crmsDatabase } from "@/lib/crms-db";
 import { currentPaymentReviewHours } from "@/features/settings/automatic-checks-server";
@@ -88,6 +89,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       <BackgroundRefresh />
       <OrderDetailView
         paymentReview={paymentReview}
+        proofReads={modules.includes(PAYMENTS_MODULE) ? await proofReadsOrEmpty(crmsDatabase(), order.paymentProofs.map(p => p.id)) : {}}
         role={role}
         approvalId={approvalId}
         waitingApproval={waitingApproval}

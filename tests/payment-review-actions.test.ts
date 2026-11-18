@@ -32,6 +32,7 @@ beforeAll(async () => {
   await db.sql`create schema crms`;
   await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
   await db.sql.unsafe(readFileSync("docs/db/crms-payment-allocations.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-payment-proof-reads.sql", "utf8"));
   // The migration widens the existing notifications kind check, so give it the table it widens.
   await db.sql`create table crms.notifications (id bigint generated always as identity primary key, kind text not null constraint notifications_kind_check check (kind in ('new-customer')))`;
   await db.sql.unsafe(readFileSync("docs/db/crms-payment-reviews.sql", "utf8"));
