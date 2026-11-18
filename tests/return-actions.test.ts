@@ -434,7 +434,7 @@ describe("Return Audit Events", () => {
         ? `Ana Reyes marked Return RMA-${id} (Order #1) refunded: items ₱100.00, Delivery fee not included.`
         : `Ana Reyes marked Return RMA-${id} (Order #1) ${test.next}.`,
       occurred_at: expect.any(String), operationId: `return:${id}:${action}`,
-      ...(test.next === "refunded" ? { metadata: { itemsInCentavos: 10000, deliveryFeeIncluded: false } } : {}),
+      ...(test.next === "refunded" ? { metadata: { itemsInCentavos: 10000, deliveryFeeIncluded: false, deliveryFeeInCentavos: 0 } } : {}),
     };
     // Sending a replacement also records the linked Replacement Order, once.
     const calls = test.next === "replaced" ? 2 : 1;
