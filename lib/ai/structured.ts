@@ -19,22 +19,28 @@ export function configuredStructuredModels(env: Record<string, string | undefine
 }
 
 /** Each provider gets one bounded attempt; invalid structured output also falls back. Never log prompts or provider errors. */
-export async function structuredOutput<T>({ schema, system, prompt, models, maxOutputTokens = 600 }: {
+export async function structuredOutput<T>({ schema, system, prompt, models, maxOutputTokens = 600, image, timeoutMs = 20_000 }: {
   schema: z.ZodType<T>;
   system: string;
   prompt: string;
   models: StructuredModel[];
   maxOutputTokens?: number;
+  /** One image sent beside the prompt, for a model that reads pictures. */
+  image?: Uint8Array;
+  timeoutMs?: number;
 }): Promise<{ ok: true; output: T; model: string } | { ok: false; reason: "no-keys" | "model-failed" }> {
   for (const { name, model } of models) {
     try {
       const { output } = await generateText({
-        model, system, prompt,
+        model, system,
+        ...(image
+          ? { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: prompt }, { type: "file" as const, mediaType: "image/*" as const, data: image }] }] }
+          : { prompt }),
         output: Output.object({ schema }),
         temperature: 0,
         maxOutputTokens,
         maxRetries: 0,
-        abortSignal: AbortSignal.timeout(20_000),
+        abortSignal: AbortSignal.timeout(timeoutMs),
       });
       return { ok: true, model: name, output };
     } catch {
