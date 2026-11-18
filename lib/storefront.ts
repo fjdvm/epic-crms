@@ -3,7 +3,8 @@ import { createHmac } from "node:crypto";
 
 export interface CourierBooking {
   name: "Lalamove" | "Grab";
-  trackingUrl: string;
+  /** An https share link; optional, and can be added or fixed later while the Order is dispatched. */
+  trackingUrl?: string;
   riderName?: string;
   riderPlate?: string;
   riderPhone?: string;
@@ -93,7 +94,7 @@ async function orderRequest(id: number, update: OrderStatusUpdate | ProofRejecti
       typeof body.packedBy?.at !== "string" || !Number.isFinite(Date.parse(body.packedBy.at)))) ||
       ("status" in update && update.status === "delivered" && body.deliveryPhotoFileId !== update.deliveryPhotoFileId) ||
       body.id !== id || ("status" in update ? body.status !== (responseStatus ?? update.status) : !["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(body.status)) ||
-      ("courier" in update && update.courier !== undefined && (body.courier?.name !== update.courier.name || body.courier?.trackingUrl !== update.courier.trackingUrl)) ||
+      ("courier" in update && update.courier !== undefined && (body.courier?.name !== update.courier.name || (body.courier?.trackingUrl ?? undefined) !== update.courier.trackingUrl)) ||
       ("deliveryFeeInCentavos" in update && update.deliveryFeeInCentavos !== undefined && body.deliveryFeeInCentavos !== update.deliveryFeeInCentavos) ||
       ("amounts" in update && update.amounts !== undefined && body.totalInCentavos !== undefined && body.totalInCentavos !== update.amounts.totalInCentavos) ||
       !(body.deliveryFeeInCentavos === null || Number.isSafeInteger(body.deliveryFeeInCentavos))) {
@@ -108,6 +109,31 @@ async function orderRequest(id: number, update: OrderStatusUpdate | ProofRejecti
     return { ok: true, order: { id: body.id, status: body.status, deliveryFeeInCentavos: body.deliveryFeeInCentavos } };
   } catch {
     return { ok: false, reason: "Storefront could not confirm the change. Refresh the Order before trying again." };
+  }
+}
+
+/**
+ * Staff add or fix the booking of an Order that is still dispatched. The storefront saves it in one transaction and does
+ * not email the Customer again. Not optimistic on the storefront side: CREOMS shows the change at once and rolls it back if this refuses.
+ */
+export async function changeOrderCourier(id: number, change: { courier: CourierBooking; staffId: string; staffName: string }): Promise<OrderChangeResult> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the change. Refresh the Order before trying again.";
+  try {
+    const response = await fetch(new URL(`/api/internal/orders/${id}/courier`, origin), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret)}` },
+      body: JSON.stringify(change), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the change." };
+    if (body?.id !== id || body.status !== "dispatched" || body.courier?.name !== change.courier.name ||
+      (body.courier?.trackingUrl ?? undefined) !== change.courier.trackingUrl) return { ok: false, reason: uncertain };
+    return { ok: true, order: { id, status: "dispatched", deliveryFeeInCentavos: Number.isSafeInteger(body.deliveryFeeInCentavos) ? body.deliveryFeeInCentavos : null } };
+  } catch {
+    return { ok: false, reason: uncertain };
   }
 }
 

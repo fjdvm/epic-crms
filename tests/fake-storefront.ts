@@ -25,6 +25,12 @@ export class FakeStorefront {
 
   constructor(private sql: postgres.Sql, private now: () => Date = () => new Date(), private files?: FakeFileStorage) {}
 
+  /** The storefront keeps the courier booking on the Order, the rider details with it. */
+  private async saveCourier(id: number, courier: { name: string; trackingUrl?: string; riderName?: string; riderPlate?: string; riderPhone?: string }) {
+    await this.sql`update orders set courier = ${courier.name}, courier_tracking_url = ${courier.trackingUrl ?? null},
+      courier_rider_name = ${courier.riderName ?? null}, courier_rider_plate = ${courier.riderPlate ?? null}, courier_rider_phone = ${courier.riderPhone ?? null} where id = ${id}`;
+  }
+
   private async requestReturn(request: Request, orderId: number): Promise<Response> {
     const customerId = request.headers.get("X-Test-Customer");
     if (!customerId) return Response.json({ error: "Sign in first." }, { status: 401 });
@@ -417,6 +423,20 @@ export class FakeStorefront {
         return Response.json({ id, status: updated.status, deliveryFeeInCentavos: updated.delivery_fee_in_centavos });
       });
     }
+    const courierEdit = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/courier$/);
+    if (courierEdit && request.method === "POST") {
+      if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+      const id = Number(courierEdit[1]), { courier, staffId, staffName } = await request.json();
+      if (!staffId || !staffName) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+      if (!["Lalamove", "Grab"].includes(courier?.name) || (courier.trackingUrl !== undefined && !/^https:\/\/\S{1,2040}$/.test(courier.trackingUrl))) {
+        return Response.json({ error: "Choose Lalamove or Grab; a booking link must be https." }, { status: 400 });
+      }
+      const [order] = await this.sql`select status, fulfillment_method from orders where id = ${id}`;
+      if (!order || order.status !== "dispatched" || order.fulfillment_method !== "delivery") return Response.json({ error: "Order already changed." }, { status: 409 });
+      this.couriers.set(id, courier);
+      await this.saveCourier(id, courier);
+      return Response.json({ id, status: "dispatched", courier: { name: courier.name, trackingUrl: courier.trackingUrl ?? null }, deliveryFeeInCentavos: null });
+    }
     const resend = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/email\/resend$/);
     if (resend && request.method === "POST") {
       if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
@@ -450,9 +470,9 @@ export class FakeStorefront {
     if (mayDeliver && (!update.deliveryPhotoFileId || order.delivery_photo_file_id)) {
       return Response.json({ error: "Exactly one permanent Delivery photo is required." }, { status: 400 });
     }
-    if (mayDispatch && order.fulfillment_method === "delivery" &&
-      (!["Lalamove", "Grab"].includes(update.courier?.name) || !/^https:\/\//.test(update.courier?.trackingUrl ?? ""))) {
-      return Response.json({ error: "Dispatching a Delivery Order needs the courier and an https tracking link." }, { status: 400 });
+    if (mayDispatch && (!["Lalamove", "Grab"].includes(update.courier?.name) ||
+      (update.courier?.trackingUrl !== undefined && !/^https:\/\/\S{1,2040}$/.test(update.courier.trackingUrl)))) {
+      return Response.json({ error: "Dispatching a Delivery Order needs the courier, and any tracking link must be https." }, { status: 400 });
     }
     if (mayMarkPaid && order.payment_proof_rejections >= 3 && !update.approvedAnyway?.reason?.trim()) {
       return Response.json({ error: "After 3 rejected proofs a Manager must approve with a reason." }, { status: 400 });
@@ -504,7 +524,10 @@ export class FakeStorefront {
       where id = ${id} and status = ${order.status} returning id, status, delivery_fee_in_centavos, delivery_photo_file_id, packed_by_id, packed_by_name, packed_at`;
     if (!changed) return Response.json({ error: "Order already changed." }, { status: 409 });
     if (mayPrepare) this.packedEvents.push({ action: "order.packed", actor: { id: changed.packed_by_id, name: changed.packed_by_name }, at: changed.packed_at.toISOString() });
-    if (mayDispatch && update.courier) this.couriers.set(id, update.courier);
+    if (mayDispatch && update.courier) {
+      this.couriers.set(id, update.courier);
+      await this.saveCourier(id, update.courier);
+    }
     return Response.json({ id: changed.id, status: changed.status, ...(changed.packed_at ? { packedBy: { id: changed.packed_by_id, name: changed.packed_by_name, at: changed.packed_at.toISOString() } } : {}), ...(this.couriers.has(id) ? { courier: this.couriers.get(id) } : {}), deliveryFeeInCentavos: changed.delivery_fee_in_centavos, deliveryPhotoFileId: changed.delivery_photo_file_id });
   };
 }

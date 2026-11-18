@@ -23,6 +23,8 @@ import { PaymentPill } from "./status-pill";
 import { EmailNotSent } from "./email-not-sent";
 import { CancelDispatched, CancellationNote } from "./cancel-dispatched";
 import type { CancellationState } from "./cancellation-state";
+import { DispatchRecordCard } from "./dispatch-record-card";
+import type { DispatchRecord } from "./dispatch-record";
 
 /** A Delivery Order whose entered Delivery fee is ₱0 ships free, whatever the subtotal. */
 export function hasFreeDelivery(order: OrderDetail): boolean {
@@ -162,6 +164,7 @@ export function OrderDetailView({
   codFlags = [],
   paymentReview = null,
   proofReads = {},
+  dispatch = null,
 }: {
   /** The viewer's role; omitted means Staff, so the buttons that need a Manager read "Request approval". */
   role?: ShopRole | null;
@@ -185,6 +188,8 @@ export function OrderDetailView({
   paymentReview?: PaymentReview | null;
   /** The Proof reader's stored findings by proof id (#596); read-only. */
   proofReads?: Record<number, ProofReadView>;
+  /** The courier booking of a Delivery Order; its rider details are present only for Staff and Managers. */
+  dispatch?: DispatchRecord | null;
 }) {
   const address = order.address;
   const backToReturns = modules.includes(RETURNS_MODULE) && !modules.includes(ORDERS_MODULE);
@@ -372,6 +377,14 @@ export function OrderDetailView({
 
           {(order.status === "delivered" || order.status === "received") && (
             <DeliveryPhoto order={order} url={deliveryPhotoUrl} />
+          )}
+
+          {dispatch && order.fulfillmentMethod === "delivery" && (
+            <DispatchRecordCard
+              orderId={order.id}
+              record={dispatch}
+              editable={order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) && (role === undefined || role === "staff" || role === "manager")}
+            />
           )}
 
           {order.packedBy && (

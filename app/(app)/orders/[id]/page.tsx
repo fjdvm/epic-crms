@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadCodFlags } from "@/features/orders/cod-actions";
+import { loadDispatchRecord } from "@/features/orders/dispatch-record-read";
 import { loadOrder } from "@/features/orders/orders";
 import { loadCancellationState } from "@/features/orders/cancellation-state";
 import { proofReadsOrEmpty } from "@/features/orders/proof-read";
@@ -70,6 +71,10 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const role = shopRole(staff.role);
   // Flags are for Staff and Managers who hold Orders; Admin and CEO see none, and a Customer never reaches this page.
   const codResult = modules.includes(ORDERS_MODULE) && (role === "staff" || role === "manager") ? await loadCodFlags(order.id) : null;
+  // Rider details go only to Staff and Managers; Admin and CEO never receive them.
+  const dispatch = order.fulfillmentMethod === "delivery" && ["dispatched", "delivered", "received"].includes(order.status)
+    ? await loadDispatchRecord(ticketsDatabase(), order.id, role === "staff" || role === "manager").catch(() => null)
+    : null;
   const codFlags = codResult?.ok ? codResult.flags[order.id] ?? [] : [];
   const requests = modules.includes(PAYMENTS_MODULE)
     ? (await approvals().list(staff, PAYMENTS_MODULE).catch(() => []))
@@ -95,6 +100,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         waitingApproval={waitingApproval}
         cancellation={cancellation}
         order={order}
+        dispatch={dispatch}
         codFlags={codFlags}
         modules={modules}
         deliveryPhotoUrl={deliveryPhotoUrl}

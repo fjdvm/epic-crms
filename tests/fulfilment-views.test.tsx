@@ -179,7 +179,7 @@ describe("the Fulfilment board", () => {
     fireEvent.click(within(cardFor(3)).getByRole("button", { name: "Mark as dispatched" }));
     const dialog = screen.getByRole("alertdialog");
     expect(within(dialog).getByRole("radio", { name: "Lalamove" })).toBeTruthy();
-    expect(within(dialog).getByLabelText("Booking share link")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Booking share link (optional)")).toBeTruthy();
     for (const label of ["Rider name (optional)", "Rider contact (optional)", "Plate no. (optional)"]) expect(within(dialog).getByLabelText(label)).toBeTruthy();
   });
 });
@@ -523,10 +523,10 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     const confirm = within(dialog).getByRole("button", { name: "Mark as dispatched" }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     fireEvent.click(within(dialog).getByRole("radio", { name: "Grab" }));
-    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "http://grab.test/1" } });
-    expect(within(dialog).getByText("The link must start with https://")).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText("Booking share link (optional)"), { target: { value: "http://grab.test/1" } });
+    expect(within(dialog).getByRole("alert").textContent).toContain("https://");
     expect(confirm.disabled).toBe(true);
-    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "https://grab.test/1" } });
+    fireEvent.change(within(dialog).getByLabelText("Booking share link (optional)"), { target: { value: "https://grab.test/1" } });
     fireEvent.change(within(dialog).getByLabelText("Rider contact (optional)"), { target: { value: "0917 123 4567" } });
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
@@ -543,7 +543,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mark as dispatched" }));
     const dialog = screen.getByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("radio", { name: "Lalamove" }));
-    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "https://x.test/1" } });
+    fireEvent.change(within(dialog).getByLabelText("Booking share link (optional)"), { target: { value: "https://x.test/1" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as dispatched" }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Enter the booking's share link, starting with https://."));

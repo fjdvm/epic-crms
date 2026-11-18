@@ -3,7 +3,8 @@
 The Fulfilment Module's backend lives at the Order actions boundary:
 
 - `getFulfilmentBoard()` returns `{ ok: true, board }` or `{ ok: false }` when reads are unavailable.
-- `startPreparing(id)`, `dispatchOrder(id)` and `deliverOrder(id, form)` return the existing Order change result.
+- `startPreparing(id)`, `dispatchOrder(id, courier)` and `deliverOrder(id, form)` return the existing Order change result.
+- `dispatchOrder` needs the courier (Lalamove or Grab); the booking link (https only, up to 2048 characters) and rider details are optional. `updateDispatchRecord(id, courier)` adds or fixes them while the Order is `dispatched`; both audit the old and new courier and link, and never the rider details, which only Staff and Managers can read (`loadDispatchRecord`). Storefront contract and columns: `docs/db/storefront-dispatch-record.sql`.
 
 Every entry point checks the Fulfilment Module, including direct calls and calls after a
 Module is revoked. Holding Orders or Payments alone is insufficient. The Fulfilment page
