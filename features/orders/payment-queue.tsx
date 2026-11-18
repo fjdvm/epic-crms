@@ -15,6 +15,8 @@ import type { ShopRole } from "@/lib/portal/roles";
 import { ApproveAnywayDialog, AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { isViewableScreenshot } from "./payment-screenshot";
+import { OrderActionDialog } from "./action-dialog";
+import { claimPaymentReview } from "./payment-review-actions";
 import { PAYMENTS_WINDOW_DAYS, summarize, type PaymentRow, type PaymentTab } from "./payments";
 
 const METHOD: Record<PaymentRow["method"], string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on delivery" };
@@ -154,7 +156,12 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
   const cells = [
     order.proof ? <Receipt order={order} size="thumb" /> : <span className="text-[#a1a1aa]">—</span>,
     <Link key="o" href={`/orders/${order.id}`} className="font-medium text-[#5b2a86]">#{order.id}</Link>,
-    <span key="c" className="truncate pr-3">{order.customer.name}</span>,
+    <span key="c" className="flex min-w-0 flex-col pr-3">
+      <span className="truncate">{order.customer.name}</span>
+      {tab === "review" && order.review && (
+        <span className="truncate text-xs text-[#71717a]">{order.review.owner ? `Owner: ${order.review.owner.name}` : "Not claimed"}</span>
+      )}
+    </span>,
     METHOD[order.method],
     <span key="r" className="truncate pr-3">{order.proof ? (order.proof.reference ?? "—") : "—"}</span>,
     <span key="a" className="flex items-center gap-1.5">
@@ -162,9 +169,32 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
       {tab === "paid" && <Check aria-label="Paid" className="size-3.5 text-[#16a34a]" />}
       {tab === "rejected" && <AlertTriangle aria-label="Cancelled" className="size-3.5 text-[#dc2626]" />}
     </span>,
-    <span key="u" className="text-[13px] text-[#71717a]">{order.proof ? ago(order.proof.submittedAt, now) : "—"}</span>,
+    tab === "review" && order.review ? (
+      <span key="u" className="flex flex-col items-start gap-0.5 text-[13px] text-[#71717a]">
+        {order.review.overdue && <span className="rounded-full bg-[#fee2e2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">Overdue</span>}
+        <span>Rejected {ago(order.review.startedAt, now)}</span>
+      </span>
+    ) : (
+      <span key="u" className="text-[13px] text-[#71717a]">{order.proof ? ago(order.proof.submittedAt, now) : "—"}</span>
+    ),
     tab === "verify" ? (
       <VerifyDialog order={order} role={role} approval={approval} onMarkPaid={onMarkPaid} />
+    ) : tab === "review" ? (
+      <span key="v" className="flex flex-col items-end gap-1">
+        {role === "manager" && order.review && !order.review.owner && (
+          <OrderActionDialog
+            trigger="Claim review"
+            triggerClassName="h-auto px-2.5 py-1 text-xs"
+            title={`Claim the payment review on Order #${order.id}?`}
+            description="You become its owner. Opening an Order never claims it."
+            confirm="Claim review"
+            busy="Claiming…"
+            run={() => claimPaymentReview(order.id)}
+            successMessage="You now own this payment review."
+          />
+        )}
+        <Link href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">Open</Link>
+      </span>
     ) : (
       <Link key="v" href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">View</Link>
     ),

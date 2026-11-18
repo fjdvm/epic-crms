@@ -4,6 +4,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { cancelPaymentOrder, markPaid, rejectPaymentProof } from "@/features/orders/actions";
 import { claimPaymentReview, loadReviewManagers, reassignPaymentReview } from "@/features/orders/payment-review-actions";
 import { loadPaymentReview, reviewTiming } from "@/features/orders/payment-review";
+import { paymentRows } from "@/features/orders/payments";
+import { DEFAULT_AUTOMATIC_CHECKS } from "@/features/settings/automatic-checks";
 import { readOrderEvents } from "@/features/notifications/order-events";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
@@ -125,6 +127,16 @@ describe("Manager payment review", () => {
     expect(await claimPaymentReview(id)).toEqual({ ok: true });
     expect(await owner(id)).toBe("mario Person");
     expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "payment_review.claimed", module: "Payments", description: expect.stringContaining("mario Person") })]);
+  });
+
+  it("reaches the Payments list with its owner and Overdue flag, and an Order with 2 rejections does not", async () => {
+    const late = await reviewOrder(60), fresh = await reviewOrder(1);
+    await signIn("mario"); await claimPaymentReview(late);
+    const rows = await paymentRows(db.sql, new Date(), DEFAULT_AUTOMATIC_CHECKS, db.sql);
+    expect(rows.find(r => r.id === late)?.review).toMatchObject({ overdue: true, owner: { id: "mario", name: "mario Person" } });
+    expect(rows.find(r => r.id === fresh)?.review).toMatchObject({ overdue: false, owner: null });
+    const plain = await proofOrder();
+    expect((await paymentRows(db.sql, new Date(), DEFAULT_AUTOMATIC_CHECKS, db.sql)).find(r => r.id === plain)?.review).toBeUndefined();
   });
 
   it("is claimed by one Manager only; a second claim says who holds it", async () => {

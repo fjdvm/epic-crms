@@ -6,6 +6,7 @@ import type postgres from "postgres";
 import { proofAccount, type ProofAccount, type ProofAccountRow } from "./proof-account";
 import { paymentScreenshotSource } from "./payment-screenshot";
 import { isPrepaid, PREPAID_METHODS, type PaymentMethod } from "./payment-methods";
+import { inReview, reviewTiming } from "./payment-review";
 
 export type { PaymentMethod };
 
@@ -60,6 +61,18 @@ export interface PaymentRow {
   /** Proofs rejected so far; at 3 only a Manager can approve. */
   rejections: number;
   proofChecks?: PaymentProofChecks;
+  /** Set when the Order is in Manager payment review (third rejected proof, still awaiting payment). */
+  review?: PaymentRowReview;
+}
+
+/** What the Manager review tab shows about one Order in review. */
+export interface PaymentRowReview {
+  startedAt: Date;
+  deadline: Date | null;
+  /** Past the Admin's target and still unsettled. Flagged only; nothing is cancelled. */
+  overdue: boolean;
+  /** Null until a Manager takes it with Claim review. */
+  owner: { id: string; name: string } | null;
 }
 
 export type PaymentsResult = { ok: true; rows: PaymentRow[]; now: Date } | { ok: false; reason: string };
@@ -70,7 +83,7 @@ export const PAYMENTS_WINDOW_DAYS = 30;
 const ACTIVE = ["awaiting payment", "confirmed", "preparing", "dispatched"];
 
 /** Open work at any age, plus everything created in the window. */
-export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), settings: AutomaticChecks = DEFAULT_AUTOMATIC_CHECKS): Promise<PaymentRow[]> {
+export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), settings: AutomaticChecks = DEFAULT_AUTOMATIC_CHECKS, crms?: postgres.Sql): Promise<PaymentRow[]> {
   const since = new Date(now.getTime() - PAYMENTS_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const rows = await sql<{
     id: number; customer_id: string; full_name: string; payment_method: PaymentMethod; status: string; total: number;
@@ -94,7 +107,18 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), set
     where order_id in ${sql(rows.map(o => o.id))} order by order_id, submitted_at desc, id desc` : [];
   const byOrder = new Map(latestProofs.map(p => [p.order_id, byProof.get(p.id)]));
   const accounts = new Map(latestProofs.map(p => [p.order_id, proofAccount(p)]));
+  const reviewIds = rows.filter(o => inReview({ status: o.status, rejections: o.payment_proof_rejections, rejectedAt: o.payment_proof_rejected_at })).map(o => o.id);
+  const claims = new Map<number, { id: string; name: string }>();
+  if (crms && reviewIds.length) {
+    const found = await crms<{ order_id: number; claimed_by_id: string; claimed_by_name: string }[]>`
+      select order_id, claimed_by_id, claimed_by_name from crms.payment_review_claims where order_id in ${crms(reviewIds)}`;
+    for (const c of found) claims.set(c.order_id, { id: c.claimed_by_id, name: c.claimed_by_name });
+  }
+  const target = settings.dashboard.paymentReviews.enabled ? settings.dashboard.paymentReviews.hours : null;
   return rows.map(o => ({
+    review: reviewIds.includes(o.id)
+      ? { startedAt: o.payment_proof_rejected_at!, ...reviewTiming(o.payment_proof_rejected_at!, target, now), owner: claims.get(o.id) ?? null }
+      : undefined,
     proofChecks: byOrder.get(o.id),
     id: o.id, customer: { id: o.customer_id, name: o.full_name }, method: o.payment_method, status: o.status,
     total: o.total,
@@ -105,7 +129,7 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), set
   }));
 }
 
-export type PaymentTab = "verify" | "cod" | "paid" | "rejected";
+export type PaymentTab = "verify" | "review" | "cod" | "paid" | "rejected";
 
 const PREPAID_PAID = ["paid", "preparing", "dispatched", "delivered", "received"];
 const COD_OPEN = ["confirmed", "preparing", "dispatched"];
@@ -120,13 +144,21 @@ export const settled = (r: PaymentRow): boolean =>
   isPrepaid(r.method) ? PREPAID_PAID.includes(r.status) : ["delivered", "received"].includes(r.status);
 /** A prepaid Order whose proof was rejected and is waiting for a new one, or that was cancelled after the Customer sent proof. */
 export const rejected = (r: PaymentRow): boolean =>
-  isPrepaid(r.method) && r.proof !== null && (r.status === "cancelled" || r.status === "awaiting payment" && r.proofRejectedAt !== null);
+  isPrepaid(r.method) && r.proof !== null && !r.review && (r.status === "cancelled" || r.status === "awaiting payment" && r.proofRejectedAt !== null);
+
+/** In Manager payment review: the third rejected proof, still awaiting payment. */
+export const inManagerReview = (r: PaymentRow): boolean => r.review !== undefined && r.status === "awaiting payment";
+
+/** Overdue reviews first, then the longest waiting; ties use the Order number. */
+export const byReviewUrgency = (a: PaymentRow, b: PaymentRow): number =>
+  Number(b.review!.overdue) - Number(a.review!.overdue) || a.review!.startedAt.getTime() - b.review!.startedAt.getTime() || a.id - b.id;
 
 /** The page's tabs and stat cards, all derived from the rows so an optimistic change moves both. */
 export function summarize(rows: PaymentRow[], now: Date) {
   const verify = rows.filter(awaitingCheck).sort((a, b) => a.proof!.submittedAt.getTime() - b.proof!.submittedAt.getTime() || a.id - b.id);
   const tabs: Record<PaymentTab, PaymentRow[]> = {
     verify,
+    review: rows.filter(inManagerReview).sort(byReviewUrgency),
     cod: rows.filter(codToCollect),
     paid: rows.filter(settled).sort((a, b) => b.id - a.id),
     rejected: rows.filter(rejected).sort((a, b) => b.id - a.id),
