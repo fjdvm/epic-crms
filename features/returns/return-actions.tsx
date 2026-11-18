@@ -13,8 +13,9 @@ import type { ApprovalView } from "@/features/approvals/view";
 import { waitingLabel, WAITING } from "@/features/approvals/view";
 import { formatPesos } from "@/features/customer-profiles/format";
 import { refundDestination } from "@/features/orders/payment-methods";
-import { useShownStatus } from "./optimistic-status";
-import { REFUND_FIELDS, REFUND_METHODS, todayInManila } from "./refund-record";
+import { useShownStatus, type SavedProof } from "./optimistic-status";
+import { REFUND_FIELDS, REFUND_METHODS, refundMethodLabel, TRANSFER_VERIFIED, todayInManila } from "./refund-record";
+import { saveRefundProof } from "./refund-proof-actions";
 import type { ShopRole } from "@/lib/portal/roles";
 import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "./actions";
 import { RequestApproval } from "./request-approval";
@@ -131,18 +132,21 @@ export interface RefundContext {
   deliveryFee?: number;
   /** The method the Customer confirmed for this refund; the sent-by choice starts there. */
   destinationMethod?: string | null;
+  /** The refund proof and details Staff already saved, with what the Proof reader found (#615); null until they save one. */
+  saved?: SavedProof | null;
 }
 
 const FIELD = "h-9 w-full rounded-lg border border-[#e4e4e7] bg-white px-3 text-sm text-[#18181b]";
 const pesoText = (centavos: number) => (centavos / 100).toFixed(2);
 
-function Refund({ id, number, approvalId, context, canIncludeFee = false, showRefunded }: { id: number; number: string; approvalId?: string; context?: RefundContext; canIncludeFee?: boolean; showRefunded?: () => void }) {
+/** Step one of a refund: save the proof and the details of the money sent, so the Proof reader's findings can be checked before the Return is marked Refunded (#615). */
+function SaveProof({ id, number, context, canIncludeFee = false }: { id: number; number: string; context?: RefundContext; canIncludeFee?: boolean }) {
+  const saved = context?.saved ?? null;
   const [proof, setProof] = useState<File | null>(null);
   const [sentAmount, setSentAmount] = useState<string | null>(null);
   const [sentVia, setSentVia] = useState(context?.destinationMethod ?? "");
   const [sentOn, setSentOn] = useState(() => todayInManila());
   const [sentReference, setSentReference] = useState("");
-  const [note, setNote] = useState("");
   const [withFee, setWithFee] = useState(false);
   const [feeReason, setFeeReason] = useState("");
   const destination = context ? refundDestination(context.paymentMethod) : null;
@@ -154,15 +158,16 @@ function Refund({ id, number, approvalId, context, canIncludeFee = false, showRe
 
   return (
     <OrderActionDialog
-      trigger="Issue refund"
-      title="Issue refund"
+      trigger={saved ? "Replace refund proof" : "Save refund proof"}
+      triggerClassName={saved ? "border border-[#d9cce8] bg-white text-[#5b2a86] hover:bg-[#f6f2fa]" : undefined}
+      title="Save refund proof"
       description={context
         ? `${number} · ${context.customerName} · paid ${amount}${destination ? ` via ${destination}` : ""}`
-        : "Only confirm once the money has been paid back to the Customer outside CREOMS. The Customer can see the proof."}
-      confirm={amount ? `Refund ${amount}` : "Mark refunded"}
+        : "Only save this once the money has been paid back to the Customer outside CREOMS."}
+      confirm="Save proof"
       busy="Saving…"
       disabled={proof === null || detailsMissing || (feeOffered && withFee && !feeReason.trim())}
-      onOptimistic={showRefunded}
+      // Recording a refund is a money step: no optimistic update; the spinner shows at once and a refusal is told in plain words.
       run={async () => {
         const uploaded = await uploadFile("Returns", proof as File);
         if (!uploaded.ok) return uploaded;
@@ -172,9 +177,9 @@ function Refund({ id, number, approvalId, context, canIncludeFee = false, showRe
         form.set(REFUND_FIELDS.date, sentOn); form.set(REFUND_FIELDS.reference, sentReference.trim());
         if (feeOffered && withFee) { form.set("includeDeliveryFee", "true"); form.set("deliveryFeeReason", feeReason.trim()); }
 
-        return approvalId || note.trim() ? markReturnRefunded(id, form, { approvalId, reason: note }) : markReturnRefunded(id, form);
+        return saveRefundProof(id, form);
       }}
-      successMessage={`${number} marked refunded.`}
+      successMessage="Refund proof saved. Check the Proof reader's findings, then mark the Return refunded."
     >
       {context && (
         <>
@@ -245,7 +250,48 @@ function Refund({ id, number, approvalId, context, canIncludeFee = false, showRe
         </div>
       </div>
       <DeliveryPhotoPicker photo={proof} onChange={setProof} label="Refund proof" />
-      {context && <p className="rounded-lg bg-[#fffbeb] px-3 py-2.5 text-[13px] text-[#92400e]">Recorded on the Return once proof is uploaded. The Order status does not change.</p>}
+      <p className="rounded-lg bg-[#fffbeb] px-3 py-2.5 text-[13px] text-[#92400e]">Saved on the Return for you to check. The Return is not marked Refunded and the Customer is not told until you do that next.</p>
+    </OrderActionDialog>
+  );
+}
+
+/** Step two: the saved details and the Proof reader's findings, a reminder to verify the real transfer, then Mark refunded. */
+function MarkRefunded({ id, number, approvalId, context, showRefunded }: { id: number; number: string; approvalId?: string; context?: RefundContext; showRefunded?: () => void }) {
+  const saved = context?.saved ?? null;
+  const [verified, setVerified] = useState(false);
+  const [note, setNote] = useState("");
+  if (!saved) return null;
+  const amount = formatPesos(saved.amountInCentavos);
+  const blocked = saved.reading ? "The Proof reader is still checking the refund proof. Wait for its findings." : saved.unresolved.length > 0 ? `Correct or proceed past the flagged details on the Refund proof card first: ${saved.unresolved.join(", ")}.` : null;
+
+  return (
+    <OrderActionDialog
+      trigger="Mark refunded"
+      title="Mark refunded"
+      description={`${number}${context ? ` · ${context.customerName}` : ""} · ${amount} sent by ${refundMethodLabel(saved.method)}`}
+      confirm={`Mark ${amount} refunded`}
+      busy="Saving…"
+      disabled={!verified || blocked !== null}
+      onOptimistic={showRefunded}
+      run={() => {
+        const form = new FormData();
+        form.set(TRANSFER_VERIFIED, "true");
+        return approvalId || note.trim() ? markReturnRefunded(id, form, { approvalId, reason: note }) : markReturnRefunded(id, form);
+      }}
+      successMessage={`${number} marked refunded.`}
+    >
+      <dl className="space-y-1 rounded-lg border border-[#e4e4e7] px-3 py-2.5 text-sm text-[#18181b]">
+        <div className="flex justify-between gap-3"><dt>Amount</dt><dd>{amount}</dd></div>
+        <div className="flex justify-between gap-3"><dt>Sent by</dt><dd>{refundMethodLabel(saved.method)}</dd></div>
+        <div className="flex justify-between gap-3"><dt>Date</dt><dd>{saved.refundedOn}</dd></div>
+        <div className="flex justify-between gap-3"><dt>Reference</dt><dd className="break-all text-right">{saved.reference}</dd></div>
+      </dl>
+      {blocked && <p role="alert" className="rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">{blocked}</p>}
+      <p className="rounded-lg bg-[#fffbeb] px-3 py-2.5 text-[13px] text-[#92400e]">The Proof reader only extracts details. Matching details are not proof of payment. Verify the real transfer with the payment provider before marking the Return refunded.</p>
+      <label className="flex items-start gap-2 text-[13px] font-medium text-[#27272a]">
+        <input type="checkbox" className="mt-0.5" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
+        I verified the real transfer with the payment provider
+      </label>
       {!approvalId && (
         <div className="space-y-1.5">
           <Label htmlFor={`refund-note-${id}`} className="text-[13px] font-medium text-foreground">Note for the CEO, if the amount needs their final approval</Label>
@@ -253,6 +299,18 @@ function Refund({ id, number, approvalId, context, canIncludeFee = false, showRe
         </div>
       )}
     </OrderActionDialog>
+  );
+}
+
+/** Both refund steps: Save the proof first; Mark refunded appears once a proof is saved. */
+function RefundSteps({ id, number, approvalId, context, canIncludeFee, showRefunded }: { id: number; number: string; approvalId?: string; context?: RefundContext; canIncludeFee?: boolean; showRefunded?: () => void }) {
+  const proof = context?.saved ?? null;
+
+  return (
+    <>
+      <SaveProof id={id} number={number} context={context} canIncludeFee={canIncludeFee} />
+      {proof && <MarkRefunded id={id} number={number} approvalId={approvalId} context={context} showRefunded={showRefunded} />}
+    </>
   );
 }
 
@@ -298,7 +356,7 @@ export function ReturnActions({
             <OrderActionDialog trigger="Mark goods received" title={`Mark goods received for ${number}?`} description="Confirm the returned goods have reached the store."
               confirm="Mark received" busy="Saving…" run={() => markReturnGoodsReceived(id)} successMessage={`${number} marked goods received.`} />
           )}
-          {finishable.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} showRefunded={ready("return.refund") ? showRefunded : undefined} />}
+          {finishable.includes("refund") && <RefundSteps id={id} number={number} approvalId={ready("return.refund")} context={refund} showRefunded={ready("return.refund") ? showRefunded : undefined} />}
           {finishable.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} approvalId={ready("return.approve")} />}
           {finishable.includes("decline") && <Decline id={id} number={number} approvalId={ready("return.decline")} />}
           {finishable.includes("replace") && (
@@ -326,7 +384,7 @@ export function ReturnActions({
           successMessage={`${number} marked goods received.`}
         />
       )}
-      {steps.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} canIncludeFee showRefunded={ready("return.refund") ? showRefunded : undefined} />}
+      {steps.includes("refund") && <RefundSteps id={id} number={number} approvalId={ready("return.refund")} context={refund} canIncludeFee showRefunded={ready("return.refund") ? showRefunded : undefined} />}
       {steps.includes("replace") && (
         <OrderActionDialog
           trigger="Mark replaced"

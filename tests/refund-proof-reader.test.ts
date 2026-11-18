@@ -12,21 +12,25 @@ const facts: RefundProofFacts = {
 const f = (value: string | null, unclear = false) => ({ value, unclear });
 const clean: ModelReading = { amount: f("1,200.00"), date: f("2026-11-12"), reference: f("ref9001"), recipient: f("JUAN DELA CRUZ"), accountNumber: f("09171234567") };
 
-function fakeDb(opts: { existing?: string[]; pending?: { id: number; file: string }[] } = {}) {
+function fakeDb(opts: { existing?: string[]; pending?: { id: number; file: string }[]; drafts?: { id: number; file: string }[] } = {}) {
   const rows = new Map<string, Record<string, unknown>>((opts.existing ?? []).map(id => [id, { status: "read" }]));
   const crms = Object.assign(async (strings: TemplateStringsArray, ...v: unknown[]) => {
     const q = strings.join("?");
     if (q.includes("insert into crms.refund_proof_reads")) { if (rows.has(v[0] as string)) return []; rows.set(v[0] as string, { status: "reading" }); return [{ proof_file_id: v[0] }]; }
     if (q.includes("update crms.refund_proof_reads set status = 'needs-review'")) return [];
     if (q.startsWith("update crms.refund_proof_reads")) { rows.set(v.at(-1) as string, { status: v[0], findings: v[1], model: v[2] }); return []; }
+    if (q.includes("from crms.refund_proof_drafts")) return (opts.drafts ?? []).map(d => ({ return_id: d.id, file: d.file, expected: 120_000, reference: "REF-9001" }));
     if (q.includes("select proof_file_id from")) return [...rows.keys()].map(proof_file_id => ({ proof_file_id }));
     if (q.includes("select status, findings")) { const r = rows.get(v[0] as string); return r ? [r] : []; }
     throw new Error(`unexpected crms sql: ${q}`);
   }, { json: (x: unknown) => x });
-  const storefront = async (strings: TemplateStringsArray) => {
-    if (!strings.join("?").includes("public.order_returns r")) throw new Error("unexpected storefront sql");
+  const storefront = Object.assign(async (strings: TemplateStringsArray) => {
+    if (!("raw" in strings)) return strings; // the `sql(ids)` list helper
+    const q = strings.join("?");
+    if (q.includes("r.id in")) return (opts.drafts ?? []).map(d => ({ id: d.id, order_id: 40, requested_at: new Date("2026-11-10"), dest_name: "Juan Dela Cruz", dest_number: "09171234567" }));
+    if (!q.includes("public.order_returns r")) throw new Error("unexpected storefront sql");
     return (opts.pending ?? []).map(p => ({ id: p.id, order_id: 40, file: p.file, amount: 100_000, fee: 20_000, paid: null, requested_at: new Date("2026-11-10"), reference: "REF-9001", dest_name: "Juan Dela Cruz", dest_number: "09171234567" }));
-  };
+  }, { });
   return { rows, crms: crms as never, storefront: storefront as never };
 }
 const model = (json: unknown) => new MockLanguageModelV4({ doGenerate: async () => ({
@@ -84,6 +88,13 @@ describe("the sweep and the view", () => {
     expect(await readPendingRefundProofs(deps(db, m))).toEqual({ read: 2, needsReview: 0, skipped: 0 });
     expect(await readPendingRefundProofs(deps(db, m))).toEqual({ read: 0, needsReview: 0, skipped: 2 });
     expect(m.doGenerateCalls).toHaveLength(2);
+  });
+  it("reads a proof Staff saved before marking Refunded, against the amount saved with it, once", async () => {
+    const db = fakeDb({ drafts: [{ id: 5, file: "rf5" }] }); const m = model(clean);
+    expect(await readPendingRefundProofs(deps(db, m))).toEqual({ read: 1, needsReview: 0, skipped: 0 });
+    expect((db.rows.get("rf5")!.findings as { amount: { expected: string } }).amount.expected).toContain("1,200.00");
+    expect(await readPendingRefundProofs(deps(db, m))).toEqual({ read: 0, needsReview: 0, skipped: 1 });
+    expect(m.doGenerateCalls).toHaveLength(1);
   });
   it("expects the items plus the included Delivery fee when no paid amount is recorded", async () => {
     const db = fakeDb({ pending: [{ id: 5, file: "rf5" }] });

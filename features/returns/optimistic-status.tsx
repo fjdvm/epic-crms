@@ -8,6 +8,9 @@ import { returnLabel } from "./refund-record";
 import type { ReturnStatus } from "./returns";
 import { STATUS_PILLS } from "./returns-table";
 
+/** What the Refund proof card and the Mark refunded step need to know about the proof Staff saved (#615). Saving is refund recording, so it is never shown ahead of the server. */
+export interface SavedProof { amountInCentavos: number; method: string; refundedOn: string; reference: string; reading: boolean; unresolved: string[] }
+
 const Context = createContext<{ status: ReturnStatus; show: (status: ReturnStatus) => void } | null>(null);
 
 /**

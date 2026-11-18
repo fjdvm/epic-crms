@@ -1,4 +1,7 @@
-import { refundProofReadFor } from "@/features/returns/refund-proof-reader";
+import { refundProofRow } from "@/features/returns/refund-proof-reader";
+import { loadRefundCorrections, loadRefundDraft } from "@/features/returns/refund-draft";
+import { reviewRefundProof } from "@/features/returns/refund-review";
+import type { SavedProof } from "@/features/returns/optimistic-status";
 import type { ProofReadView } from "@/features/orders/proof-read";
 import { notFound } from "next/navigation";
 
@@ -63,17 +66,30 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
   const returnRequests = requests.filter((r) => r.action !== "return.extend-window" && r.action !== "return.change-destination" && r.targetId === id);
   const windowRequest = requests.find((r) => r.action === "return.extend-window" && r.targetId === String(detail.orderId) && r.status !== "completed" && r.status !== "declined");
   const destinationRequest = requests.find((r) => r.action === "return.change-destination" && r.targetId === id && r.status !== "completed" && r.status !== "declined");
-  const [imageUrls, deliveryPhotoUrl, videoUrl, refundProofUrl, refundReadRow] = await Promise.all([
+  // The proof Staff saved before marking Refunded; a read failure just leaves it out.
+  const draft = detail.status === "refunded" ? null : await loadRefundDraft(crmsDatabase(), detail.id).catch((error) => {
+    console.error("The saved refund proof could not be read", error);
+
+    return null;
+  });
+  const proofFileId = detail.refundProofFileId ?? draft?.fileId ?? null;
+  const [imageUrls, deliveryPhotoUrl, videoUrl, refundProofUrl, refundRow, refundCorrections] = await Promise.all([
     Promise.all(detail.images.map((image) => viewUrl(image.fileId))),
     detail.deliveryPhotoFileId ? viewUrl(detail.deliveryPhotoFileId) : undefined,
     detail.videoFileId ? viewUrl(detail.videoFileId) : undefined,
-    detail.refundProofFileId ? viewUrl(detail.refundProofFileId) : undefined,
+    proofFileId ? viewUrl(proofFileId) : undefined,
     // Findings the Proof reader already stored; reading them never calls the model, and a failure just shows nothing read yet.
-    refundProofReadFor(crmsDatabase(), detail.refundProofFileId),
+    refundProofRow(crmsDatabase(), proofFileId),
+    proofFileId ? loadRefundCorrections(crmsDatabase(), proofFileId).catch(() => []) : [],
   ]);
 
-  const refundRead: ProofReadView | null = refundReadRow
-    ? { ...refundReadRow, flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, corrections: [] } : null;
+  const refundRead: ProofReadView | null = refundRow
+    ? { status: refundRow.status === "reading" || refundRow.status === "none" ? "pending" : refundRow.status, findings: refundRow.findings,
+      flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, corrections: refundCorrections } : null;
+  const review = reviewRefundProof(refundRow ? { status: refundRow.status === "none" ? "pending" : refundRow.status, findings: refundRow.findings } : null, refundCorrections, draft?.savedAt);
+  const savedProof: SavedProof | null = draft
+    ? { amountInCentavos: draft.amountInCentavos, method: draft.method, refundedOn: draft.refundedOn, reference: draft.reference, reading: review.reading, unresolved: review.unresolved }
+    : null;
 
   // Photos not yet fingerprinted are done now; a failure here only means no flag, never an error page.
   const flags = await (async () => {
@@ -107,6 +123,7 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
         videoUrl={videoUrl}
         refundProofUrl={refundProofUrl}
         refundRead={refundRead}
+        savedProof={savedProof}
         role={role}
         requests={returnRequests}
         windowRequest={windowRequest}

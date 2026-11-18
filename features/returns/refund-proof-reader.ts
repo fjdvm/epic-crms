@@ -78,7 +78,10 @@ interface PendingRow {
   reference: string | null; dest_name: string | null; dest_number: string | null;
 }
 
-/** Reads every recently refunded Return whose proof has no result yet. Runs on a schedule or right after Staff save the proof; viewing never calls it. */
+interface DraftRow { return_id: number; file: string; expected: number; reference: string }
+interface DraftFactsRow { id: number; order_id: number; requested_at: Date; dest_name: string | null; dest_number: string | null }
+
+/** Reads every recently saved or refunded Return whose proof has no result yet. Runs on a schedule or right after Staff save the proof; viewing never calls it. */
 export async function readPendingRefundProofs(deps: RefundReaderDeps, only?: number): Promise<{ read: number; needsReview: number; skipped: number }> {
   await deps.crms`update crms.refund_proof_reads set status = 'needs-review', finished_at = now()
     where status = 'reading' and created_at < now() - ${`${STALE_MINUTES} minutes`}::interval`;
@@ -92,6 +95,25 @@ export async function readPendingRefundProofs(deps: RefundReaderDeps, only?: num
       and (${only ?? null}::int is null and r.refunded_at > now() - make_interval(days => ${SWEEP_DAYS}) or r.id = ${only ?? null}::int)
     order by r.refunded_at limit 25`;
   const counts = { read: 0, needsReview: 0, skipped: 0 };
+  // A proof Staff saved before marking the Return Refunded is read first, so the findings are there to check (#615).
+  const drafts = await deps.crms<DraftRow[]>`select return_id, proof_file_id as file, expected_in_centavos as expected, reference from crms.refund_proof_drafts
+    where (${only ?? null}::int is null and saved_at > now() - make_interval(days => ${SWEEP_DAYS})) or return_id = ${only ?? null}::int order by saved_at limit 25`;
+  const waiting = drafts.filter(d => !done.has(d.file));
+  counts.skipped += drafts.length - waiting.length;
+  if (waiting.length > 0) {
+    const ids = waiting.map(d => d.return_id);
+    const details = await deps.storefront<DraftFactsRow[]>`
+      select r.id, r.order_id, r.requested_at, to_jsonb(r)->>'refund_account_name' as dest_name, to_jsonb(r)->>'refund_account_number' as dest_number
+      from public.order_returns r where r.id in ${deps.storefront(ids)}`;
+    for (const d of waiting) {
+      const t = details.find(x => x.id === d.return_id);
+      if (!t) { counts.skipped++; continue; }
+      done.add(d.file);
+      const result = await readRefundProof(deps, { returnId: d.return_id, orderId: t.order_id, fileId: d.file, expectedInCentavos: d.expected, requestedAt: t.requested_at,
+        reference: d.reference, destinationName: t.dest_name, destinationNumber: t.dest_number }).catch(() => null);
+      if (!result) counts.skipped++; else if (result.status === "read") counts.read++; else counts.needsReview++;
+    }
+  }
   for (const r of rows) {
     if (done.has(r.file)) { counts.skipped++; continue; }
     const result = await readRefundProof(deps, {
@@ -103,14 +125,24 @@ export async function readPendingRefundProofs(deps: RefundReaderDeps, only?: num
   return counts;
 }
 
-/** What Staff see beside a refund proof. Reading it never calls the model; a failed read just shows nothing read yet. */
-export async function refundProofReadFor(crms: postgres.Sql, fileId: string | null): Promise<{ status: "pending" | "read" | "needs-review"; findings: Findings | null } | null> {
+/** The stored row for a refund proof, with the reader's own status ("reading" kept apart from "no row yet"). Null when it could not be read. */
+export async function refundProofRow(crms: postgres.Sql, fileId: string | null): Promise<{ status: "none" | "reading" | "read" | "needs-review"; findings: Findings | null } | null> {
   if (!fileId) return null;
   try {
     const [row] = await crms<{ status: "reading" | "read" | "needs-review"; findings: Findings | null }[]>`select status, findings from crms.refund_proof_reads where proof_file_id = ${fileId}`;
-    return row ? { status: row.status === "reading" ? "pending" : row.status, findings: row.findings } : { status: "pending", findings: null };
+
+    return row ? { status: row.status, findings: row.findings } : { status: "none", findings: null };
   } catch (error) {
     console.error("Refund proof findings could not be read", error);
+
     return null;
   }
+}
+
+/** What Staff see beside a refund proof. Reading it never calls the model; a failed read just shows nothing read yet. */
+export async function refundProofReadFor(crms: postgres.Sql, fileId: string | null): Promise<{ status: "pending" | "read" | "needs-review"; findings: Findings | null } | null> {
+  const row = await refundProofRow(crms, fileId);
+  if (!row) return null;
+
+  return { status: row.status === "reading" || row.status === "none" ? "pending" : row.status, findings: row.findings };
 }

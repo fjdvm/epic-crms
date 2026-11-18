@@ -5,7 +5,7 @@ import { formatPesos } from "@/features/customer-profiles/format";
 import type { ShopRole } from "@/lib/portal/roles";
 import type { Field, Finding } from "./proof-reader";
 import { rejudge, type ProofCorrection, type ProofReadView } from "./proof-read";
-import { ProofReadControls } from "./proof-read-controls";
+import { ProofReadControls, type ProofChanges } from "./proof-read-controls";
 
 const LABEL: Record<Field, string> = {
   amount: "Amount", date: "Date", reference: "Reference no.", recipient: "Sent to", accountNumber: "Account number",
@@ -44,7 +44,7 @@ export function explain(field: Field, f: { finding: Finding; read: string | null
  * there is no control here, so no role (Admin and the CEO included) can start a read by looking.
  * Findings are evidence, never proof of payment: Staff still verify the real transfer.
  */
-export function ProofReadFindings({ read, role, proofId, subject = "order" }: { read: ProofReadView | null | undefined; role: ShopRole | null; proofId?: number; subject?: "order" | "refund" }) {
+export function ProofReadFindings({ read, role, proofId, subject = "order", changes }: { read: ProofReadView | null | undefined; role: ShopRole | null; proofId?: number; subject?: "order" | "refund"; changes?: ProofChanges }) {
   if (!role) return null;
   const heading = <h3 className="font-semibold">Proof reader findings</h3>;
   const shell = "space-y-2 rounded-lg border border-[#e4e4e7] px-4 py-3 text-sm";
@@ -84,8 +84,8 @@ export function ProofReadFindings({ read, role, proofId, subject = "order" }: { 
                       : <>{latest.by} proceeded despite {latest.originalFinding}. Reason: {latest.reason}</>}
                   </span>
                 )}
-                {proofId !== undefined && (role === "staff" || role === "manager") && (
-                  <ProofReadControls proofId={proofId} field={field} label={LABEL[field]} flagged={shownFinding !== "Match" && latest?.kind !== "override"} />
+                {(proofId !== undefined || changes) && (role === "staff" || role === "manager") && (
+                  <ProofReadControls proofId={proofId ?? 0} changes={changes} field={field} label={LABEL[field]} flagged={shownFinding !== "Match" && latest?.kind !== "override"} />
                 )}
               </li>
             );
