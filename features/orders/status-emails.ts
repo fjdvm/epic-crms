@@ -6,6 +6,11 @@ import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/
  */
 export const STATUS_EMAILS = {
   confirmation: { label: "confirmation", module: ORDERS_MODULE },
+  // The confirmation emails the storefront records today, by fulfilment and payment kind.
+  "delivery-confirmed": { label: "delivery confirmation", module: ORDERS_MODULE },
+  "online-delivery-confirmed": { label: "delivery confirmation", module: ORDERS_MODULE },
+  "pickup-confirmed": { label: "pickup confirmation", module: ORDERS_MODULE },
+  "online-pickup-confirmed": { label: "pickup confirmation", module: ORDERS_MODULE },
   paid: { label: "payment verified", module: PAYMENTS_MODULE },
   rejected: { label: "payment rejected", module: PAYMENTS_MODULE },
   expired: { label: "payment expired", module: PAYMENTS_MODULE },

@@ -214,9 +214,9 @@ export type OrderResult = { ok: true; order: OrderDetail | null } | { ok: false 
 /** Status emails that failed after retries, oldest first. A sent, retrying or unknown email is not listed. */
 export async function failedEmails(sql: postgres.Sql, orderId: number): Promise<FailedEmail[]> {
   try {
-    // `occurrence` is read defensively: the storefront adds it so two rejections each get their own row.
+    // `occurrence` is "" for an event that happens once; two rejections are two rows (migration 0053, granted to the read-only role).
     const rows = await sql<{ kind: string; occurrence: string | null; reason: string | null }[]>`
-      select e.kind, to_jsonb(e)->>'occurrence' as occurrence, e.reason from public.order_email_outcomes e
+      select e.kind, e.occurrence, e.reason from public.order_email_outcomes e
       where e.order_id = ${orderId} and e.status = 'failed' order by e.updated_at, e.kind`;
     return rows.filter((row) => isStatusEmailKind(row.kind))
       .map((row) => ({ kind: row.kind as StatusEmailKind, occurrence: isOccurrence(row.occurrence) ? row.occurrence : null, reason: safeReason(row.reason) }));
