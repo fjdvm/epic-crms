@@ -35,7 +35,7 @@ beforeEach(async () => {
   await db.sql`truncate crms.approval_requests, crms.approval_events, order_returns, orders, customers restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
-  await db.sql`insert into orders (customer_id, status, payment_method) values ('c1','delivered','gcash')`;
+  await db.sql`insert into orders (customer_id, status, payment_method, subtotal_in_centavos) values ('c1','delivered','gcash', 10000000)`;
   portal = new FakePortal(); storefront = new FakeStorefront(db.sql, undefined, storage); storage.reset(); notices.length = 0; oldDirectory = false; audit.mockClear();
   for (const [id, role] of Object.entries({ ana: "Staff/Employee", mario: "CRMS Manager", ada: "Super Admin", owner: "CEO" })) {
     portal.addStaff(id, { id, username: id, name: `${id} Person`, email: `${id}@example.com`, role }, ["Returns", "Fulfilment"]);

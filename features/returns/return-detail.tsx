@@ -99,7 +99,7 @@ export function ReturnDetailView({
             finalResolution={detail.finalResolution}
             role={role}
             requests={requests}
-            refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
+            refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, deliveryFee: detail.deliveryFeeRefundable ? detail.orderDeliveryFee : 0, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
           />
         </div>
       </div>
@@ -184,9 +184,19 @@ export function ReturnDetailView({
               </table>
             </div>
             <dl className="ml-auto w-full max-w-[20rem] space-y-1 text-sm text-[#1f1a2e]">
+              <div className="flex justify-between">
+                <dt>Items</dt>
+                <dd>{formatPesos(detail.amount)}</dd>
+              </div>
+              {detail.deliveryFeeRefunded > 0 && (
+                <div className="flex justify-between">
+                  <dt>Delivery fee</dt>
+                  <dd>{formatPesos(detail.deliveryFeeRefunded)}</dd>
+                </div>
+              )}
               <div className="flex justify-between font-medium">
                 <dt>Refund amount</dt>
-                <dd>{formatPesos(detail.amount)}</dd>
+                <dd>{formatPesos(detail.amount + detail.deliveryFeeRefunded)}</dd>
               </div>
             </dl>
           </section>

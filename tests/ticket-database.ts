@@ -45,6 +45,8 @@ const SCHEMA = `
     status text not null default 'placed',
     subtotal_in_centavos integer not null default 0,
     delivery_fee_in_centavos integer,
+    approved_discount_in_centavos integer,
+    total_in_centavos integer,
     free_delivery boolean not null default false,
     free_delivery_threshold_in_centavos bigint,
     fulfillment_method text not null default 'delivery',

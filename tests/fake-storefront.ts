@@ -231,19 +231,23 @@ export class FakeStorefront {
           current.final_resolution === (update.status === "refunded" ? "refund" : "replacement");
       if (!allowed) return Response.json({ error: "Return already changed." }, { status: 409 });
       const at = this.now();
+      const [order] = await tx`select delivery_fee_in_centavos from orders where id = ${current.order_id}`;
+      const fee = order?.delivery_fee_in_centavos ?? 0;
       const [changed] = await tx`update order_returns set status = ${update.status},
         final_resolution = ${update.status === "approved" ? update.finalResolution ?? current.preferred_resolution : current.final_resolution},
         refund_proof_file_id = ${update.status === "refunded" ? update.refundProofFileId : current.refund_proof_file_id},
         replaced_at = ${update.status === "replaced" ? at : current.replaced_at},
         goods_required = ${update.status === "approved" ? update.goodsRequired : current.goods_required},
         decline_reason = ${update.status === "declined" ? update.declineReason.trim() : current.decline_reason},
-        refunded_at = ${update.status === "refunded" ? at : current.refunded_at}
+        refunded_at = ${update.status === "refunded" ? at : current.refunded_at},
+        refund_delivery_fee_in_centavos = ${update.status === "refunded" && update.deliveryFeeReason ? fee : current.refund_delivery_fee_in_centavos},
+        refund_delivery_fee_reason = ${update.status === "refunded" && update.deliveryFeeReason ? update.deliveryFeeReason : current.refund_delivery_fee_reason}
         where id = ${id} returning *`;
       await tx`insert into order_return_history (return_id, status, actor_type, actor_id, actor_name, occurred_at, note)
         values (${id}, ${update.status}, 'staff', ${update.staffId}, ${update.staffName}, ${at}, ${changed.decline_reason})`;
       return Response.json({ id, status: changed.status, goodsRequired: changed.goods_required,
         finalResolution: changed.final_resolution, refundProofFileId: changed.refund_proof_file_id,
-        declineReason: changed.decline_reason, actedBy: { id: update.staffId, name: update.staffName, at: at.toISOString() } });
+        declineReason: changed.decline_reason, refundDeliveryFeeInCentavos: changed.refund_delivery_fee_in_centavos, actedBy: { id: update.staffId, name: update.staffName, at: at.toISOString() } });
     });
   }
 

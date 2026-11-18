@@ -145,7 +145,7 @@ export type ReturnDecision =
   | { status: "approved"; goodsRequired: boolean; finalResolution?: ReturnResolution }
   | { status: "declined"; declineReason: string }
   | { status: "goods received" | "replaced" }
-  | { status: "refunded"; refundProofFileId: string; refundMethod?: string };
+  | { status: "refunded"; refundProofFileId: string; refundMethod?: string; deliveryFeeReason?: string };
 export type ReturnStatusUpdate = ReturnDecision & { staffId: string; staffName: string };
 export type ReturnChangeResult =
   | { ok: true; return: { id: number; status: ReturnStatusUpdate["status"] } }
@@ -167,7 +167,8 @@ export async function changeReturnStatus(id: number, update: ReturnStatusUpdate)
     if (!response.ok) return { ok: false, reason: typeof body?.error === "string" ? body.error : "Storefront refused the change." };
     if (body?.id !== id || body.status !== update.status ||
       (update.status === "approved" && (body.goodsRequired !== update.goodsRequired || body.finalResolution !== update.finalResolution)) ||
-      (update.status === "refunded" && body.refundProofFileId !== update.refundProofFileId) ||
+      (update.status === "refunded" && (body.refundProofFileId !== update.refundProofFileId ||
+        (update.deliveryFeeReason ? !(Number.isSafeInteger(body.refundDeliveryFeeInCentavos) && body.refundDeliveryFeeInCentavos >= 0) : false))) ||
       (update.status === "declined" && body.declineReason !== update.declineReason) ||
       body.actedBy?.id !== update.staffId || body.actedBy?.name !== update.staffName ||
       typeof body.actedBy?.at !== "string" || !Number.isFinite(Date.parse(body.actedBy.at))) {
