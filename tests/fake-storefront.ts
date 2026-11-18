@@ -188,7 +188,7 @@ export class FakeStorefront {
       if (!["approved", "goods received"].includes(ret.status) || ret.final_resolution !== "refund") return Response.json({ error: "Money was already sent or the refund is not approved." }, { status: 409 });
       const changedAt = this.now();
       await tx`update order_returns set refund_method = ${input.method}, refund_account_name = ${input.accountName}, refund_account_number = ${input.accountNumber},
-        refund_bank_name = ${input.bankName}, refund_destination_changed_at = ${changedAt} where id = ${id}`;
+        refund_bank_name = ${input.bankName}, refund_destination_confirmed_at = ${changedAt} where id = ${id}`;
       return Response.json({ returnId: id, changedAt: changedAt.toISOString() });
     });
   }

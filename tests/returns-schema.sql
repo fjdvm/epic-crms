@@ -15,7 +15,7 @@ create table order_returns (
   refund_account_name text,
   refund_account_number text,
   refund_bank_name text,
-  refund_destination_changed_at timestamptz,
+  refund_destination_confirmed_at timestamptz,
   replaced_at timestamptz,
   goods_required boolean,
   decline_reason text,
