@@ -472,6 +472,38 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  it("locks the fee at ₱0 and shows Free delivery for a qualifying Order, with the total before confirming", async () => {
+    vi.mocked(quoteDeliveryFee).mockResolvedValue(confirmed(1042, 0));
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000, freeDelivery: { qualifies: true, thresholdInCentavos: 50_000 } })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm free delivery" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
+    const fee = within(dialog).getByLabelText(/Delivery fee to charge/) as HTMLInputElement;
+    expect(fee.value).toBe("0.00");
+    expect(fee.disabled).toBe(true);
+    expect(within(dialog).getByText(/Free delivery · the fee is locked/)).toBeTruthy();
+    const total = within(dialog).getByRole("group", { name: "Order total" });
+    expect(total.textContent).toContain("= Total₱1,000.00");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 100_000);
+  });
+
+  it("keeps the fee editable for a Delivery Order that does not qualify", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000, freeDelivery: { qualifies: false, thresholdInCentavos: 200_000 } })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
+    const fee = within(dialog).getByLabelText(/Delivery fee to charge/) as HTMLInputElement;
+    expect(fee.disabled).toBe(false);
+    fireEvent.change(fee, { target: { value: "150" } });
+    expect(within(dialog).getByRole("group", { name: "Order total" }).textContent).toContain("= Total₱1,150.00");
+  });
+
+  it("shows the Order page's loading state at once", async () => {
+    const { default: Loading } = await import("@/app/(app)/orders/[id]/loading");
+    render(<Loading />);
+    expect(screen.getByRole("status", { name: "Loading Order" })).toBeTruthy();
+  });
+
   it("offers optional Lalamove and Grab estimates that are never sent; only the fee to charge is", async () => {
     vi.mocked(quoteDeliveryFee).mockResolvedValue(confirmed(1042, 19_000));
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} modules={ORDERS} />);

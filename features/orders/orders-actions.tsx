@@ -37,7 +37,7 @@ function TotalFormula({ order, fee }: { order: OrderDetail; fee: number | null }
     <dl role="group" aria-label="Order total" className="grid grid-cols-[repeat(4,auto)] items-end gap-x-3 text-sm text-[#1f1a2e]">
       <div><dt className="text-xs text-[#6e6680]">Subtotal</dt><dd>{formatPesos(order.subtotal)}</dd></div>
       <div><dt className="text-xs text-[#6e6680]">− Approved discount</dt><dd>{formatPesos(order.discount)}</dd></div>
-      <div><dt className="text-xs text-[#6e6680]">+ Delivery fee</dt><dd>{pickup ? formatPesos(0) : fee === null ? "—" : formatPesos(fee)}</dd></div>
+      <div><dt className="text-xs text-[#6e6680]">+ Delivery fee{order.freeDelivery?.qualifies && !pickup ? " (Free delivery)" : ""}</dt><dd>{pickup ? formatPesos(0) : fee === null ? "—" : formatPesos(fee)}</dd></div>
       <div className="font-medium"><dt className="text-xs font-normal text-[#6e6680]">= Total</dt><dd>{total === null ? "—" : formatPesos(total)}</dd></div>
     </dl>
   );
@@ -48,15 +48,16 @@ function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFla
   // Staff's own notes from the Lalamove and Grab apps. They are never saved or sent: only the fee to charge is.
   const [lalamove, setLalamove] = useState("");
   const [grab, setGrab] = useState("");
-  const fee = parsePesos(text);
+  const free = order.freeDelivery?.qualifies === true;
+  const fee = free ? 0 : parsePesos(text);
   const cod = useCodChoice(order, flags, (choice) => (choice ? quoteDeliveryFee(order.id, fee as number, order.subtotal - order.discount + (fee as number), choice) : quoteDeliveryFee(order.id, fee as number, order.subtotal - order.discount + (fee as number))), `Order #${order.id} confirmed with a ${formatPesos(fee ?? 0)} Delivery fee.`);
 
   return (
     <OrderActionDialog
-      trigger="Quote delivery fee"
+      trigger={free ? "Confirm free delivery" : "Quote delivery fee"}
       title={`Quote a Delivery fee for Order #${order.id}?`}
-      description="Quoting the fee confirms the Order, and the Customer is told what they owe."
-      confirm={cod.asking ? "Save" : cod.flagged ? "Save & continue" : "Quote and confirm"}
+      description={free ? "This Order qualifies for free delivery. Confirming it charges no Delivery fee." : "Quoting the fee confirms the Order, and the Customer is told what they owe."}
+      confirm={cod.asking ? "Save" : cod.flagged ? "Save & continue" : free ? "Confirm order" : "Quote and confirm"}
       busy={cod.asking ? "Saving…" : "Confirming…"}
       disabled={cod.disabled || (!cod.asking && fee === null)}
       run={cod.run}
@@ -83,14 +84,17 @@ function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFla
           inputMode="decimal"
           autoComplete="off"
           placeholder="0.00"
-          value={text}
+          value={free ? "0.00" : text}
+          readOnly={free}
+          disabled={free}
           onChange={(e) => setText(e.target.value)}
-          aria-invalid={text !== "" && fee === null}
+          aria-invalid={!free && text !== "" && fee === null}
         />
-        {text !== "" && fee === null && (
+        {free && <p className="text-xs font-medium text-[#1e6b3a]">Free delivery · the fee is locked at ₱0.00.</p>}
+        {!free && text !== "" && fee === null && (
           <p className="text-xs text-[#b91c1c]">Enter an amount in pesos, like 150 or 150.50.</p>
         )}
-        <p className="text-xs text-[#71717a]">Customers see this as the final delivery fee.</p>
+        {!free && <p className="text-xs text-[#71717a]">Customers see this as the final delivery fee.</p>}
       </div>
       <TotalFormula order={order} fee={fee} />
     </OrderActionDialog>
