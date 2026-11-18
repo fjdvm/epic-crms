@@ -38,17 +38,17 @@ export const describeMasked = (destination: MaskedRefundDestination): string =>
 export type DestinationInput = { method: string; accountName: string; accountNumber: string; bankName?: string | null };
 export type DestinationCheck = { ok: true; destination: RefundDestination } | { ok: false; reason: string };
 
-/** The same shape the Customer is held to on the storefront: a PH mobile number for GCash or Maya, an account number for a bank. */
+/** The same shape the Customer is held to on the storefront: (lib/returns/refund-destination.ts there). */
 export function checkDestination(input: DestinationInput): DestinationCheck {
   if (!input || typeof input.method !== "string" || !(PREPAID_METHODS as readonly string[]).includes(input.method)) return { ok: false, reason: "Choose GCash, Maya or bank transfer." };
   const method = input.method as PrepaidMethod;
   const accountName = typeof input.accountName === "string" ? input.accountName.trim().replace(/\s+/g, " ") : "";
-  if (accountName.length < 2 || accountName.length > 80) return { ok: false, reason: "Enter the account name, 2 to 80 characters." };
+  if (!accountName || accountName.length > 100 || !/^[\p{L}\p{M}\s'.,-]+$/u.test(accountName)) return { ok: false, reason: "Enter the account name using letters only, up to 100 characters." };
   const accountNumber = typeof input.accountNumber === "string" ? input.accountNumber.replace(/[\s-]/g, "") : "";
   if (method !== "bank-transfer" && !/^09\d{9}$/.test(accountNumber)) return { ok: false, reason: "Enter the 11-digit mobile number, starting with 09." };
-  if (method === "bank-transfer" && !/^\d{8,20}$/.test(accountNumber)) return { ok: false, reason: "Enter the bank account number, 8 to 20 digits." };
+  if (method === "bank-transfer" && !/^\d{6,20}$/.test(accountNumber)) return { ok: false, reason: "Enter the bank account number, 6 to 20 digits." };
   const bankName = method === "bank-transfer" && typeof input.bankName === "string" ? input.bankName.trim().replace(/\s+/g, " ") : "";
-  if (method === "bank-transfer" && (bankName.length < 2 || bankName.length > 60)) return { ok: false, reason: "Enter the bank name." };
+  if (method === "bank-transfer" && (!bankName || bankName.length > 100 || /[<>\u0000-\u001f\u007f]/u.test(bankName))) return { ok: false, reason: "Enter the bank name." };
 
   return { ok: true, destination: { method, accountName, accountNumber, bankName: bankName || null } };
 }
