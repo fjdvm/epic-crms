@@ -4,16 +4,18 @@ import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail
 import { MANAGEMENT_MODULE } from "@/lib/portal/config";
 import { canManage } from "@/lib/portal/roles";
 
-import { maskNumber, methodLabel, validateAccount } from "./payment-account-format";
+import { maskNumber, methodLabel, PAYMENT_METHODS, validateAccount } from "./payment-account-format";
 
 export type PaymentAccountRow = {
-  id: string; method: string; label: string; accountName: string; maskedNumber: string; bankName: string | null; active: boolean; hasQr: boolean;
+  id: string; method: string; label: string; accountName: string; maskedNumber: string; bankName: string | null; active: boolean; hasQr: boolean; used: boolean;
+  /** Raw number for the edit form only; the Manager or CEO already holds the Module that lists it. */
+  accountNumber: string;
 };
 
 export async function listPaymentAccounts(sql: postgres.Sql): Promise<PaymentAccountRow[]> {
-  const rows = await sql<{ id: string; method: string; label: string; account_name: string; account_number: string; bank_name: string | null; active: boolean; qr_file_id: string | null }[]>`
-    select id, method, label, account_name, account_number, bank_name, active, qr_file_id from crms.payment_accounts order by created_at, id`;
-  return rows.map((r) => ({ id: r.id, method: r.method, label: r.label, accountName: r.account_name, maskedNumber: maskNumber(r.account_number), bankName: r.bank_name, active: r.active, hasQr: r.qr_file_id !== null }));
+  const rows = await sql<{ id: string; method: string; label: string; account_name: string; account_number: string; bank_name: string | null; active: boolean; qr_file_id: string | null; first_used_at: Date | null }[]>`
+    select id, method, label, account_name, account_number, bank_name, active, qr_file_id, first_used_at from crms.payment_accounts order by created_at, id`;
+  return rows.map((r) => ({ id: r.id, method: r.method, label: r.label, accountName: r.account_name, maskedNumber: maskNumber(r.account_number), bankName: r.bank_name, active: r.active, hasQr: r.qr_file_id !== null, used: r.first_used_at !== null, accountNumber: r.account_number }));
 }
 
 type Staff = { id: string; name: string; role: string };
@@ -84,4 +86,115 @@ export async function setPaymentAccountQr(
 export async function qrFileId(sql: postgres.Sql, accountId: string): Promise<string | null> {
   const [row] = await sql<{ qr_file_id: string | null }[]>`select qr_file_id from crms.payment_accounts where id::text = ${accountId}`;
   return row?.qr_file_id ?? null;
+}
+
+/** Methods a Manager or the CEO has switched off. A method with no row is on. */
+export async function listDisabledMethods(sql: postgres.Sql): Promise<string[]> {
+  const rows = await sql<{ method: string }[]>`select method from crms.payment_methods where not enabled`;
+  return rows.map((r) => r.method);
+}
+
+type Found = { label: string; method: string; active: boolean; account_number: string; bank_name: string | null; first_used_at: Date | null };
+const find = async (sql: postgres.Sql, id: string) => (await sql<Found[]>`
+  select label, method, active, account_number, bank_name, first_used_at from crms.payment_accounts where id::text = ${id}`)[0];
+const MISSING = { ok: false, reason: "That Payment account no longer exists." } as const;
+
+/** Edits an account's details. The method cannot change; add a new account instead. The audit holds the masked number only. */
+export async function editPaymentAccount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, input: unknown): Promise<AddAccountResult> {
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can edit a Payment account." };
+  const before = await find(sql, accountId);
+  if (!before) return MISSING;
+  const valid = validateAccount({ ...(input && typeof input === "object" ? input : {}), method: before.method });
+  if (!valid.ok) return valid;
+  const a = valid.account;
+  const clash = await sql`
+    update crms.payment_accounts set label = ${a.label}, account_name = ${a.accountName}, account_number = ${a.accountNumber},
+      number_normalised = ${a.numberNormalised}, bank_name = ${a.bankName}
+    where id::text = ${accountId} and not exists (
+      select 1 from crms.payment_accounts o where o.method = ${a.method} and o.number_normalised = ${a.numberNormalised} and o.id::text <> ${accountId})
+    returning id`.catch((e: { code?: string }) => (e?.code === "23505" ? [] : Promise.reject(e)));
+  if (clash.length === 0) return { ok: false, reason: `A ${methodLabel(a.method)} account with that number already exists.` };
+  await recordAudit(audit, {
+    module: MANAGEMENT_MODULE, action: "payment_account.edited", outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "payment_account", id: accountId, display_name: a.label },
+    description: `${staff.name} edited the ${methodLabel(a.method)} Payment account “${a.label}” (${maskNumber(before.account_number)} → ${maskNumber(a.numberNormalised)}).`,
+    occurred_at: new Date().toISOString(), metadata: { method: a.method, bank_name: a.bankName, old_number_last4: before.account_number.replace(/\D/g, "").slice(-4), number_last4: a.numberNormalised.slice(-4) },
+    operationId: `payment-account-edited:${accountId}:${crypto.randomUUID()}`,
+  });
+  return { ok: true };
+}
+
+/** Switches an account off or on without deleting it. Switching off the last active account of an enabled method is refused. */
+export async function setPaymentAccountActive(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, active: boolean): Promise<AddAccountResult> {
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can switch a Payment account on or off." };
+  const done = await sql.begin(async (tx) => {
+    const [row] = await tx<Found[]>`
+      select label, method, active, account_number, bank_name, first_used_at from crms.payment_accounts where id::text = ${accountId} for update`;
+    if (!row) return MISSING;
+    if (row.active === active) return { ok: true as const, changed: false, row };
+    if (!active) {
+      // Lock the method's accounts so two switch-offs at once cannot both pass the check.
+      await tx`select 1 from crms.payment_accounts where method = ${row.method} for update`;
+      const [m] = await tx<{ enabled: boolean }[]>`select enabled from crms.payment_methods where method = ${row.method}`;
+      const [others] = await tx<{ n: number }[]>`select count(*)::int as n from crms.payment_accounts where method = ${row.method} and active and id::text <> ${accountId}`;
+      if ((m?.enabled ?? true) && others.n === 0) {
+        return { ok: false as const, reason: `This is the last active ${methodLabel(row.method)} account. Add another one or disable ${methodLabel(row.method)} first.` };
+      }
+    }
+    await tx`update crms.payment_accounts set active = ${active} where id::text = ${accountId}`;
+    return { ok: true as const, changed: true, row };
+  });
+  if (!done.ok || !("changed" in done) || !done.changed) return done.ok ? { ok: true } : done;
+  const { row } = done;
+  await recordAudit(audit, {
+    module: MANAGEMENT_MODULE, action: active ? "payment_account.activated" : "payment_account.deactivated", outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "payment_account", id: accountId, display_name: row.label },
+    description: `${staff.name} switched ${active ? "on" : "off"} the ${methodLabel(row.method)} Payment account “${row.label}” (${maskNumber(row.account_number)}).`,
+    occurred_at: new Date().toISOString(), metadata: { method: row.method, active, number_last4: row.account_number.replace(/\D/g, "").slice(-4) },
+    operationId: `payment-account-active:${accountId}:${crypto.randomUUID()}`,
+  });
+  return { ok: true };
+}
+
+/** Disables or re-enables a whole method. A method cannot come back on without an active account to receive money. */
+export async function setPaymentMethodEnabled(sql: postgres.Sql, audit: AuditTrail, staff: Staff, method: string, enabled: boolean): Promise<AddAccountResult> {
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can enable or disable a payment method." };
+  if (!PAYMENT_METHODS.some((m) => m.value === method)) return { ok: false, reason: "Choose GCash, Maya or Bank transfer." };
+  if (enabled) {
+    const [n] = await sql<{ n: number }[]>`select count(*)::int as n from crms.payment_accounts where method = ${method} and active`;
+    if (n.n === 0) return { ok: false, reason: `${methodLabel(method)} has no active account. Add or switch on an account first.` };
+  }
+  const [prev] = await sql<{ enabled: boolean }[]>`select enabled from crms.payment_methods where method = ${method}`;
+  if ((prev?.enabled ?? true) === enabled) return { ok: true };
+  await sql`
+    insert into crms.payment_methods (method, enabled) values (${method}, ${enabled})
+    on conflict (method) do update set enabled = excluded.enabled, updated_at = now()`;
+  await recordAudit(audit, {
+    module: MANAGEMENT_MODULE, action: enabled ? "payment_method.enabled" : "payment_method.disabled", outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "payment_method", id: method, display_name: methodLabel(method) },
+    description: `${staff.name} ${enabled ? "enabled" : "disabled"} ${methodLabel(method)} as a payment method.`,
+    occurred_at: new Date().toISOString(), metadata: { method, enabled },
+    operationId: `payment-method:${method}:${crypto.randomUUID()}`,
+  });
+  return { ok: true };
+}
+
+/** Deletes an account nobody has used. Once a Customer has seen or used it, it can only be switched off, so history stays whole. */
+export async function deletePaymentAccount(sql: postgres.Sql, audit: AuditTrail, files: Pick<QrFiles, "remove">, staff: Staff, accountId: string): Promise<AddAccountResult> {
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can delete a Payment account." };
+  const [row] = await sql<(Found & { qr_file_id: string | null })[]>`
+    delete from crms.payment_accounts where id::text = ${accountId} and first_used_at is null
+    returning label, method, active, account_number, bank_name, first_used_at, qr_file_id`;
+  if (!row) {
+    return (await find(sql, accountId)) ? { ok: false, reason: "This account has been used, so it cannot be deleted. Switch it off instead." } : MISSING;
+  }
+  await recordAudit(audit, {
+    module: MANAGEMENT_MODULE, action: "payment_account.deleted", outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "payment_account", id: accountId, display_name: row.label },
+    description: `${staff.name} deleted the unused ${methodLabel(row.method)} Payment account “${row.label}” (${maskNumber(row.account_number)}).`,
+    occurred_at: new Date().toISOString(), metadata: { method: row.method, number_last4: row.account_number.replace(/\D/g, "").slice(-4) },
+    operationId: `payment-account-deleted:${accountId}`,
+  });
+  if (row.qr_file_id) await files.remove(row.qr_file_id).catch(() => {});
+  return { ok: true };
 }
