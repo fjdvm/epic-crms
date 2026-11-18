@@ -3,7 +3,7 @@ import type postgres from "postgres";
 
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { MANAGEMENT_MODULE } from "@/lib/portal/config";
-import { shopRole } from "@/lib/portal/roles";
+import { canManage } from "@/lib/portal/roles";
 
 import { parseThreshold, pesos, type ThresholdResult } from "./threshold-format";
 
@@ -17,7 +17,7 @@ type Staff = { id: string; name: string; role: string };
 
 /** Manager or CEO only, checked here and not only on the page. Saved at once and audited with the old and new value. */
 export async function changeFreeDeliveryThreshold(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<ThresholdResult> {
-  if (!["manager", "ceo"].includes(shopRole(staff.role) ?? "")) return { ok: false, reason: "Only a Manager or the CEO can change the Free delivery threshold." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can change the Free delivery threshold." };
   const valid = parseThreshold(input);
   if (!valid.ok) return valid;
   const next = valid.thresholdInCentavos;
@@ -34,7 +34,7 @@ export async function changeFreeDeliveryThreshold(sql: postgres.Sql, audit: Audi
   await recordAudit(audit, {
     module: MANAGEMENT_MODULE, action: "free_delivery_threshold.changed", outcome: "success", actor: staffAuditActor(staff),
     target: { type: "setting", id: "free-delivery-threshold", display_name: "Free delivery threshold" },
-    description: `${staff.name} changed the Free delivery threshold from ${previous === null ? "not set" : pesos(previous)} to ${pesos(next)}.`,
+    description: `${staff.name} changed the Free delivery threshold from ${previous === null ? "an unknown amount" : pesos(previous)} to ${pesos(next)}.`,
     occurred_at: new Date().toISOString(), metadata: { previous, next }, operationId: `free-delivery-threshold:${randomUUID()}`,
   });
   return { ok: true, thresholdInCentavos: next };
