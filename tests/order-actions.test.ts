@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, confirmPickup as realConfirm, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
-  resendConfirmationEmail, loadPackingSlip, startPreparing, dispatchOrder, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
+  resendConfirmationEmail, loadPackingSlip, startPreparing, dispatchOrder, deliverOrder, markReadyForPickup, markPickedUp, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { database } from "@/lib/db";
@@ -373,11 +373,12 @@ describe("Courier details at dispatch", () => {
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.dispatched", metadata: { courier: "Grab" } }));
     expect(JSON.stringify(audit.mock.calls)).not.toContain("0917");
   });
-  it("dispatches a Pickup Order without a courier", async () => {
+  it("refuses to dispatch a Pickup Order, before the storefront", async () => {
     const id = await order("pickup", "preparing");
-    expect(await dispatch(id)).toEqual({ ok: true, order: { id, status: "dispatched", deliveryFeeInCentavos: null } });
-    expect(storefront.couriers.has(id)).toBe(false);
-    expect(audit).toHaveBeenCalledWith(expect.not.objectContaining({ metadata: expect.anything() }));
+    const requests = storefront.requests;
+    expect(await dispatch(id)).toMatchObject({ ok: false, reason: expect.stringContaining("Ready for pickup") });
+    expect(storefront.requests).toBe(requests);
+    expect(audit).not.toHaveBeenCalled();
   });
   it("reports the storefront's refusal without auditing", async () => {
     const id = await order("delivery", "preparing");
@@ -464,12 +465,10 @@ describe("Fulfilment Order actions", () => {
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
-  it("requires a Delivery photo before contacting the storefront, including Pickup", async () => {
-    for (const method of ["delivery", "pickup"]) {
-      expect(await deliverOrder(await order(method, "dispatched"))).toEqual({
-        ok: false, reason: "Choose exactly one Delivery photo.",
-      });
-    }
+  it("requires a Delivery photo before contacting the storefront", async () => {
+    expect(await deliverOrder(await order("delivery", "dispatched"))).toEqual({
+      ok: false, reason: "Choose exactly one Delivery photo.",
+    });
     expect(storefront.requests).toBe(0);
     expect(storage.files.size).toBe(0);
     expect(revalidatePath).not.toHaveBeenCalled();
@@ -953,5 +952,61 @@ describe("resendConfirmationEmail", () => {
     vi.mocked(requireModule).mockResolvedValue({ id: "z", username: "z", name: "Zed", email: "z@example.com", role: "CEO" });
     expect(await resendConfirmationEmail(id)).toEqual({ ok: false, reason: expect.stringContaining("view") });
     expect(storefront.resentEmails).toEqual([]);
+  });
+});
+
+describe("Pickup Order moves", () => {
+  it("moves preparing to ready for pickup to collected, audited with who made each move", async () => {
+    const id = await order("pickup", "preparing");
+    expect(await markReadyForPickup(id)).toEqual({ ok: true, order: { id, status: "ready for pickup", deliveryFeeInCentavos: null } });
+    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({ action: "order.ready_for_pickup", description: "Ana marked Pickup Order #" + id + " Ready for pickup.", actor: expect.objectContaining({ id: "ana" }) }));
+    expect(await markPickedUp(id)).toEqual({ ok: true, order: { id, status: "collected", deliveryFeeInCentavos: null } });
+    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({ action: "order.picked_up", description: "Ana marked Pickup Order #" + id + " Picked up." }));
+    const [row] = await db.sql`select collected_at, delivered_at from orders where id = ${id}`;
+    expect(row.collected_at).toBeInstanceOf(Date);
+    expect(row.delivered_at).toBeNull();
+    expect(await markPickedUp(id)).toMatchObject({ ok: false });
+    expect(revalidatePath).toHaveBeenCalledWith("/fulfilment");
+  });
+  it("refuses out-of-order pickup moves before the storefront", async () => {
+    const requests = () => storefront.requests;
+    for (const status of ["paid", "confirmed", "ready for pickup", "collected", "received", "cancelled"]) {
+      const id = await order("pickup", status);
+      const before = requests();
+      expect((await markReadyForPickup(id)).ok).toBe(false);
+      expect(requests()).toBe(before);
+    }
+    for (const status of ["preparing", "collected", "received", "cancelled", "paid"]) {
+      const id = await order("pickup", status);
+      const before = requests();
+      expect((await markPickedUp(id)).ok).toBe(false);
+      expect(requests()).toBe(before);
+    }
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("completes a legacy Pickup Order that is already dispatched", async () => {
+    const id = await order("pickup", "dispatched");
+    expect(await markPickedUp(id)).toMatchObject({ ok: true, order: { status: "collected" } });
+  });
+  it("refuses Delivery Orders the pickup steps, and Pickup Orders the delivery steps", async () => {
+    const delivery = await order("delivery", "preparing");
+    expect(await markReadyForPickup(delivery)).toMatchObject({ ok: false, reason: expect.stringContaining("Pickup Order") });
+    const deliveryDispatched = await order("delivery", "dispatched");
+    expect(await markPickedUp(deliveryDispatched)).toMatchObject({ ok: false, reason: expect.stringContaining("Pickup Order") });
+    const pickup = await order("pickup", "dispatched");
+    expect(await deliverOrder(pickup)).toMatchObject({ ok: false, reason: expect.stringContaining("Ready for pickup") });
+    expect(storefront.requests).toBe(0);
+  });
+  it("reports the storefront's refusal in plain words without auditing", async () => {
+    const id = await order("pickup", "preparing");
+    storefront.refusal = "Another Staff member has already moved this Order.";
+    expect(await markReadyForPickup(id)).toEqual({ ok: false, reason: storefront.refusal });
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("keeps the moves read-only for Admin and CEO", async () => {
+    const id = await order("pickup", "preparing");
+    vi.mocked(requireModule).mockResolvedValue({ id: "owner", username: "owner", name: "Owner", email: "o@example.com", role: "CEO" });
+    expect(await markReadyForPickup(id)).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
+    expect(storefront.requests).toBe(0);
   });
 });

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { deliverOrder, dispatchOrder, loadPackingSlip, startPreparing } from "@/features/orders/actions";
+import { deliverOrder, dispatchOrder, loadPackingSlip, markPickedUp, markReadyForPickup, startPreparing } from "@/features/orders/actions";
 import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
 import type { FulfilmentBoard, FulfilmentOrder } from "@/features/orders/fulfilment";
 import { OrderDetailView } from "@/features/orders/order-detail";
@@ -19,6 +19,8 @@ vi.mock("@/features/orders/actions", () => ({
   loadPackingSlip: vi.fn(),
   dispatchOrder: vi.fn(),
   deliverOrder: vi.fn(),
+  markReadyForPickup: vi.fn(),
+  markPickedUp: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
@@ -162,13 +164,13 @@ describe("the Fulfilment board", () => {
     expect(screen.getByText("No Orders here.")).toBeTruthy();
   });
 
-  it("asks for no courier on a Pickup dispatch or a delivery, but a Delivery dispatch asks for the booking", () => {
+  it("asks for no courier on a Pickup move or a delivery, but a Delivery dispatch asks for the booking", () => {
     board({
       preparing: [card({ id: 1, status: "preparing", fulfillmentMethod: "pickup" }), card({ id: 3, status: "preparing" })],
       dispatched: [card({ id: 2, status: "dispatched" })],
     });
     for (const id of [1, 2]) {
-      fireEvent.click(within(cardFor(id)).getByRole("button", { name: id === 1 ? "Mark as dispatched" : "Mark as delivered" }));
+      fireEvent.click(within(cardFor(id)).getByRole("button", { name: id === 1 ? "Mark ready for pickup" : "Mark as delivered" }));
       const dialog = screen.getByRole("alertdialog");
       expect(within(dialog).queryAllByRole("textbox")).toHaveLength(0);
       expect(within(dialog).queryAllByLabelText(/courier|link/i)).toHaveLength(0);
@@ -203,26 +205,52 @@ describe("moving an Order on the board", () => {
     expect(startPreparing).not.toHaveBeenCalled();
   });
 
-  it("closes the dialog at once, and tells Staff only once the server confirms", async () => {
-    const pending = deferred<Awaited<ReturnType<typeof dispatchOrder>>>();
-    vi.mocked(dispatchOrder).mockReturnValue(pending.promise);
+  it("waits for the server on a Pickup Order's Ready for pickup, with a spinner and no early success", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof markReadyForPickup>>>();
+    vi.mocked(markReadyForPickup).mockReturnValue(pending.promise);
     board({ preparing: [card({ status: "preparing", fulfillmentMethod: "pickup" })] });
-    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as dispatched" }));
+    expect(within(cardFor(1042)).queryByRole("button", { name: "Mark as dispatched" })).toBeNull();
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark ready for pickup" }));
 
-    const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 as dispatched?" });
-    expect(within(dialog).getByText(/no courier or tracking link/i)).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark as dispatched" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 ready for pickup?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark ready for pickup" }));
 
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" })).toBeTruthy();
-    expect(dispatchOrder).toHaveBeenCalledWith(1042);
+    expect(markReadyForPickup).toHaveBeenCalledWith(1042);
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
     expect(toast.success).not.toHaveBeenCalled();
-    expect(refresh).not.toHaveBeenCalled();
 
-    await act(async () => pending.settle(moved(1042, "dispatched")));
+    await act(async () => pending.settle(moved(1042, "ready for pickup")));
 
-    expect(toast.success).toHaveBeenCalledWith("Order #1042 dispatched.");
+    expect(toast.success).toHaveBeenCalledWith("Order #1042 is ready for pickup.");
     expect(refresh).toHaveBeenCalled();
+  });
+
+  it("marks a Ready for pickup Order as picked up after a confirm dialog", async () => {
+    vi.mocked(markPickedUp).mockResolvedValue(moved(1042, "collected"));
+    board({ preparing: [card({ status: "ready for pickup", fulfillmentMethod: "pickup" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as picked up" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 as picked up?" });
+    expect(markPickedUp).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark as picked up" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 picked up."));
+    expect(markPickedUp).toHaveBeenCalledWith(1042);
+  });
+
+  it("offers Picked up, not Delivered, for a legacy Pickup Order that is already dispatched", () => {
+    board({ preparing: [card({ status: "dispatched", fulfillmentMethod: "pickup" })] });
+    expect(within(cardFor(1042)).getByRole("button", { name: "Mark as picked up" })).toBeTruthy();
+    expect(within(cardFor(1042)).queryByRole("button", { name: "Mark as delivered" })).toBeNull();
+  });
+
+  it("says why when the server refuses a pickup move, and keeps the Order where it was", async () => {
+    vi.mocked(markReadyForPickup).mockResolvedValue({ ok: false, reason: "Order already changed; refresh it before trying again." });
+    board({ preparing: [card({ status: "preparing", fulfillmentMethod: "pickup" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark ready for pickup" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark ready for pickup" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Order already changed; refresh it before trying again."));
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("marks an Order delivered following the Figma dialog, saying the store emails the Customer and asks for Feedback", async () => {
@@ -414,7 +442,7 @@ describe("Order detail packing", () => {
     expect(screen.getByLabelText("Packing slip").textContent).toContain("Halaya");
   });
 });
-const MOVES = ["Pack order", "Mark as dispatched", "Mark as delivered"];
+const MOVES = ["Pack order", "Mark as dispatched", "Mark as delivered", "Mark ready for pickup", "Mark as picked up"];
 
 describe("the Fulfilment Module's moves on an Order's detail", () => {
   it("offers the next move for each status", () => {

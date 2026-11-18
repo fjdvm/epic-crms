@@ -12,6 +12,8 @@ export function boardStatusLabel(status: string): string {
 /** The Figma "What each move triggers" card, saying only what the storefront really does. */
 export const RULES: { move: string; effect: string }[] = [
   { move: "To pack → Preparing", effect: "Staff with the Orders Module can still cancel it until it is dispatched" },
-  { move: "Preparing → Out for delivery", effect: "No courier or tracking number; it can no longer be cancelled" },
+  { move: "Preparing → Out for delivery", effect: "Delivery only: needs the courier and its share link; it can no longer be cancelled" },
   { move: "Out for delivery → Delivered", effect: "The Customer is emailed; Feedback request 2 days later" },
+  { move: "Preparing → Ready for pickup", effect: "Pickup only: the Customer is told it can be collected" },
+  { move: "Ready for pickup → Picked up", effect: "Pickup only: the pickup time is recorded; Feedback request 2 days later" },
 ];

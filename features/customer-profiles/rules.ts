@@ -65,6 +65,7 @@ export function paymentStatusOf(status: string): "Paid" | "Unpaid" | "Cancelled"
 
 const ORDER_LABELS: Record<string, string> = {
   pickup: "Pickup",
+  collected: "Picked up",
   delivery: "Delivery",
   gcash: "GCash",
   maya: "Maya",
