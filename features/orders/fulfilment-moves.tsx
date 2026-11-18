@@ -112,14 +112,17 @@ function DispatchDelivery({ id, triggerClassName }: { id: number; triggerClassNa
 /**
  * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. A Delivery Order is
  * dispatched with its courier booking and delivered; a Pickup Order is marked Ready for pickup and then Picked up.
- * Every move waits for the server and shows its refusal in plain words.
+ * The pickup moves show at once and roll back with the reason if the server refuses; Delivery moves wait for the server.
  */
 export function FulfilmentMove({
   order,
   triggerClassName,
+  onMove,
 }: {
   order: { id: number; status: string; paymentMethod: string; fulfillmentMethod: string };
   triggerClassName?: string;
+  /** Shows the Order in its next status at once; the pickup moves call it, and a refusal rolls it back. */
+  onMove?: (status: "ready for pickup" | "collected") => void;
 }) {
   const { id } = order;
   const pickup = order.fulfillmentMethod === "pickup";
@@ -148,6 +151,7 @@ export function FulfilmentMove({
         confirm="Mark ready for pickup"
         busy="Marking ready…"
         run={() => markReadyForPickup(id)}
+        onOptimistic={onMove && (() => onMove("ready for pickup"))}
         successMessage={`Order #${id} is ready for pickup.`}
       />
     );
@@ -166,6 +170,7 @@ export function FulfilmentMove({
         confirm="Mark as picked up"
         busy="Marking picked up…"
         run={() => markPickedUp(id)}
+        onOptimistic={onMove && (() => onMove("collected"))}
         successMessage={`Order #${id} picked up.`}
       />
     );

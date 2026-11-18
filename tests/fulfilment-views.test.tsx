@@ -205,7 +205,7 @@ describe("moving an Order on the board", () => {
     expect(startPreparing).not.toHaveBeenCalled();
   });
 
-  it("waits for the server on a Pickup Order's Ready for pickup, with a spinner and no early success", async () => {
+  it("moves a Pickup Order to Ready for pickup at once, and confirms only when the server does", async () => {
     const pending = deferred<Awaited<ReturnType<typeof markReadyForPickup>>>();
     vi.mocked(markReadyForPickup).mockReturnValue(pending.promise);
     board({ preparing: [card({ status: "preparing", fulfillmentMethod: "pickup" })] });
@@ -215,8 +215,9 @@ describe("moving an Order on the board", () => {
     const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 ready for pickup?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark ready for pickup" }));
 
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(within(cardFor(1042)).getByRole("button", { name: "Mark as picked up" })).toBeTruthy();
     expect(markReadyForPickup).toHaveBeenCalledWith(1042);
-    expect(screen.getByRole("alertdialog")).toBeTruthy();
     expect(toast.success).not.toHaveBeenCalled();
 
     await act(async () => pending.settle(moved(1042, "ready for pickup")));
@@ -243,7 +244,7 @@ describe("moving an Order on the board", () => {
     expect(within(cardFor(1042)).queryByRole("button", { name: "Mark as delivered" })).toBeNull();
   });
 
-  it("says why when the server refuses a pickup move, and keeps the Order where it was", async () => {
+  it("says why when the server refuses a pickup move, and rolls the Order back", async () => {
     vi.mocked(markReadyForPickup).mockResolvedValue({ ok: false, reason: "Order already changed; refresh it before trying again." });
     board({ preparing: [card({ status: "preparing", fulfillmentMethod: "pickup" })] });
     fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark ready for pickup" }));
@@ -251,6 +252,7 @@ describe("moving an Order on the board", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Order already changed; refresh it before trying again."));
     expect(toast.success).not.toHaveBeenCalled();
+    await waitFor(() => expect(within(cardFor(1042)).getByRole("button", { name: "Mark ready for pickup" })).toBeTruthy());
   });
 
   it("marks an Order delivered following the Figma dialog, saying the store emails the Customer and asks for Feedback", async () => {
