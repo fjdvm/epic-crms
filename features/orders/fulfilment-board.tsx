@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useOptimistic, useState } from "react";
 import Link from "next/link";
 
 import { formatDate } from "@/features/customer-profiles/format";
@@ -10,7 +10,7 @@ import { ordersOnTab, TABS, type FulfilmentBoard, type FulfilmentOrder, type Ful
 import { boardStatusLabel, RULES } from "./fulfilment-layout";
 import { FulfilmentMove } from "./fulfilment-moves";
 
-function FulfilmentCard({ order }: { order: FulfilmentOrder }) {
+function FulfilmentCard({ order, onMove }: { order: FulfilmentOrder; onMove: (id: number, status: "ready for pickup" | "collected") => void }) {
   return (
     <li
       data-fulfilment-card
@@ -40,14 +40,20 @@ function FulfilmentCard({ order }: { order: FulfilmentOrder }) {
       )}
       {order.packedBy && <p className="truncate text-xs text-[#6e6680]">Packed by {order.packedBy.name}</p>}
       <div className="mt-1 empty:hidden">
-        <FulfilmentMove order={order} triggerClassName="w-full px-3 py-1.5 text-[13px]" />
+        <FulfilmentMove order={order} triggerClassName="w-full px-3 py-1.5 text-[13px]" onMove={(status) => onMove(order.id, status)} />
       </div>
     </li>
   );
 }
 
+/** The board with one Order moved to a status, as it will be once the server confirms. */
+function moved(board: FulfilmentBoard, { id, status }: { id: number; status: "ready for pickup" | "collected" }): FulfilmentBoard {
+  return { orders: board.orders.map((o) => (o.id === id ? { ...o, status, ...(status === "collected" ? { deliveredAt: new Date() } : {}) } : o)) };
+}
+
 /** Tabs filter the same Orders; none of them is a status. */
-export function FulfilmentBoardView({ board }: { board: FulfilmentBoard }) {
+export function FulfilmentBoardView({ board: served }: { board: FulfilmentBoard }) {
+  const [board, move] = useOptimistic(served, moved);
   const [tab, setTab] = useState<FulfilmentTab>("all-active");
   const orders = ordersOnTab(board, tab);
 
@@ -83,7 +89,7 @@ export function FulfilmentBoardView({ board }: { board: FulfilmentBoard }) {
         ) : (
           <ul className="grid grid-cols-[minmax(0,1fr)] gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
             {orders.map((order) => (
-              <FulfilmentCard key={order.id} order={order} />
+              <FulfilmentCard key={order.id} order={order} onMove={(id, status) => move({ id, status })} />
             ))}
           </ul>
         )}
