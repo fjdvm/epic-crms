@@ -187,6 +187,8 @@ export interface OrderDetail extends CustomerOrder {
   customer: { id: string; name: string; deleted?: boolean };
   /** Null for legacy Orders and Orders never marked paid. */
   paidBy: { id: string; name: string; at: Date } | null;
+  /** The cash a Cash on Delivery Order's completion recorded (amount in centavos, time, Staff); null until then and for every other Order. */
+  codCollection: { amountInCentavos: number; at: Date; byName: string } | null;
   /** Who packed the Order and when; null for legacy Orders and Orders not yet packed. */
   packedBy: { id: string; name: string; at: Date } | null;
   /** Null means No photo, including legacy delivered Orders. */
@@ -243,10 +245,11 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number, se
 
     if (!order) return { ok: true, order: null };
 
-    const [customer] = await sql<{ id: string; full_name: string; deleted: boolean; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null; packed_by_id: string | null; packed_by_name: string | null; packed_at: string | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null; allowance_used: string | null; reduction_reason: string | null; free_delivery: boolean; free_delivery_threshold: number | null }[]>`
+    const [customer] = await sql<{ id: string; full_name: string; deleted: boolean; paid_by_id: string | null; paid_by_name: string | null; paid_at: Date | null; packed_by_id: string | null; packed_by_name: string | null; packed_at: string | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null; cod_amount: string | null; cod_at: string | null; cod_by_name: string | null; allowance_used: string | null; reduction_reason: string | null; free_delivery: boolean; free_delivery_threshold: number | null }[]>`
       select c.id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, o.paid_by_id, o.paid_by_name, o.paid_at,
         to_jsonb(o)->>'packed_by_id' as packed_by_id, to_jsonb(o)->>'packed_by_name' as packed_by_name,
         to_jsonb(o)->>'packed_at' as packed_at,
+        to_jsonb(o)->>'cod_collected_amount_in_centavos' as cod_amount, to_jsonb(o)->>'cod_collected_at' as cod_at, to_jsonb(o)->>'cod_collected_by_name' as cod_by_name,
         to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,
         to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at,
         to_jsonb(o)->>'senior_pwd_allowance_used_in_centavos' as allowance_used,
@@ -275,6 +278,9 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number, se
           reductionReason: customer.reduction_reason?.trim() || null,
         },
         customer: { id: customer.id, name: customer.full_name, deleted: customer.deleted },
+        codCollection: customer.cod_amount !== null && customer.cod_at && customer.cod_by_name && Number.isSafeInteger(Number(customer.cod_amount))
+          ? { amountInCentavos: Number(customer.cod_amount), at: new Date(customer.cod_at), byName: customer.cod_by_name }
+          : null,
         paidBy: customer.paid_by_id && customer.paid_by_name && customer.paid_at
           ? { id: customer.paid_by_id, name: customer.paid_by_name, at: customer.paid_at }
           : null,

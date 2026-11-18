@@ -43,7 +43,7 @@ it("shows each Order line's reserved quantity", () => {
     id: 1, createdAt: new Date(), status: "confirmed", fulfillmentMethod: "pickup", paymentMethod: "cash-on-delivery",
     lines: [{ id: 11, product: "Halaya", size: "500g", quantity: 4, price: 50_000 }], subtotal: 200_000, deliveryFee: null,
     total: 200_000, address: null, feedback: null, paymentProof: null, paymentLabel: "Unpaid",
-    customer: { id: "c1", name: "Maria" }, paidBy: null, packedBy: null, deliveryPhotoFileId: null, deliveryPhotoRemovedAt: null,
+    customer: { id: "c1", name: "Maria" }, paidBy: null, codCollection: null, packedBy: null, deliveryPhotoFileId: null, deliveryPhotoRemovedAt: null,
   } as unknown as OrderDetail;
   render(<OrderDetailView order={order} modules={["Orders"]} reservations={new Map([[11, { reserved: 4, left: 18 }]])} />);
   expect(screen.getByText(/Reserved 4 · 18 left/)).toBeTruthy();

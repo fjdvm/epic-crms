@@ -460,6 +460,14 @@ export class FakeStorefront {
     if (mayMarkPaid && order.payment_proof_rejections < 3 && order.payment_proof_rejected_at !== null) {
       return Response.json({ error: "The proof was rejected. Wait for another." }, { status: 409 });
     }
+    // COD completion saves the collection with the status; any other amount is refused and nothing is kept.
+    const cod = order.payment_method === "cash-on-delivery" && (mayDeliver || mayCollect);
+    if (cod) {
+      const total = order.subtotal_in_centavos - (order.discount_in_centavos ?? 0) + (order.delivery_fee_in_centavos ?? 0);
+      if (!update.codCollection || update.codCollection.amountInCentavos !== total || !update.codCollection.staffId || !update.codCollection.staffName) {
+        return Response.json({ error: "The collected amount must equal the saved total." }, { status: 400 });
+      }
+    }
     if ((mayMarkPaid || mayPrepare || mayReady || mayCollect) && (!update.staffId || !update.staffName)) {
       return Response.json({ error: "Staff attribution is required." }, { status: 400 });
     }
@@ -482,6 +490,10 @@ export class FakeStorefront {
         dispatched_at = ${mayDispatch ? new Date() : order.dispatched_at},
         delivered_at = ${mayDeliver ? new Date() : order.delivered_at},
         collected_at = ${mayCollect ? new Date() : order.collected_at},
+        cod_collected_amount_in_centavos = ${cod ? update.codCollection.amountInCentavos : order.cod_collected_amount_in_centavos},
+        cod_collected_at = ${cod ? new Date() : order.cod_collected_at},
+        cod_collected_by_id = ${cod ? update.codCollection.staffId : order.cod_collected_by_id},
+        cod_collected_by_name = ${cod ? update.codCollection.staffName : order.cod_collected_by_name},
         delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos},
         paid_by_id = ${mayMarkPaid ? update.staffId : order.paid_by_id},
         paid_by_name = ${mayMarkPaid ? update.staffName : order.paid_by_name},

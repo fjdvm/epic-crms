@@ -8,14 +8,38 @@ import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "./action-dialog";
 import { deliverOrder, dispatchOrder, markPickedUp, markReadyForPickup, startPreparing } from "./actions";
 import { DeliveryPhotoPicker } from "./delivery-photo-picker";
+import { formatPesos } from "@/features/customer-profiles/format";
 import { readyToPrepare } from "./fulfilment";
 
 /** The status an Order shows at once after Staff confirm a move. */
 export type MoveStatus = "preparing" | "dispatched" | "delivered" | "ready for pickup" | "collected";
 
+/** What Staff typed as pesos, in centavos; NaN when it is not an amount. */
+function centavosOf(text: string): number {
+  const clean = text.replace(/[₱,\s]/g, "");
+  return /^\d+(\.\d{1,2})?$/.test(clean) ? Math.round(Number(clean) * 100) : Number.NaN;
+}
+
+/**
+ * A Cash on Delivery Order's completion records the cash collected in the same save. It is pre-filled with the saved
+ * total; any other amount is refused by the server with the reason.
+ */
+function CollectedAmount({ total, value, onChange }: { total: number; value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="collected-amount" className="text-[13px] font-medium text-foreground">Payment collected (₱)</Label>
+      <Input id="collected-amount" inputMode="decimal" autoComplete="off" value={value} onChange={e => onChange(e.target.value)} />
+      <p className="text-xs text-[#71717a]">Order total {formatPesos(total)}. Recorded with your name and the time.</p>
+    </div>
+  );
+}
+
+const totalText = (total: number) => (total / 100).toFixed(2);
+
 /** Marking delivered needs the Delivery photo, so this keeps the chosen file for the dialog. */
-function MarkDelivered({ id, triggerClassName, onMove }: { id: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
+function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: number; cod: boolean; total: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
   const [photo, setPhoto] = useState<File | null>(null);
+  const [collected, setCollected] = useState(totalText(total));
 
   return (
     <OrderActionDialog
@@ -25,19 +49,20 @@ function MarkDelivered({ id, triggerClassName, onMove }: { id: number; triggerCl
       description="The store records the delivery time now and emails the Customer."
       confirm="Mark as delivered"
       busy="Marking delivered…"
-      disabled={photo === null}
+      disabled={photo === null || (cod && Number.isNaN(centavosOf(collected)))}
       run={async () => {
         const uploaded = await uploadFile("Fulfilment", photo as File);
         if (!uploaded.ok) return uploaded;
         const form = new FormData();
         form.set("photo", uploaded.reference);
 
-        return deliverOrder(id, form);
+        return deliverOrder(id, form, cod ? centavosOf(collected) : undefined);
       }}
       onOptimistic={onMove && (() => onMove("delivered"))}
       successMessage={`Order #${id} delivered.`}
     >
       <DeliveryPhotoPicker photo={photo} onChange={setPhoto} />
+      {cod && <CollectedAmount total={total} value={collected} onChange={setCollected} />}
       {/* The Figma dialog's Feedback request row; the storefront always schedules it, so there is no toggle. */}
       <div className="space-y-1">
         <p className="font-medium text-foreground">Send Feedback request in 2 days</p>
@@ -114,6 +139,29 @@ function DispatchDelivery({ id, triggerClassName, onMove }: { id: number; trigge
   );
 }
 
+function MarkPickedUp({ id, cod, total, triggerClassName, onMove }: { id: number; cod: boolean; total: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
+  const [collected, setCollected] = useState(totalText(total));
+
+  return (
+    <OrderActionDialog
+      trigger="Mark as picked up"
+      triggerClassName={triggerClassName}
+      title={`Mark Order #${id} as picked up?`}
+      description={cod
+        ? "Confirm the Customer has collected it and paid. The store records the pickup time and the payment now; Feedback is requested 2 days later."
+        : "Confirm the Customer has collected it. The store records the pickup time now; Feedback is requested 2 days later."}
+      confirm="Mark as picked up"
+      busy="Marking picked up…"
+      disabled={cod && Number.isNaN(centavosOf(collected))}
+      run={() => markPickedUp(id, cod ? centavosOf(collected) : undefined)}
+      onOptimistic={onMove && (() => onMove("collected"))}
+      successMessage={`Order #${id} picked up.`}
+    >
+      {cod && <CollectedAmount total={total} value={collected} onChange={setCollected} />}
+    </OrderActionDialog>
+  );
+}
+
 /**
  * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. A Delivery Order is
  * dispatched with its courier booking and delivered; a Pickup Order is marked Ready for pickup and then Picked up.
@@ -124,7 +172,7 @@ export function FulfilmentMove({
   triggerClassName,
   onMove,
 }: {
-  order: { id: number; status: string; paymentMethod: string; fulfillmentMethod: string };
+  order: { id: number; status: string; paymentMethod: string; fulfillmentMethod: string; total: number };
   triggerClassName?: string;
   /** Shows the Order in its next status at once; every move calls it, and a refusal rolls it back. */
   onMove?: (status: MoveStatus) => void;
@@ -168,21 +216,11 @@ export function FulfilmentMove({
   // A legacy Pickup Order already dispatched is completed the same way.
   if (pickup && (order.status === "ready for pickup" || order.status === "dispatched")) {
     return (
-      <OrderActionDialog
-        trigger="Mark as picked up"
-        triggerClassName={triggerClassName}
-        title={`Mark Order #${id} as picked up?`}
-        description="Confirm the Customer has collected it. The store records the pickup time now; Feedback is requested 2 days later."
-        confirm="Mark as picked up"
-        busy="Marking picked up…"
-        run={() => markPickedUp(id)}
-        onOptimistic={onMove && (() => onMove("collected"))}
-        successMessage={`Order #${id} picked up.`}
-      />
+      <MarkPickedUp id={id} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />
     );
   }
   if (order.status === "dispatched") {
-    return <MarkDelivered id={id} triggerClassName={triggerClassName} onMove={onMove} />;
+    return <MarkDelivered id={id} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />;
   }
   return null;
 }

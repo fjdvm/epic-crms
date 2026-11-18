@@ -39,7 +39,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const evidence = [
   {
     module: "Fulfilment", label: "Delivery photo", trigger: "Mark as delivered", confirmLabel: "Mark as delivered", field: "photo", id: 1042,
-    render: () => render(<FulfilmentMove order={{ id: 1042, status: "dispatched", paymentMethod: "gcash", fulfillmentMethod: "delivery" }} />),
+    render: () => render(<FulfilmentMove order={{ id: 1042, status: "dispatched", paymentMethod: "gcash", fulfillmentMethod: "delivery", total: 10000 }} />),
     submit: deliverOrder,
   },
   {

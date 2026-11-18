@@ -152,6 +152,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
+  codCollection: null,
   packedBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),
@@ -305,6 +306,16 @@ describe("an Order's detail", () => {
     expect(screen.getByText("Method").nextElementSibling?.textContent).toBe("GCash");
     expect(screen.getByText("Amount").nextElementSibling?.textContent).toBe("₱1,150.00");
     expect(screen.getByText("Verified by").nextElementSibling?.textContent).toContain("Bernice");
+  });
+
+  it("shows Payment collected with the amount and time once a COD Order's cash was recorded", () => {
+    render(<OrderDetailView order={detail({ status: "collected", paymentMethod: "cash-on-delivery", codCollection: { amountInCentavos: 115_000, at: new Date("2026-10-21T08:00:00Z"), byName: "Ana" } })} />);
+    expect(screen.getByText("Payment collected").nextElementSibling?.textContent).toContain("₱1,150.00");
+  });
+
+  it("shows no Payment collected row before the cash is recorded", () => {
+    render(<OrderDetailView order={detail({ status: "dispatched", paymentMethod: "cash-on-delivery" })} />);
+    expect(screen.queryByText("Payment collected")).toBeNull();
   });
 
   it("shows no Verified by row before the payment is checked", () => {

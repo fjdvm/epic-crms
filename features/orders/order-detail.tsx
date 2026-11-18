@@ -343,6 +343,14 @@ export function OrderDetailView({
                 <dt className="text-[#6e6680]">Amount</dt>
                 <dd>{formatPesos(order.total)}</dd>
               </div>
+              {order.codCollection && (
+                <div data-testid="payment-collected" className="flex justify-between">
+                  <dt className="text-[#6e6680]">Payment collected</dt>
+                  <dd>
+                    {formatPesos(order.codCollection.amountInCentavos)} · {formatDate(order.codCollection.at)}
+                  </dd>
+                </div>
+              )}
               {order.paidBy && (
                 <div className="flex justify-between">
                   <dt className="text-[#6e6680]">Verified by</dt>

@@ -43,6 +43,7 @@ const detail = (overrides: Partial<OrderDetail> = {}): OrderDetail => ({
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
+  codCollection: null,
   packedBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),

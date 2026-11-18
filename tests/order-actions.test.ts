@@ -218,7 +218,7 @@ describe("Order actions", () => {
   });
 
   it.each(["confirmed", "awaiting payment", "paid", "preparing"])("requires a new quote after cancelling an item from a Free delivery Order in %s", async status => {
-    const id = await order("delivery", status);
+    const id = await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery");
     if (status === "paid") vi.mocked(requireModule).mockResolvedValue({ id: "ana", username: "ana", name: "Ana", email: "ana@example.com", role: "CREOMS Manager" });
     await db.sql`update orders set subtotal_in_centavos = 250001, delivery_fee_in_centavos = 0 where id = ${id}`;
     await db.sql`insert into order_lines (order_id, product_name, quantity, price_in_centavos) values (${id}, 'Keep', 1, 250000)`;
@@ -329,11 +329,11 @@ describe("Order actions", () => {
   });
   it("cancels up to preparing, and refuses dispatched, delivered and cancelled Orders", async () => {
     for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing"]) {
-      const id = await order("delivery", status);
+      const id = await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery");
       expect(await cancelOrder(id)).toEqual({ ok: true, order: { id, status: "cancelled", deliveryFeeInCentavos: null } });
     }
     for (const status of ["dispatched", "delivered", "cancelled"]) {
-      const id = await order("delivery", status);
+      const id = await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery");
       const requests = storefront.requests;
       expect(await cancelOrder(id)).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
       expect(storefront.requests).toBe(requests);
@@ -390,7 +390,7 @@ describe("Courier details at dispatch", () => {
 
 describe("Fulfilment Order actions", () => {
   it("reconciles only the photo recorded on a delivered or received Order", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     storefront.refusal = "Delivery refused.";
     await deliverOrder(id, deliveryPhoto());
     expect((await reconcileDeliveryPhoto(id)).ok).toBe(false);
@@ -413,7 +413,7 @@ describe("Fulfilment Order actions", () => {
   });
 
   it("leaves Temporary evidence after malformed responses and transport failures without retrying", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     vi.mocked(revalidatePath).mockClear();
     const replies = [() => new Response("invalid JSON"), () => new Response(null, { status: 204 }),
       () => new Response(null, { status: 503 }), () => { throw new Error("Connection lost"); }];
@@ -428,7 +428,7 @@ describe("Fulfilment Order actions", () => {
   });
 
   it("does not repeat a confirmed delivery when making its photo Permanent fails", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     storage.failPromote = true;
     expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("The Order was marked delivered") });
     expect(storefront.requests).toBe(1);
@@ -445,7 +445,7 @@ describe("Fulfilment Order actions", () => {
     for (const reply of [{}, { id: "another-file", retentionType: "permanent", expiresAt: null },
       { id: "file-1", retentionType: "temporary", expiresAt: "2026-11-02T00:00:00Z" }]) {
       storage.reset();
-      const id = await order("delivery", "dispatched");
+      const id = await order("delivery", "dispatched", "gcash");
       vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
         const request = new Request(input, init);
         return request.url.startsWith(FAKE_STOREFRONT_URL) ? send(request) : Promise.resolve(Response.json(reply));
@@ -456,7 +456,7 @@ describe("Fulfilment Order actions", () => {
   });
 
   it("keeps a refused Delivery photo Temporary and says the Order was not changed", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     storefront.refusal = "The Order is no longer dispatched.";
     expect(await deliverOrder(id, deliveryPhoto())).toEqual({ ok: false, reason: storefront.refusal });
     expect(storage.files.get("file-1")).toMatchObject({ retentionType: "temporary" });
@@ -466,7 +466,7 @@ describe("Fulfilment Order actions", () => {
   });
 
   it("requires a Delivery photo before contacting the storefront", async () => {
-    expect(await deliverOrder(await order("delivery", "dispatched"))).toEqual({
+    expect(await deliverOrder(await order("delivery", "dispatched", "gcash"))).toEqual({
       ok: false, reason: "Choose exactly one Delivery photo.",
     });
     expect(storefront.requests).toBe(0);
@@ -475,7 +475,7 @@ describe("Fulfilment Order actions", () => {
   });
 
   it("refuses raw bytes, bare File ids and multiple references before contacting the storefront", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     const bytes = new FormData(); bytes.set("photo", new File([PNG], "delivery.png"));
     const bare = new FormData(); bare.set("photo", "file-from-browser");
     const duplicate = deliveryPhoto(); duplicate.append("photo", "second-reference");
@@ -487,7 +487,7 @@ describe("Fulfilment Order actions", () => {
 
   it("does not contact the storefront if the photo cannot be stored", async () => {
     storage.failUpload = true;
-    expect(await deliverOrder(await order("delivery", "dispatched"), deliveryPhoto())).toEqual({
+    expect(await deliverOrder(await order("delivery", "dispatched", "gcash"), deliveryPhoto())).toEqual({
       ok: false, reason: "Delivery photo could not be stored. The Order was not marked delivered.",
     });
     expect(storefront.requests).toBe(0);
@@ -495,7 +495,7 @@ describe("Fulfilment Order actions", () => {
   });
 
   it("keeps delivery evidence after an accepted write whose response was lost, without retrying", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       await storefront.handle(new Request(input, init));
       throw new Error("Response lost after commit");
@@ -511,7 +511,7 @@ describe("Fulfilment Order actions", () => {
   });
 
   it("requires the storefront to confirm the photo id as well as the status", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     for (const deliveryPhotoFileId of [undefined, "another-photo"]) {
       const send = vi.fn(async () => Response.json({ id, status: "delivered", deliveryFeeInCentavos: null, deliveryPhotoFileId }));
       vi.stubGlobal("fetch", send);
@@ -523,7 +523,7 @@ describe("Fulfilment Order actions", () => {
   });
 
   it("does not replace or remove an attached Delivery photo", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(true);
     expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
     expect(storage.files.get("file-1")?.retentionType).toBe("permanent");
@@ -575,14 +575,14 @@ describe("Fulfilment Order actions", () => {
 
   it("refuses out-of-order moves and unpaid Orders before sending a request", async () => {
     for (const status of ["placed", "awaiting payment", "preparing", "dispatched", "delivered", "cancelled"]) {
-      expect(await startPreparing(await order("delivery", status))).toMatchObject({ ok: false, reason: expect.stringContaining("not ready to prepare") });
+      expect(await startPreparing(await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery"))).toMatchObject({ ok: false, reason: expect.stringContaining("not ready to prepare") });
     }
     expect((await startPreparing(await order("delivery", "confirmed", "gcash"))).ok).toBe(false);
     for (const status of ["placed", "confirmed", "awaiting payment", "paid", "dispatched", "delivered", "cancelled"]) {
-      expect(await dispatchOrder(await order("delivery", status))).toMatchObject({ ok: false, reason: expect.stringContaining("Only a preparing Order") });
+      expect(await dispatchOrder(await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery"))).toMatchObject({ ok: false, reason: expect.stringContaining("Only a preparing Order") });
     }
     for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing", "delivered", "cancelled"]) {
-      expect(await deliverOrder(await order("delivery", status))).toMatchObject({ ok: false, reason: expect.stringContaining("Only a dispatched Order") });
+      expect(await deliverOrder(await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery"))).toMatchObject({ ok: false, reason: expect.stringContaining("Only a dispatched Order") });
     }
     expect(storefront.requests).toBe(0);
   });
@@ -595,14 +595,14 @@ describe("Fulfilment Order actions", () => {
   it("preserves the storefront refusal for each move without reporting success", async () => {
     storefront.refusal = "Another Staff member has already moved this Order.";
     for (const [status, move] of [["confirmed", startPreparing], ["preparing", (id: number) => dispatch(id)], ["dispatched", deliverOrder]] as const) {
-      expect(await move(await order("delivery", status), deliveryPhoto())).toEqual({ ok: false, reason: storefront.refusal });
+      expect(await move(await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery"), deliveryPhoto())).toEqual({ ok: false, reason: storefront.refusal });
     }
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("only confirms one of two Staff making the same move", async () => {
     for (const [status, move] of [["confirmed", startPreparing], ["preparing", (id: number) => dispatch(id)], ["dispatched", deliverOrder]] as const) {
-      const id = await order("delivery", status);
+      const id = await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery");
       const results = await Promise.all([move(id, deliveryPhoto()), move(id, deliveryPhoto())]);
       expect(results.filter(result => result.ok)).toHaveLength(1);
       expect(results.find(result => !result.ok)).toMatchObject({ reason: expect.stringMatching(/already changed/) });
@@ -615,7 +615,7 @@ describe("Fulfilment Order actions", () => {
     expect(requireModule).toHaveBeenCalledWith("Fulfilment");
   });
   it("marks a dispatched Order delivered through the storefront and records its Delivery time", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     expect(await deliverOrder(id, deliveryPhoto())).toEqual({ ok: true, order: { id, status: "delivered", deliveryFeeInCentavos: null } });
     const { loadFulfilmentBoard } = await import("@/features/orders/fulfilment");
     const result = await loadFulfilmentBoard(() => db.sql);
@@ -695,11 +695,11 @@ describe("checking a Payment proof", () => {
 describe("cancelling from Payments", () => {
   it("lets Payments Staff cancel through preparing and refuses later Orders", async () => {
     for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing"]) {
-      const id = await order("delivery", status);
+      const id = await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery");
       expect(await cancelPaymentOrder(id)).toMatchObject({ ok: true, order: { id, status: "cancelled" } });
     }
     for (const status of ["dispatched", "delivered", "cancelled"]) {
-      expect(await cancelPaymentOrder(await order("delivery", status))).toEqual({
+      expect(await cancelPaymentOrder(await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery"))).toEqual({
         ok: false, reason: "Order already changed; refresh it before trying again.",
       });
     }
@@ -864,7 +864,7 @@ describe("Fulfilment Audit Events", () => {
     { status: "dispatched", next: "delivered", run: (id: number) => deliverOrder(id, deliveryPhoto()), actions: ["order.delivered", "order.delivery_photo_attached"] },
   ];
   it.each(cases)("audits $next exactly once across retries", async test => {
-    const id = await order("delivery", test.status);
+    const id = await order("delivery", test.status, test.status === "dispatched" ? "gcash" : "cash-on-delivery");
     vi.mocked(requireModule).mockResolvedValue({ id: "portal-user-123", username: "ana", name: "Ana", email: "ana@example.com", role: "Staff" });
     expect((await test.run(id)).ok).toBe(true);
     expect(audit.mock.calls.map(([event]) => event.action)).toEqual(test.actions);
@@ -882,7 +882,7 @@ describe("Fulfilment Audit Events", () => {
     expect(audit).toHaveBeenCalledTimes(test.actions.length);
   });
   it.each(cases)("preserves $next when audit fails", async test => {
-    const id = await order("delivery", test.status);
+    const id = await order("delivery", test.status, test.status === "dispatched" ? "gcash" : "cash-on-delivery");
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     test.actions.forEach(() => audit.mockRejectedValueOnce(new Error("offline")));
     expect((await test.run(id)).ok).toBe(true);
@@ -891,13 +891,13 @@ describe("Fulfilment Audit Events", () => {
     expect(revalidatePath).toHaveBeenCalledWith(`/orders/${id}`);
   });
   it.each(cases)("does not audit refused $next", async test => {
-    const id = await order("delivery", test.status);
+    const id = await order("delivery", test.status, test.status === "dispatched" ? "gcash" : "cash-on-delivery");
     storefront.refusal = "Already changed";
     expect((await test.run(id)).ok).toBe(false);
     expect(audit).not.toHaveBeenCalled();
   });
   it("audits delivery and attachment even when photo promotion fails, without duplicating on reconciliation", async () => {
-    const id = await order("delivery", "dispatched");
+    const id = await order("delivery", "dispatched", "gcash");
     storage.failPromote = true;
     expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
     expect(audit).toHaveBeenCalledTimes(2);
@@ -957,7 +957,7 @@ describe("resendConfirmationEmail", () => {
 
 describe("Pickup Order moves", () => {
   it("moves preparing to ready for pickup to collected, audited with who made each move", async () => {
-    const id = await order("pickup", "preparing");
+    const id = await order("pickup", "preparing", "gcash");
     expect(await markReadyForPickup(id)).toEqual({ ok: true, order: { id, status: "ready for pickup", deliveryFeeInCentavos: null } });
     expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({ action: "order.ready_for_pickup", description: "Ana marked Pickup Order #" + id + " Ready for pickup.", actor: expect.objectContaining({ id: "ana" }) }));
     expect(await markPickedUp(id)).toEqual({ ok: true, order: { id, status: "collected", deliveryFeeInCentavos: null } });
@@ -968,6 +968,76 @@ describe("Pickup Order moves", () => {
     expect(await markPickedUp(id)).toMatchObject({ ok: false });
     expect(revalidatePath).toHaveBeenCalledWith("/fulfilment");
   });
+  it("records no collection for an Order that is not Cash on Delivery", async () => {
+    const id = await order("pickup", "ready for pickup", "gcash");
+    expect(await markPickedUp(id)).toMatchObject({ ok: true });
+    const [row] = await db.sql`select cod_collected_amount_in_centavos as amount, cod_collected_at as at from orders where id = ${id}`;
+    expect(row).toEqual({ amount: null, at: null });
+  });
+});
+
+describe("COD collection", () => {
+  async function codOrder(method: "pickup" | "delivery", status: string) {
+    const id = await order(method, status);
+    await db.sql`update orders set subtotal_in_centavos = 150000, delivery_fee_in_centavos = 5000 where id = ${id}`;
+    return id;
+  }
+  const collection = (id: number) => db.sql`
+    select status, cod_collected_amount_in_centavos as amount, cod_collected_at as at, cod_collected_by_name as by from orders where id = ${id}`.then(rows => rows[0]);
+
+  it("saves the amount, time and Staff member with the pickup, and audits them in the one event", async () => {
+    const id = await codOrder("pickup", "ready for pickup");
+    expect(await markPickedUp(id, 155000)).toMatchObject({ ok: true, order: { status: "collected" } });
+    expect(await collection(id)).toMatchObject({ status: "collected", amount: 155000, by: "Ana", at: expect.any(Date) });
+    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({
+      action: "order.picked_up", description: expect.stringContaining("₱1550.00"), metadata: { cod_collected_in_centavos: 155000, cod_collected_by: "Ana" },
+    }));
+  });
+  it("saves the amount, time and Staff member with the delivery", async () => {
+    const id = await codOrder("delivery", "dispatched");
+    expect(await deliverOrder(id, deliveryPhoto(), 155000)).toMatchObject({ ok: true, order: { status: "delivered" } });
+    expect(await collection(id)).toMatchObject({ status: "delivered", amount: 155000, by: "Ana" });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.delivered", metadata: { cod_collected_in_centavos: 155000, cod_collected_by: "Ana" } }));
+  });
+  it("refuses any other amount, or none, with the reason, before the storefront, keeping the status", async () => {
+    for (const method of ["pickup", "delivery"] as const) {
+      const id = await codOrder(method, method === "pickup" ? "ready for pickup" : "dispatched");
+      const before = storefront.requests;
+      for (const amount of [154999, 155001, 0, Number.NaN, undefined]) {
+        const result = method === "pickup" ? await markPickedUp(id, amount) : await deliverOrder(id, deliveryPhoto(), amount);
+        expect(result).toEqual({ ok: false, reason: expect.stringContaining("must equal the Order total of ₱1550.00") });
+      }
+      expect(storefront.requests).toBe(before);
+      expect(await collection(id)).toMatchObject({ status: method === "pickup" ? "ready for pickup" : "dispatched", amount: null, at: null });
+    }
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("keeps neither the status nor the collection when the storefront save fails", async () => {
+    for (const method of ["pickup", "delivery"] as const) {
+      const id = await codOrder(method, method === "pickup" ? "ready for pickup" : "dispatched");
+      storefront.refusal = "The save failed.";
+      const result = method === "pickup" ? await markPickedUp(id, 155000) : await deliverOrder(id, deliveryPhoto(), 155000);
+      expect(result).toEqual({ ok: false, reason: "The save failed." });
+      expect(await collection(id)).toMatchObject({ status: method === "pickup" ? "ready for pickup" : "dispatched", amount: null, at: null, by: null });
+      storefront.refusal = null;
+    }
+  });
+  it("makes no second record on a retry", async () => {
+    const id = await codOrder("pickup", "ready for pickup");
+    expect((await markPickedUp(id, 155000)).ok).toBe(true);
+    const first = await collection(id);
+    expect((await markPickedUp(id, 155000)).ok).toBe(false);
+    expect(await collection(id)).toEqual(first);
+  });
+  it("loads the collection for the Order page, and null before it", async () => {
+    const id = await codOrder("pickup", "ready for pickup");
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { codCollection: null } });
+    await markPickedUp(id, 155000);
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { codCollection: { amountInCentavos: 155000, byName: "Ana", at: expect.any(Date) } } });
+  });
+});
+
+describe("Pickup Order refusals", () => {
   it("refuses out-of-order pickup moves before the storefront", async () => {
     const requests = () => storefront.requests;
     for (const status of ["paid", "confirmed", "ready for pickup", "collected", "received", "cancelled"]) {
@@ -985,15 +1055,15 @@ describe("Pickup Order moves", () => {
     expect(audit).not.toHaveBeenCalled();
   });
   it("completes a legacy Pickup Order that is already dispatched", async () => {
-    const id = await order("pickup", "dispatched");
+    const id = await order("pickup", "dispatched", "gcash");
     expect(await markPickedUp(id)).toMatchObject({ ok: true, order: { status: "collected" } });
   });
   it("refuses Delivery Orders the pickup steps, and Pickup Orders the delivery steps", async () => {
     const delivery = await order("delivery", "preparing");
     expect(await markReadyForPickup(delivery)).toMatchObject({ ok: false, reason: expect.stringContaining("Pickup Order") });
-    const deliveryDispatched = await order("delivery", "dispatched");
+    const deliveryDispatched = await order("delivery", "dispatched", "gcash");
     expect(await markPickedUp(deliveryDispatched)).toMatchObject({ ok: false, reason: expect.stringContaining("Pickup Order") });
-    const pickup = await order("pickup", "dispatched");
+    const pickup = await order("pickup", "dispatched", "gcash");
     expect(await deliverOrder(pickup)).toMatchObject({ ok: false, reason: expect.stringContaining("Ready for pickup") });
     expect(storefront.requests).toBe(0);
   });
