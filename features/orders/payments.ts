@@ -1,6 +1,7 @@
 import { DEFAULT_AUTOMATIC_CHECKS, type AutomaticChecks } from "@/features/settings/automatic-checks";
 import { customerNameSql } from "@/lib/deleted-customer";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
+import { proofReadsOrEmpty, type ProofReadView } from "./proof-read";
 import type postgres from "postgres";
 
 import { proofAccount, type ProofAccount, type ProofAccountRow } from "./proof-account";
@@ -61,6 +62,8 @@ export interface PaymentRow {
   /** Proofs rejected so far; at 3 only a Manager can approve. */
   rejections: number;
   proofChecks?: PaymentProofChecks;
+  /** The Proof reader's stored findings for the latest proof (#596); absent until it has run. */
+  proofRead?: ProofReadView;
   /** Set when the Order is in Manager payment review (third rejected proof, still awaiting payment). */
   review?: PaymentRowReview;
 }
@@ -107,6 +110,8 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), set
     where order_id in ${sql(rows.map(o => o.id))} order by order_id, submitted_at desc, id desc` : [];
   const byOrder = new Map(latestProofs.map(p => [p.order_id, byProof.get(p.id)]));
   const accounts = new Map(latestProofs.map(p => [p.order_id, proofAccount(p)]));
+  const reads = crms ? await proofReadsOrEmpty(crms, latestProofs.map(p => p.id)) : {};
+  const readByOrder = new Map(latestProofs.map(p => [p.order_id, reads[p.id]]));
   const reviewIds = rows.filter(o => inReview({ status: o.status, rejections: o.payment_proof_rejections, rejectedAt: o.payment_proof_rejected_at })).map(o => o.id);
   const claims = new Map<number, { id: string; name: string }>();
   if (crms && reviewIds.length) {
@@ -120,6 +125,7 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), set
       ? { startedAt: o.payment_proof_rejected_at!, ...reviewTiming(o.payment_proof_rejected_at!, target, now), owner: claims.get(o.id) ?? null }
       : undefined,
     proofChecks: byOrder.get(o.id),
+    proofRead: readByOrder.get(o.id),
     id: o.id, customer: { id: o.customer_id, name: o.full_name }, method: o.payment_method, status: o.status,
     total: o.total,
     proof: o.payment_proof_submitted_at
