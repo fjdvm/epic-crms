@@ -14,7 +14,7 @@ import { canWork, READ_ONLY_REASON, shopRole } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import type { Staff } from "@/lib/portal/client";
 
-import { claimReview, loadPaymentReview, reassignReview } from "./payment-review";
+import { claimReview, loadPaymentReview, reassignReview, type PaymentReview } from "./payment-review";
 
 export type ReviewResult = { ok: true } | { ok: false; reason: string };
 
@@ -30,7 +30,7 @@ async function audit(id: number, staff: Staff, action: string, description: stri
 }
 
 /** Authorize, then run with the Order's current review. Opening an Order never claims it; only these actions do. */
-async function act(id: number, run: (staff: Staff, review: NonNullable<Awaited<ReturnType<typeof loadPaymentReview>>>) => Promise<ReviewResult>): Promise<ReviewResult> {
+async function act(id: number, run: (staff: Staff, review: PaymentReview) => Promise<ReviewResult>): Promise<ReviewResult> {
   const staff = await requireModule(PAYMENTS_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };

@@ -11,34 +11,24 @@ import { OrderActionDialog } from "./action-dialog";
 import { claimPaymentReview, loadReviewManagers, reassignPaymentReview } from "./payment-review-actions";
 import type { PaymentReview } from "./payment-review";
 
-function ReassignDialog({ id, review }: { id: number; review: PaymentReview }) {
+/** The dialog body only mounts when the dialog opens, so the Managers are read on that user action, never on page view or a timer. */
+function ReassignFields({ id, ownerId, to, setTo, reason, setReason }: {
+  id: number; ownerId: string | undefined; to: string; setTo: (v: string) => void; reason: string; setReason: (v: string) => void;
+}) {
   const [managers, setManagers] = useState<{ id: string; name: string }[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const [to, setTo] = useState("");
-  const [reason, setReason] = useState("");
 
-  // Opened on demand by the dialog, never on a timer.
   useEffect(() => {
     let live = true;
     loadReviewManagers().then(r => {
       if (!live) return;
-      if (r.ok) setManagers(r.managers.filter(m => m.id !== review.owner?.id)); else setFailure(r.reason);
-    }, () => live && setFailure("Managers could not be loaded. Try again."));
+      if (r.ok) setManagers(r.managers.filter(m => m.id !== ownerId)); else setFailure(r.reason);
+    }, () => { if (live) setFailure("Managers could not be loaded. Try again."); });
     return () => { live = false; };
-  }, [review.owner?.id]);
+  }, [ownerId]);
 
   return (
-    <OrderActionDialog
-      trigger="Reassign"
-      triggerClassName="bg-white text-[#5b2a86] border border-[#d9cce8] hover:bg-[#f6f2fa]"
-      title={`Hand over the payment review on Order #${id}?`}
-      description="The new owner is audited with your reason."
-      confirm="Reassign"
-      busy="Reassigning…"
-      disabled={!to || !reason.trim()}
-      run={() => reassignPaymentReview(id, to, reason)}
-      successMessage="Payment review reassigned."
-    >
+    <>
       {failure && <p role="alert" className="text-[13px] text-[#b91c1c]">{failure}</p>}
       <div className="space-y-1.5">
         <Label htmlFor={`review-owner-${id}`} className="text-[13px] font-medium text-foreground">New owner</Label>
@@ -52,6 +42,27 @@ function ReassignDialog({ id, review }: { id: number; review: PaymentReview }) {
         <Label htmlFor={`review-reason-${id}`} className="text-[13px] font-medium text-foreground">Reason</Label>
         <Textarea id={`review-reason-${id}`} value={reason} onChange={e => setReason(e.target.value)} />
       </div>
+    </>
+  );
+}
+
+function ReassignDialog({ id, review }: { id: number; review: PaymentReview }) {
+  const [to, setTo] = useState("");
+  const [reason, setReason] = useState("");
+
+  return (
+    <OrderActionDialog
+      trigger="Reassign"
+      triggerClassName="bg-white text-[#5b2a86] border border-[#d9cce8] hover:bg-[#f6f2fa]"
+      title={`Hand over the payment review on Order #${id}?`}
+      description="The new owner is audited with your reason."
+      confirm="Reassign"
+      busy="Reassigning…"
+      disabled={!to || !reason.trim()}
+      run={() => reassignPaymentReview(id, to, reason)}
+      successMessage="Payment review reassigned."
+    >
+      <ReassignFields id={id} ownerId={review.owner?.id} to={to} setTo={setTo} reason={reason} setReason={setReason} />
     </OrderActionDialog>
   );
 }
