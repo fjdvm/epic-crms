@@ -1054,6 +1054,23 @@ describe("resendStatusEmail", () => {
     expect(storefront.resentEmails).toEqual([]);
   });
 
+  it("resends a failed refund email once, owned by Returns, audited with the person's name and the Return", async () => {
+    const id = await failedEmail("return-refunded", "mailbox full", "7");
+    expect(await resendStatusEmail(id, "return-refunded", "7")).toEqual({ ok: true });
+    expect(requireModule).toHaveBeenLastCalledWith("Returns");
+    expect(storefront.resentEmails).toEqual([{ orderId: id, kind: "return-refunded", occurrence: "7", staffName: "Ana" }]);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.email_resent", module: "Returns", description: expect.stringContaining("Ana"), metadata: expect.objectContaining({ kind: "return-refunded", occurrence: "7" }) }));
+    expect((await resendStatusEmail(id, "return-refunded", "7")).ok).toBe(false);
+    expect(storefront.resentEmails).toHaveLength(1);
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a refund email resend that names no Return", async () => {
+    const id = await failedEmail("return-refunded", "mailbox full", "7");
+    expect(await resendStatusEmail(id, "return-refunded")).toEqual({ ok: false, reason: "Unknown email." });
+    expect(storefront.resentEmails).toEqual([]);
+  });
+
   it("asks for the email's owning Module", async () => {
     const id = await failedEmail("payment-expired");
     await resendStatusEmail(id, "payment-expired");

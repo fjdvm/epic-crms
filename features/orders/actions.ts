@@ -14,7 +14,7 @@ import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
-import { isOccurrence, isStatusEmailKind, STATUS_EMAILS } from "./status-emails";
+import { isOccurrence, isStatusEmailKind, RETURN_REFUNDED_EMAIL, STATUS_EMAILS } from "./status-emails";
 import { cancelStorefrontItems, changeOrderCourier, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
 import { checkBooking, type CourierInput, type DispatchRecord } from "./dispatch-record";
 import { loadDispatchRecord } from "./dispatch-record-read";
@@ -561,6 +561,8 @@ export async function loadPackingSlip(id: number) {
 export async function resendStatusEmail(id: number, kind: string, occurrence: string | null = null): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
   if (!isStatusEmailKind(kind) || !isOccurrence(occurrence)) return { ok: false, reason: "Unknown email." };
+  // The refund email is one per Return, so its occurrence must name that Return.
+  if (kind === RETURN_REFUNDED_EMAIL && !(occurrence && /^[1-9]\d*$/.test(occurrence))) return { ok: false, reason: "Unknown email." };
   const staff = await requireModule(STATUS_EMAILS[kind].module);
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   try {
@@ -574,9 +576,10 @@ export async function resendStatusEmail(id: number, kind: string, occurrence: st
   await recordAudit(gatewayAuditTrail, {
     action: "order.email_resent", module: STATUS_EMAILS[kind].module, outcome: "success", actor: staffAuditActor(staff),
     target: { type: "order", id: String(id), display_name: `Order #${id}` },
-    description: `${staff.name} resent the ${STATUS_EMAILS[kind].label} email for Order #${id}.`,
+    description: `${staff.name} resent the ${STATUS_EMAILS[kind].label} email for ${kind === RETURN_REFUNDED_EMAIL ? `Return #${occurrence} on ` : ""}Order #${id}.`,
     metadata: { kind, ...(occurrence ? { occurrence } : {}), reconciled: result.reconciled }, occurred_at: new Date().toISOString(), operationId: `order:${id}:email-resend:${randomUUID()}`,
   });
   revalidatePath(`/orders/${id}`);
+  if (kind === RETURN_REFUNDED_EMAIL) revalidatePath(`/returns/${occurrence}`);
   return { ok: true };
 }

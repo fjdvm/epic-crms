@@ -193,7 +193,7 @@ staffId, staffName}`). The storefront resends under the email's stable id, so a 
 Notification already accepted the email it reconciles the delivery status first, sends nothing and answers
 `status: "reconciled"` (otherwise `"sent"`), echoing `kind` and `occurrence`. Either answer records the outcome as
 `sent`, which clears the notice. A Resend reaches a Customer, so it waits for the server and is never optimistic.
-That endpoint is the storefront's to provide. Each success writes `order.email_resent` (module = the owning
+The Refunded email (`return-refunded`, #616/#617) is owned by Returns: its occurrence is the Return's id, it is shown on the Return page as well as the Order, and a failed send never reverses the refund. That endpoint is the storefront's to provide. Each success writes `order.email_resent` (module = the owning
 Module) with the person's name, the kind, the occurrence, whether it was reconciled, and a fresh operation id
 (a second Resend of a different event is a second entry). A refusal changes and audits nothing, and a failed
 email never reverses the saved update. The #572 sync records the failed-to-sent change as a system

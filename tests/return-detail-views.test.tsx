@@ -24,8 +24,10 @@ vi.mock("@/features/returns/actions", () => ({
   revealRefundDestination: vi.fn(),
 }));
 vi.mock("@/features/returns/refund-proof-actions", () => ({ saveRefundProof: vi.fn(), correctRefundReading: vi.fn(), proceedDespiteRefundFlag: vi.fn() }));
+vi.mock("@/features/orders/actions", () => ({ resendStatusEmail: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
+import { resendStatusEmail } from "@/features/orders/actions";
 import { saveRefundProof } from "@/features/returns/refund-proof-actions";
 import { approveReturn, changeRefundDestination, declineReturn, extendRefundWindow, revealRefundDestination, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
 
@@ -573,5 +575,36 @@ describe("Refund destination", () => {
     cleanup();
     view("manager", { preferredResolution: "replacement", finalResolution: "replacement" });
     expect(screen.queryByRole("heading", { name: "Refund destination" })).toBeNull();
+  });
+});
+
+describe("Refund email not sent", () => {
+  const failed = { emailFailures: [{ kind: "return-refunded" as const, occurrence: "15", reason: "mailbox full" }] };
+  const open = (role: "staff" | "ceo") => render(<ReturnDetailView detail={detail({ status: "refunded", ...failed })} imageUrls={[]} role={role} />);
+
+  it("shows the notice and, after confirming, resends once, then says so", async () => {
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: true });
+    open("staff");
+    expect(screen.getByText("Email not sent")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Resend refund email" }));
+    expect(resendStatusEmail).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(resendStatusEmail).toHaveBeenCalledWith(1042, "return-refunded", "15"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Refund email sent."));
+  });
+
+  it("says why when the storefront refuses, and keeps the notice", async () => {
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: false, reason: "Resend is not available right now." });
+    open("staff");
+    fireEvent.click(screen.getByRole("button", { name: "Resend refund email" }));
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Resend is not available right now."));
+    expect(screen.getByText("Email not sent")).toBeTruthy();
+  });
+
+  it("is read-only for the CEO", () => {
+    open("ceo");
+    expect(screen.getByText("Email not sent")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resend refund email" })).toBeNull();
   });
 });
