@@ -70,7 +70,7 @@ describe("refund amount rules (#611)", () => {
     expect(await markReturnRefunded(id, withFee(proof()))).toMatchObject({ ok: true });
     expect(await feeOf(id)).toEqual({ fee: 15000, reason: "Shop sent the wrong flavour" });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { amount: 40000, deliveryFeeRefunded: 15000 } });
-    expect(audit.mock.calls.at(-1)![0]).toMatchObject({ action: "return.refund_approved", metadata: { itemsInCentavos: 40000, deliveryFeeIncluded: true, deliveryFeeReason: "Shop sent the wrong flavour" } });
+    expect(audit.mock.calls.at(-1)![0]).toMatchObject({ action: "return.refund_approved", metadata: { itemsInCentavos: 40000, deliveryFeeIncluded: true, deliveryFeeInCentavos: 15000, deliveryFeeReason: "Shop sent the wrong flavour" } });
   });
 
   it("refuses the Delivery fee for Staff, without a reason, for another reason, or twice on one Order", async () => {

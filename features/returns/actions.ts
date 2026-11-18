@@ -99,6 +99,7 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
     }
     let deliveryFeeReason: string | undefined;
     let refundItems = 0;
+    let refundFee = 0;
     if (decision.status === "refunded") {
       const facts = await refundFacts(id, orderId);
       if (!facts) return { ok: false, reason: "Return was not found." };
@@ -111,6 +112,7 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       const checked = checkRefund({ ...facts, deliveryFeeReason });
       if (!checked.ok) return { ok: false, reason: checked.error };
       refundItems = facts.itemsInCentavos;
+      refundFee = checked.deliveryFeeInCentavos;
     }
     if (decision.status === "approved") decision = { ...decision, finalResolution: decision.finalResolution ?? current.preferred_resolution };
     const execute = async (): Promise<ReturnChangeResult> => {
@@ -158,10 +160,10 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
         action, module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
         target: { type: "return", id: String(id), display_name: `RMA-${id}` },
         description: update.status === "refunded"
-          ? `${staff.name} marked Return RMA-${id} (Order #${orderId}) refunded: items ${formatPesos(refundItems)}, Delivery fee ${update.deliveryFeeReason ? "included" : "not included"}${update.deliveryFeeReason ? ` (${update.deliveryFeeReason})` : ""}.`
+          ? `${staff.name} marked Return RMA-${id} (Order #${orderId}) refunded: items ${formatPesos(refundItems)}, Delivery fee ${update.deliveryFeeReason ? `${formatPesos(refundFee)} (${update.deliveryFeeReason})` : "not included"}.`
           : `${staff.name} marked Return RMA-${id} (Order #${orderId}) ${update.status}.`,
         occurred_at: new Date().toISOString(), operationId: `return:${id}:${action}`,
-        ...(update.status === "refunded" ? { metadata: { itemsInCentavos: refundItems, deliveryFeeIncluded: Boolean(update.deliveryFeeReason), ...(update.deliveryFeeReason ? { deliveryFeeReason: update.deliveryFeeReason } : {}) } } : {}),
+        ...(update.status === "refunded" ? { metadata: { itemsInCentavos: refundItems, deliveryFeeIncluded: Boolean(update.deliveryFeeReason), deliveryFeeInCentavos: refundFee, ...(update.deliveryFeeReason ? { deliveryFeeReason: update.deliveryFeeReason } : {}) } } : {}),
       });
     }
     if (result.ok && update.status === "refunded") {
