@@ -182,9 +182,13 @@ function Refund({ id, number, approvalId, context, canIncludeFee = false }: { id
           )}
           <div className="space-y-1">
             <p className="text-[13px] font-medium text-[#27272a]">Refund amount</p>
-            <p className="rounded-lg border border-[#e4e4e7] px-3 py-2.5 text-sm text-[#18181b]">{amount}</p>
+            <dl className="space-y-1 rounded-lg border border-[#e4e4e7] px-3 py-2.5 text-sm text-[#18181b]">
+              <div className="flex justify-between"><dt>Items</dt><dd>{formatPesos(context.amount)}</dd></div>
+              <div className="flex justify-between"><dt>Delivery fee</dt><dd>{formatPesos(fee)}</dd></div>
+              <div className="flex justify-between border-t border-[#e4e4e7] pt-1 font-medium"><dt>Total</dt><dd>{amount}</dd></div>
+            </dl>
             <p className="text-xs text-[#71717a]">
-              {fee > 0 ? `${formatPesos(context.amount)} for these items plus ${formatPesos(fee)} Delivery fee.` : "The amount paid for these items, after discounts. The Delivery fee is not included."}
+              {fee > 0 ? "Items are the amount paid after discounts, plus the Delivery fee a Manager chose to include." : "The amount paid for these items, after discounts. The Delivery fee is not included."}
             </p>
           </div>
           {feeOffered && (

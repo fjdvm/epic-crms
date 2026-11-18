@@ -336,7 +336,9 @@ describe("goods received and refunded", () => {
     const dialog = within(screen.getByRole("alertdialog"));
     expect(dialog.getByText(/The Delivery fee is not included/)).toBeTruthy();
     fireEvent.click(dialog.getByRole("checkbox", { name: /Also refund the Delivery fee/ }));
-    expect(dialog.getByText(/plus ₱150\.00 Delivery fee/)).toBeTruthy();
+    expect(dialog.getByText("Items").nextSibling?.textContent).toBe("₱219.00");
+    expect(dialog.getByText("Delivery fee").nextSibling?.textContent).toBe("₱150.00");
+    expect(dialog.getByText("Total").nextSibling?.textContent).toBe("₱369.00");
     expect((dialog.getByRole("button", { name: /^Refund ₱/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(dialog.getByLabelText(/Reason/), { target: { value: "Shop sent the wrong flavour" } });
     fireEvent.click(dialog.getByRole("button", { name: /^Refund ₱/ }));
@@ -345,6 +347,13 @@ describe("goods received and refunded", () => {
     const form = vi.mocked(markReturnRefunded).mock.calls[0][1] as FormData;
     expect(form.get("includeDeliveryFee")).toBe("true");
     expect(form.get("deliveryFeeReason")).toBe("Shop sent the wrong flavour");
+  });
+
+  it("shows Items, Delivery fee and Total before approval, noting a Delivery fee a Manager may add", () => {
+    view({ ...refundable(), status: "requested", reason: "defective", orderDeliveryFee: 15_000, deliveryFeeRefundable: true });
+    expect(screen.getByText("Delivery fee").nextSibling?.textContent).toBe("₱0.00");
+    expect(screen.getByText(/A Manager may add the ₱150\.00 Delivery fee/)).toBeTruthy();
+    expect(screen.getByText("Refund amount").nextSibling?.textContent).toBe("₱219.00");
   });
 
   it("offers no Delivery fee when it cannot be refunded", () => {

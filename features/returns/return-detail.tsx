@@ -188,11 +188,12 @@ export function ReturnDetailView({
                 <dt>Items</dt>
                 <dd>{formatPesos(detail.amount)}</dd>
               </div>
-              {detail.deliveryFeeRefunded > 0 && (
-                <div className="flex justify-between">
-                  <dt>Delivery fee</dt>
-                  <dd>{formatPesos(detail.deliveryFeeRefunded)}</dd>
-                </div>
+              <div className="flex justify-between">
+                <dt>Delivery fee</dt>
+                <dd>{formatPesos(detail.deliveryFeeRefunded)}</dd>
+              </div>
+              {detail.deliveryFeeRefundable && detail.deliveryFeeRefunded === 0 && (
+                <p className="text-xs text-[#6e6680]">Not included. A Manager may add the {formatPesos(detail.orderDeliveryFee)} Delivery fee when the refund is issued.</p>
               )}
               <div className="flex justify-between font-medium">
                 <dt>Refund amount</dt>
