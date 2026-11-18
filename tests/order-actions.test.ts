@@ -996,19 +996,19 @@ describe("resendStatusEmail", () => {
   });
 
   it("lists every failed Status email with its reason and no email address", async () => {
-    const id = await failedEmail("paid", "rejected maria@example.com");
+    const id = await failedEmail("payment-verified", "rejected maria@example.com");
     await db.sql`insert into order_email_outcomes (order_id, kind, status, reason) values (${id}, 'dispatched', 'sent', null), (${id}, 'preparing', 'retrying', 'later')`;
     const result = await loadOrder(() => db.sql, id);
-    expect(result.ok && result.order?.emailFailures).toEqual([{ kind: "paid", occurrence: null, reason: "rejected [email removed]" }]);
+    expect(result.ok && result.order?.emailFailures).toEqual([{ kind: "payment-verified", occurrence: null, reason: "rejected [email removed]" }]);
   });
 
   it("resends one rejection without touching the other", async () => {
-    const id = await failedEmail("rejected", "bounced", "1");
-    await db.sql`insert into order_email_outcomes (order_id, kind, occurrence, status, reason) values (${id}, 'rejected', '2', 'failed', 'bounced again')`;
-    expect(await resendStatusEmail(id, "rejected", "2")).toEqual({ ok: true });
+    const id = await failedEmail("payment-rejected", "bounced", "1");
+    await db.sql`insert into order_email_outcomes (order_id, kind, occurrence, status, reason) values (${id}, 'payment-rejected', '2', 'failed', 'bounced again')`;
+    expect(await resendStatusEmail(id, "payment-rejected", "2")).toEqual({ ok: true });
     expect((await outcomes(id)).map((o) => [o.occurrence, o.status])).toEqual([["1", "failed"], ["2", "sent"]]);
-    expect(storefront.resentEmails).toEqual([{ orderId: id, kind: "rejected", occurrence: "2", staffName: "Ana" }]);
-    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ kind: "rejected", occurrence: "2" }) }));
+    expect(storefront.resentEmails).toEqual([{ orderId: id, kind: "payment-rejected", occurrence: "2", staffName: "Ana" }]);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ kind: "payment-rejected", occurrence: "2" }) }));
   });
 
   it("sends nothing when Notification already accepted it, and still clears the notice and audits", async () => {
@@ -1040,9 +1040,9 @@ describe("resendStatusEmail", () => {
     const id = await order("delivery", "confirmed");
     await db.sql`insert into order_email_outcomes (order_id, kind, status) values (${id}, 'confirmation', 'sent')`;
     expect((await resendStatusEmail(id, "confirmation")).ok).toBe(false);
-    const other = await failedEmail("rejected", "bounced", "1");
-    expect((await resendStatusEmail(other, "rejected", "2")).ok).toBe(false);
-    expect((await resendStatusEmail(other, "rejected")).ok).toBe(false);
+    const other = await failedEmail("payment-rejected", "bounced", "1");
+    expect((await resendStatusEmail(other, "payment-rejected", "2")).ok).toBe(false);
+    expect((await resendStatusEmail(other, "payment-rejected")).ok).toBe(false);
     expect(storefront.resentEmails).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
@@ -1055,8 +1055,8 @@ describe("resendStatusEmail", () => {
   });
 
   it("asks for the email's owning Module", async () => {
-    const id = await failedEmail("expired");
-    await resendStatusEmail(id, "expired");
+    const id = await failedEmail("payment-expired");
+    await resendStatusEmail(id, "payment-expired");
     expect(requireModule).toHaveBeenLastCalledWith("Payments");
     await resendStatusEmail(id, "preparing");
     expect(requireModule).toHaveBeenLastCalledWith("Fulfilment");

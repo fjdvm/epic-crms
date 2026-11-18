@@ -1088,14 +1088,14 @@ describe("Email not sent notice", () => {
   it("shows each failed email with its own Resend, passing the occurrence", async () => {
     vi.mocked(resendStatusEmail).mockResolvedValue({ ok: true });
     const order = detail({ emailFailures: [
-      { kind: "rejected", occurrence: "1", reason: "first bounce" }, { kind: "rejected", occurrence: "2", reason: "second bounce" },
+      { kind: "payment-rejected", occurrence: "1", reason: "first bounce" }, { kind: "payment-rejected", occurrence: "2", reason: "second bounce" },
     ] as never });
     render(<OrderDetailView order={order} modules={["Payments"]} role="staff" />);
     expect(screen.getByText(/first bounce/)).toBeTruthy();
     expect(screen.getByText(/second bounce/)).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Resend payment rejected email" })[1]);
     fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
-    await waitFor(() => expect(resendStatusEmail).toHaveBeenCalledWith(1042, "rejected", "2"));
+    await waitFor(() => expect(resendStatusEmail).toHaveBeenCalledWith(1042, "payment-rejected", "2"));
   });
 
   it("shows an email only to people holding its owning Module", () => {
