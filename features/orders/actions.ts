@@ -31,8 +31,8 @@ interface CurrentOrder {
   payment_method: string;
   subtotal_in_centavos: number;
   delivery_fee_in_centavos: number | null;
-  /** The free-delivery rule saved on the Order when it was placed; null when none was saved. */
-  free_delivery_applied: boolean | null;
+  /** The free-delivery rule saved on the Order when it was placed; a null threshold means it was not judged yet. */
+  free_delivery: boolean;
   free_delivery_threshold_in_centavos: number | null;
   /** The approved Senior/PWD discount saved on the Order; absent or 0 when it has none. */
   discount_in_centavos?: number | null;
@@ -63,7 +63,7 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
     const [order] = await database()<CurrentOrder[]>`
       select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at,
         coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as discount_in_centavos,
-        (to_jsonb(o) ->> 'free_delivery_applied')::boolean as free_delivery_applied,
+        coalesce((to_jsonb(o) ->> 'free_delivery')::boolean, false) as free_delivery,
         (to_jsonb(o) ->> 'free_delivery_threshold_in_centavos')::bigint::float8 as free_delivery_threshold_in_centavos,
         payment_proof_rejected_at, payment_proof_rejections,
         exists (select 1 from public.senior_pwd_verifications v where v.id = o.senior_pwd_verification_id and v.status = 'pending') as senior_pwd_pending
@@ -136,7 +136,7 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     }
     if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
     if (!CANCELLABLE_STATUSES.includes(order.status) || order.delivery_fee_in_centavos !== null) return { ok: false, reason: ALREADY_CHANGED };
-    const rule = await freeDeliveryRule(database(), { applied: order.free_delivery_applied, thresholdInCentavos: order.free_delivery_threshold_in_centavos },
+    const rule = await freeDeliveryRule(database(), { freeDelivery: order.free_delivery, thresholdInCentavos: order.free_delivery_threshold_in_centavos },
       order.subtotal_in_centavos - (order.discount_in_centavos ?? 0));
     const refusal = feeRefusal(rule, deliveryFeeInCentavos);
     if (refusal) return { ok: false, reason: refusal };
