@@ -22,6 +22,7 @@ import { CANCELLABLE_STATUSES, confirmationEmailFailure, loadOrder } from "./ord
 import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { feeRefusal, freeDeliveryRule, type FreeDeliveryRule } from "./free-delivery";
 import { reusedReferenceOrderIds } from "./payment-proof-checks";
+import { alreadyFundedOrderIds, allocateReference, latestProofReference, releaseReference } from "./payment-allocations";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
 
@@ -261,9 +262,11 @@ const clean = (text: string | undefined) => (typeof text === "string" ? text.tri
  * Marks a prepaid Order paid. Only the Portal may supply the identity; the storefront records the time.
  * After 3 rejected proofs this is "approve anyway": a Manager gives a reason, and Staff can only request approval.
  */
-export async function markPaid(id: number, options: { reason?: string; approvalId?: string } = {}): Promise<OrderChangeResult | ApprovalResult> {
+export async function markPaid(id: number, options: { reason?: string; approvalId?: string; allocateToOrderId?: number } = {}): Promise<OrderChangeResult | ApprovalResult> {
   let approvedAnyway: string | null = null;
   let reusedOn: number[] = [];
+  let allocatedTo: number | null = null;
+  let allocatedBy: { id: string; name: string } | null = null;
   return act<OrderChangeResult | ApprovalResult>(id, async (order, staff) => {
     if (order.status !== "awaiting payment") return { ok: false, reason: ALREADY_CHANGED };
     if (!isPrepaid(order.payment_method) || !order.payment_proof_submitted_at) {
@@ -280,8 +283,13 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
     const reason = clean(options.reason);
     // The reason is needed to request, to approve anyway, and is checked again against the approved request.
     if (!options.approvalId && !reason) return { ok: false, reason: "Enter a reason to approve this payment anyway." };
+    // A reused reference must say which Order the transfer pays: this one or one that already used it.
+    const chosen = options.allocateToOrderId;
+    if (reusedOn.length > 0 && (chosen === undefined || ![id, ...reusedOn].includes(chosen))) {
+      return { ok: false, reason: "Choose which Order this transfer pays." };
+    }
     return approvals().run(staff, { module: PAYMENTS_MODULE, action: "payment.approve-anyway", targetId: String(id),
-      payload: { rejections, reusedReferenceOrderIds: reusedOn }, amountInCentavos: 0 },
+      payload: { rejections, reusedReferenceOrderIds: reusedOn, ...(reusedOn.length ? { allocateToOrderId: chosen } : {}) }, amountInCentavos: 0 },
     { reason, approvalId: options.approvalId }, async () => {
       // A Staff retry names only the approval; the reason is the one they gave when they asked.
       if (!reason && options.approvalId) {
@@ -289,14 +297,43 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
         approvedAnyway = asked?.reason ?? "";
       } else approvedAnyway = reason;
       if (!approvedAnyway) return { ok: false, reason: "Enter a reason to approve this payment anyway." };
-      return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name, approvedAnyway: { reason: approvedAnyway } });
+      let claimed: string | null = null;
+      if (reusedOn.length > 0 && chosen !== undefined) {
+        // The Manager who approved names the Order; a Staff retry carries the request's approver.
+        allocatedBy = { id: staff.username, name: staff.name };
+        if (options.approvalId) {
+          const [approver] = await crmsDatabase()<{ manager_id: string | null; manager_name: string | null }[]>`select manager_id, manager_name from crms.approval_requests where id = ${options.approvalId}`;
+          if (approver?.manager_id && approver.manager_name) allocatedBy = { id: approver.manager_id, name: approver.manager_name };
+        }
+        const reference = await latestProofReference(database(), id);
+        if (!reference) return { ok: false, reason: "This proof has no reference to allocate." };
+        // One transfer funds one Order: an Order that already moved past payment on it cannot be joined by another.
+        const funded = (await alreadyFundedOrderIds(database(), reusedOn)).filter(n => n !== chosen);
+        if (chosen === id && funded.length > 0) return { ok: false, reason: `This transfer already paid Order #${funded[0]}. It cannot fund a second Order.` };
+        const holder = await allocateReference(crmsDatabase(), reference, { orderId: chosen, reason: approvedAnyway, by: allocatedBy });
+        if (holder !== null) return { ok: false, reason: `This transfer was already allocated to Order #${holder}. It cannot fund a second Order.` };
+        allocatedTo = chosen;
+        if (chosen !== id) {
+          await auditOrder(id, staff, PAYMENTS_MODULE, "payment.reference_allocated",
+            `${allocatedBy.name} allocated the transfer on Order #${id} to Order #${chosen}: ${approvedAnyway}`,
+            { reason: approvedAnyway, allocatedToOrderId: chosen, allocatedBy: allocatedBy.name, reusedReferenceOrderIds: reusedOn });
+          return { ok: false, reason: `Transfer allocated to Order #${chosen}. It does not pay this Order: reject the proof or ask for a new one.` };
+        }
+        claimed = reference;
+      }
+      const paid = await changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name, approvedAnyway: { reason: approvedAnyway } });
+      if (!paid.ok && claimed) await releaseReference(crmsDatabase(), claimed, id);
+      return paid;
     });
   }, PAYMENTS_MODULE, {
     get action() { return approvedAnyway ? "payment.approved_anyway" : "payment.marked_paid"; },
     description: staff => approvedAnyway
       ? `${staff.name} approved Order #${id} anyway: ${approvedAnyway}`
       : `${staff.name} marked Order #${id} paid.`,
-    get metadata() { return approvedAnyway ? { reason: approvedAnyway, ...(reusedOn.length ? { reusedReferenceOrderIds: reusedOn } : {}) } : undefined; },
+    get metadata() {
+      return approvedAnyway ? { reason: approvedAnyway, ...(reusedOn.length ? { reusedReferenceOrderIds: reusedOn } : {}),
+        ...(allocatedTo !== null && allocatedBy ? { allocatedToOrderId: allocatedTo, allocatedBy: allocatedBy.name } : {}) } : undefined;
+    },
   });
 }
 

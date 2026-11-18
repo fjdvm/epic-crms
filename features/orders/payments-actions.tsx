@@ -111,6 +111,8 @@ export function AskNewProofDialog({ id }: { id: number }) {
  */
 export function ApproveAnywayDialog({ id, role, approvalId, waiting = false, reusedOn = [] }: { id: number; role: ShopRole | null; approvalId?: string; waiting?: boolean; reusedOn?: number[] }) {
   const [reason, setReason] = useState("");
+  // A reused reference must say which Order the transfer pays: this one or an Order that already used it.
+  const [pays, setPays] = useState(id);
   const staff = role === "staff";
   if (staff && waiting && !approvalId) {
     return <span className="rounded-full bg-[#fdf1d8] px-3 py-1 text-xs font-medium text-[#8a5a00]">Waiting for approval</span>;
@@ -127,12 +129,23 @@ export function ApproveAnywayDialog({ id, role, approvalId, waiting = false, reu
       busy={request ? "Sending…" : "Approving…"}
       disabled={!approvalId && !reason.trim()}
       run={async () => {
-        const result = await markPaid(id, { reason, approvalId });
+        const result = await markPaid(id, { reason, approvalId, ...(reusedOn.length ? { allocateToOrderId: pays } : {}) });
         // A waiting request is the expected answer for Staff, not a refusal.
         return request && !result.ok && result.reason === "Waiting for approval" ? { ok: true as const } : result;
       }}
       successMessage={request ? "Sent to a Manager. The Order shows Waiting for approval." : `Order #${id} approved and marked paid.`}
     >
+      {reusedOn.length > 0 && (
+        <fieldset className="space-y-2">
+          <legend className="text-[13px] font-medium text-foreground">Which Order does this transfer pay? One transfer pays one Order.</legend>
+          {[id, ...reusedOn].map(n => (
+            <label key={n} className="flex items-start gap-2 text-[#1f1a2e]">
+              <input type="radio" name={`pays-${id}`} checked={pays === n} onChange={() => setPays(n)} className="mt-1" />
+              <span>Order #{n}{n === id ? " (this Order)" : ""}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
       {!approvalId && <ReasonField id={`approve-reason-${id}`} label="Reason" value={reason} onChange={setReason} />}
     </OrderActionDialog>
   );
