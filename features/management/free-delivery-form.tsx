@@ -35,7 +35,11 @@ export function FreeDeliveryForm({ currentInCentavos }: { currentInCentavos: num
           aria-describedby={error ? "free-delivery-threshold-error" : undefined}
         />
         {error && <p id="free-delivery-threshold-error" role="alert" className="text-xs text-[#dc2626]">{error}</p>}
-        {currentInCentavos !== null && <p className="text-xs text-[#6e6680]">Current: {pesos(currentInCentavos)}</p>}
+        {currentInCentavos !== null ? (
+          <p className="text-xs text-[#6e6680]">Current: {pesos(currentInCentavos)}</p>
+        ) : (
+          <p role="status" className="text-xs text-[#8a5a00]">The current threshold could not be loaded. Reload before changing it.</p>
+        )}
       </div>
       <OrderActionDialog
         trigger="Save threshold"
@@ -49,7 +53,7 @@ export function FreeDeliveryForm({ currentInCentavos }: { currentInCentavos: num
       >
         {parsed.ok && (
           <p>
-            From {currentInCentavos === null ? "not set" : pesos(currentInCentavos)} to <strong>{pesos(parsed.thresholdInCentavos)}</strong>. Orders already placed are not changed.
+            From {currentInCentavos === null ? "an unknown amount" : pesos(currentInCentavos)} to <strong>{pesos(parsed.thresholdInCentavos)}</strong>. Orders already placed are not changed.
           </p>
         )}
       </OrderActionDialog>

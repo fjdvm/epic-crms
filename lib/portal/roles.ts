@@ -15,7 +15,7 @@ export function canWork(staff: Staff): boolean {
   return ["staff", "manager"].includes(shopRole(staff.role) ?? "");
 }
 /** Management is for a Manager or the CEO; Staff and Admin cannot open it even if a Module reached them. */
-export function canManage(staff: Staff): boolean {
+export function canManage(staff: Pick<Staff, "role">): boolean {
   return ["manager", "ceo"].includes(shopRole(staff.role) ?? "");
 }
 export const READ_ONLY_REASON = "Your Role can only view shop work.";
