@@ -17,6 +17,7 @@ import { formatPesos } from "@/features/customer-profiles/format";
 import { checkRefund, type RefundOrder } from "./refund-rules";
 import { checkRefundRecord, refundMethodLabel, type RefundRecord } from "./refund-record";
 import { randomUUID } from "node:crypto";
+import { startRefundProofRead } from "./refund-proof-start";
 import { loadReturns, loadReturnDetail, loadReturnStats, type ReturnQuery } from "./returns";
 
 /** Each endpoint proves Returns access itself, before opening a database connection. */
@@ -181,6 +182,8 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       } catch {
         return { ok: false, reason: "The Return was marked refunded, but its refund proof could not be made Permanent. Refresh the Return; do not repeat the refund." };
       }
+      // The Proof reader reads it in the background (#614); this response never waits for it, and a failure is picked up by the schedule.
+      startRefundProofRead(id);
     }
     return result;
     };
