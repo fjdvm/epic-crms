@@ -20,6 +20,7 @@ import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
 import { CANCELLABLE_STATUSES, confirmationEmailFailure, loadOrder } from "./orders";
 import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
+import { feeRefusal, freeDeliveryRule, type FreeDeliveryRule } from "./free-delivery";
 import { reusedReferenceOrderIds } from "./payment-proof-checks";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
@@ -30,6 +31,9 @@ interface CurrentOrder {
   payment_method: string;
   subtotal_in_centavos: number;
   delivery_fee_in_centavos: number | null;
+  /** The free-delivery rule saved on the Order when it was placed; null when none was saved. */
+  free_delivery_applied: boolean | null;
+  free_delivery_threshold_in_centavos: number | null;
   /** The approved Senior/PWD discount saved on the Order; absent or 0 when it has none. */
   discount_in_centavos?: number | null;
   payment_proof_submitted_at: Date | null;
@@ -59,6 +63,8 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
     const [order] = await database()<CurrentOrder[]>`
       select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at,
         coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as discount_in_centavos,
+        (to_jsonb(o) ->> 'free_delivery_applied')::boolean as free_delivery_applied,
+        (to_jsonb(o) ->> 'free_delivery_threshold_in_centavos')::bigint::float8 as free_delivery_threshold_in_centavos,
         payment_proof_rejected_at, payment_proof_rejections,
         exists (select 1 from public.senior_pwd_verifications v where v.id = o.senior_pwd_verification_id and v.status = 'pending') as senior_pwd_pending
       from public.orders o where o.id = ${id}`;
@@ -120,6 +126,7 @@ const amountsMetadata = (a: { subtotalInCentavos: number; discountInCentavos: nu
 /** Quote in integer centavos; the storefront confirms the Delivery Order in the same write, after checking the final amounts. */
 export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, expectedTotalInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
   let confirmed: ConfirmedAmounts | undefined;
+  let freeDelivery: FreeDeliveryRule | undefined;
   return act(id, async (order, staff) => {
     if (!Number.isSafeInteger(deliveryFeeInCentavos) || deliveryFeeInCentavos < 0) {
       return { ok: false, reason: "Enter a nonnegative whole number of centavos." };
@@ -129,6 +136,11 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     }
     if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
     if (!CANCELLABLE_STATUSES.includes(order.status) || order.delivery_fee_in_centavos !== null) return { ok: false, reason: ALREADY_CHANGED };
+    const rule = await freeDeliveryRule(database(), { applied: order.free_delivery_applied, thresholdInCentavos: order.free_delivery_threshold_in_centavos },
+      order.subtotal_in_centavos - (order.discount_in_centavos ?? 0));
+    const refusal = feeRefusal(rule, deliveryFeeInCentavos);
+    if (refusal) return { ok: false, reason: refusal };
+    freeDelivery = rule.qualifies ? rule : undefined;
     const final = finalAmounts(order, staff, deliveryFeeInCentavos, expectedTotalInCentavos);
     if (!final.ok) return final;
     confirmed = final.amounts;
@@ -136,7 +148,12 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
   }, ORDERS_MODULE, {
     action: "order.confirmed",
     description: staff => `${staff.name} ${deliveryFeeInCentavos === 0 ? "quoted free delivery (₱0.00)" : `quoted a Delivery fee of ${pesos(deliveryFeeInCentavos)}`} and confirmed Order #${id}${choiceNote(codChoice)}.`,
-    get metadata() { return confirmed ? amountsMetadata(confirmed) : undefined; },
+    get metadata() {
+      if (!confirmed) return undefined;
+      return freeDelivery
+        ? { ...amountsMetadata(confirmed), free_delivery_applied: true, free_delivery_threshold_in_centavos: freeDelivery.thresholdInCentavos }
+        : amountsMetadata(confirmed);
+    },
   });
 }
 
