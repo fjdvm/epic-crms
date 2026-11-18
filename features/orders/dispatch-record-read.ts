@@ -11,9 +11,9 @@ type Row = { courier: string | null; link: string | null; rider_name: string | n
 export async function loadDispatchRecord(sql: postgres.Sql, orderId: number, withRider: boolean): Promise<DispatchRecord | null> {
   const [row] = await sql<Row[]>`
     select to_jsonb(o)->>'courier' as courier, to_jsonb(o)->>'courier_tracking_url' as link,
-      ${withRider ? sql`to_jsonb(o)->>'courier_rider_name'` : sql`null`} as rider_name,
-      ${withRider ? sql`to_jsonb(o)->>'courier_rider_plate'` : sql`null`} as rider_plate,
-      ${withRider ? sql`to_jsonb(o)->>'courier_rider_phone'` : sql`null`} as rider_phone
+      ${withRider ? sql`to_jsonb(o)->>'rider_name'` : sql`null`} as rider_name,
+      ${withRider ? sql`to_jsonb(o)->>'rider_plate'` : sql`null`} as rider_plate,
+      ${withRider ? sql`to_jsonb(o)->>'rider_phone'` : sql`null`} as rider_phone
     from public.orders o where o.id = ${orderId} and o.fulfillment_method = 'delivery'`;
   const courier = COURIERS.find((name): name is CourierName => name === row?.courier);
   if (!row || !courier) return null;

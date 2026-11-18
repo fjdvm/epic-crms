@@ -362,7 +362,7 @@ describe("Courier details at dispatch", () => {
     const requests = storefront.requests;
     for (const input of [undefined, { ...COURIER, courier: "" }, { ...COURIER, courier: "Other" },
       { ...COURIER, trackingUrl: "http://share.lalamove.com/abc" }, { ...COURIER, trackingUrl: "not a link" }, { ...COURIER, trackingUrl: "https://a.com/" + "x".repeat(2100) },
-      { ...COURIER, trackingUrl: "https://user:pw@share.lalamove.com/abc" }, { ...COURIER, riderName: "x".repeat(101) }]) {
+      { ...COURIER, trackingUrl: "https://user:pw@share.lalamove.com/abc" }, { ...COURIER, riderName: "x".repeat(121) }, { ...COURIER, riderName: "Juan 3" }, { ...COURIER, riderPlate: "A".repeat(17) }, { ...COURIER, riderPhone: "12345" }]) {
       expect((await dispatchOrder(id, input)).ok).toBe(false);
     }
     expect(storefront.requests).toBe(requests);
@@ -371,7 +371,7 @@ describe("Courier details at dispatch", () => {
   it("sends the booking with optional rider details and audits only the courier", async () => {
     const id = await order("delivery", "preparing");
     expect(await dispatchOrder(id, { ...COURIER, courier: "Grab", riderName: " Juan ", riderPhone: "0917 123 4567", riderPlate: "" })).toEqual({ ok: true, order: { id, status: "dispatched", deliveryFeeInCentavos: null } });
-    expect(storefront.couriers.get(id)).toEqual({ name: "Grab", trackingUrl: COURIER.trackingUrl, riderName: "Juan", riderPhone: "0917 123 4567" });
+    expect(storefront.couriers.get(id)).toEqual({ name: "Grab", trackingUrl: COURIER.trackingUrl, riderName: "Juan", riderPhone: "09171234567" });
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.dispatched", metadata: { old: { courier: null, tracking_url: null }, new: { courier: "Grab", tracking_url: COURIER.trackingUrl } } }));
     expect(JSON.stringify(audit.mock.calls)).not.toContain("0917");
     expect(JSON.stringify(audit.mock.calls)).not.toContain("Juan");
@@ -393,7 +393,7 @@ describe("Changing the dispatch record later", () => {
   it("adds a link and fixes the rider while dispatched, auditing old and new values without rider details", async () => {
     const id = await dispatched();
     expect(await updateDispatchRecord(id, { courier: "Grab", trackingUrl: "https://grab.example/ride/9", riderName: "Pedro", riderPhone: "0917 123 4567" })).toMatchObject({ ok: true });
-    expect(await loadDispatchRecord(db.sql, id, true)).toEqual({ courier: "Grab", trackingUrl: "https://grab.example/ride/9", rider: { name: "Pedro", plate: null, phone: "0917 123 4567" } });
+    expect(await loadDispatchRecord(db.sql, id, true)).toEqual({ courier: "Grab", trackingUrl: "https://grab.example/ride/9", rider: { name: "Pedro", plate: null, phone: "09171234567" } });
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({
       action: "order.dispatch_updated",
       metadata: { old: { courier: "Lalamove", tracking_url: null }, new: { courier: "Grab", tracking_url: "https://grab.example/ride/9" }, rider_details_changed: true },
@@ -436,7 +436,7 @@ describe("Changing the dispatch record later", () => {
   });
   it("hands rider details only to a reader who may see them, and none for a Pickup Order", async () => {
     const id = await dispatched();
-    expect(await loadDispatchRecord(db.sql, id, true)).toMatchObject({ rider: { name: "Juan", phone: "0917 123 4567" } });
+    expect(await loadDispatchRecord(db.sql, id, true)).toMatchObject({ rider: { name: "Juan", phone: "09171234567" } });
     const hidden = await loadDispatchRecord(db.sql, id, false);
     expect(hidden).toEqual({ courier: "Lalamove", trackingUrl: null, rider: null });
     expect(JSON.stringify(hidden)).not.toMatch(/Juan|0917/);

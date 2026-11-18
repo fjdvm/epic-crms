@@ -28,7 +28,7 @@ export class FakeStorefront {
   /** The storefront keeps the courier booking on the Order, the rider details with it. */
   private async saveCourier(id: number, courier: { name: string; trackingUrl?: string; riderName?: string; riderPlate?: string; riderPhone?: string }) {
     await this.sql`update orders set courier = ${courier.name}, courier_tracking_url = ${courier.trackingUrl ?? null},
-      courier_rider_name = ${courier.riderName ?? null}, courier_rider_plate = ${courier.riderPlate ?? null}, courier_rider_phone = ${courier.riderPhone ?? null} where id = ${id}`;
+      rider_name = ${courier.riderName ?? null}, rider_plate = ${courier.riderPlate ?? null}, rider_phone = ${courier.riderPhone ?? null} where id = ${id}`;
   }
 
   private async requestReturn(request: Request, orderId: number): Promise<Response> {
