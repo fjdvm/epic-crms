@@ -183,7 +183,8 @@ Order Details shows "Email not sent" with the reason for every `order_email_outc
 `failed`, for any of the nine Status emails (`confirmation`, `paid`, `rejected`, `expired`, `manager_review`,
 `preparing`, `dispatched`, `ready_for_pickup`, `completed`; `features/orders/status-emails.ts`). A row is one event
 occurrence: the storefront adds a nullable `occurrence` text column (for example the rejection number) so two
-rejections are two rows, and CREOMS reads it defensively (`to_jsonb(e)->>'occurrence'`), so no CREOMS migration is
+rejections are two rows (`""` for an event that happens once; storefront migration 0053, applied to production and
+granted to the read-only role by the storefront's `docs/sql/creoms-email-outcomes-grant.sql`), so no CREOMS migration is
 needed. Staff and Managers holding the email's owning Module (confirmation: Orders; paid, rejected, expired,
 Manager review: Payments; Preparing, dispatched, Ready for pickup, completed: Fulfilment) can resend it after a
 confirm dialog; Admin and the CEO only read.
