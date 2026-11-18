@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const readPendingProofs = vi.hoisted(() => vi.fn());
 const reportLiveError = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/features/orders/proof-reader", () => ({ readPendingProofs }));
-vi.mock("@/lib/ai/structured", () => ({ configuredStructuredModels: () => [] }));
+vi.mock("@/lib/ai/structured", () => ({ configuredVisionModels: () => [] }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => ({}) }));
 vi.mock("@/lib/tickets-db", () => ({ ticketsDatabase: () => ({}) }));
 vi.mock("@/lib/error-monitor", () => ({ reportLiveError }));

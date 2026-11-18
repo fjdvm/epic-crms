@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
-import { structuredOutput } from "@/lib/ai/structured";
+import { configuredVisionModels, structuredOutput } from "@/lib/ai/structured";
 
 function model(text: string) {
   return new MockLanguageModelV4({
@@ -38,5 +38,9 @@ describe("schema-checked AI output", () => {
       { name: "groq", model: new MockLanguageModelV4({ doGenerate: async () => { throw new Error("down"); } }) },
       { name: "gemini", model: model('{"wrong":"shape"}') },
     ] })).toEqual({ ok: false, reason: "model-failed" });
+  });
+  it("offers only Gemini for images, since the Groq model is text-only", () => {
+    expect(configuredVisionModels({ GROQ_API_KEY: "g", GROQ_MODEL: "m" })).toEqual([]);
+    expect(configuredVisionModels({ GROQ_API_KEY: "g", GROQ_MODEL: "m", GOOGLE_GENERATIVE_AI_API_KEY: "k", GEMINI_MODEL: "gemini-2.5-flash" }).map(m => m.name)).toEqual(["gemini-2.5-flash"]);
   });
 });
