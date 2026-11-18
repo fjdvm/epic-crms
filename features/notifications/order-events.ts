@@ -1,7 +1,7 @@
 import type postgres from "postgres";
 
 import { loadAutomaticChecks } from "@/features/settings/automatic-checks";
-import { MANAGER_AFTER_REJECTIONS as REVIEW_AFTER_REJECTIONS } from "@/features/orders/payment-methods";
+import { MANAGER_AFTER_REJECTIONS } from "@/features/orders/payment-methods";
 import { DEFAULT_SCHEMA, schemaIdent, type SyncResult } from "./notifications";
 
 type OrderEventKind = "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "order-overdue" | "payment-review" | "payment-review-overdue";
@@ -63,7 +63,7 @@ export async function readOrderEvents(reader: postgres.Sql, overdueHours: number
     select 'payment-review:' || o.id, 'payment-review', o.id, o.customer_id, c.full_name
     from public.orders o
     join public.customers c on c.id = o.customer_id
-    where o.status = 'awaiting payment' and o.payment_proof_rejections >= ${REVIEW_AFTER_REJECTIONS}::int
+    where o.status = 'awaiting payment' and o.payment_proof_rejections >= ${MANAGER_AFTER_REJECTIONS}::int
       and o.payment_proof_rejected_at is not null
 
     union all
@@ -74,7 +74,7 @@ export async function readOrderEvents(reader: postgres.Sql, overdueHours: number
       'payment-review-overdue', o.id, o.customer_id, c.full_name
     from public.orders o
     join public.customers c on c.id = o.customer_id
-    where ${reviewHours}::int is not null and o.status = 'awaiting payment' and o.payment_proof_rejections >= ${REVIEW_AFTER_REJECTIONS}::int
+    where ${reviewHours}::int is not null and o.status = 'awaiting payment' and o.payment_proof_rejections >= ${MANAGER_AFTER_REJECTIONS}::int
       and o.payment_proof_rejected_at is not null
       and o.payment_proof_rejected_at <= now() - ${reviewHours ?? 0}::int * interval '1 hour'`;
 
