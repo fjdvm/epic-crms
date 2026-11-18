@@ -50,6 +50,13 @@ const evidence = [
 ] as const;
 
 function pick(label: string, file: File) {
+  if (label === "Refund proof") {
+    // A refund also records what was sent (#613).
+    const dialog = within(screen.getByRole("alertdialog"));
+    fireEvent.change(dialog.getByLabelText(/Amount sent/), { target: { value: "100.00" } });
+    fireEvent.change(dialog.getByLabelText(/Sent by/), { target: { value: "gcash" } });
+    fireEvent.change(dialog.getByLabelText(/Reference/), { target: { value: "GC-2026-0001" } });
+  }
   fireEvent.change(screen.getByLabelText(label), { target: { files: [file] } });
 }
 
@@ -99,7 +106,9 @@ for (const picker of evidence) {
       expect(confirmFileUpload).toHaveBeenCalledWith(picker.module, "pending-reference");
       const [id, form] = vi.mocked(picker.submit).mock.calls[0];
       expect(id).toBe(picker.id);
-      expect(Array.from((form as FormData).entries())).toEqual([[picker.field, "ready-reference"]]);
+      // The File travels only as its confirmed reference; a refund also carries the details Staff recorded.
+      expect((form as FormData).getAll(picker.field)).toEqual(["ready-reference"]);
+      expect(Array.from((form as FormData).keys())).toEqual(picker.module === "Returns" ? [picker.field, "sentAmount", "sentVia", "sentOn", "sentReference"] : [picker.field]);
     });
 
     it("cancels without uploading or submitting", () => {

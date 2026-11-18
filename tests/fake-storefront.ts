@@ -210,6 +210,11 @@ export class FakeStorefront {
     if (update.status === "refunded" && (typeof update.refundProofFileId !== "string" || !update.refundProofFileId.trim())) {
       return Response.json({ error: "Refund proof is required." }, { status: 400 });
     }
+    if (update.status === "refunded" && (!Number.isSafeInteger(update.refundAmountInCentavos) || update.refundAmountInCentavos < 0 ||
+      !["gcash", "maya", "bank-transfer"].includes(update.refundPaidMethod) || !/^\d{4}-\d{2}-\d{2}$/.test(update.refundedOn ?? "") ||
+      typeof update.refundReference !== "string" || update.refundReference.trim().length < 4)) {
+      return Response.json({ error: "Refund details are required." }, { status: 400 });
+    }
     if (update.status === "declined" && (typeof update.declineReason !== "string" || !update.declineReason.trim())) {
       return Response.json({ error: "Enter a reason for declining the Return." }, { status: 400 });
     }
@@ -240,13 +245,19 @@ export class FakeStorefront {
         goods_required = ${update.status === "approved" ? update.goodsRequired : current.goods_required},
         decline_reason = ${update.status === "declined" ? update.declineReason.trim() : current.decline_reason},
         refunded_at = ${update.status === "refunded" ? at : current.refunded_at},
+        refund_amount_in_centavos = ${update.status === "refunded" ? update.refundAmountInCentavos : current.refund_amount_in_centavos},
+        refund_paid_method = ${update.status === "refunded" ? update.refundPaidMethod : current.refund_paid_method},
+        refund_paid_on = ${update.status === "refunded" ? update.refundedOn : current.refund_paid_on},
+        refund_reference = ${update.status === "refunded" ? update.refundReference : current.refund_reference},
         refund_delivery_fee_in_centavos = ${update.status === "refunded" && update.deliveryFeeReason ? fee : current.refund_delivery_fee_in_centavos},
         refund_delivery_fee_reason = ${update.status === "refunded" && update.deliveryFeeReason ? update.deliveryFeeReason : current.refund_delivery_fee_reason}
-        where id = ${id} returning *`;
+        where id = ${id} returning *, refund_paid_on::text as paid_on_text`;
       await tx`insert into order_return_history (return_id, status, actor_type, actor_id, actor_name, occurred_at, note)
         values (${id}, ${update.status}, 'staff', ${update.staffId}, ${update.staffName}, ${at}, ${changed.decline_reason})`;
       return Response.json({ id, status: changed.status, goodsRequired: changed.goods_required,
         finalResolution: changed.final_resolution, refundProofFileId: changed.refund_proof_file_id,
+        refundAmountInCentavos: changed.refund_amount_in_centavos, refundPaidMethod: changed.refund_paid_method,
+        refundedOn: changed.paid_on_text, refundReference: changed.refund_reference,
         declineReason: changed.decline_reason, refundDeliveryFeeInCentavos: changed.refund_delivery_fee_in_centavos, actedBy: { id: update.staffId, name: update.staffName, at: at.toISOString() } });
     });
   }

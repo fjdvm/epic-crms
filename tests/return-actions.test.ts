@@ -1,3 +1,5 @@
+import { withRefundDetails } from "./refund-details";
+import { todayInManila } from "@/features/returns/refund-record";
 import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, getReturnDetail, reconcileRefundProof } from "@/features/returns/actions";
@@ -18,7 +20,7 @@ vi.mock("@/features/files/storage", () => ({
 function proof(bytes: Uint8Array = PNG, staffId = "ana") {
   const form = new FormData();
   form.set("proof", storage.readyEvidence("Returns", bytes, staffId));
-  return form;
+  return withRefundDetails(form);
 }
 
 vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn() }));
@@ -155,10 +157,10 @@ describe("Staff Return decisions", () => {
   it("refuses raw bytes, bare File ids and duplicate proof references", async () => {
     const id = await requested();
     await approveReturn(id);
-    const raw = new FormData(); raw.set("proof", new File([PNG], "refund.png"));
-    const bare = new FormData(); bare.set("proof", "file-from-another-return");
+    const raw = withRefundDetails(new FormData()); raw.set("proof", new File([PNG], "refund.png"));
+    const bare = withRefundDetails(new FormData()); bare.set("proof", "file-from-another-return");
     const duplicate = proof(); duplicate.append("proof", "another-reference");
-    for (const form of [undefined, new FormData(), raw, bare, duplicate]) {
+    for (const form of [undefined, withRefundDetails(new FormData()), raw, bare, duplicate]) {
       expect(await markReturnRefunded(id, form)).toMatchObject({ ok: false, reason: expect.any(String) });
     }
     expect(storefront.requests).toBe(1);
@@ -431,10 +433,10 @@ describe("Return Audit Events", () => {
       actor: { type: "user", id: "portal-user-123", display_name: "Ana Reyes" },
       target: { type: "return", id: String(id), display_name: `RMA-${id}` },
       description: test.next === "refunded"
-        ? `Ana Reyes marked Return RMA-${id} (Order #1) refunded: items ₱100.00, Delivery fee not included.`
+        ? `Ana Reyes marked Return RMA-${id} (Order #1) refunded: items ₱100.00, Delivery fee not included; ₱100.00 sent by GCash on ${todayInManila()}, reference GC-2026-0001.`
         : `Ana Reyes marked Return RMA-${id} (Order #1) ${test.next}.`,
       occurred_at: expect.any(String), operationId: `return:${id}:${action}`,
-      ...(test.next === "refunded" ? { metadata: { itemsInCentavos: 10000, deliveryFeeIncluded: false, deliveryFeeInCentavos: 0 } } : {}),
+      ...(test.next === "refunded" ? { metadata: { amountInCentavos: 10000, method: "gcash", refundedOn: todayInManila(), reference: "GC-2026-0001", itemsInCentavos: 10000, deliveryFeeIncluded: false, deliveryFeeInCentavos: 0 } } : {}),
     };
     // Sending a replacement also records the linked Replacement Order, once.
     const calls = test.next === "replaced" ? 2 : 1;

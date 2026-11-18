@@ -1,3 +1,4 @@
+import { withRefundDetails } from "./refund-details";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,7 +16,7 @@ vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn(async () => {}), get 
 function proof() {
   const form = new FormData();
   form.set("proof", storage.readyEvidence("Returns", PNG, "ana"));
-  return form;
+  return withRefundDetails(form);
 }
 vi.mock("@/features/files/storage", () => ({
   storageUrl: (url: string) => url,

@@ -13,6 +13,8 @@ import type { ApprovalView } from "@/features/approvals/view";
 import { waitingLabel, WAITING } from "@/features/approvals/view";
 import { formatPesos } from "@/features/customer-profiles/format";
 import { refundDestination } from "@/features/orders/payment-methods";
+import { useShownStatus } from "./optimistic-status";
+import { REFUND_FIELDS, REFUND_METHODS, todayInManila } from "./refund-record";
 import type { ShopRole } from "@/lib/portal/roles";
 import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "./actions";
 import { RequestApproval } from "./request-approval";
@@ -127,10 +129,19 @@ export interface RefundContext {
   customerName: string; amount: number; paymentMethod: string; items: { name: string; quantity: number }[];
   /** The Order's Delivery fee when a Manager may include it in this refund (wrong or defective item, not refunded yet); 0 otherwise. */
   deliveryFee?: number;
+  /** The method the Customer confirmed for this refund; the sent-by choice starts there. */
+  destinationMethod?: string | null;
 }
 
-function Refund({ id, number, approvalId, context, canIncludeFee = false }: { id: number; number: string; approvalId?: string; context?: RefundContext; canIncludeFee?: boolean }) {
+const FIELD = "h-9 w-full rounded-lg border border-[#e4e4e7] bg-white px-3 text-sm text-[#18181b]";
+const pesoText = (centavos: number) => (centavos / 100).toFixed(2);
+
+function Refund({ id, number, approvalId, context, canIncludeFee = false, showRefunded }: { id: number; number: string; approvalId?: string; context?: RefundContext; canIncludeFee?: boolean; showRefunded?: () => void }) {
   const [proof, setProof] = useState<File | null>(null);
+  const [sentAmount, setSentAmount] = useState<string | null>(null);
+  const [sentVia, setSentVia] = useState(context?.destinationMethod ?? "");
+  const [sentOn, setSentOn] = useState(() => todayInManila());
+  const [sentReference, setSentReference] = useState("");
   const [note, setNote] = useState("");
   const [withFee, setWithFee] = useState(false);
   const [feeReason, setFeeReason] = useState("");
@@ -138,6 +149,8 @@ function Refund({ id, number, approvalId, context, canIncludeFee = false }: { id
   const feeOffered = canIncludeFee && (context?.deliveryFee ?? 0) > 0;
   const fee = feeOffered && withFee ? context!.deliveryFee! : 0;
   const amount = context ? formatPesos(context.amount + fee) : null;
+  const typedAmount = sentAmount ?? (context ? pesoText(context.amount + fee) : "");
+  const detailsMissing = !typedAmount.trim() || !sentVia || !sentOn || sentReference.trim().length < 4;
 
   return (
     <OrderActionDialog
@@ -148,12 +161,15 @@ function Refund({ id, number, approvalId, context, canIncludeFee = false }: { id
         : "Only confirm once the money has been paid back to the Customer outside CREOMS. The Customer can see the proof."}
       confirm={amount ? `Refund ${amount}` : "Mark refunded"}
       busy="Saving…"
-      disabled={proof === null || (feeOffered && withFee && !feeReason.trim())}
+      disabled={proof === null || detailsMissing || (feeOffered && withFee && !feeReason.trim())}
+      onOptimistic={showRefunded}
       run={async () => {
         const uploaded = await uploadFile("Returns", proof as File);
         if (!uploaded.ok) return uploaded;
         const form = new FormData();
         form.set("proof", uploaded.reference);
+        form.set(REFUND_FIELDS.amount, typedAmount); form.set(REFUND_FIELDS.method, sentVia);
+        form.set(REFUND_FIELDS.date, sentOn); form.set(REFUND_FIELDS.reference, sentReference.trim());
         if (feeOffered && withFee) { form.set("includeDeliveryFee", "true"); form.set("deliveryFeeReason", feeReason.trim()); }
 
         return approvalId || note.trim() ? markReturnRefunded(id, form, { approvalId, reason: note }) : markReturnRefunded(id, form);
@@ -207,6 +223,27 @@ function Refund({ id, number, approvalId, context, canIncludeFee = false }: { id
           )}
         </>
       )}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor={`refund-amount-${id}`} className="text-[13px] font-medium text-foreground">Amount sent (₱) <span className="text-[#dc2626]">*</span></Label>
+          <input id={`refund-amount-${id}`} inputMode="decimal" className={FIELD} value={typedAmount} onChange={(e) => setSentAmount(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`refund-method-${id}`} className="text-[13px] font-medium text-foreground">Sent by <span className="text-[#dc2626]">*</span></Label>
+          <select id={`refund-method-${id}`} className={FIELD} value={sentVia} onChange={(e) => setSentVia(e.target.value)}>
+            <option value="">Choose…</option>
+            {REFUND_METHODS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`refund-date-${id}`} className="text-[13px] font-medium text-foreground">Date sent <span className="text-[#dc2626]">*</span></Label>
+          <input id={`refund-date-${id}`} type="date" max={todayInManila()} className={FIELD} value={sentOn} onChange={(e) => setSentOn(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`refund-reference-${id}`} className="text-[13px] font-medium text-foreground">Reference <span className="text-[#dc2626]">*</span></Label>
+          <input id={`refund-reference-${id}`} className={FIELD} maxLength={100} value={sentReference} onChange={(e) => setSentReference(e.target.value)} placeholder="Transfer reference" />
+        </div>
+      </div>
       <DeliveryPhotoPicker photo={proof} onChange={setProof} label="Refund proof" />
       {context && <p className="rounded-lg bg-[#fffbeb] px-3 py-2.5 text-[13px] text-[#92400e]">Recorded on the Return once proof is uploaded. The Order status does not change.</p>}
       {!approvalId && (
@@ -243,6 +280,9 @@ export function ReturnActions({
   /** What the Issue refund dialog shows; without it the dialog is the plain confirmation. */
   refund?: RefundContext;
 }) {
+  const { show } = useShownStatus(status);
+  // Only a refund whose approval is already decided shows at once. A Manager's or the CEO's own decision waits for the server.
+  const showRefunded = () => show("refunded");
   const steps = availableSteps(status, goodsRequired, finalResolution);
   if (role === "admin" || role === "ceo" || role === null) return <p className="text-sm text-[#71717a]">View only</p>;
   const waiting = requests.find((r) => WAITING.includes(r.status));
@@ -258,7 +298,7 @@ export function ReturnActions({
             <OrderActionDialog trigger="Mark goods received" title={`Mark goods received for ${number}?`} description="Confirm the returned goods have reached the store."
               confirm="Mark received" busy="Saving…" run={() => markReturnGoodsReceived(id)} successMessage={`${number} marked goods received.`} />
           )}
-          {finishable.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} />}
+          {finishable.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} showRefunded={ready("return.refund") ? showRefunded : undefined} />}
           {finishable.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} approvalId={ready("return.approve")} />}
           {finishable.includes("decline") && <Decline id={id} number={number} approvalId={ready("return.decline")} />}
           {finishable.includes("replace") && (
@@ -286,7 +326,7 @@ export function ReturnActions({
           successMessage={`${number} marked goods received.`}
         />
       )}
-      {steps.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} canIncludeFee />}
+      {steps.includes("refund") && <Refund id={id} number={number} approvalId={ready("return.refund")} context={refund} canIncludeFee showRefunded={ready("return.refund") ? showRefunded : undefined} />}
       {steps.includes("replace") && (
         <OrderActionDialog
           trigger="Mark replaced"

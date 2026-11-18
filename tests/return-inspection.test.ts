@@ -1,3 +1,4 @@
+import { withRefundDetails } from "./refund-details";
 import { randomUUID, createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -80,7 +81,7 @@ async function returned(amount: number) {
     values (${r.id},${line.id},'Cake','',1,${amount})`;
   return Number(r.id);
 }
-function proof(staff = "ana") { const f = new FormData(); f.set("proof", storage.readyEvidence("Returns", PNG, staff)); return f; }
+function proof(staff = "ana") { const f = new FormData(); f.set("proof", storage.readyEvidence("Returns", PNG, staff)); return withRefundDetails(f, { amount: "0.01" }); }
 
 /** Two whole line items, goods received: a 3,000 tub and a damaged-prone jar of the given price. */
 async function received(jarPrice = 2000_00) {

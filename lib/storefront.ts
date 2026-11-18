@@ -145,7 +145,9 @@ export type ReturnDecision =
   | { status: "approved"; goodsRequired: boolean; finalResolution?: ReturnResolution }
   | { status: "declined"; declineReason: string }
   | { status: "goods received" | "replaced" }
-  | { status: "refunded"; refundProofFileId: string; refundMethod?: string; deliveryFeeReason?: string };
+  | { status: "refunded"; refundProofFileId: string; deliveryFeeReason?: string;
+    /** What Staff recorded: the amount sent, how, on what date and under what reference (epic-crms#613). */
+    refundAmountInCentavos: number; refundPaidMethod: string; refundedOn: string; refundReference: string };
 export type ReturnStatusUpdate = ReturnDecision & { staffId: string; staffName: string };
 export type ReturnChangeResult =
   | { ok: true; return: { id: number; status: ReturnStatusUpdate["status"] } }
@@ -168,6 +170,8 @@ export async function changeReturnStatus(id: number, update: ReturnStatusUpdate)
     if (body?.id !== id || body.status !== update.status ||
       (update.status === "approved" && (body.goodsRequired !== update.goodsRequired || body.finalResolution !== update.finalResolution)) ||
       (update.status === "refunded" && (body.refundProofFileId !== update.refundProofFileId ||
+        body.refundAmountInCentavos !== update.refundAmountInCentavos || body.refundPaidMethod !== update.refundPaidMethod ||
+        body.refundedOn !== update.refundedOn || body.refundReference !== update.refundReference ||
         (update.deliveryFeeReason ? !(Number.isSafeInteger(body.refundDeliveryFeeInCentavos) && body.refundDeliveryFeeInCentavos >= 0) : false))) ||
       (update.status === "declined" && body.declineReason !== update.declineReason) ||
       body.actedBy?.id !== update.staffId || body.actedBy?.name !== update.staffName ||

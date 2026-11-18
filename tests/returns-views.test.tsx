@@ -88,12 +88,12 @@ describe("the Returns page", () => {
 
     const tabs = within(screen.getByRole("navigation", { name: "Return tabs" })).getAllByRole("link");
     expect(tabs.map((t) => t.textContent)).toEqual([
-      "Requested 3",
-      "Approved 2",
-      "Goods received 1",
+      "Pending Review 3",
+      "Awaiting Return 2",
+      "Returned 1",
       "Refunded 4",
       "Replaced 7",
-      "Declined 1",
+      "Rejected 1",
     ]);
     expect(tabs[0].getAttribute("aria-current")).toBe("page");
     expect(tabs[1].getAttribute("href")).toBe("/returns?tab=approved");
@@ -124,7 +124,7 @@ describe("the Returns page", () => {
     expect(within(r).getByText("Maria Santos")).toBeTruthy();
     expect(within(r).getByRole("link", { name: "#1042" }).getAttribute("href")).toBe("/orders/1042");
     expect(within(r).getByText("Smooth tub ×2, Powder ×1")).toBeTruthy();
-    expect(within(r).getByText("Requested")).toBeTruthy();
+    expect(within(r).getByText("Pending Review")).toBeTruthy();
     expect(within(r).getByText("20 Oct 2026")).toBeTruthy();
   });
 
@@ -151,7 +151,7 @@ describe("the Returns page", () => {
   it("says when a tab has no Returns", () => {
     view([], { tab: "declined" });
 
-    expect(screen.getByText("No Declined Returns.")).toBeTruthy();
+    expect(screen.getByText("No Rejected Returns.")).toBeTruthy();
   });
 
   it("pages through a long tab, keeping the tab in the links", () => {
