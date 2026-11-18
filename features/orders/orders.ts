@@ -20,8 +20,10 @@ export const ORDER_STATUSES = [
   "awaiting payment",
   "paid",
   "preparing",
+  "ready for pickup",
   "dispatched",
   "delivered",
+  "collected",
   "received",
   "cancelled",
 ] as const;

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { OrderActionDialog } from "./action-dialog";
-import { deliverOrder, dispatchOrder, startPreparing } from "./actions";
+import { deliverOrder, dispatchOrder, markPickedUp, markReadyForPickup, startPreparing } from "./actions";
 import { DeliveryPhotoPicker } from "./delivery-photo-picker";
 import { readyToPrepare } from "./fulfilment";
 
@@ -110,20 +110,19 @@ function DispatchDelivery({ id, triggerClassName }: { id: number; triggerClassNa
 }
 
 /**
- * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. Dispatching a
- * Delivery Order asks for the courier booking; Pickup needs none.
+ * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. A Delivery Order is
+ * dispatched with its courier booking and delivered; a Pickup Order is marked Ready for pickup and then Picked up.
+ * Every move waits for the server and shows its refusal in plain words.
  */
 export function FulfilmentMove({
   order,
   triggerClassName,
-  onMove,
 }: {
   order: { id: number; status: string; paymentMethod: string; fulfillmentMethod: string };
   triggerClassName?: string;
-  /** Shows the Order in its next status at once; the moves without an outside effect call it. */
-  onMove?: (status: "preparing" | "dispatched") => void;
 }) {
   const { id } = order;
+  const pickup = order.fulfillmentMethod === "pickup";
 
   if (readyToPrepare(order)) {
     return (
@@ -139,21 +138,35 @@ export function FulfilmentMove({
       />
     );
   }
-  if (order.status === "preparing" && order.fulfillmentMethod === "delivery") {
-    return <DispatchDelivery id={id} triggerClassName={triggerClassName} />;
-  }
-  if (order.status === "preparing") {
+  if (order.status === "preparing" && pickup) {
     return (
       <OrderActionDialog
-        trigger="Mark as dispatched"
+        trigger="Mark ready for pickup"
         triggerClassName={triggerClassName}
-        title={`Mark Order #${id} as dispatched?`}
-        description="Pickup needs no courier or tracking link. A dispatched Order can no longer be cancelled."
-        confirm="Mark as dispatched"
-        busy="Dispatching…"
-        run={() => dispatchOrder(id)}
-        onOptimistic={onMove && (() => onMove("dispatched"))}
-        successMessage={`Order #${id} dispatched.`}
+        title={`Mark Order #${id} ready for pickup?`}
+        description="The Customer is told their Order can be collected. A Pickup Order needs no courier or tracking link."
+        confirm="Mark ready for pickup"
+        busy="Marking ready…"
+        run={() => markReadyForPickup(id)}
+        successMessage={`Order #${id} is ready for pickup.`}
+      />
+    );
+  }
+  if (order.status === "preparing") {
+    return <DispatchDelivery id={id} triggerClassName={triggerClassName} />;
+  }
+  // A legacy Pickup Order already dispatched is completed the same way.
+  if (pickup && (order.status === "ready for pickup" || order.status === "dispatched")) {
+    return (
+      <OrderActionDialog
+        trigger="Mark as picked up"
+        triggerClassName={triggerClassName}
+        title={`Mark Order #${id} as picked up?`}
+        description="Confirm the Customer has collected it. The store records the pickup time now; Feedback is requested 2 days later."
+        confirm="Mark as picked up"
+        busy="Marking picked up…"
+        run={() => markPickedUp(id)}
+        successMessage={`Order #${id} picked up.`}
       />
     );
   }

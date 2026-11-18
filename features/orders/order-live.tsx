@@ -47,8 +47,7 @@ function progressFor(order: OrderDetail): string[] {
     "confirmed",
     ...(pays ? ["awaiting payment", "paid"] : []),
     "preparing",
-    "dispatched",
-    "delivered",
+    ...(order.fulfillmentMethod === "pickup" && order.status !== "dispatched" ? ["ready for pickup", "collected"] : ["dispatched", order.fulfillmentMethod === "pickup" ? "collected" : "delivered"]),
     ...(order.status === "received" ? ["received"] : []),
   ];
 }
@@ -115,7 +114,7 @@ export function LiveProgress({ order }: { order: OrderDetail }) {
 
 /** The actions the viewer's Modules allow, shown against the live status. */
 export function LiveActions({ order, modules, role, approvalId, waiting, codFlags }: { codFlags?: readonly { rule: string; label: string; reason: string }[]; order: OrderDetail; modules: readonly string[]; role?: ShopRole | null; approvalId?: string; waiting?: boolean }) {
-  const { status, move } = useLiveStatus();
+  const { status } = useLiveStatus();
   const live = { ...order, status };
 
   if (!modules.includes(ORDERS_MODULE) && !modules.includes(PAYMENTS_MODULE) && !modules.includes(FULFILMENT_MODULE)) {
@@ -129,7 +128,7 @@ export function LiveActions({ order, modules, role, approvalId, waiting, codFlag
         <PaymentsActions order={live} withCancel={!modules.includes(ORDERS_MODULE)} role={role} approvalId={approvalId} waiting={waiting} />
       )}
       {modules.includes(FULFILMENT_MODULE) && <PrintPackingSlip id={order.id} />}
-      {modules.includes(FULFILMENT_MODULE) && <FulfilmentMove order={live} onMove={move} />}
+      {modules.includes(FULFILMENT_MODULE) && <FulfilmentMove order={live} />}
     </div>
   );
 }

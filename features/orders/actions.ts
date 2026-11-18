@@ -384,19 +384,20 @@ function courierBooking(input: CourierInput | undefined): { ok: true; booking: C
   } };
 }
 
-/** A Delivery Order needs its courier booking; Pickup needs none. The storefront stores it and emails the link once. */
+const DELIVERY_ONLY = "That step is for a Delivery Order. A Pickup Order is marked Ready for pickup and then Picked up.";
+
+/** A Delivery Order needs its courier booking and its storefront emails the link once. A Pickup Order is never dispatched. */
 export async function dispatchOrder(id: number, courier?: CourierInput): Promise<OrderChangeResult> {
   let booking: CourierBooking | undefined;
   return act(id, async (order) => {
+    if (order.fulfillment_method !== "delivery") return { ok: false, reason: DELIVERY_ONLY };
     if (order.status !== "preparing") {
       return { ok: false, reason: "Only a preparing Order can be dispatched; it may have already changed. Refresh it before trying again." };
     }
-    if (order.fulfillment_method === "delivery") {
-      const checked = courierBooking(courier);
-      if (!checked.ok) return checked;
-      booking = checked.booking;
-    }
-    return changeOrderStatus(id, booking ? { status: "dispatched", courier: booking } : { status: "dispatched" });
+    const checked = courierBooking(courier);
+    if (!checked.ok) return checked;
+    booking = checked.booking;
+    return changeOrderStatus(id, { status: "dispatched", courier: booking });
   }, FULFILMENT_MODULE, {
     action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}${booking ? ` with ${booking.name}` : ""}.`,
     // The courier's name only; never the rider's phone or plate.
@@ -404,9 +405,36 @@ export async function dispatchOrder(id: number, courier?: CourierInput): Promise
   });
 }
 
+/** A Pickup Order is packed and waiting at the shop; the storefront tells the Customer it can be collected. */
+export async function markReadyForPickup(id: number): Promise<OrderChangeResult> {
+  return act(id, async (order, staff) => {
+    if (order.fulfillment_method !== "pickup") return { ok: false, reason: DELIVERY_ONLY };
+    if (order.status !== "preparing") {
+      return { ok: false, reason: "Only a preparing Pickup Order can be marked Ready for pickup; it may have already changed. Refresh it before trying again." };
+    }
+    return changeOrderStatus(id, { status: "ready for pickup", staffId: staff.username, staffName: staff.name });
+  }, FULFILMENT_MODULE, {
+    action: "order.ready_for_pickup", description: staff => `${staff.name} marked Pickup Order #${id} Ready for pickup.`,
+  });
+}
+
+/** The Customer collected it. The storefront records collected_at, which counts like delivered_at. A legacy Pickup Order still `dispatched` can be completed too. */
+export async function markPickedUp(id: number): Promise<OrderChangeResult> {
+  return act(id, async (order, staff) => {
+    if (order.fulfillment_method !== "pickup") return { ok: false, reason: DELIVERY_ONLY };
+    if (order.status !== "ready for pickup" && order.status !== "dispatched") {
+      return { ok: false, reason: "Only a Pickup Order that is Ready for pickup can be marked Picked up; it may have already changed. Refresh it before trying again." };
+    }
+    return changeOrderStatus(id, { status: "collected", staffId: staff.username, staffName: staff.name });
+  }, FULFILMENT_MODULE, {
+    action: "order.picked_up", description: staff => `${staff.name} marked Pickup Order #${id} Picked up.`,
+  });
+}
+
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
 export async function deliverOrder(id: number, form?: FormData): Promise<OrderChangeResult> {
   return act(id, async (order, staff) => {
+    if (order.fulfillment_method !== "delivery") return { ok: false, reason: DELIVERY_ONLY };
     if (order.status !== "dispatched") {
       return { ok: false, reason: "Only a dispatched Order can be delivered; it may have already changed. Refresh it before trying again." };
     }
