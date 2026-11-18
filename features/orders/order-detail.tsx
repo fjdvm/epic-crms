@@ -114,7 +114,7 @@ function PaymentProof({ order, reads, role }: { order: OrderDetail; reads: Recor
           {proof.account && <ProofAccountView account={proof.account} method={order.paymentMethod} />}
           {proof.confirmed && proof.expected && proof.checks && <PaymentProofChecksView confirmed={proof.confirmed} expected={proof.expected} checks={proof.checks} />}
           <Screenshot source={proof.screenshot} alt={`Payment proof ${index + 1} for order ${order.id}`} />
-          <ProofReadFindings read={reads[proof.id]} role={role} />
+          <ProofReadFindings read={reads[proof.id]} role={role} proofId={proof.id} />
           {proof.rejection && (
             <p className="text-xs text-[#6e6680]">
               Rejected by {proof.rejection.by.name || "Staff"} on {formatDate(proof.rejection.at)}: {proof.rejection.reason}
