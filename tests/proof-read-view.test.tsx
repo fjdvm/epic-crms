@@ -82,3 +82,15 @@ it("shows a correction beside the preserved original, re-judged, and a recorded 
   expect(screen.getByTestId("change-reference").textContent).toMatch(/Ana proceeded despite Missing\. Reason: Checked with GCash/);
   expect(screen.getByTestId("change-reference").closest("li")!.querySelectorAll("button")).toHaveLength(1);
 });
+
+it("words a refund proof's findings about the refund, offers no control, and says to verify before marking refunded (#614)", () => {
+  render(<ProofReadFindings read={{ ...read, flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] } }} role="admin" subject="refund" />);
+  expect(screen.getByText(/but the refund requires ₱1,250.00/)).toBeTruthy();
+  expect(screen.getByText(/before marking refunded/)).toBeTruthy();
+  expect(screen.queryAllByRole("button")).toHaveLength(0);
+});
+
+it("tells Staff a refund proof is being checked in the background while it has no result", () => {
+  render(<ProofReadFindings read={{ status: "pending", findings: null, flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, corrections: [] }} role="staff" subject="refund" />);
+  expect(screen.getByText(/checking this proof in the background/)).toBeTruthy();
+});

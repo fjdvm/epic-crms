@@ -6,6 +6,8 @@ import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
 import type { ApprovalView } from "@/features/approvals/view";
 import type { ShopRole } from "@/lib/portal/roles";
+import { ProofReadFindings } from "@/features/orders/proof-read-view";
+import type { ProofReadView } from "@/features/orders/proof-read";
 import { InspectReturn } from "./inspect-return";
 import { OptimisticReturn, ReturnStatusPill } from "./optimistic-status";
 import { refundMethodLabel, returnLabel } from "./refund-record";
@@ -43,6 +45,7 @@ export function ReturnDetailView({
   deliveryPhotoUrl,
   videoUrl,
   refundProofUrl,
+  refundRead,
   role,
   requests,
   windowRequest,
@@ -58,6 +61,8 @@ export function ReturnDetailView({
   videoUrl?: string | null;
   /** Null when the refund proof exists but could not be reached. */
   refundProofUrl?: string | null;
+  /** The Proof reader's stored result for the refund proof (#614); display only. */
+  refundRead?: ProofReadView | null;
   role?: ShopRole | null;
   requests?: ApprovalView[];
   /** The Staff request to extend this Order's Refund window, if any. */
@@ -283,6 +288,7 @@ export function ReturnDetailView({
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Refund proof</h2>
               <Photo url={refundProofUrl ?? null} alt={`Refund proof for ${detail.number}`} />
+              <ProofReadFindings read={refundRead} role={role ?? null} subject="refund" />
             </section>
           )}
 

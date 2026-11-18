@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const readPendingProofs = vi.hoisted(() => vi.fn());
 const reportLiveError = vi.hoisted(() => vi.fn(async () => {}));
+const readPendingRefundProofs = vi.hoisted(() => vi.fn());
 vi.mock("@/features/orders/proof-reader", () => ({ readPendingProofs }));
+vi.mock("@/features/returns/refund-proof-reader", () => ({ readPendingRefundProofs }));
 vi.mock("@/lib/ai/structured", () => ({ configuredVisionModels: () => [] }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => ({}) }));
 vi.mock("@/lib/tickets-db", () => ({ ticketsDatabase: () => ({}) }));
@@ -29,6 +31,16 @@ describe("the Proof reader route", () => {
     expect(readPendingProofs.mock.calls[0][1]).toBeUndefined();
     await call("?proof=9", "Bearer cron-secret");
     expect(readPendingProofs.mock.calls[1][1]).toBe(9);
+  });
+  it("sweeps refund proofs too, or reads only the one Return named, without running the payment sweep", async () => {
+    readPendingProofs.mockResolvedValue({ read: 0, needsReview: 0, skipped: 0 });
+    readPendingRefundProofs.mockResolvedValue({ read: 1, needsReview: 0, skipped: 0 });
+    await call("", "Bearer cron-secret");
+    expect(readPendingRefundProofs.mock.calls[0][1]).toBeUndefined();
+    readPendingProofs.mockClear();
+    await call("?refund=4", "Bearer cron-secret");
+    expect(readPendingRefundProofs.mock.calls[1][1]).toBe(4);
+    expect(readPendingProofs).not.toHaveBeenCalled();
   });
   it("reports a failed run without leaking details", async () => {
     readPendingProofs.mockRejectedValue(new Error("secret detail"));
