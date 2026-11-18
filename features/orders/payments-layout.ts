@@ -2,6 +2,7 @@ import type { PaymentTab } from "./payments";
 
 export const TABS: { key: PaymentTab; label: string; empty: string }[] = [
   { key: "verify", label: "For verification", empty: "No GCash Orders are waiting for a payment check." },
+  { key: "review", label: "Manager review", empty: "No payments are waiting for a Manager review." },
   { key: "cod", label: "COD to collect", empty: "No Cash on Delivery Orders are waiting to be delivered." },
   { key: "paid", label: "Paid", empty: "No payments in the last 30 days." },
   { key: "rejected", label: "Rejected", empty: "No cancelled GCash Orders in the last 30 days." },

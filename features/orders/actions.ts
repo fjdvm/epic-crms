@@ -249,7 +249,7 @@ export async function loadPayments(): Promise<PaymentsResult> {
   await requireModule(PAYMENTS_MODULE);
   try {
     const now = new Date();
-    return { ok: true, rows: await paymentRows(database(), now, await currentAutomaticChecks()), now };
+    return { ok: true, rows: await paymentRows(database(), now, await currentAutomaticChecks(), crmsDatabase()), now };
   } catch {
     return { ok: false, reason: "Payments are temporarily unavailable." };
   }
