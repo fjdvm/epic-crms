@@ -215,3 +215,30 @@ describe("Orders Overdue to confirm", () => {
     expect(result?.overdueOrders).toBeUndefined();
   });
 });
+
+describe("Payment reviews for a Manager", () => {
+  // `now` is 2026-10-25T07:00Z, so the default 48 hour target falls at 2026-10-23T07:00Z.
+  const reviews = async (opts: { manager?: boolean; hours?: number | null } = {}) =>
+    (await loadAttention(connect, { modules: ["Payments"], now, targets: undefined, manager: opts.manager ?? true, reviewHours: opts.hours === undefined ? 48 : opts.hours })).paymentReviews;
+  const inReview = async (rejectedAt: string, rejections = 3, status = "awaiting payment") => {
+    const id = await order({ status, payment: "gcash", proofAt: "2026-10-20T00:00:00Z" });
+    await db.sql`update orders set payment_proof_rejections = ${rejections}, payment_proof_rejected_at = ${new Date(rejectedAt)} where id = ${id}`;
+  };
+
+  it("lists Orders after the third rejection and counts the Overdue ones; the others are left out", async () => {
+    await inReview("2026-10-23T06:00:00Z");
+    await inReview("2026-10-24T06:00:00Z");
+    await inReview("2026-10-20T00:00:00Z", 2);
+    await inReview("2026-10-20T00:00:00Z", 3, "cancelled");
+    await inReview("2026-10-20T00:00:00Z", 3, "paid");
+
+    expect(await reviews()).toEqual({ ok: true, count: 2, oldest: new Date("2026-10-23T06:00:00Z"), overdue: 1 });
+  });
+
+  it("stays listed without an Overdue count when the rule is off, and is hidden from non-Managers", async () => {
+    await inReview("2026-10-20T00:00:00Z");
+
+    expect(await reviews({ hours: null })).toMatchObject({ count: 1, overdue: 0 });
+    expect(await reviews({ manager: false })).toBeUndefined();
+  });
+});

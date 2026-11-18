@@ -7,6 +7,9 @@ import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadCodFlags } from "@/features/orders/cod-actions";
 import { loadOrder } from "@/features/orders/orders";
 import { loadCancellationState } from "@/features/orders/cancellation-state";
+import { loadPaymentReview } from "@/features/orders/payment-review";
+import { crmsDatabase } from "@/lib/crms-db";
+import { currentPaymentReviewHours } from "@/features/settings/automatic-checks-server";
 import { loadLineReservations } from "@/features/orders/stock";
 import { loadEmbeddedReturns } from "@/features/returns/returns";
 import { gatewayFileStorage } from "@/lib/gateway";
@@ -75,10 +78,16 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const approvalId = requests.find((r) => r.status === "approved")?.id;
   const waitingApproval = requests.some((r) => WAITING.includes(r.status));
 
+  // A review is read for anyone who can see Payments; a failure hides the panel rather than the Order.
+  const paymentReview = modules.includes(PAYMENTS_MODULE) && order.status === "awaiting payment"
+    ? await loadPaymentReview(ticketsDatabase(), crmsDatabase(), order.id, await currentPaymentReviewHours()).catch(() => null)
+    : null;
+
   return (
     <>
       <BackgroundRefresh />
       <OrderDetailView
+        paymentReview={paymentReview}
         role={role}
         approvalId={approvalId}
         waitingApproval={waitingApproval}

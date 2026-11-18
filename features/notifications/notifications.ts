@@ -7,7 +7,7 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "ticket-escalated" | "ticket-sent-back" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "order-overdue" | "return-requested";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "ticket-escalated" | "ticket-sent-back" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "order-overdue" | "payment-review" | "payment-review-overdue" | "return-requested";
 
 /** What a Reassign alert says. `side` is whether the reader was the previous or the new Claimer. */
 export interface ReassignDetail {
@@ -81,6 +81,7 @@ export function visibleTo(sql: postgres.Sql | postgres.TransactionSql, viewer: V
     or (kind in ('order-delivery-fee', 'order-placed', 'order-free-delivery') and ${viewer.orders})
     or (kind = 'order-payment-proof' and ${viewer.payments})
     or (kind = 'order-overdue' and ${viewer.orders && viewer.manager === true})
+    or (kind in ('payment-review', 'payment-review-overdue') and ${viewer.payments && viewer.manager === true})
     or (kind = 'return-requested' and ${viewer.returns})
     or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned', 'ticket-escalated', 'ticket-sent-back') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))

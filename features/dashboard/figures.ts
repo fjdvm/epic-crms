@@ -64,6 +64,10 @@ interface FigureOptions {
   targets?: TargetHistory | null;
   /** The Admin's limit for an unconfirmed Order (null when switched off); 48 hours when not given. */
   unconfirmedHours?: number | null;
+  /** The Admin's target for a Manager payment review (null when switched off); 48 hours when not given. */
+  reviewHours?: number | null;
+  /** The viewer is a Manager: their Needs attention also lists payment reviews. */
+  manager?: boolean;
 }
 
 /** The Total spent rule across all Customers: paid and fulfilled Orders less Refunded Return amounts. */
@@ -214,7 +218,7 @@ export function loadDashboardFigures(connect: () => postgres.Sql, options: Figur
 export function loadDashboardFigures(connect: () => postgres.Sql, options: FigureOptions): Promise<DashboardFigures>;
 export async function loadDashboardFigures(
   connect: () => postgres.Sql,
-  { period, modules, now = new Date(), stream = false, targets, unconfirmedHours }: FigureOptions & { stream?: boolean },
+  { period, modules, now = new Date(), stream = false, targets, unconfirmedHours, reviewHours, manager }: FigureOptions & { stream?: boolean },
 ): Promise<DashboardFigures | DashboardWidgets> {
   const options = { period, modules, now };
   const analytics = async (): Promise<DashboardWidgets> => {
@@ -233,7 +237,7 @@ export async function loadDashboardFigures(
     return result;
   };
   const pendingAnalytics = analytics();
-  const attention = loadAttention(connect, { modules, now, targets, unconfirmedHours });
+  const attention = loadAttention(connect, { modules, now, targets, unconfirmedHours, reviewHours, manager });
   const widgets: DashboardWidgets = { ...await pendingAnalytics, attention };
   if (stream) return widgets;
   return Object.fromEntries(await Promise.all(Object.entries(widgets).map(async ([key, widget]) => [key, await widget])));

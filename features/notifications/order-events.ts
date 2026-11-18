@@ -1,9 +1,10 @@
 import type postgres from "postgres";
 
 import { loadAutomaticChecks } from "@/features/settings/automatic-checks";
+import { MANAGER_AFTER_REJECTIONS as REVIEW_AFTER_REJECTIONS } from "@/features/orders/payment-methods";
 import { DEFAULT_SCHEMA, schemaIdent, type SyncResult } from "./notifications";
 
-type OrderEventKind = "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "order-overdue";
+type OrderEventKind = "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "order-overdue" | "payment-review" | "payment-review-overdue";
 
 interface OrderEvent {
   key: string;
@@ -17,7 +18,7 @@ interface OrderEvent {
  * Proofs remain events after the Order moves on, so a payment checked between two syncs is still seen.
  * The first proof has one stable key per Order; each resubmission after a rejection has its own.
  */
-export async function readOrderEvents(reader: postgres.Sql, overdueHours: number | null = null): Promise<OrderEvent[]> {
+export async function readOrderEvents(reader: postgres.Sql, overdueHours: number | null = null, reviewHours: number | null = null): Promise<OrderEvent[]> {
   const rows = await reader<{
     key: string; kind: OrderEventKind; order_id: number; customer_id: string; customer_name: string;
   }[]>`
@@ -54,7 +55,28 @@ export async function readOrderEvents(reader: postgres.Sql, overdueHours: number
     from public.orders o
     join public.customers c on c.id = o.customer_id
     where ${overdueHours}::int is not null and o.status = 'placed'
-      and o.created_at <= now() - ${overdueHours ?? 0}::int * interval '1 hour'`;
+      and o.created_at <= now() - ${overdueHours ?? 0}::int * interval '1 hour'
+
+    union all
+
+    -- The third rejected proof starts a Manager payment review: one alert per Order.
+    select 'payment-review:' || o.id, 'payment-review', o.id, o.customer_id, c.full_name
+    from public.orders o
+    join public.customers c on c.id = o.customer_id
+    where o.status = 'awaiting payment' and o.payment_proof_rejections >= ${REVIEW_AFTER_REJECTIONS}::int
+      and o.payment_proof_rejected_at is not null
+
+    union all
+
+    -- Past the Admin's target the review is Overdue. Each further whole target period is a new key, so the
+    -- alert repeats until a Manager settles the Order. A null target (switched off) reads nothing. Nothing is cancelled.
+    select 'payment-review-overdue:' || o.id || ':' || (floor(extract(epoch from now() - o.payment_proof_rejected_at) / 3600 / ${reviewHours ?? 1}::int)::int),
+      'payment-review-overdue', o.id, o.customer_id, c.full_name
+    from public.orders o
+    join public.customers c on c.id = o.customer_id
+    where ${reviewHours}::int is not null and o.status = 'awaiting payment' and o.payment_proof_rejections >= ${REVIEW_AFTER_REJECTIONS}::int
+      and o.payment_proof_rejected_at is not null
+      and o.payment_proof_rejected_at <= now() - ${reviewHours ?? 0}::int * interval '1 hour'`;
 
   return rows.map((r) => ({
     key: r.key, kind: r.kind, orderId: r.order_id, customerId: r.customer_id, customerName: r.customer_name,
@@ -73,7 +95,8 @@ export async function syncOrderEvents(
   const s = schemaIdent(writer, schema);
   const checks = await loadAutomaticChecks(writer);
   const limit = checks.dashboard.unconfirmedOrders;
-  const events = await readOrderEvents(reader, limit.enabled ? limit.hours : null);
+  const review = checks.dashboard.paymentReviews;
+  const events = await readOrderEvents(reader, limit.enabled ? limit.hours : null, review.enabled ? review.hours : null);
 
   return writer.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${`${schema}.order-sync`}))`;
