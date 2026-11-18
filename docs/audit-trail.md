@@ -181,7 +181,7 @@ when it saves one.
 
 Order Details shows "Email not sent" with the reason for every `order_email_outcomes` row whose status is
 `failed`, for any of the nine Status emails (`confirmation`, `payment-verified`, `payment-rejected`, `payment-expired`, `manager-review-started`,
-`preparing`, `dispatched`, `ready_for_pickup`, `completed`; `features/orders/status-emails.ts`). A row is one event
+`preparing`, `dispatched`, `ready-for-pickup`, `completed`; `features/orders/status-emails.ts`). A row is one event
 occurrence: the storefront adds a nullable `occurrence` text column (for example the rejection number) so two
 rejections are two rows (`""` for an event that happens once; storefront migration 0053, applied to production and
 granted to the read-only role by the storefront's `docs/sql/creoms-email-outcomes-grant.sql`), so no CREOMS migration is

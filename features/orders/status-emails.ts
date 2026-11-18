@@ -17,7 +17,7 @@ export const STATUS_EMAILS = {
   "manager-review-started": { label: "Manager review started", module: PAYMENTS_MODULE },
   preparing: { label: "Preparing", module: FULFILMENT_MODULE },
   dispatched: { label: "Out for delivery", module: FULFILMENT_MODULE },
-  ready_for_pickup: { label: "Ready for pickup", module: FULFILMENT_MODULE },
+  "ready-for-pickup": { label: "Ready for pickup", module: FULFILMENT_MODULE },
   completed: { label: "Delivered or Picked up", module: FULFILMENT_MODULE },
 } as const;
 
