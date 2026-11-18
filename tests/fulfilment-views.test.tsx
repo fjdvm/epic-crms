@@ -238,7 +238,7 @@ describe("moving an Order on the board", () => {
     expect(markPickedUp).toHaveBeenCalledWith(1042, undefined);
   });
 
-  it("records the collected cash with a COD pickup at once: pre-filled with the total, passes the amount, and rolls back with the reason on refusal", async () => {
+  it("records the collected cash with a COD pickup: pre-filled with the total, shows the move, updates at once, and rolls back with the reason on refusal", async () => {
     const pending = deferred<Awaited<ReturnType<typeof markPickedUp>>>();
     vi.mocked(markPickedUp).mockReturnValue(pending.promise);
     board({ preparing: [card({ status: "ready for pickup", fulfillmentMethod: "pickup", paymentMethod: "cash-on-delivery", total: 115_050 })] });
@@ -246,15 +246,20 @@ describe("moving an Order on the board", () => {
     const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 as picked up?" });
     const amount = within(dialog).getByLabelText("Payment collected (₱)") as HTMLInputElement;
     expect(amount.value).toBe("1150.50");
+    expect(within(dialog).getByText("Ready for pickup → Picked up")).toBeTruthy();
+    expect(within(dialog).getByText(/Payment collected with your name/)).toBeTruthy();
+    expect(within(dialog).queryByText(/remit/i)).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as picked up" }));
 
+    // Optimistic and instant: the dialog closes and the card moves at once; a refusal rolls it back with the reason.
     expect(markPickedUp).toHaveBeenCalledWith(1042, 115_050);
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.queryByRole("button", { name: "Mark as picked up" })).toBeNull();
     expect(toast.success).not.toHaveBeenCalled();
     await act(async () => pending.settle({ ok: false, reason: "The collected amount must equal the Order total of ₱1150.50." }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The collected amount must equal the Order total of ₱1150.50."));
-    await waitFor(() => expect(within(cardFor(1042)).getByRole("button", { name: "Mark as picked up" })).toBeTruthy());
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(within(cardFor(1042)).getByRole("button", { name: "Mark as picked up" })).toBeTruthy();
   });
 
   it("sends the typed COD amount with a delivery, and cannot confirm an unreadable one", async () => {

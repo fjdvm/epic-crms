@@ -24,12 +24,13 @@ function centavosOf(text: string): number {
  * A Cash on Delivery Order's completion records the cash collected in the same save. It is pre-filled with the saved
  * total; any other amount is refused by the server with the reason.
  */
-function CollectedAmount({ total, value, onChange }: { total: number; value: string; onChange: (value: string) => void }) {
+function CollectedAmount({ move, total, value, onChange }: { move: string; total: number; value: string; onChange: (value: string) => void }) {
   return (
     <div className="space-y-1.5">
+      <p className="text-[13px] font-medium text-foreground">{move}</p>
       <Label htmlFor="collected-amount" className="text-[13px] font-medium text-foreground">Payment collected (₱)</Label>
       <Input id="collected-amount" inputMode="decimal" autoComplete="off" value={value} onChange={e => onChange(e.target.value)} />
-      <p className="text-xs text-[#71717a]">Order total {formatPesos(total)}. Recorded with your name and the time.</p>
+      <p className="text-xs text-[#71717a]">Order total {formatPesos(total)}. Recorded as Payment collected with your name and the time.</p>
     </div>
   );
 }
@@ -62,7 +63,7 @@ function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: numbe
       successMessage={`Order #${id} delivered.`}
     >
       <DeliveryPhotoPicker photo={photo} onChange={setPhoto} />
-      {cod && <CollectedAmount total={total} value={collected} onChange={setCollected} />}
+      {cod && <CollectedAmount move="Out for delivery → Delivered" total={total} value={collected} onChange={setCollected} />}
       {/* The Figma dialog's Feedback request row; the storefront always schedules it, so there is no toggle. */}
       <div className="space-y-1">
         <p className="font-medium text-foreground">Send Feedback request in 2 days</p>
@@ -139,7 +140,7 @@ function DispatchDelivery({ id, triggerClassName, onMove }: { id: number; trigge
   );
 }
 
-function MarkPickedUp({ id, cod, total, triggerClassName, onMove }: { id: number; cod: boolean; total: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
+function MarkPickedUp({ id, cod, total, pickupFrom, triggerClassName, onMove }: { id: number; cod: boolean; total: number; pickupFrom: string; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
   const [collected, setCollected] = useState(totalText(total));
 
   return (
@@ -157,7 +158,7 @@ function MarkPickedUp({ id, cod, total, triggerClassName, onMove }: { id: number
       onOptimistic={onMove && (() => onMove("collected"))}
       successMessage={`Order #${id} picked up.`}
     >
-      {cod && <CollectedAmount total={total} value={collected} onChange={setCollected} />}
+      {cod && <CollectedAmount move={`${pickupFrom} → Picked up`} total={total} value={collected} onChange={setCollected} />}
     </OrderActionDialog>
   );
 }
@@ -216,7 +217,7 @@ export function FulfilmentMove({
   // A legacy Pickup Order already dispatched is completed the same way.
   if (pickup && (order.status === "ready for pickup" || order.status === "dispatched")) {
     return (
-      <MarkPickedUp id={id} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />
+      <MarkPickedUp id={id} pickupFrom={order.status === "dispatched" ? "Out for delivery" : "Ready for pickup"} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />
     );
   }
   if (order.status === "dispatched") {
