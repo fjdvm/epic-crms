@@ -59,17 +59,16 @@ const BERNICE: [string, string] = ["staff-1", "Bernice"];
 const RHEA: [string, string] = ["staff-2", "Rhea"];
 
 describe("the Tickets list", () => {
-  it("lists every Ticket, Claimed or not, with who Claimed it", async () => {
+  it("takes a Claimed Ticket off Open, in the rows and the count, and lists it under Mine with who Claimed it", async () => {
     await ticket({ subject: "free", messages: [["customer", 2]] });
     await ticket({ subject: "taken", claimedBy: RHEA, messages: [["customer", 3]] });
 
-    const list = await listTickets(db.sql, { tab: "open", now: NOW });
+    const open = await listTickets(db.sql, { tab: "open", now: NOW, viewerId: RHEA[0] });
+    expect(open.rows.map((r) => [r.subject, r.claimedById, r.claimedByName])).toEqual([["free", null, null]]);
+    expect(open.counts.open).toBe(1);
 
-    expect(list.rows.map((r) => [r.subject, r.claimedById, r.claimedByName])).toEqual([
-      ["free", null, null],
-      ["taken", "staff-2", "Rhea"],
-    ]);
-    expect(list.counts.open).toBe(2);
+    const mine = await listTickets(db.sql, { tab: "mine", now: NOW, viewerId: RHEA[0] });
+    expect(mine.rows.map((r) => [r.subject, r.claimedById, r.claimedByName])).toEqual([["taken", "staff-2", "Rhea"]]);
   });
 });
 
@@ -288,24 +287,24 @@ describe("filtering the Tickets list", () => {
     subjects((await listTickets(db.sql, { tab: "open", now: NOW, ...query })).rows).sort();
 
   it("by Priority", async () => {
-    expect(await find({ priority: "high" })).toEqual(["a", "b", "d"]);
+    expect(await find({ priority: "high" })).toEqual(["b"]);
   });
 
   it("by Category", async () => {
-    expect(await find({ category: "Damaged item" })).toEqual(["a", "c", "d"]);
+    expect(await find({ category: "Damaged item" })).toEqual(["c"]);
   });
 
   it("by Claimed by, including Unclaimed", async () => {
-    expect(await find({ claimedBy: "staff-2" })).toEqual(["a"]);
+    expect(await find({ tab: "mine", viewerId: "staff-2", claimedBy: "staff-2" })).toEqual(["a"]);
     expect(await find({ claimedBy: UNCLAIMED })).toEqual(["b", "c"]);
   });
 
-  it("to Overdue Tickets, Claimed or not", async () => {
-    expect(await find({ overdue: true })).toEqual(["a", "b"]);
+  it("to Overdue Tickets", async () => {
+    expect(await find({ overdue: true })).toEqual(["b"]);
   });
 
   it("alone or together, with a search", async () => {
-    expect(await find({ priority: "high", category: "Damaged item" })).toEqual(["a", "d"]);
+    expect(await find({ priority: "high", category: "Damaged item" })).toEqual([]);
     expect(await find({ priority: "high", category: "Damaged item", claimedBy: UNCLAIMED })).toEqual([]);
     expect(await find({ priority: "high", overdue: true, claimedBy: UNCLAIMED })).toEqual(["b"]);
     expect(await find({ q: "jane", category: "Delivery", overdue: true })).toEqual(["b"]);
@@ -314,7 +313,7 @@ describe("filtering the Tickets list", () => {
   it("applies to the tab counts, and Overdue shows only Open Tickets", async () => {
     const list = await listTickets(db.sql, { tab: "open", now: NOW, overdue: true, priority: "high", viewerId: RHEA[0] });
 
-    expect(list.counts).toMatchObject({ open: 2, all: 2 });
+    expect(list.counts).toMatchObject({ open: 1, all: 2 });
   });
 
   it("offers the Categories Tickets have and everyone who Claimed one", async () => {

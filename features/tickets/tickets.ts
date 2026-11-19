@@ -213,7 +213,7 @@ export async function listTickets(
   const [counts] = await sql<Record<string, number>[]>`
     ${derived(filtered)}
     select
-      count(*) filter (where status = 'open' and (not ${query.overdue ?? false} or overdue))::int as open,
+      count(*) filter (where status = 'open' and claimed_by_id is null and (not ${query.overdue ?? false} or overdue))::int as open,
       count(*) filter (where waiting and (not ${query.overdue ?? false} or overdue))::int as waiting,
       count(*) filter (where status = 'on_hold' and not ${query.overdue ?? false})::int as on_hold,
       count(*) filter (where status = 'resolved' and not ${query.overdue ?? false})::int as resolved,
@@ -236,7 +236,8 @@ export async function listTickets(
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);
 
   const tabFilter = {
-    open: sql`status = 'open'`,
+    // Open is the queue nobody has taken yet: a Claimed Ticket leaves it and shows under Mine for its Claimer.
+    open: sql`status = 'open' and claimed_by_id is null`,
     waiting: sql`waiting`,
     on_hold: sql`status = 'on_hold'`,
     resolved: sql`status = 'resolved'`,
