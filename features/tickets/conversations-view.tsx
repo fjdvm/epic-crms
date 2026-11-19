@@ -8,7 +8,7 @@ import { Conversation } from "./conversation";
 import { draftDisabledReason } from "./draft";
 import { NotesProvider } from "./notes";
 import { CHAT_SCOPES, inboxTime, type ChatScope, type Conversations } from "./conversations";
-import { initials } from "./image-viewer";
+import { initials } from "./initials";
 import { ClaimedBy, ClaimProvider } from "./claim";
 import { HoldProvider, HoldSummary } from "./hold";
 import { TicketActions } from "./ticket-controls";
