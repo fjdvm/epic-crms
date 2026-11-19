@@ -27,6 +27,8 @@ export interface TicketMessage {
   /** The attachment's content type and file name, when file-storage could say; they decide how it is shown. */
   attachmentType?: string | null;
   attachmentName?: string | null;
+  /** The attachment's size in bytes, when file-storage could say. */
+  attachmentSize?: number | null;
   createdAt: Date;
 }
 
@@ -275,6 +277,7 @@ async function addImageAddresses(ticket: TicketDetail, storage: FileStorage) {
           m.attachmentUrl = file.url;
           m.attachmentType = file.contentType;
           m.attachmentName = file.filename;
+          m.attachmentSize = file.size ?? null;
         } else m.attachmentUrl = await storage.viewUrl(m.fileId);
       } catch (error) {
         console.error(`The image on Ticket TKT-${ticket.id} Message ${m.id} could not be reached`, error);

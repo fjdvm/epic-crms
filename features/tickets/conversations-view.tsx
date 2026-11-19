@@ -184,7 +184,7 @@ function SelectedChat({
               canReply={ticket.status !== "completed" && isClaimer}
               note={
                 ticket.status === "completed"
-                  ? "The Customer completed this Ticket, so it can no longer be replied to."
+                  ? "This Ticket is resolved, so the chat is read-only. The Customer can reopen it on the storefront."
                   : ticket.claimerName
                     ? `${ticket.claimerName} claimed this Ticket, so only they can reply.`
                     : "Claim this Ticket to reply."

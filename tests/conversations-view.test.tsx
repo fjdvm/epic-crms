@@ -146,6 +146,7 @@ describe("the Conversations page as designed", () => {
       attachmentUrl: url,
       attachmentType: "image/jpeg",
       attachmentName: `IMG_${id}.jpg`,
+      attachmentSize: 1_200_000,
       createdAt: new Date("2026-10-19T02:12:00Z"),
     });
     view(ticket({ messages: [image(1, "https://f/1.jpg"), image(2, "https://f/2.jpg")] }));
@@ -154,6 +155,7 @@ describe("the Conversations page as designed", () => {
     const viewer = screen.getByRole("dialog", { name: "Photo from Maria" });
 
     expect(within(viewer).getByText("2 of 2 in chat")).toBeTruthy();
+    expect(within(viewer).getByText(/IMG_2\.jpg · 1\.2 MB/)).toBeTruthy();
     expect(within(viewer).getByText("100%")).toBeTruthy();
     fireEvent.click(within(viewer).getByRole("button", { name: "Zoom in" }));
     expect(within(viewer).getByText("150%")).toBeTruthy();

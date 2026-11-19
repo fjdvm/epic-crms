@@ -40,7 +40,7 @@ export const ticketFileStorage = {
   remove: (fileId: string) => gatewayFileStorage.remove(fileId),
   viewUrl: async (fileId: string) => (await viewStoredFile("Tickets", fileId)).url,
   viewFile: async (fileId: string) => {
-    const { url, filename, contentType } = await viewStoredFile("Tickets", fileId);
-    return { url, filename, contentType };
+    const { url, filename, contentType, size } = await viewStoredFile("Tickets", fileId);
+    return { url, filename, contentType, size };
   },
 };
