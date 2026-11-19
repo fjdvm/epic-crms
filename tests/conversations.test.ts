@@ -132,11 +132,18 @@ describe("the Conversations list", () => {
     expect((await listConversations(db.sql, ME)).map((r) => r.ticketId)).toEqual([mine]);
   });
 
-  it("includes Resolved and Completed Tickets' chats", async () => {
-    const id = await chat("c1", "Done", [{ body: "thanks", minutes: 5 }]);
-    await db.sql`update tickets set status = 'completed' where id = ${id}`;
+  it("keeps Resolved and Completed Tickets' chats off Mine and Unclaimed, and on All only", async () => {
+    const live = await chat("c1", "Live", [{ body: "hi", minutes: 5 }]);
+    const done = await chat("c1", "Done", [{ body: "thanks", minutes: 6 }]);
+    const resolved = await chat("c2", "Fixed", [{ body: "ok", minutes: 7 }], 1_000, null);
+    await db.sql`update tickets set status = 'completed' where id = ${done}`;
+    await db.sql`update tickets set status = 'resolved' where id = ${resolved}`;
+    const ids = async (scope: "mine" | "unclaimed" | "all") =>
+      (await listConversations(db.sql, ME, undefined, scope)).map((r) => r.ticketId);
 
-    expect((await listConversations(db.sql, ME)).map((r) => r.ticketId)).toEqual([id]);
+    expect(await ids("mine")).toEqual([live]);
+    expect(await ids("unclaimed")).toEqual([]);
+    expect(await ids("all")).toEqual([live, done, resolved]);
   });
 
   it("previews an image alone as a photo, and a Ticket with no Message by its subject", async () => {

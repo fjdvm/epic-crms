@@ -12,10 +12,19 @@ export interface ViewerImage {
   id: number;
   url: string;
   name: string | null;
+  /** Bytes, when file-storage said. */
+  size: number | null;
   senderName: string;
   /** "19 Oct, 10:13 AM", already formatted. */
   sentAt: string;
   caption: string;
+}
+
+/** 1.2 MB, 340 KB: how the viewer says a file's size. */
+export function fileSize(bytes: number): string {
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+
+  return `${Math.max(1, Math.round(bytes / 1_000))} KB`;
 }
 
 const ZOOMS = [25, 50, 75, 100, 150, 200, 300];
@@ -78,6 +87,7 @@ export function ImageViewer({
           <p className="truncate text-[10px] text-white/60">
             Store chat · {image.sentAt}
             {image.name && ` · ${image.name}`}
+            {image.size !== null && ` · ${fileSize(image.size)}`}
           </p>
         </div>
         <span className="rounded-full bg-white/10 px-3 py-1 text-[11px]">

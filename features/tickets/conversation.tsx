@@ -50,6 +50,7 @@ export function Bubbles({ messages: saved, chat = false }: { messages: TicketMes
             id: m.id,
             url: m.attachmentUrl,
             name: m.attachmentName ?? null,
+            size: m.attachmentSize ?? null,
             senderName: m.senderName,
             sentAt: `${formatDate(m.createdAt)}, ${TIME.format(m.createdAt)}`,
             caption: m.body,
