@@ -1,3 +1,4 @@
+import { Eye } from "lucide-react";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -27,8 +28,11 @@ export default async function ConversationsPage({
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1">
-          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
+          <h1 className="flex items-center gap-2 text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
             Conversations
+            <Suspense fallback={null}>
+              <ReadOnlyBadge />
+            </Suspense>
           </h1>
           <p className="text-sm leading-[normal] text-[#6e6680]">
             The live chat inside each ticket. Escalate from the ticket page.
@@ -43,6 +47,19 @@ export default async function ConversationsPage({
         <ConversationsData raw={raw} />
       </Suspense>
     </div>
+  );
+}
+
+/** Admin and CEO see a Read-only tag beside the title; Staff and Managers see nothing. */
+async function ReadOnlyBadge() {
+  const staff = await requireModule(TICKETS_MODULE);
+  if (canWork(staff)) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-[#f3f1f6] px-2 py-0.5 text-[11px] font-medium text-[#6e6680]">
+      <Eye aria-hidden className="size-3" />
+      Read-only
+    </span>
   );
 }
 
@@ -89,6 +106,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
       query={query}
       scope={scope}
       canDraft={canWork(staff)}
+      readOnly={!canWork(staff)}
     />
   );
 }
