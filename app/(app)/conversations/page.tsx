@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { loadConversations } from "@/features/tickets/conversations";
+import { CHAT_SCOPES, loadConversations } from "@/features/tickets/conversations";
 import { ConversationsView } from "@/features/tickets/conversations-view";
 import { ChatSearchInput } from "@/features/tickets/ticket-toolbar";
 import { ticketFileStorage } from "@/features/files/server";
@@ -31,8 +31,7 @@ export default async function ConversationsPage({
             Conversations
           </h1>
           <p className="text-sm leading-[normal] text-[#6e6680]">
-            Your claimed Tickets, one chat each, newest activity first. To read
-            any other Ticket, open it from Tickets.
+            The live chat inside each ticket. Escalate from the ticket page.
           </p>
         </div>
         <ChatSearchInput
@@ -58,12 +57,16 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
   const asking = raw.q;
   const query = ((Array.isArray(asking) ? asking[0] : asking) ?? "").trim();
 
+  const picked = Array.isArray(raw.tab) ? raw.tab[0] : raw.tab;
+  const scope = CHAT_SCOPES.find((s) => s === picked) ?? "mine";
+
   const result = await loadConversations(
     ticketsDatabase,
     staff.username,
     selectedId,
     ticketFileStorage,
     query,
+    scope,
   );
 
   if (!result.ok) {
@@ -84,6 +87,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
       viewerId={staff.username}
       viewerName={staff.name}
       query={query}
+      scope={scope}
       canDraft={canWork(staff)}
     />
   );

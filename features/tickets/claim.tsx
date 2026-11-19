@@ -119,6 +119,13 @@ export function ClaimerName() {
   return <>{useClaim().claimer?.name ?? "Unclaimed"}</>;
 }
 
+/** "Claimed by you", "Claimed by Bernice" or "Unclaimed", as the chat header says it. */
+export function ClaimedBy() {
+  const { claimer, isClaimer } = useClaim();
+
+  return <>{claimer === null ? "Unclaimed" : isClaimer ? "Claimed by you" : `Claimed by ${claimer.name}`}</>;
+}
+
 /** Picks what to show by who holds the Ticket right now: the viewer, someone else, or nobody. */
 export function ByClaimer({
   mine,

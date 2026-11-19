@@ -1,5 +1,5 @@
 import { validateSession, type Staff, type Validation } from "./client";
-import { DEV_STAFF, devBypassEnabled } from "./dev-bypass";
+import { devBypassEnabled, devUser, type DevRole } from "./dev-bypass";
 import { auditAccessDenied } from "./access-audit";
 import { pages } from "./pages";
 import { MANAGEMENT_MODULE } from "./config";
@@ -17,13 +17,13 @@ export type Overview =
  */
 export function accessFor(
   sessionHandle: string | undefined,
-  { bypass = devBypassEnabled() }: { bypass?: boolean } = {},
+  { bypass = devBypassEnabled(), devRole }: { bypass?: boolean; /** Which dev user the bypass signs in; Staff when not given. */ devRole?: DevRole } = {},
 ) {
   const answers = new Map<string, Promise<Validation>>();
 
   function check(module: string): Promise<Validation> {
     if (bypass) {
-      return Promise.resolve({ decision: "allowed", staff: DEV_STAFF });
+      return Promise.resolve({ decision: "allowed", staff: devUser(devRole) });
     }
 
     if (!sessionHandle) {

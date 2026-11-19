@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { register } from "@/instrumentation";
+import { shopRole } from "@/lib/portal/roles";
 import { accessFor } from "@/lib/portal/access";
-import { DEV_STAFF, devBypassEnabled } from "@/lib/portal/dev-bypass";
+import { DEV_ROLES, DEV_STAFF, devBypassEnabled, devUser } from "@/lib/portal/dev-bypass";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -58,5 +59,24 @@ describe("dev bypass", () => {
       decision: "allowed",
       staff: DEV_STAFF,
     });
+  });
+
+  it("signs in as each of the four Roles, Staff by default", async () => {
+    expect(DEV_ROLES).toEqual(["staff", "manager", "admin", "ceo"]);
+    expect(DEV_STAFF.role).toBe("Staff");
+
+    for (const [role, expected] of [
+      ["staff", "staff"],
+      ["manager", "manager"],
+      ["admin", "admin"],
+      ["ceo", "ceo"],
+    ] as const) {
+      const access = accessFor(undefined, { bypass: true, devRole: role });
+      const result = await access.check("Customer Profiles");
+
+      expect(result).toEqual({ decision: "allowed", staff: devUser(role) });
+      expect(shopRole(devUser(role).role)).toBe(expected);
+    }
+    expect(devUser("ceo").name).toBe("Dev CEO");
   });
 });

@@ -43,6 +43,20 @@ async function chat(
   return row.id;
 }
 
+describe("the inbox tabs", () => {
+  it("shows the viewer's chats on Mine, nobody's on Unclaimed and every chat on All", async () => {
+    const mine = await chat("c1", "Leak", [{ body: "hi", minutes: 5 }]);
+    const open = await chat("c2", "Receipt", [{ body: "hi", minutes: 6 }], 1_000, null);
+    const theirs = await chat("c2", "Late", [{ body: "hi", minutes: 7 }], 1_000, "staff-2");
+    const ids = async (scope: "mine" | "unclaimed" | "all") =>
+      (await listConversations(db.sql, ME, undefined, scope)).map((r) => r.ticketId);
+
+    expect(await ids("mine")).toEqual([mine]);
+    expect(await ids("unclaimed")).toEqual([open]);
+    expect(await ids("all")).toEqual([mine, open, theirs]);
+  });
+});
+
 describe("searching Conversations", () => {
   it("narrows the viewer's chats by Ticket number, Customer name or email, or Linked order", async () => {
     const [order] = await db.sql<{ id: number }[]>`insert into orders (customer_id) values ('c2') returning id`;
