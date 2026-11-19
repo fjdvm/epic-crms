@@ -31,6 +31,7 @@ export function ConversationsView({
   query = "",
   scope = "mine",
   canDraft = false,
+  readOnly = false,
 }: {
   conversations: Conversations;
   viewerId: string;
@@ -42,6 +43,8 @@ export function ConversationsView({
   scope?: ChatScope;
   /** Staff and Managers only; Admin and CEO see no draft button. */
   canDraft?: boolean;
+  /** Admin and CEO: read the chats, no reply box, notes, AI or claim buttons. */
+  readOnly?: boolean;
 }) {
   const { chats, selected } = conversations;
   const searching = query !== "";
@@ -114,7 +117,7 @@ export function ConversationsView({
       </div>
 
       {selected ? (
-        <SelectedChat ticket={selected} viewerId={viewerId} viewerName={viewerName} canDraft={canDraft} />
+        <SelectedChat ticket={selected} viewerId={viewerId} viewerName={viewerName} canDraft={canDraft} readOnly={readOnly} />
       ) : (
         <section className="flex h-[30vh] w-full min-w-0 items-center justify-center p-5 lg:h-full lg:flex-1">
           <p className="text-sm leading-[normal] text-[#6e6680]">
@@ -131,11 +134,13 @@ function SelectedChat({
   viewerId,
   viewerName,
   canDraft,
+  readOnly,
 }: {
   ticket: NonNullable<Conversations["selected"]>;
   viewerId: string;
   viewerName: string;
   canDraft: boolean;
+  readOnly: boolean;
 }) {
   const { order, customer } = ticket;
   const isClaimer = ticket.claimerId !== null && ticket.claimerId === viewerId;
@@ -159,7 +164,7 @@ function SelectedChat({
                   {order && ` · BR-${order.id}`}
                 </p>
               </div>
-              <TicketActions ticketId={ticket.id} withReply={false} className="flex-wrap" />
+              {!readOnly && <TicketActions ticketId={ticket.id} withReply={false} className="flex-wrap" />}
               <Link
                 href={`/tickets/${ticket.id}`}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6e1ee] bg-white px-3 py-1.5 text-[13px] font-medium leading-[normal] text-[#1f1a2e]"
@@ -177,7 +182,8 @@ function SelectedChat({
               viewerName={viewerName}
               customerName={customer.name.split(" ")[0]}
               scrollable
-              canNote
+              canNote={!readOnly}
+              readOnly={readOnly}
               draftDisabledReason={canDraft ? draftDisabledReason(ticket.status, isClaimer) : undefined}
               canReply={ticket.status !== "completed" && isClaimer}
               note={
