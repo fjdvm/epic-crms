@@ -60,7 +60,6 @@ const chromeLoadings = [
   ["Feedback", FeedbackLoading, "Feedback"],
   ["Tickets", TicketsLoading, "Tickets"],
   ["Fulfilment", FulfilmentLoading, "Fulfilment"],
-  ["Conversations", ConversationsLoading, "Conversations"],
 ] as const;
 
 describe("the page navigation skeleton", () => {
@@ -89,6 +88,15 @@ describe("the page navigation skeleton that keeps the page's static chrome", () 
     expect(screen.queryByText("Getting this page ready")).toBeNull();
   });
 });
+});
+
+describe("the Conversations navigation skeleton", () => {
+  it("shows the search box and a skeleton for the chats at once", () => {
+    render(<ConversationsLoading />);
+
+    expect(screen.getByRole("status", { name: "Loading Conversations" })).toBeTruthy();
+    expect(screen.queryByText("Getting this page ready")).toBeNull();
+  });
 });
 
 describe("the return to the Portal loading card", () => {

@@ -1,5 +1,4 @@
-import Link from "next/link";
-
+import { BackButton } from "@/components/shared/back-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
@@ -8,9 +7,7 @@ export default function Loading() {
   return (
     <div role="status" aria-label="Loading Ticket" className="flex flex-col gap-5 px-8 py-7">
       <div className="space-y-2">
-        <Link href="/tickets" className="text-sm font-medium text-[#5b2a86]">
-          ← Tickets
-        </Link>
+        <div className="self-start"><BackButton fallbackHref="/tickets" label="Tickets" /></div>
         <div className="space-y-2">
           <Skeleton className="h-8 w-80 max-w-full" />
           <Skeleton className="h-4 w-72 max-w-full" />

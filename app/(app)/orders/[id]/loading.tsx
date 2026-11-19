@@ -1,5 +1,4 @@
-import Link from "next/link";
-
+import { BackButton } from "@/components/shared/back-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
@@ -12,9 +11,7 @@ export default function Loading() {
       className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden"
     >
       <div className="shrink-0 space-y-2">
-        <Link href="/orders" className="text-sm font-medium text-[#5b2a86]">
-          ← Orders
-        </Link>
+        <div className="self-start"><BackButton fallbackHref="/orders" label="Orders" /></div>
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="flex items-center gap-2 text-2xl font-semibold leading-[normal] text-[#1f1a2e]">

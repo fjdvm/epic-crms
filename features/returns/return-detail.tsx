@@ -1,3 +1,4 @@
+import { BackButton } from "@/components/shared/back-button";
 import Link from "next/link";
 
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
@@ -100,9 +101,7 @@ export function ReturnDetailView({
     <OptimisticReturn status={detail.status}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="shrink-0 space-y-2">
-        <Link href="/returns" className="text-sm font-medium text-[#5b2a86]">
-          ← Returns
-        </Link>
+        <div className="self-start"><BackButton fallbackHref="/returns" label="Returns" /></div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">

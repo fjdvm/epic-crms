@@ -9,15 +9,6 @@ import { cn } from "@/lib/utils";
 
 import { useOptimisticAction } from "@/hooks/use-optimistic-action";
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { uploadFile } from "@/features/files/client";
 import { checkFileInfo, FILE_TYPES, type FileContentType } from "@/features/files/policy";
 
@@ -201,7 +192,6 @@ export function Composer({
     box.style.height = "auto";
     box.style.height = `${box.scrollHeight}px`;
   }, [text]);
-  const [confirming, setConfirming] = useState(false);
   const [picked, setPicked] = useState<{ file: File; url?: string } | null>(
     null,
   );
@@ -245,7 +235,6 @@ export function Composer({
   const uploaded = useRef<{ file: File; reference: string } | null>(null);
 
   const send = () => {
-    setConfirming(false);
     if (sending.current || pending || (!text.trim() && !file)) return;
     sending.current = true;
 
@@ -343,7 +332,7 @@ export function Composer({
           readOnly={pending}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !pending && (text.trim() || file)) setConfirming(true);
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !pending && (text.trim() || file)) send();
           }}
           className="my-1 max-h-40 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-sm leading-[normal] text-[#1f1a2e] outline-none placeholder:text-[#9a93a8]"
         />
@@ -369,31 +358,12 @@ export function Composer({
           className={cn(PRIMARY, "inline-flex items-center gap-1.5")}
           disabled={pending || (!text.trim() && !file)}
           aria-busy={pending}
-          onClick={() => setConfirming(true)}
+          onClick={send}
         >
           {pending && <Loader2 aria-hidden className="size-4 animate-spin" />}
           {pending ? "Sending…" : "Send"}
         </button>
       </div>
-      <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Send this reply?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {file
-                ? `The Customer will see your reply with ${file.name} attached.`
-                : "The Customer will see your reply."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            {/* A plain button, not AlertDialogAction: send() closes the dialog itself. */}
-            <button type="button" className={PRIMARY} onClick={send}>
-              Send reply
-            </button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

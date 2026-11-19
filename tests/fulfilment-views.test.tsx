@@ -496,7 +496,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     ];
     for (const [overrides, expected] of cases) {
       const { unmount } = render(<OrderDetailView order={detail(overrides)} modules={FULFILMENT} />);
-      expect(screen.getAllByRole("button").map((b) => b.textContent).filter((t) => t !== "Print packing slip")).toEqual(expected);
+      expect(screen.getAllByRole("button").map((b) => b.textContent).filter((t) => t !== "Print packing slip" && t !== "Orders")).toEqual(expected);
       unmount();
     }
   });
@@ -510,7 +510,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
       { status: "cancelled", paymentLabel: "Cancelled" as const },
     ]) {
       const { unmount } = render(<OrderDetailView order={detail(overrides)} modules={FULFILMENT} />);
-      expect(screen.queryAllByRole("button").filter((b) => b.textContent !== "Print packing slip")).toHaveLength(0);
+      expect(screen.queryAllByRole("button").filter((b) => b.textContent !== "Print packing slip" && b.textContent !== "Orders")).toHaveLength(0);
       unmount();
     }
   });

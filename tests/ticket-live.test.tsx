@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -72,10 +72,9 @@ const renderConversation = (
     />,
   );
 
-/** Send always asks first: the reply goes only once Staff confirm in the dialog. */
+/** Send goes at once: there is no confirm dialog for a reply. */
 const send = async () => {
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
-  await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Send reply" }));
 };
 
 const fromCustomer = (id: number, text: string): LiveEvent => ({
@@ -143,17 +142,16 @@ describe("live Conversation", () => {
     await waitFor(() => expect(screen.getByText("Still here")).toBeTruthy());
   });
 
-  it("asks before sending, and sends nothing if Staff back out", async () => {
+  it("sends at once, with no confirm dialog", async () => {
     vi.mocked(reply).mockClear();
+    vi.mocked(reply).mockResolvedValue({ ok: true, messageId: 5 });
     renderConversation(fakeRelay().connect);
 
-    await userEvent.type(screen.getByLabelText("Write a reply"), "Hold on");
+    await userEvent.type(screen.getByLabelText("Write a reply"), "On it");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
-    expect(reply).not.toHaveBeenCalled();
 
-    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Cancel" }));
-    expect(reply).not.toHaveBeenCalled();
-    expect((screen.getByLabelText("Write a reply") as HTMLTextAreaElement).value).toBe("Hold on");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() => expect(reply).toHaveBeenCalled());
   });
 
   it("uploads the picked image straight to storage and sends only its reference", async () => {
@@ -169,8 +167,6 @@ describe("live Conversation", () => {
     await userEvent.upload(screen.getByLabelText("Attach a file"), photo);
     expect(screen.getByAltText("Selected image: box.jpg")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
-    expect(uploadFile).not.toHaveBeenCalled();
-    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Send reply" }));
 
     await waitFor(() => expect(reply).toHaveBeenCalled());
     expect(uploadFile).toHaveBeenCalledWith("Tickets", photo, { ticketId: 208 });
