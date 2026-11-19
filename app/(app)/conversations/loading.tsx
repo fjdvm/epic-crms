@@ -11,8 +11,7 @@ export default function Loading() {
             Conversations
           </h1>
           <p className="text-sm leading-[normal] text-[#6e6680]">
-            Your claimed Tickets, one chat each, newest activity first. To read
-            any other Ticket, open it from Tickets.
+            The live chat inside each ticket. Escalate from the ticket page.
           </p>
         </div>
         <Skeleton className="h-9 w-[320px] max-w-full" />

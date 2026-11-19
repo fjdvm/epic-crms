@@ -8,6 +8,7 @@ import { formatDate } from "@/features/customer-profiles/format";
 
 import type { ConnectLive, LiveConnection, LiveEvent } from "./live";
 import { connectLive } from "./live-socket";
+import { ImageViewer, type ViewerImage } from "./image-viewer";
 import { MessageAttachment } from "./message-attachment";
 import type { TicketMessage } from "./ticket";
 import { NoteBox, Sending, useMessagesWithNotes } from "./notes";
@@ -36,8 +37,25 @@ function byline(message: TicketMessage, previous: TicketMessage | undefined): st
 }
 
 /** Messages as chat bubbles, Customer on the left and Staff on the right. */
-export function Bubbles({ messages: saved }: { messages: TicketMessage[] }) {
+export function Bubbles({ messages: saved, chat = false }: { messages: TicketMessage[]; /** The Conversations look: our replies in solid purple, the Customer's in white. */ chat?: boolean }) {
   const messages = useMessagesWithNotes(saved);
+  const [viewing, setViewing] = useState<number | null>(null);
+
+  // Every image in the chat, so the viewer can step through them.
+  const images: ViewerImage[] = messages.flatMap((m) =>
+    chat && m.attachmentUrl && !m.attachmentType?.startsWith("video/") && m.attachmentType !== "application/pdf"
+      ? [
+          {
+            id: m.id,
+            url: m.attachmentUrl,
+            name: m.attachmentName ?? null,
+            senderName: m.senderName,
+            sentAt: `${formatDate(m.createdAt)}, ${TIME.format(m.createdAt)}`,
+            caption: m.body,
+          },
+        ]
+      : [],
+  );
 
   return (
     <>
@@ -73,20 +91,40 @@ export function Bubbles({ messages: saved }: { messages: TicketMessage[] }) {
             <div
               className={cn(
                 "flex w-[460px] max-w-full flex-col gap-1 rounded-xl px-[14px] py-[10px]",
-                fromStaff ? "bg-[#efe6f8]" : "bg-[#f3f1f6]",
+                chat
+                  ? fromStaff
+                    ? "bg-[#5b2a86] text-white"
+                    : "border border-[#e6e1ee] bg-white"
+                  : fromStaff
+                    ? "bg-[#efe6f8]"
+                    : "bg-[#f3f1f6]",
               )}
             >
               {message.body && (
-                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
+                <p className={cn("text-sm leading-[normal] break-words whitespace-pre-wrap", chat && fromStaff ? "text-white" : "text-[#1f1a2e]")}>
                   {message.body}
                 </p>
               )}
-              <MessageAttachment message={message} imageClassName="max-h-64 max-w-full rounded-lg object-contain" />
-              <p className="text-[11px] leading-[normal] text-[#6e6680]">{byline(message, messages[i - 1])}</p>
+              <MessageAttachment
+                message={message}
+                imageClassName="max-h-64 max-w-full rounded-lg object-contain"
+                onOpenImage={
+                  chat
+                    ? () => {
+                        const at = images.findIndex((img) => img.id === message.id);
+                        if (at >= 0) setViewing(at);
+                      }
+                    : undefined
+                }
+              />
+              <p className={cn("text-[11px] leading-[normal]", chat && fromStaff ? "text-white/80" : "text-[#6e6680]")}>
+                {byline(message, messages[i - 1])}
+              </p>
             </div>
           </div>
         );
       })}
+      {viewing !== null && <ImageViewer images={images} start={viewing} onClose={() => setViewing(null)} />}
     </>
   );
 }
@@ -219,9 +257,10 @@ export function Conversation({
   const [reply, setReply] = useState("");
   const [draftId, setDraftId] = useState<number | null>(null);
 
-  const bubbles = <Bubbles messages={shown} />;
+  const [mode, setMode] = useState<"reply" | "note">("reply");
+  const bubbles = <Bubbles messages={shown} chat={scrollable} />;
 
-  const footer = (
+  const replyArea = (
     <>
       {draftDisabledReason !== undefined && (
         <DraftPanel
@@ -236,6 +275,12 @@ export function Conversation({
       ) : (
         <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
       )}
+    </>
+  );
+
+  const footer = (
+    <>
+      {replyArea}
       {canNote && <NoteBox />}
     </>
   );
@@ -250,11 +295,35 @@ export function Conversation({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-[#faf9fc] p-5">
         {bubbles}
       </div>
-      {footer}
+      <div className="flex flex-col gap-3 border-t border-[#e6e1ee] bg-white px-5 pt-3 pb-4">
+        {canNote && (
+          <div role="tablist" aria-label="Reply or note" className="flex gap-4 border-b border-[#e6e1ee]">
+            {(["reply", "note"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  "-mb-px border-b-2 pb-2 text-[13px] font-medium leading-[normal]",
+                  mode === m ? "border-[#5b2a86] text-[#5b2a86]" : "border-transparent text-[#6e6680]",
+                )}
+              >
+                {m === "reply" ? "Reply" : "Internal note"}
+              </button>
+            ))}
+          </div>
+        )}
+        {mode === "reply" || !canNote ? replyArea : <NoteBox inline />}
+        <p className="text-[11px] leading-[normal] text-[#6e6680]">
+          Only the claimer can reply. Nothing sends until you press Send. Images: JPG or PNG up to 5 MB.
+        </p>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { someServiceLevel } from "./service-level-fixture";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Conversations } from "@/features/tickets/conversations";
@@ -68,7 +68,7 @@ describe("the Conversations page as designed", () => {
     const list = screen.getByRole("navigation", { name: "Chats" });
     const ana = within(list).getByRole("link", { name: /Ana Reyes/ });
 
-    expect(ana.textContent).toBe("Ana Reyes3hMy receipt was rejectedTKT-206");
+    expect(ana.textContent).toBe("ARAna Reyes TKT-2063hMy receipt was rejected");
     expect(ana.getAttribute("href")).toBe("/conversations?ticket=206");
     expect(within(list).getByRole("link", { name: /Maria Santos/ }).textContent).toContain("5m");
     expect(within(list).getByRole("link", { name: /Maria Santos/ }).getAttribute("aria-current")).toBe("true");
@@ -91,62 +91,76 @@ describe("the Conversations page as designed", () => {
     expect(within(chat).getByRole("textbox", { name: "Write a reply" })).toBeTruthy();
   });
 
-  it("shows the Customer card with Stage, orders, Total spent and the Customer Profile link", () => {
+  it("shows the chat header with name, Ticket number, who claimed it, the order and a link to the Ticket", () => {
     view();
 
-    const card = screen.getByRole("region", { name: "Customer" });
+    const chat = screen.getByRole("region", { name: "Chat" });
 
-    expect(within(card).getByText("Repeat")).toBeTruthy();
-    expect(within(card).getByText("6 orders · ₱4,734 total spent")).toBeTruthy();
-    expect(within(card).getByRole("link", { name: "View customer profile →" }).getAttribute("href")).toBe("/customer-profiles/c1");
+    expect(within(chat).getByRole("heading", { name: "Maria Santos · TKT-208" })).toBeTruthy();
+    expect(within(chat).getByText("Claimed by you · BR-1042")).toBeTruthy();
+    expect(within(chat).getByRole("link", { name: "Open ticket" }).getAttribute("href")).toBe("/tickets/208");
   });
 
-  it("tags a Deleted Customer with no profile link, and the reply box still works", () => {
-    view(ticket({ customer: { id: "c1", name: "Deleted customer", deleted: true, stage: "repeat", orders: 6, totalSpent: 473_400 } }));
-
-    const card = screen.getByRole("region", { name: "Customer" });
-
-    expect(within(card).getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
-    expect(within(card).queryByRole("link", { name: "View customer profile →" })).toBeNull();
-    expect(within(screen.getByRole("region", { name: "Ticket" })).queryByRole("link", { name: "#1042" })).toBeNull();
-    expect(screen.getByRole("textbox", { name: "Write a reply" })).toBeTruthy();
-  });
-
-  it("shows the Ticket card with number, subject, status, Priority, Claimer, Linked order and a link to the Ticket", () => {
-    view();
-
-    const card = screen.getByRole("region", { name: "Ticket" });
-
-    expect(within(card).getByRole("heading", { name: "TKT-208" })).toBeTruthy();
-    expect(within(card).getByText("Halaya pouch arrived leaking")).toBeTruthy();
-    expect(within(card).getByText("Open")).toBeTruthy();
-    expect(within(card).getByText("High")).toBeTruthy();
-    expect(within(card).getByText("Bernice")).toBeTruthy();
-    expect(within(card).getByRole("link", { name: "#1042" }).getAttribute("href")).toBe("/customer-profiles/c1#order-1042");
-    expect(within(card).getByRole("link", { name: "Open ticket →" }).getAttribute("href")).toBe("/tickets/208");
-  });
-
-  it("says None yet without a Linked order, and Unclaimed without a Claimer", () => {
+  it("says Unclaimed in the header without a Claimer, and offers Claim", () => {
     view(ticket({ order: null, claimerId: null, claimerName: null }), "carlo");
+    const chat = screen.getByRole("region", { name: "Chat" });
 
-    const card = screen.getByRole("region", { name: "Ticket" });
-
-    expect(within(card).getByText("None yet")).toBeTruthy();
-    expect(within(card).getByText("Unclaimed")).toBeTruthy();
+    expect(within(chat).getByText("Unclaimed")).toBeTruthy();
+    expect(within(chat).getByRole("button", { name: "Claim" })).toBeTruthy();
   });
 
-  it("offers Release and Mark resolved to the Claimer, Claim on an Unclaimed Ticket, and no Reply link", () => {
+  it("offers Mine, Unclaimed and All tabs that keep the open chat's search", () => {
+    render(
+      <ConversationsView
+        conversations={{ chats: [], selected: null }}
+        viewerId="bernice"
+        viewerName="Bernice"
+        query="maria"
+        scope="unclaimed"
+      />,
+    );
+    const tabs = screen.getByRole("tablist", { name: "Inbox" });
+
+    expect(within(tabs).getByRole("tab", { name: "Unclaimed" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(tabs).getByRole("tab", { name: "All" }).getAttribute("href")).toBe("/conversations?tab=all&q=maria");
+    expect(within(tabs).getByRole("tab", { name: "Mine" }).getAttribute("href")).toBe("/conversations?q=maria");
+  });
+
+  it("switches the reply box to an Internal note with the Internal note tab", () => {
     view();
-    const card = () => within(screen.getByRole("region", { name: "Ticket" }));
 
-    expect(card().getByRole("button", { name: "Release" })).toBeTruthy();
-    expect(card().getByRole("button", { name: "Mark resolved" })).toBeTruthy();
-    expect(card().queryByRole("button", { name: "Claim" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Reply" })).toBeNull();
-    cleanup();
+    fireEvent.click(screen.getByRole("tab", { name: "Internal note" }));
 
-    view(ticket({ claimerId: null, claimerName: null }), "carlo");
-    expect(card().getByRole("button", { name: "Claim" })).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Write a reply" })).toBeNull();
+    expect(screen.getByPlaceholderText("Write a note for your teammates…")).toBeTruthy();
+  });
+
+  it("opens an image full screen, steps through the chat's images and closes it", () => {
+    const image = (id: number, url: string) => ({
+      id,
+      sender: "customer" as const,
+      senderName: "Maria",
+      body: id === 1 ? "Here are photos" : "",
+      hasAttachment: true,
+      attachmentUrl: url,
+      attachmentType: "image/jpeg",
+      attachmentName: `IMG_${id}.jpg`,
+      createdAt: new Date("2026-10-19T02:12:00Z"),
+    });
+    view(ticket({ messages: [image(1, "https://f/1.jpg"), image(2, "https://f/2.jpg")] }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Open image from Maria" })[1]);
+    const viewer = screen.getByRole("dialog", { name: "Photo from Maria" });
+
+    expect(within(viewer).getByText("2 of 2 in chat")).toBeTruthy();
+    expect(within(viewer).getByText("100%")).toBeTruthy();
+    fireEvent.click(within(viewer).getByRole("button", { name: "Zoom in" }));
+    expect(within(viewer).getByText("150%")).toBeTruthy();
+    fireEvent.click(within(viewer).getByRole("button", { name: "Previous image" }));
+    expect(within(viewer).getByText("1 of 2 in chat")).toBeTruthy();
+    expect(within(viewer).getByText("Here are photos")).toBeTruthy();
+    fireEvent.click(within(viewer).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("gives another Staff member no reply box on a Claimed Ticket", () => {
