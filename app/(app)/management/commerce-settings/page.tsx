@@ -1,6 +1,8 @@
 import { crmsDatabase } from "@/lib/crms-db";
 import { FreeDeliveryForm } from "@/features/management/free-delivery-form";
 import { loadFreeDeliveryThreshold } from "@/features/management/free-delivery-threshold";
+import { SeniorPwdDiscountForm } from "@/features/management/senior-pwd-discount-form";
+import { loadSeniorPwdDiscount } from "@/features/management/senior-pwd-discount";
 import { PaymentAccountForm } from "@/features/management/payment-account-form";
 import { PaymentAccountList } from "@/features/management/payment-account-list";
 import { listDisabledMethods, listPaymentAccounts } from "@/features/management/payment-accounts";
@@ -11,10 +13,11 @@ import { requireManagement } from "@/lib/portal/staff";
 export default async function CommerceSettingsPage() {
   await requireManagement();
   const db = crmsDatabase();
-  const [accounts, disabled, threshold] = await Promise.all([
+  const [accounts, disabled, threshold, discount] = await Promise.all([
     listPaymentAccounts(db).catch(() => null),
     listDisabledMethods(db).catch(() => []),
     loadFreeDeliveryThreshold(db).catch(() => null),
+    loadSeniorPwdDiscount(db).catch(() => null),
   ]);
 
   return (
@@ -26,6 +29,9 @@ export default async function CommerceSettingsPage() {
         </div>
         <div className="min-w-0 border-t border-[#e6e1ee] pt-8 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
           <FreeDeliveryForm currentInCentavos={threshold} />
+          <div className="mt-8 border-t border-[#e6e1ee] pt-8">
+            <SeniorPwdDiscountForm current={discount} />
+          </div>
         </div>
       </div>
     </CommerceSettingsFrame>

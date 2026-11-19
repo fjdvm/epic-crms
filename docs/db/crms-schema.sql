@@ -35,18 +35,19 @@ CREATE TABLE crms.sync_state (
 -- Bell notifications. kind says what happened: a New Customer (at most one per Customer) or a
 -- Ticket event, Order event, Return request or low-rating Feedback. recipient_id is the Claimer's Portal id; NULL means every
 -- Staff member who may see that kind (Customer Profiles for new-customer, Tickets for the Ticket
--- kinds, Feedback for feedback-low, Orders for order-delivery-fee and order-placed, Payments for order-payment-proof, Managers with Orders for order-overdue, Managers with Payments for payment-review and payment-review-overdue, Returns for return-requested).
+-- kinds, Feedback for feedback-low, Orders for order-delivery-fee and order-placed, Payments for order-payment-proof, Managers with Orders for order-overdue, Managers with Payments for payment-review and payment-review-overdue, Returns for return-requested, Senior/PWD for senior-pwd-waiting).
 -- read_at is shared.
 CREATE TABLE crms.notifications (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   kind          text NOT NULL DEFAULT 'new-customer'
-                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned', 'ticket-escalated', 'ticket-sent-back', 'feedback-low', 'order-delivery-fee', 'order-placed', 'order-free-delivery', 'order-payment-proof', 'order-overdue', 'payment-review', 'payment-review-overdue', 'return-requested')),
+                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned', 'ticket-escalated', 'ticket-sent-back', 'feedback-low', 'order-delivery-fee', 'order-placed', 'order-free-delivery', 'order-payment-proof', 'order-overdue', 'payment-review', 'payment-review-overdue', 'return-requested', 'senior-pwd-waiting')),
   customer_id   text NOT NULL,
   customer_name text NOT NULL,
   ticket_id     integer,
   order_id      integer,
   rating        smallint,
   return_id     integer,
+  verification_id integer,
   recipient_id  text,
   detail        jsonb,
   created_at    timestamptz NOT NULL DEFAULT now(),
@@ -127,6 +128,17 @@ CREATE TABLE crms.seen_returns (
 );
 
 CREATE TABLE crms.return_sync_state (
+  singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  baselined_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Each uploaded Senior/PWD ID alerts once, regardless of what happens to it later.
+CREATE TABLE crms.seen_senior_pwd (
+  verification_id integer PRIMARY KEY,
+  seen_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE crms.senior_pwd_sync_state (
   singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
   baselined_at timestamptz NOT NULL DEFAULT now()
 );
@@ -215,3 +227,15 @@ CREATE TABLE IF NOT EXISTS crms.seen_order_audit_events (
   operation_id text PRIMARY KEY,
   delivered_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- The Senior/PWD discount rule (Commerce Settings). See crms-senior-pwd-discount.sql.
+CREATE TABLE crms.senior_pwd_discount_settings (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  discount_kind text NOT NULL DEFAULT 'percent' CHECK (discount_kind IN ('percent', 'pesos')),
+  discount_hundredths bigint NOT NULL DEFAULT 500 CHECK (discount_hundredths > 0 AND discount_hundredths <= 100000000),
+  limit_in_centavos bigint NOT NULL DEFAULT 12500 CHECK (limit_in_centavos > 0 AND limit_in_centavos <= 100000000),
+  limit_per text NOT NULL DEFAULT 'week' CHECK (limit_per IN ('day', 'week', 'month')),
+  changed_by_id text, changed_by_name text, changed_at timestamptz,
+  CHECK (discount_kind <> 'percent' OR discount_hundredths <= 10000)
+);
+INSERT INTO crms.senior_pwd_discount_settings (singleton) VALUES (true);

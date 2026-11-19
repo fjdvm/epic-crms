@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmPickup as realConfirm, quoteDeliveryFee as realQuote } from "@/features/orders/actions";
-import { approveVerification, declineVerification, loadVerificationPhoto, loadVerifications, overrideVerification, revokeVerification } from "@/features/senior-pwd/actions";
+import { approveVerification, declineVerification, loadVerificationDetail, loadVerificationPhoto, loadVerifications, overrideVerification, revokeVerification } from "@/features/senior-pwd/actions";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 import { FakeFileStorage, PNG } from "./fake-file-storage";
@@ -165,6 +165,35 @@ it("shows the photo only while it waits for review", async () => {
   expect(await loadVerificationPhoto(id)).toEqual({ ok: true, url: expect.stringContaining(photo), backUrl: null });
   await approveVerification(id, future(30));
   expect(await loadVerificationPhoto(id)).toMatchObject({ ok: false });
+});
+
+it("audits opening the photo, once per Staff member per ten minutes, never with the number", async () => {
+  const { id } = await upload();
+  await signIn("ana");
+  await loadVerificationPhoto(id);
+  await loadVerificationPhoto(id);
+  const viewed = audit.mock.calls.map(([e]) => e).filter(e => e.action === "pwd.photo_viewed");
+  expect(viewed).toHaveLength(2);
+  expect(viewed[0]).toMatchObject({ module: "Senior/PWD", outcome: "success", actor: { display_name: "ana Person" }, target: { type: "customer", id: "c1" } });
+  // Both openings carry one identity, so the audit trail keeps a single event.
+  expect(viewed[1].operationId).toBe(viewed[0].operationId);
+  expect(everything()).not.toContain(NUMBER);
+  audit.mockClear();
+  await approveVerification(id, future(30));
+  await loadVerificationPhoto(id); // refused: the photo is gone, and a refusal is not a view
+  expect(audit.mock.calls.filter(([e]) => e.action === "pwd.photo_viewed")).toHaveLength(0);
+});
+
+it("loads one verification with a masked email and the order it holds, and says when it is missing", async () => {
+  const { id } = await upload();
+  await db.sql`insert into orders (customer_id, senior_pwd_verification_id) values ('c1', ${id})`;
+  await signIn("ana");
+  const detail = await loadVerificationDetail(id);
+  expect(detail).toMatchObject({ ok: true, verification: { id, customerName: "Maria", customerEmailHint: "maria@...", orderId: 1, status: "pending" } });
+  expect(JSON.stringify(detail)).not.toContain("maria@example.com");
+  expect(await loadVerificationDetail(id + 99)).toMatchObject({ ok: false, missing: true });
+  expect(await loadVerificationDetail(Number.NaN)).toMatchObject({ ok: false, missing: true });
+  expect(await loadVerifications()).toMatchObject({ list: { pending: [{ id, customerEmailHint: "maria@...", orderId: 1 }] } });
 });
 
 it("lapses on the expiry date and the Customer verifies again", async () => {

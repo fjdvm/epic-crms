@@ -31,6 +31,7 @@ export type ChangeResult = { ok: true } | { ok: false; reason: string };
 export function OrderActionDialog({
   trigger,
   triggerClassName,
+  triggerDisabled = false,
   title,
   description,
   children,
@@ -47,6 +48,8 @@ export function OrderActionDialog({
   trigger: string;
   /** Extra classes for that button, such as a smaller one on a board card. */
   triggerClassName?: string;
+  /** True while the page's button cannot be pressed yet, such as before every field is confirmed. */
+  triggerDisabled?: boolean;
   title: string;
   description: string;
   /** Anything Staff fill in or should read before confirming. */
@@ -110,6 +113,7 @@ export function OrderActionDialog({
         <Button
           type="button"
           variant={destructive ? "outline" : "default"}
+          disabled={triggerDisabled}
           className={cn(
             "h-auto rounded-lg px-4 py-[9px] leading-[normal] shadow-none",
             destructive && "text-[#dc2626] hover:text-[#dc2626]",

@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 
+import { SENIOR_PWD_PAGE } from "@/lib/portal/pages";
 import { shopRole } from "@/lib/portal/roles";
 import { DEFAULT_SCHEMA, listNotifications, type NotificationFeed, type Viewer } from "./notifications";
 
@@ -26,8 +27,9 @@ export function viewerFor(staff: { username: string; role?: string }, permittedP
     orders: permittedPages.includes("/orders"),
     payments: permittedPages.includes("/payments"),
     returns: permittedPages.includes("/returns"),
+    seniorPwd: permittedPages.includes(SENIOR_PWD_PAGE),
     manager: shopRole(staff.role ?? "") === "manager",
   };
 
-  return viewer.customerProfiles || viewer.ticketsStaffId !== null || viewer.feedback || viewer.orders || viewer.payments || viewer.returns ? viewer : null;
+  return viewer.customerProfiles || viewer.ticketsStaffId !== null || viewer.feedback || viewer.orders || viewer.payments || viewer.returns || viewer.seniorPwd ? viewer : null;
 }

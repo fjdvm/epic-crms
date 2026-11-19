@@ -56,4 +56,23 @@ describe("changeFreeDeliveryThreshold", () => {
     });
     expect(event.description).toBe("Mario changed the Free delivery threshold from ₱2,500 to ₱3,000.");
   });
+
+  describe("telling the storefront", () => {
+    const manager = { id: "m", name: "Mario", role: "CRMS Manager" };
+    it("nudges once after a save, and never for a refusal or an invalid amount", async () => {
+      const notify = vi.fn(async () => {});
+      await changeFreeDeliveryThreshold(db.sql, audit, { id: "x", name: "X", role: "Super Admin" }, "3000", notify);
+      await changeFreeDeliveryThreshold(db.sql, audit, manager, "0", notify);
+      expect(notify).not.toHaveBeenCalled();
+      await changeFreeDeliveryThreshold(db.sql, audit, manager, "3000", notify);
+      expect(notify).toHaveBeenCalledTimes(1);
+    });
+    it("keeps the saved threshold when the nudge fails", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const r = await changeFreeDeliveryThreshold(db.sql, audit, manager, "3500", async () => { throw new Error("gateway down"); });
+      expect(r).toEqual({ ok: true, thresholdInCentavos: 350000 });
+      expect(await loadFreeDeliveryThreshold(db.sql)).toBe(350000);
+      error.mockRestore();
+    });
+  });
 });

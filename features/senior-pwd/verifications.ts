@@ -15,6 +15,10 @@ export interface Verification {
   id: number;
   customerId: string;
   customerName: string;
+  /** The Customer's email with most of it hidden, such as `lito.r@...`. The full address never reaches the browser. */
+  customerEmailHint: string;
+  /** The Order this ID holds (it cannot be confirmed until the ID is reviewed); null when the Customer has none waiting. */
+  orderId: number | null;
   idType: IdType;
   status: VerificationStatus;
   submittedAt: Date;
@@ -36,13 +40,24 @@ type Row = Record<string, unknown>;
 
 const SELECT = (sql: postgres.Sql) => sql<Row[]>`
   select v.id, v.customer_id, c.full_name, v.id_type, v.status, v.submitted_at, v.photo_file_id, v.photo_back_file_id,
-    v.decided_by_name, v.decided_at, v.decline_reason, to_char(v.expires_on, 'YYYY-MM-DD') as expires_on
-  from public.senior_pwd_verifications v join public.customers c on c.id = v.customer_id`;
+    v.decided_by_name, v.decided_at, v.decline_reason, to_char(v.expires_on, 'YYYY-MM-DD') as expires_on,
+    c.email, held.id as order_id
+  from public.senior_pwd_verifications v join public.customers c on c.id = v.customer_id
+  left join lateral (
+    select o.id from public.orders o where o.senior_pwd_verification_id = v.id order by o.id desc limit 1
+  ) held on true`;
+
+/** `lito.ramos@example.com` becomes `lito.r@...`: enough for Staff to tell two Customers apart, never the address. */
+export function emailHint(email: unknown): string {
+  const local = typeof email === "string" ? email.split("@")[0] : "";
+  return local ? `${local.slice(0, 6)}@...` : "";
+}
 
 function toVerification(row: Row): Verification {
   const submittedAt = row.submitted_at as Date;
   return {
     id: row.id as number, customerId: row.customer_id as string, customerName: row.full_name as string,
+    customerEmailHint: emailHint(row.email), orderId: (row.order_id as number | null) ?? null,
     idType: row.id_type as IdType, status: row.status as VerificationStatus, submittedAt,
     photoFileId: (row.photo_file_id as string | null) ?? null,
     photoBackFileId: (row.photo_back_file_id as string | null) ?? null,

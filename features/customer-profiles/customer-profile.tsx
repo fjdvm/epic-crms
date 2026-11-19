@@ -217,8 +217,8 @@ export function CustomerProfileView({
               <NotesTab customerId={p.id} notes={notes} readFailed={p.notes === null} author={noteAuthor} onNoteChange={changeNote} />
             </TabsContent>
 
-            <TabsContent value="details" className="mt-0 space-y-5">
-              <TabCard title="Details">
+            <TabsContent value="details" className="mt-0">
+              <TabCard title="Details" scroll>
                 <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="First name">{p.firstName}</Field>
                   <Field label="Middle name">{p.middleName ?? "—"}</Field>
@@ -229,9 +229,9 @@ export function CustomerProfileView({
                     {formatDate(p.customerSince)}
                   </Field>
                 </dl>
-              </TabCard>
 
-              <TabCard title="Addresses">
+                <section aria-label="Addresses" className="space-y-[14px] border-t border-border pt-5">
+                <h3 className="text-sm font-semibold text-foreground">Addresses</h3>
                 {p.addresses.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No addresses saved.
@@ -259,6 +259,7 @@ export function CustomerProfileView({
                     ))}
                   </ul>
                 )}
+                </section>
               </TabCard>
             </TabsContent>
           </div>

@@ -1,6 +1,7 @@
 import { feedbackAnchor } from "@/features/feedback/anchor";
 import { returnAnchor } from "@/features/returns/anchor";
 
+import { SENIOR_PWD_PAGE } from "@/lib/portal/pages";
 import { escalationReasonLabel } from "@/features/tickets/escalate-reasons";
 
 import type { EscalationDetail, Notification, ReassignDetail, SentBackDetail } from "./notifications";
@@ -37,6 +38,8 @@ export function describeNotification(n: Notification): { text: string; href: str
       return { text: `The payment review for Order #${n.orderId} from ${n.customerName} is Overdue. Nothing is cancelled; a Manager must decide`, href: `/orders/${n.orderId}` };
     case "return-requested":
       return { text: `${n.customerName} requested Return RMA-${n.returnId}`, href: `/returns#${returnAnchor(n.returnId!)}` };
+    case "senior-pwd-waiting":
+      return { text: `${n.customerName} uploaded a Senior/PWD ID to review`, href: `${SENIOR_PWD_PAGE}/${n.verificationId}` };
     case "ticket-reassigned": {
       const d = n.detail as ReassignDetail | null | undefined;
       if (!d) return { text: `${ticket} was reassigned`, href };
