@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnalyzeButton, failureWarning } from "@/features/feedback/analyze-button";
 
@@ -8,10 +8,16 @@ const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 const analyze = vi.fn();
-vi.mock("@/features/feedback/actions", () => ({ analyze: () => analyze() }));
+const generate = vi.fn();
+const load = vi.fn();
+vi.mock("@/features/feedback/actions", () => ({ analyze: () => analyze(), generateProductAdvice: () => generate(), loadProductAdvice: () => load() }));
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
+
+beforeEach(() => {
+  generate.mockResolvedValue({ result: null, unavailable: false });
+});
 
 afterEach(() => {
   cleanup();
@@ -102,5 +108,59 @@ describe("AnalyzeButton", () => {
 
     expect(screen.queryByRole("status")).toBeNull();
     expect(failureWarning(1)).toBe("1 Feedback couldn't be analyzed");
+  });
+
+  const ADVICE = { result: { adviceUnavailable: false, model: "m", createdAt: "2026-11-20T03:00:00.000Z", products: [
+    { rank: 1, product: "Halaya 500 g", feedbackCount: 6, averageRating: 1.5, negativeShare: 0.8, trend: "down", advice: { action: "check-batch", label: "Check the batch or packaging", why: "Leaking pouches repeat." } },
+    { rank: 2, product: "Ube jam", feedbackCount: 5, averageRating: 4.8, negativeShare: 0, trend: null, advice: null },
+  ] }, unavailable: false };
+
+  it("slides in the drawer with a skeleton, then the ranked products and suggestions, once the run is done", async () => {
+    analyze.mockResolvedValue({ status: "done", analyzed: 4, failed: 0, model: "groq-4" });
+    let finish!: (value: unknown) => void;
+    generate.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    render(<AnalyzeButton {...READY} />);
+
+    fireEvent.click(button());
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: "Analyze" }).at(-1)!); });
+
+    expect(screen.getByRole("status", { name: "Loading suggestions" })).toBeTruthy();
+    await act(async () => finish(ADVICE));
+
+    const names = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    expect(names).toEqual(["Halaya 500 g", "Ube jam"]);
+    expect(screen.getByText("Check the batch or packaging")).toBeTruthy();
+    expect(screen.getByText(/AI-written/)).toBeTruthy();
+  });
+
+  it("opens no drawer when the run is refused", async () => {
+    analyze.mockResolvedValue({ status: "cooling-down", until: new Date() });
+    render(<AnalyzeButton {...READY} />);
+
+    fireEvent.click(button());
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: "Analyze" }).at(-1)!); });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(screen.queryByText("Product suggestions")).toBeNull();
+  });
+
+  it("reopens the saved suggestions from the Suggestions button without running anything", async () => {
+    load.mockResolvedValue(ADVICE);
+    render(<AnalyzeButton {...READY} />);
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Suggestions" })); });
+
+    expect(screen.getByText("Halaya 500 g")).toBeTruthy();
+    expect(analyze).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("says so when the suggestions are unavailable", async () => {
+    load.mockResolvedValue({ result: null, unavailable: true });
+    render(<AnalyzeButton {...READY} />);
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Suggestions" })); });
+
+    expect(screen.getByRole("alert").textContent).toMatch(/unavailable/);
   });
 });
