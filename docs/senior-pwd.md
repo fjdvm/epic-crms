@@ -48,6 +48,11 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
   total including this Order) and `discount_reduction_reason`. Missing columns show "Not reported yet". No ID number.
 - The checkout step (photo front/back, number) is Storefront work in the Ecommerce repo, not CREOMS.
 
+## Same ID number on another account
+
+- CREOMS can never read `id_hash`. The storefront compares the hashes when an ID is sent and saves `public.senior_pwd_verifications.same_id_as_verification_id`, the other account's verification that carries the same number (set for a number last seen declined, revoked or expired; a number pending or approved elsewhere is refused before it is saved). Grant it with `docs/db/creoms-senior-pwd-readonly.sql`.
+- The checks list shows "ID already used by another account" under the Customer, and the check detail shows a warning naming the other account (name, hidden email, status) with a link to its check. It warns; it does not block, and the storefront still refuses approving a number already verified on another account. Names are not copied: Staff compare the name on the ID with the account name as before.
+
 ## Senior/PWD checks tab under Customers
 
 - A sidebar item "Senior/PWD checks" in the CUSTOMERS group, at `/customer-profiles/senior-pwd` (the page is `SENIOR_PWD_PAGE` in `lib/portal/pages.ts`, held by

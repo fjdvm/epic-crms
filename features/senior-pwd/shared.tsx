@@ -1,16 +1,18 @@
 "use client";
 
-import { Eye } from "lucide-react";
+import { Eye, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
+import { SENIOR_PWD_PAGE } from "@/lib/portal/pages";
 import type { ShopRole } from "@/lib/portal/roles";
 
 import { overrideVerification, revokeVerification, declineVerification } from "./actions";
-import type { IdType, Verification, VerificationStatus } from "./verifications";
+import type { IdType, SameIdHolder, Verification, VerificationStatus } from "./verifications";
 
 export const ID_KIND: Record<IdType, string> = { senior: "Senior citizen", pwd: "PWD" };
 export const STATUS_LABEL: Record<VerificationStatus, string> = {
@@ -49,6 +51,32 @@ export function ReadOnlyBadge() {
 
 export function StatusPill({ status }: { status: VerificationStatus }) {
   return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>;
+}
+
+/**
+ * The same ID number is on another account. Staff cannot see the number, but the storefront compared the hashes, so this
+ * says who else used it and links to that check. Shown wherever the ID is reviewed or listed.
+ */
+export function SameIdWarning({ holder, compact = false }: { holder: SameIdHolder; compact?: boolean }) {
+  const who = `${holder.customerName} (${holder.customerEmailHint}) · ${STATUS_LABEL[holder.status]}`;
+  if (compact) {
+    return (
+      <p className="inline-flex items-center gap-1 pt-0.5 text-xs font-medium text-[#b45309]">
+        <TriangleAlert aria-hidden className="size-3" /> ID already used by another account
+      </p>
+    );
+  }
+  return (
+    <div role="alert" className="flex gap-2 rounded-xl border border-[#f5d38b] bg-[#fef9e7] px-4 py-3 text-[13px] text-[#92400e]">
+      <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <p>
+        <span className="font-semibold">This ID number is already used by another account.</span><br />
+        {who}.{" "}
+        <Link href={`${SENIOR_PWD_PAGE}/${holder.verificationId}`} className="font-medium underline">Open their check</Link>.
+        {" "}Compare the name and photo before you approve, and decline it if it is not the Customer&apos;s own ID.
+      </p>
+    </div>
+  );
 }
 
 function ReasonField({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (t: string) => void }) {

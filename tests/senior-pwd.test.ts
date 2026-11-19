@@ -146,6 +146,20 @@ it("refuses the same ID number on a second account, whatever its spacing or case
   expect(await storefront.submitVerification("c2", "senior", " sc-123-456-789 ", photo)).toEqual({ error: "This ID is already used on another account." });
 });
 
+it("flags an ID number the storefront saw on another account, naming who without exposing the number or hash", async () => {
+  await db.sql`insert into customers (id, full_name, email) values ('c2','Pedro Cruz','pedro.cruz@example.com')`;
+  const first = await upload("c1", NUMBER);
+  await signIn("ana");
+  await declineVerification(first.id, "Blurry photo");
+  // The first holder was declined, so the same number is accepted on a second account, but flagged.
+  const second = await upload("c2", NUMBER);
+  const list = await loadVerifications();
+  expect(list).toMatchObject({ ok: true, list: { pending: [{ id: second.id, sameIdAs: { verificationId: first.id, customerName: "Maria", customerEmailHint: "maria@...", status: "declined" } }] } });
+  expect(JSON.stringify(list)).not.toMatch(/hash|SC-123/i);
+  // The first account's own row is not flagged.
+  expect(await loadVerificationDetail(first.id)).toMatchObject({ ok: true, verification: { id: first.id, sameIdAs: null } });
+});
+
 it("removes a photo nobody reviewed in 7 days; Staff can no longer decide and the Customer must upload again", async () => {
   const { id } = await upload();
   await db.sql`update senior_pwd_verifications set submitted_at = now() - interval '8 days'`;

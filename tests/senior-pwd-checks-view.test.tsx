@@ -202,3 +202,26 @@ describe("the Senior/PWD check screen", () => {
     });
   });
 });
+
+describe("an ID number already used by another account", () => {
+  const holder = { verificationId: 9, customerName: "Lito Ramos", customerEmailHint: "lito.r@...", status: "revoked" as const };
+
+  it("flags the row in the list without showing the number", () => {
+    render(<SeniorPwdChecksList list={list([v({ sameIdAs: holder })])} now={NOW} readOnly={false} />);
+    expect(within(screen.getByRole("row", { name: /Maria Santos/ })).getByText("ID already used by another account")).toBeTruthy();
+  });
+
+  it("says nothing when the ID is only on this account", () => {
+    render(<SeniorPwdChecksList list={list([v()])} now={NOW} readOnly={false} />);
+    expect(screen.queryByText(/already used by another account/)).toBeNull();
+  });
+
+  it("tells the reviewer who else used it and links to that check", () => {
+    vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: false, reason: "n/a" } as never);
+    render(<SeniorPwdCheckDetail verification={v({ sameIdAs: holder })} now={NOW} readOnly={false} role="staff" />);
+    const alert = screen.getByRole("alert", { name: "" });
+    expect(alert.textContent).toContain("This ID number is already used by another account.");
+    expect(alert.textContent).toContain("Lito Ramos (lito.r@...) · Revoked");
+    expect(within(alert).getByRole("link", { name: "Open their check" }).getAttribute("href")).toBe("/customer-profiles/senior-pwd/9");
+  });
+});
