@@ -19,11 +19,14 @@ export default async function CommerceSettingsPage() {
 
   return (
     <CommerceSettingsFrame>
-      <div className="space-y-8">
-        <PaymentAccountList accounts={accounts ?? []} failed={accounts === null} disabledMethods={disabled} />
-        <PaymentAccountForm />
-        <hr className="border-[#e6e1ee]" />
-        <FreeDeliveryForm currentInCentavos={threshold} />
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <div className="min-w-0 space-y-8">
+          <PaymentAccountList accounts={accounts ?? []} failed={accounts === null} disabledMethods={disabled} />
+          <PaymentAccountForm />
+        </div>
+        <div className="min-w-0 border-t border-[#e6e1ee] pt-8 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
+          <FreeDeliveryForm currentInCentavos={threshold} />
+        </div>
       </div>
     </CommerceSettingsFrame>
   );

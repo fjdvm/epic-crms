@@ -40,7 +40,7 @@ async function signIn(role: string, modules: string[]) {
 const TABS = ["/management/commerce-settings"];
 
 describe("Management access", () => {
-  it.each(["CRMS Manager", "CEO"])("opens Commerce settings for a %s holding the Module", async (role) => {
+  it.each(["CRMS Manager", "CEO"])("opens Commerce Settings for a %s holding the Module", async (role) => {
     await signIn(role, ["Orders", MANAGEMENT_MODULE]);
     await expect(requireManagement()).resolves.toMatchObject({ id: "u" });
     expect((await getShell()).permittedPages).toEqual(expect.arrayContaining(TABS));

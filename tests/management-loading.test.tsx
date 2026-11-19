@@ -5,12 +5,12 @@ import CommerceSettingsLoading from "@/app/(app)/management/commerce-settings/lo
 
 afterEach(cleanup);
 
-describe("the Commerce settings loading state", () => {
+describe("the Commerce Settings loading state", () => {
   it("shows the skeleton at once, with the title and no tabs", () => {
     render(<CommerceSettingsLoading />);
 
-    expect(screen.getByRole("status", { name: "Loading Commerce settings" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Commerce settings" })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading Commerce Settings" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Commerce Settings" })).toBeTruthy();
     expect(screen.queryByText("Payment Management")).toBeNull();
   });
 });

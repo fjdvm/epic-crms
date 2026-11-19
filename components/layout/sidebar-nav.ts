@@ -127,7 +127,7 @@ export const feedbackItem: NavItem = {
 
 export const commerceSettingsItem: NavItem = {
   group: "MANAGEMENT",
-  name: "Commerce settings",
+  name: "Commerce Settings",
   href: "/management/commerce-settings",
   icon: Landmark,
 };

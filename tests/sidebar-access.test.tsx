@@ -184,11 +184,11 @@ describe("the sidebar", () => {
 });
 
 describe("the Management label", () => {
-  it("shows Commerce settings under Management when the Staff member may open it", async () => {
+  it("shows Commerce Settings under Management when the Staff member may open it", async () => {
     renderSidebar(["/management/commerce-settings"]);
 
     expect(await screen.findByText("MANAGEMENT")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Commerce settings" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Commerce Settings" })).toBeTruthy();
   });
 
   it("hides the label and page from everyone else", async () => {
@@ -196,6 +196,6 @@ describe("the Management label", () => {
     await screen.findByText("Ada Okafor");
 
     expect(screen.queryByText("MANAGEMENT")).toBeNull();
-    expect(screen.queryByRole("link", { name: "Commerce settings" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Commerce Settings" })).toBeNull();
   });
 });
