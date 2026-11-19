@@ -14,6 +14,7 @@ import { deliverGatewayAuditEvent } from "@/lib/gateway";
 import { fetchReturnPhoto } from "@/features/returns/photo-bytes";
 import { fingerprintReturnPhotos } from "@/features/returns/return-flags";
 import { syncReturnEvents } from "./return-events";
+import { syncSeniorPwdEvents } from "./senior-pwd-events";
 
 type Connection = () => postgres.Sql;
 
@@ -22,7 +23,7 @@ export async function fingerprintNewReturnPhotos(writer: postgres.Sql, reader: p
   await fingerprintReturnPhotos(reader, writer, fetchReturnPhoto, undefined, 10)
     .catch((error) => console.error("Return photo fingerprinting failed", error));
 }
-export type SyncBatch = Record<"customers" | "tickets" | "feedback" | "orders" | "returns" | "cancellations" | "orderAudit", SyncResult | { error: string }>;
+export type SyncBatch = Record<"customers" | "tickets" | "feedback" | "orders" | "returns" | "cancellations" | "orderAudit" | "seniorPwd", SyncResult | { error: string }>;
 
 /** The poll, scheduler and signal use the same truth and ledgers. Each feed fails independently. */
 export async function syncNotifications({ writer = crmsDatabase, reader = database, tickets = ticketsDatabase, copies = true }: {
@@ -50,6 +51,7 @@ export async function syncNotifications({ writer = crmsDatabase, reader = databa
       // Audit deliveries are not Staff notifications, so they never count as created.
       return { baselined: false, created: 0 };
     }),
+    seniorPwd: await attempt("Senior/PWD", () => syncSeniorPwdEvents(writer(), reader())),
     returns: await attempt("Return", async () => {
       const result = await syncReturnEvents(writer(), reader());
       await fingerprintNewReturnPhotos(writer(), reader());

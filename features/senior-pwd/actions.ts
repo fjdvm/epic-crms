@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 
 import { database } from "@/lib/db";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
@@ -34,9 +35,21 @@ export async function loadVerifications(): Promise<{ ok: true; list: Verificatio
   } catch { return { ok: false, reason: UNAVAILABLE }; }
 }
 
+/** One verification for the review page, with its status as of now. */
+export async function loadVerificationDetail(id: number): Promise<{ ok: true; verification: Verification; now: Date } | { ok: false; reason: string; missing?: true }> {
+  await requireModule(SENIOR_PWD_MODULE);
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid verification number.", missing: true };
+  try {
+    const now = new Date();
+    const v = await loadVerification(database(), id);
+    if (!v) return { ok: false, reason: "Verification was not found.", missing: true };
+    return { ok: true, verification: { ...v, status: currentStatus(v, now) }, now };
+  } catch { return { ok: false, reason: UNAVAILABLE }; }
+}
+
 /** A short-lived private address for the photo, only while the photo exists and is still waiting for review. */
 export async function loadVerificationPhoto(id: number): Promise<{ ok: true; url: string; backUrl: string | null } | { ok: false; reason: string }> {
-  await requireModule(SENIOR_PWD_MODULE);
+  const staff = await requireModule(SENIOR_PWD_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid verification number." };
   try {
     const v = await loadVerification(database(), id);
@@ -45,7 +58,18 @@ export async function loadVerificationPhoto(id: number): Promise<{ ok: true; url
       return { ok: false, reason: "The ID photo has been removed. The Customer uploads it again if needed." };
     }
     const backUrl = v.photoBackFileId ? await gatewayFileStorage.viewUrl(v.photoBackFileId).catch(() => null) : null;
-    return { ok: true, url: await gatewayFileStorage.viewUrl(v.photoFileId), backUrl };
+    const url = await gatewayFileStorage.viewUrl(v.photoFileId);
+    // An ID photo is personal data: opening it is audited (who, which ID), once per Staff member per ten minutes.
+    const opened = new Date();
+    after(() => recordAudit(gatewayAuditTrail, {
+      action: "pwd.photo_viewed", module: SENIOR_PWD_MODULE, outcome: "success", actor: staffAuditActor(staff),
+      target: { type: "customer", id: v.customerId, display_name: v.customerName },
+      description: `${staff.name} opened the Senior/PWD ID photo of ${v.customerName}.`,
+      metadata: { verificationId: id, idType: v.idType },
+      occurred_at: opened.toISOString(),
+      operationId: `pwd:${id}:photo_viewed:${staff.id}:${Math.floor(opened.getTime() / 600_000)}`,
+    }));
+    return { ok: true, url, backUrl };
   } catch { return { ok: false, reason: "The ID photo could not be opened." }; }
 }
 

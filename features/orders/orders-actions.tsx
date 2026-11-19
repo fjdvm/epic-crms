@@ -148,7 +148,7 @@ export function OrdersActions({ order, codFlags = [] }: { order: OrderDetail; co
       {waitingForId && (placed || order.deliveryFee === null) && (
         <p role="note" aria-label="Senior/PWD review first" className="text-sm text-[#8a5a00]">
           Review the Customer&apos;s Senior/PWD ID before confirming or quoting this Order.{" "}
-          <Link href="/orders/senior-pwd" className="font-medium text-[#5b2a86]">Review the ID</Link>
+          <Link href="/customer-profiles/senior-pwd" className="font-medium text-[#5b2a86]">Review the ID</Link>
         </p>
       )}
       {!waitingForId && !pickup && order.deliveryFee === null && CANCELLABLE_STATUSES.includes(order.status) && <QuoteFee order={order} flags={codFlags} />}

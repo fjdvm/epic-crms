@@ -46,6 +46,17 @@ describe("the sidebar", () => {
     expect(screen.queryByRole("link", { name: "Customer Profiles" })).toBeNull();
   });
 
+  it("lists Senior/PWD checks under Customers only with the Senior/PWD page, not with Customer Profiles alone", async () => {
+    const withoutIt = renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+    expect(screen.queryByRole("link", { name: "Senior/PWD checks" })).toBeNull();
+    withoutIt.unmount();
+
+    renderSidebar(["/customer-profiles", "/customer-profiles/senior-pwd"]);
+    const link = await screen.findByRole("link", { name: "Senior/PWD checks" });
+    expect(link.getAttribute("href")).toBe("/customer-profiles/senior-pwd");
+  });
+
   it("lists My Tasks beside Customer Profiles only with its page", async () => {
     renderSidebar(["/customer-profiles", "/my-tasks"]);
 

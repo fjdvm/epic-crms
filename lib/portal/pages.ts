@@ -7,14 +7,19 @@ import {
   ORDERS_MODULE,
   PAYMENTS_MODULE,
   RETURNS_MODULE,
+  SENIOR_PWD_MODULE,
   TICKETS_MODULE,
 } from "./config";
+
+/** The Senior/PWD checks tab under Customers. It has its own Portal Module. */
+export const SENIOR_PWD_PAGE = "/customer-profiles/senior-pwd";
 
 /** Every CREOMS page belongs to exactly one Module, in the order `/` tries them. */
 export const pages = [
   { href: "/dashboard", module: DASHBOARD_MODULE },
   { href: "/customer-profiles", module: CUSTOMER_PROFILES_MODULE },
   { href: "/my-tasks", module: CUSTOMER_PROFILES_MODULE },
+  { href: SENIOR_PWD_PAGE, module: SENIOR_PWD_MODULE },
   { href: "/orders", module: ORDERS_MODULE },
   { href: "/payments", module: PAYMENTS_MODULE },
   { href: "/fulfilment", module: FULFILMENT_MODULE },

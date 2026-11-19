@@ -213,7 +213,7 @@ describe("an Order's detail", () => {
   it("links to the review screen while the ID waits, and explains why Confirm and Quote are blocked", () => {
     render(<OrderDetailView role="staff" order={detail({ status: "placed", deliveryFee: null, seniorPwd: { id: 1, idType: "senior", status: "pending" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Senior Citizen · Waiting for review");
-    expect(screen.getByRole("link", { name: "Review the ID" }).getAttribute("href")).toBe("/orders/senior-pwd");
+    expect(screen.getByRole("link", { name: "Review the ID" }).getAttribute("href")).toBe("/customer-profiles/senior-pwd");
     expect(screen.getByRole("note", { name: "Senior/PWD review first" }).textContent).toContain("before confirming");
     expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
   });

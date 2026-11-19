@@ -7,7 +7,7 @@ export interface NewCustomer {
   name: string;
 }
 
-export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "ticket-escalated" | "ticket-sent-back" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "order-overdue" | "payment-review" | "payment-review-overdue" | "return-requested";
+export type NotificationKind = "new-customer" | "ticket-new" | "ticket-message" | "ticket-not-fixed" | "ticket-reassigned" | "ticket-escalated" | "ticket-sent-back" | "feedback-low" | "order-delivery-fee" | "order-placed" | "order-free-delivery" | "order-payment-proof" | "order-overdue" | "payment-review" | "payment-review-overdue" | "return-requested" | "senior-pwd-waiting";
 
 /** What a Reassign alert says. `side` is whether the reader was the previous or the new Claimer. */
 export interface ReassignDetail {
@@ -47,6 +47,8 @@ export interface Notification {
   rating: number | null;
   /** The Return whose request raised this alert; null for other kinds. */
   returnId: number | null;
+  /** The Senior/PWD verification whose upload raised this alert; null for other kinds. */
+  verificationId?: number | null;
   /** Who moved what and why (reassigned), or the escalation note (escalated, sent back); null for other kinds. */
   detail?: NotificationDetail | null;
   /** When CREOMS first saw the event, such as the person becoming a Customer. */
@@ -67,6 +69,8 @@ export interface Viewer {
   orders: boolean;
   payments: boolean;
   returns: boolean;
+  /** The Senior/PWD Module: alerts for IDs waiting for review. */
+  seniorPwd?: boolean;
   /** A Manager: alerts for Orders left unconfirmed past the limit go to Managers with the Orders Module only. */
   manager?: boolean;
 }
@@ -83,6 +87,7 @@ export function visibleTo(sql: postgres.Sql | postgres.TransactionSql, viewer: V
     or (kind = 'order-overdue' and ${viewer.orders && viewer.manager === true})
     or (kind in ('payment-review', 'payment-review-overdue') and ${viewer.payments && viewer.manager === true})
     or (kind = 'return-requested' and ${viewer.returns})
+    or (kind = 'senior-pwd-waiting' and ${viewer.seniorPwd === true})
     or (kind in ('ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned', 'ticket-escalated', 'ticket-sent-back') and ${viewer.ticketsStaffId !== null}
       and (recipient_id is null or recipient_id = ${viewer.ticketsStaffId}))
   )`;
@@ -178,12 +183,13 @@ export async function listNotifications(
       order_id: number | null;
       rating: number | null;
       return_id: number | null;
+      verification_id: number | null;
       detail: NotificationDetail | null;
       created_at: Date;
       read_at: Date | null;
     }[]
   >`
-    select id::text, kind, customer_id, customer_name, ticket_id, order_id, rating, return_id, detail, created_at, read_at
+    select id::text, kind, customer_id, customer_name, ticket_id, order_id, rating, return_id, verification_id, detail, created_at, read_at
     from ${s}.notifications
     where ${visibleTo(writer, viewer)}
     order by created_at desc, id desc
@@ -200,6 +206,7 @@ export async function listNotifications(
       orderId: r.order_id,
       rating: r.rating,
       returnId: r.return_id,
+      verificationId: r.verification_id,
       detail: r.detail,
       createdAt: r.created_at,
       read: r.read_at !== null,
