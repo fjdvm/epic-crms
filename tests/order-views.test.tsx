@@ -732,7 +732,8 @@ describe("the Payments page", () => {
     expect(within(dialog).getByText(/order total ₱1,197.00/)).toBeTruthy();
     expect(within(dialog).getByRole("img", { name: "Receipt for Order #1046" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "View image" }));
-    expect(screen.getAllByRole("dialog").length).toBeGreaterThan(1);
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(within(dialog).getByText(/Reading the screenshot never marks an Order paid/)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Mark paid" })).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Cancel order" })).toBeTruthy();

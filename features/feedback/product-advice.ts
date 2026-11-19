@@ -187,10 +187,12 @@ export async function openProductAdvice(
     if (options.generate && (role === "staff" || role === "manager")) {
       const result = await buildProductAdvice(deps.tickets, options);
 
+      // The model was already asked, so a failed save still shows the result; it just cannot be reopened later.
       await deps.crms`
         insert into crms.feedback_product_advice (id, result, model, created_at)
         values (1, ${deps.crms.json(result as never)}, ${result.model}, ${result.createdAt})
-        on conflict (id) do update set result = excluded.result, model = excluded.model, created_at = excluded.created_at`;
+        on conflict (id) do update set result = excluded.result, model = excluded.model, created_at = excluded.created_at`
+        .catch((error) => console.error("The product suggestions could not be saved", error));
 
       return { result, unavailable: false };
     }

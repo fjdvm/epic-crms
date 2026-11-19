@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Sparkles, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
@@ -79,6 +79,14 @@ export function AnalyzeButton({ keysSet, running, availableAt, lastFailed }: Ana
   const [open, setOpen] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [advice, setAdvice] = useState<AdviceState>(null);
+  // Only the newest request may fill the drawer, so a slow older one never overwrites it.
+  const latest = useRef(0);
+  const fill = (request: Promise<AdviceState>) => {
+    const mine = ++latest.current;
+    setAdvice(null);
+    setDrawer(true);
+    void request.catch((): AdviceState => ({ result: null, unavailable: true })).then((state) => { if (latest.current === mine) setAdvice(state); });
+  };
   const [pending, startTransition] = useTransition();
   // The 5 minutes run out while the page is open; remember which availableAt has passed.
   const [expired, setExpired] = useState<string | null>(null);
@@ -113,19 +121,13 @@ export function AnalyzeButton({ keysSet, running, availableAt, lastFailed }: Ana
 
       // The drawer slides in at once with its skeleton; the suggestions fill it when they are ready.
       if (outcome.status === "done" || outcome.status === "nothing-to-do") {
-        setAdvice(null);
-        setDrawer(true);
-        void generateProductAdvice().catch((): AdviceState => ({ result: null, unavailable: true })).then(setAdvice);
+        fill(generateProductAdvice());
       }
     });
   };
 
   /** Reopens the last saved suggestions. No model call. */
-  const showSaved = async () => {
-    setAdvice(null);
-    setDrawer(true);
-    setAdvice(await loadProductAdvice().catch((): AdviceState => ({ result: null, unavailable: true })));
-  };
+  const showSaved = () => fill(loadProductAdvice());
 
   return (
     <div className="flex shrink-0 items-center gap-2">
@@ -143,6 +145,7 @@ export function AnalyzeButton({ keysSet, running, availableAt, lastFailed }: Ana
       <button
         type="button"
         onClick={showSaved}
+        disabled={pending}
         className="shrink-0 cursor-pointer rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium leading-[normal] whitespace-nowrap text-[#1f1a2e]"
       >
         Suggestions
