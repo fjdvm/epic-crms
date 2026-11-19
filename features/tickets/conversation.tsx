@@ -307,7 +307,7 @@ export function Conversation({
       {readOnly ? (
         <p className="flex shrink-0 items-center gap-1.5 border-t border-[#e6e1ee] bg-white px-5 py-3 text-[11px] leading-[normal] text-[#6e6680]">
           <Lock aria-hidden className="size-3" />
-          Read-only · Admin and CEO can read chats but never reply or run AI.
+          Read-only · Admin and CEO & VP can read chats but never reply or run AI.
         </p>
       ) : (
       <div className="flex flex-col gap-3 border-t border-[#e6e1ee] bg-white px-5 pt-3 pb-4">
