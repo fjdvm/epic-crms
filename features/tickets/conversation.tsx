@@ -1,5 +1,6 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 
@@ -144,6 +145,7 @@ export function Conversation({
   canNote = false,
   draftDisabledReason,
   scrollable = false,
+  readOnly = false,
   connect = connectLive,
 }: {
   ticketId: number;
@@ -159,6 +161,8 @@ export function Conversation({
   draftDisabledReason?: string | null;
   /** Fill the parent's height: the Messages scroll inside it and the reply box stays in view. */
   scrollable?: boolean;
+  /** Admin and CEO read the chat and never reply, write notes or run AI: the box gives way to a one-line reason. */
+  readOnly?: boolean;
   connect?: ConnectLive;
 }) {
   const router = useRouter();
@@ -299,6 +303,12 @@ export function Conversation({
       <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-[#faf9fc] p-5">
         {bubbles}
       </div>
+      {readOnly ? (
+        <p className="flex shrink-0 items-center gap-1.5 border-t border-[#e6e1ee] bg-white px-5 py-3 text-[11px] leading-[normal] text-[#6e6680]">
+          <Lock aria-hidden className="size-3" />
+          Read-only · Admin and CEO can read chats but never reply or run AI.
+        </p>
+      ) : (
       <div className="flex flex-col gap-3 border-t border-[#e6e1ee] bg-white px-5 pt-3 pb-4">
         {canNote && (
           <div role="tablist" aria-label="Reply or note" className="flex gap-4 border-b border-[#e6e1ee]">
@@ -324,6 +334,7 @@ export function Conversation({
           Only the claimer can reply. Nothing sends until you press Send. Images: JPG or PNG up to 5 MB.
         </p>
       </div>
+      )}
     </div>
   );
 }

@@ -177,6 +177,28 @@ describe("the Conversations page as designed", () => {
   });
 });
 
+describe("the read-only chat for Admin and CEO", () => {
+  it("shows the Messages but no reply box, notes, claim buttons or draft panel", () => {
+    render(
+      <ConversationsView
+        conversations={{ chats: [], selected: ticket() }}
+        viewerId="admin"
+        viewerName="Admin"
+        readOnly
+      />,
+    );
+    const chat = screen.getByRole("region", { name: "Chat" });
+
+    expect(within(chat).getByText("One of the halaya pouches was leaking.")).toBeTruthy();
+    expect(within(chat).getByText(/Read-only · Admin and CEO can read chats but never reply or run AI/)).toBeTruthy();
+    expect(within(chat).getByRole("link", { name: "Open ticket" })).toBeTruthy();
+    expect(within(chat).queryByRole("textbox")).toBeNull();
+    expect(within(chat).queryByRole("tab", { name: "Internal note" })).toBeNull();
+    expect(within(chat).queryByRole("button", { name: "Claim" })).toBeNull();
+    expect(within(chat).queryByRole("button", { name: "Release" })).toBeNull();
+  });
+});
+
 describe("the draft panel on the chat", () => {
   it("shows the panel to Staff and Managers, and none to Admin or CEO", () => {
     const staff = view(ticket(), "bernice", true);
