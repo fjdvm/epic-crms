@@ -24,9 +24,9 @@ export default async function ConversationsPage({
   const raw = await searchParams;
 
   return (
-    <div className="px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
+    <div className="lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       {/* One card: the search sits at the top of the inbox column, outside the keyed Suspense so typing keeps its focus. */}
-      <div className="grid w-full grid-cols-1 overflow-hidden rounded-xl border border-[#e6e1ee] bg-white lg:h-full lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]">
+      <div className="grid w-full grid-cols-1 overflow-hidden bg-white lg:h-full lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]">
         <div className="border-b border-[#e6e1ee] p-3 lg:col-start-1 lg:row-start-1 lg:border-r">
           <ChatSearchInput
             label="Search chats"

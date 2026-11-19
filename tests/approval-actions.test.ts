@@ -117,18 +117,19 @@ it.each([500000, 500001])("requires the right steps for a refund selling at %i c
   expect(notices).toContainEqual(expect.objectContaining({ userIds: ["ana"] }));
 });
 
-it("uses an Admin's changed limit and records both write-off decisions and a decline", async () => {
+it("uses a Manager's changed limit and records both write-off decisions and a decline", async () => {
   const id = await returned(500001);
   await signIn("ana"); await expect(setApprovalLimit(600000)).rejects.toThrow();
-  for (const actor of ["mario", "owner"]) { await signIn(actor); expect(await setApprovalLimit(600000)).toMatchObject({ ok: false }); }
-  await signIn("ada"); expect(await setApprovalLimit(600000)).toMatchObject({ ok: true });
-  expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "approval_limit.changed", actor: { type: "user", id: "ada", display_name: "ada Person" } })]);
+  await signIn("ada"); expect(await setApprovalLimit(600000)).toMatchObject({ ok: false });
+  await signIn("owner"); expect(await setApprovalLimit(500000)).toMatchObject({ ok: true });
+  await signIn("mario"); expect(await setApprovalLimit(600000)).toMatchObject({ ok: true });
+  expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "approval_limit.changed", actor: { type: "user", id: "mario", display_name: "mario Person" } })]);
   await signIn("ana");
   const requested = await requestWriteOff(id, "Damaged stock");
   expect(requested).toMatchObject({ status: "waiting-manager" });
   if (!requested.approvalId) throw new Error("Missing request");
   await signIn("mario"); expect(await decideApproval("Returns", requested.approvalId, "approve")).toMatchObject({ ok: true, request: { status: "approved" } });
-  await signIn("ada"); await setApprovalLimit(400000);
+  await signIn("mario"); await setApprovalLimit(400000);
   await signIn("ana"); const other = await requestWriteOff(id, "Second inspection");
   if (!other.approvalId) throw new Error("Missing request");
   await signIn("mario"); expect(await decideApproval("Returns", other.approvalId, "approve")).toMatchObject({ ok: true, request: { status: "waiting-ceo" } });
@@ -164,8 +165,8 @@ it("retains Manager notifications when an old Portal directory omits Roles, then
   expect(notices).toContainEqual(expect.objectContaining({ userIds: ["mario"] }));
 });
 
-it("lets an Admin change Portal Settings without granting any Returns page access", async () => {
-  await signIn("ada"); portal.revoke("ada", "Returns");
+it("lets a Manager change the Approval limit without granting any Returns page access", async () => {
+  await signIn("mario"); portal.revoke("mario", "Returns");
   expect(await setApprovalLimit(700000)).toEqual({ ok: true });
   await expect(getApprovalRequests()).rejects.toThrow();
 });
@@ -231,7 +232,7 @@ it("a changed Admin limit applies to failed-delivery requests, and module revoca
   expect(await changeFailedDelivery(1, { action: "record", attemptId, reason: "Damaged", nextStep: "request-cancellation", customerMessage: "Staff requested cancellation." })).toMatchObject({ ok: true });
   const { approvals } = await import("@/features/approvals/server");
   // The same Admin setting entry point used by Portal Settings.
-  expect(await approvals().setLimit({ id: "ada", username: "ada", name: "Ada", email: "ada@example.com", role: "Admin" }, 600000)).toMatchObject({ ok: true });
+  expect(await approvals().setLimit({ id: "mario", username: "mario", name: "Mario", email: "mario@example.com", role: "CRMS Manager" }, 600000)).toMatchObject({ ok: true });
   await signIn("mario");
   expect(await changeFailedDelivery(1, { action: "write-off", attemptId })).toMatchObject({ ok: true });
   portal.addStaff("no-fulfilment", { id: "no-fulfilment", username: "no-fulfilment", name: "Other Person", email: "other@example.com", role: "Staff" }, ["Orders"]);
