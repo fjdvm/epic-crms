@@ -6,7 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import type { AssignableStaff } from "./staffs";
-import { CELL, COLUMNS, HEAD, TicketRows, type RowsViewer } from "./ticket-rows";
+import { CELL, COLUMNS, HEAD } from "./ticket-layout";
+import { TicketRows, type RowsViewer } from "./ticket-rows";
 import {
   hasTicketFilters,
   ticketsHref,
