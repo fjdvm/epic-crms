@@ -74,11 +74,11 @@ export function Bubbles({ messages: saved, chat = false }: { messages: TicketMes
                 data-internal-note
                 className="flex w-[460px] max-w-full flex-col gap-1 rounded-xl border border-dashed border-[#e0c97a] bg-[#fff8e1] px-[14px] py-[10px]"
               >
-                <p className="text-[11px] leading-[normal] font-semibold tracking-wide text-[#7a5b00] uppercase">
+                <p className="text-[13px] leading-[normal] font-semibold tracking-wide text-[#7a5b00] uppercase">
                   Internal note · only Staff see this
                 </p>
-                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">{message.body}</p>
-                <p className="text-[11px] leading-[normal] text-[#7a5b00]">
+                <p className="text-base leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">{message.body}</p>
+                <p className="text-[13px] leading-[normal] text-[#7a5b00]">
                   {message.sending ? (
                     <>
                       {message.senderName} · <Sending />
@@ -106,7 +106,7 @@ export function Bubbles({ messages: saved, chat = false }: { messages: TicketMes
               )}
             >
               {message.body && (
-                <p className={cn("text-sm leading-[normal] break-words whitespace-pre-wrap", chat && fromStaff ? "text-white" : "text-[#1f1a2e]")}>
+                <p className={cn("text-base leading-[normal] break-words whitespace-pre-wrap", chat && fromStaff ? "text-white" : "text-[#1f1a2e]")}>
                   {message.body}
                 </p>
               )}
@@ -122,7 +122,7 @@ export function Bubbles({ messages: saved, chat = false }: { messages: TicketMes
                     : undefined
                 }
               />
-              <p className={cn("text-[11px] leading-[normal]", chat && fromStaff ? "text-white/80" : "text-[#6e6680]")}>
+              <p className={cn("text-[13px] leading-[normal]", chat && fromStaff ? "text-white/80" : "text-[#6e6680]")}>
                 {byline(message, messages[i - 1])}
               </p>
             </div>
@@ -330,16 +330,16 @@ export function Conversation({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-[#faf9fc] p-5">
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-[#faf9fc] p-3">
         {bubbles}
       </div>
       {readOnly ? (
-        <p className="flex shrink-0 items-center gap-1.5 border-t border-[#e6e1ee] bg-white px-5 py-3 text-[11px] leading-[normal] text-[#6e6680]">
+        <p className="flex shrink-0 items-center gap-1.5 border-t border-[#e6e1ee] bg-white px-3 py-2 text-[13px] leading-[normal] text-[#6e6680]">
           <Lock aria-hidden className="size-3" />
           Read-only · Admin and CEO & VP can read chats but never reply or run AI.
         </p>
       ) : (
-      <div className="flex flex-col gap-3 border-t border-[#e6e1ee] bg-white px-5 pt-3 pb-4">
+      <div className="flex flex-col gap-3 border-t border-[#e6e1ee] bg-white px-3 pt-2 pb-3">
         {tabs.length > 1 && (
           <div role="tablist" aria-label="Reply, note or AI suggestion" className="flex gap-4 border-b border-[#e6e1ee]">
             {tabs.map((m) => (
@@ -350,7 +350,7 @@ export function Conversation({
                 aria-selected={mode === m}
                 onClick={() => setMode(m)}
                 className={cn(
-                  "-mb-px border-b-2 pb-2 text-[13px] font-medium leading-[normal]",
+                  "-mb-px border-b-2 pb-2 text-[15px] font-medium leading-[normal]",
                   mode === m ? "border-[#5b2a86] text-[#5b2a86]" : "border-transparent text-[#6e6680]",
                 )}
               >
@@ -360,7 +360,7 @@ export function Conversation({
           </div>
         )}
         {mode === "note" && canNote ? <NoteBox inline /> : mode === "ai" && draftPanel ? draftPanel : replyArea}
-        <p className="text-[11px] leading-[normal] text-[#6e6680]">
+        <p className="text-[13px] leading-[normal] text-[#6e6680]">
           Only the claimer can reply. Nothing sends until you press Send. Images: JPG or PNG up to 5 MB.
         </p>
       </div>

@@ -86,6 +86,8 @@ export interface TicketRow {
   overdue: boolean;
   /** A Manager has been asked and has not acted. */
   escalated: boolean;
+  /** When the Ticket was opened. */
+  createdAt: Date;
   lastActivity: Date;
   /** The countdown to the first reply or resolve target. */
   serviceLevel: ServiceLevel;
@@ -296,6 +298,7 @@ export async function listTickets(
       waiting: r.waiting as boolean,
       overdue: r.overdue as boolean,
       escalated: escalatedIds.has(r.id as number),
+      createdAt: r.created_at as Date,
       lastActivity: r.last_activity as Date,
       serviceLevel: levelsById.get(r.id as number)!,
     })),

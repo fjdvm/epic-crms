@@ -49,7 +49,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   ...overrides,
 });
 
-function view(selected: TicketDetail | null = ticket(), viewerId = "bernice", canDraft = false) {
+function view(selected: TicketDetail | null = ticket(), viewerId = "bernice", canDraft = false, escalatedIds: number[] = []) {
   const conversations: Conversations = {
     chats: [
       { ticketId: 208, customerName: "Maria Santos", preview: "Replacement please", lastActivity: new Date(NOW.getTime() - 5 * 60_000) },
@@ -58,7 +58,7 @@ function view(selected: TicketDetail | null = ticket(), viewerId = "bernice", ca
     selected,
   };
 
-  return render(<ConversationsView conversations={conversations} viewerId={viewerId} viewerName="Bernice" now={NOW} canDraft={canDraft} />);
+  return render(<ConversationsView conversations={conversations} viewerId={viewerId} viewerName="Bernice" now={NOW} canDraft={canDraft} escalatedIds={escalatedIds} />);
 }
 
 describe("the Conversations page as designed", () => {
@@ -127,13 +127,26 @@ describe("the Conversations page as designed", () => {
     expect(within(tabs).getByRole("tab", { name: "Mine" }).getAttribute("href")).toBe("/conversations?q=maria");
   });
 
-  it("switches the reply box to an Internal note with the Internal note tab", () => {
+  it("keeps Internal note under the three-dots menu, not beside the reply box", async () => {
     view();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Internal note" }));
+    expect(screen.queryByRole("tab", { name: "Internal note" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Add internal note" }));
 
-    expect(screen.queryByRole("textbox", { name: "Write a reply" })).toBeNull();
-    expect(screen.getByPlaceholderText("Write a note for your teammates…")).toBeTruthy();
+    expect(await screen.findByPlaceholderText("Write a note for your teammates…")).toBeTruthy();
+  });
+
+  it("offers Escalate under the three dots only while the Ticket is not already escalated", async () => {
+    const first = view();
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "Enter" });
+    expect(await screen.findByRole("menuitem", { name: "Escalate" })).toBeTruthy();
+    first.unmount();
+
+    view(ticket(), "bernice", false, [208]);
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "Enter" });
+    expect(await screen.findByRole("menuitem", { name: "Add internal note" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Escalate" })).toBeNull();
   });
 
   it("opens an image full screen, steps through the chat's images and closes it", () => {

@@ -10,6 +10,8 @@ import { requireModule } from "@/lib/portal/staff";
 import { canWork, shopRole } from "@/lib/portal/roles";
 import { ticketsDatabase } from "@/lib/tickets-db";
 import { searchParamsKey } from "@/lib/search-params-key";
+import { openEscalatedIds } from "@/features/tickets/escalate";
+import { crmsDatabase } from "@/lib/crms-db";
 import { ConversationsSkeleton } from "@/features/tickets/conversations-skeleton";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -27,7 +29,7 @@ export default async function ConversationsPage({
     <div className="lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       {/* One card: the search sits at the top of the inbox column, outside the keyed Suspense so typing keeps its focus. */}
       <div className="grid w-full grid-cols-1 overflow-hidden bg-white lg:h-full lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]">
-        <div className="border-b border-[#e6e1ee] p-3 lg:col-start-1 lg:row-start-1 lg:border-r">
+        <div className="border-b border-[#e6e1ee] p-2 lg:col-start-1 lg:row-start-1 lg:border-r">
           <ChatSearchInput
             label="Search chats"
             placeholder="Ticket no., customer, email or order"
@@ -66,6 +68,8 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
     role === "manager" || role === "admin" || role === "ceo",
   );
 
+  const escalatedIds = await openEscalatedIds(crmsDatabase()).catch(() => [] as number[]);
+
   if (!result.ok) {
     return (
       <Alert variant="destructive" className="col-span-full m-5 w-auto">
@@ -88,6 +92,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
       scopes={scopesFor(role)}
       canDraft={canWork(staff)}
       readOnly={!canWork(staff)}
+      escalatedIds={escalatedIds}
     />
   );
 }

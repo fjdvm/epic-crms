@@ -7,13 +7,9 @@ import { assignTicket } from "@/features/tickets/reassign-actions";
 import { TicketListView } from "@/features/tickets/ticket-list";
 import type { TicketList, TicketRow } from "@/features/tickets/tickets";
 
-vi.mock("@/features/tickets/actions", () => ({
-  claim: vi.fn(),
-  release: vi.fn(),
-  reply: vi.fn(),
-  resolve: vi.fn(),
-}));
+
 vi.mock("@/features/tickets/reassign-actions", () => ({ assignTicket: vi.fn() }));
+vi.mock("@/features/tickets/actions", () => ({ claim: vi.fn(), release: vi.fn(), reply: vi.fn(), resolve: vi.fn(), addNote: vi.fn(), listTicketNotes: vi.fn().mockResolvedValue({ ok: true, notes: [{ id: 1, authorName: "Bea", body: "Called the courier", at: "2026-10-20T01:00:00Z" }] }) }));
 vi.mock("@/features/tickets/escalate-actions", () => ({ escalate: vi.fn(), sendBack: vi.fn(), takeEscalated: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
@@ -32,6 +28,7 @@ const row = (overrides: Partial<TicketRow>): TicketRow => ({
   waiting: false,
   overdue: false,
   escalated: false,
+  createdAt: new Date("2026-10-19T00:00:00Z"),
   lastActivity: new Date("2026-10-20T00:00:00Z"),
   serviceLevel: someServiceLevel(),
   ...overrides,
@@ -187,5 +184,21 @@ describe("the Tickets list as designed", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open TKT-208" }));
 
     expect(screen.getByRole("link", { name: "Open conversation" }).getAttribute("href")).toBe("/conversations?ticket=208&tab=unclaimed");
+  });
+
+  it("has no checkbox, and shows when each Ticket was created", () => {
+    view([row({ id: 208 })]);
+
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getByText(/Created .* · Modified/)).toBeTruthy();
+  });
+
+  it("shows Notes and Escalate in the drawer for the Claimer", async () => {
+    view([row({ id: 207, claimedById: "me", claimedByName: "Me" })]);
+    fireEvent.click(screen.getByRole("button", { name: "Open TKT-207" }));
+
+    expect(screen.getByRole("button", { name: "Escalate" })).toBeTruthy();
+    expect(await screen.findByText("Called the courier")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add internal note" })).toBeTruthy();
   });
 });

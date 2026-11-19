@@ -1,20 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-import { useClaimer } from "./claim";
+import { ClaimProvider, useClaim } from "./claim";
+import { listTicketNotes, type TicketNote } from "./actions";
+import { EscalateDialog } from "./escalate-ui";
+import { NoteBox, NotesProvider } from "./notes";
 import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
 import { describeClock, type Clock } from "./service-level";
 import type { AssignableStaff } from "./staffs";
 import type { TicketRow } from "./tickets";
 
 export const COLUMNS: { header: string; className: string }[] = [
-  { header: "", className: "flex-[0_0_36px]" },
   { header: "Details", className: "min-w-0 flex-[4_1_340px]" },
   { header: "Service level", className: "flex-[1_1_110px]" },
   { header: "Assigned", className: "min-w-0 flex-[1.5_1_150px]" },
@@ -78,9 +79,58 @@ export function canOpenConversation(row: TicketRow, viewer: RowsViewer): boolean
   return row.claimedById === null || row.claimedById === viewer.id;
 }
 
+/** Internal notes on the open Ticket, read when the drawer opens and after each note is saved; never on a timer. */
+function DrawerNotes({ ticketId, canNote, refreshKey }: { ticketId: number; canNote: boolean; refreshKey: number }) {
+  const [notes, setNotes] = useState<TicketNote[] | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    listTicketNotes(ticketId).then((r) => {
+      if (!live) return;
+      setFailed(r.ok ? null : r.reason === "forbidden" ? "These notes belong to a Ticket another teammate holds." : "Notes could not be loaded.");
+      if (r.ok) setNotes(r.notes);
+    }).catch(() => { if (live) setFailed("Notes could not be loaded."); });
+
+    return () => { live = false; };
+  }, [ticketId, refreshKey]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs font-medium text-[#6e6680]">Internal notes</p>
+      {notes === null && failed === null && <p className="text-sm text-[#6e6680]">Loading notes…</p>}
+      {failed && <p className="text-sm text-[#9a3412]">{failed}</p>}
+      {notes?.length === 0 && <p className="text-sm text-[#6e6680]">No notes yet.</p>}
+      <ul className="flex flex-col gap-2">
+        {notes?.map((n) => (
+          <li key={n.id} className="rounded-lg border border-dashed border-[#e0c97a] bg-[#fff8e1] p-2 text-sm">
+            <p className="text-xs text-[#7a5b00]">{n.authorName} · {new Date(n.at).toLocaleString()}</p>
+            <p className="whitespace-pre-wrap">{n.body}</p>
+          </li>
+        ))}
+      </ul>
+      {canNote && <NoteBox />}
+    </div>
+  );
+}
+
 function TicketDrawerBody({ row, viewer, staffs, now }: { row: TicketRow; viewer: RowsViewer; staffs: AssignableStaff[]; now: number }) {
   const server = row.claimedById === null ? null : { id: row.claimedById, name: row.claimedByName ?? row.claimedById };
-  const claim = useClaimer(row.id, server, { id: viewer.id, name: viewer.name });
+  const [saved, setSaved] = useState(0);
+  const bump = useCallback(() => setSaved((n) => n + 1), []);
+
+  return (
+    <ClaimProvider ticketId={row.id} claimer={server} viewer={{ id: viewer.id, name: viewer.name }}>
+      <NotesProvider ticketId={row.id} viewerName={viewer.name} onSaved={bump}>
+        <TicketDrawerContent row={row} viewer={viewer} staffs={staffs} now={now} savedNotes={saved} />
+      </NotesProvider>
+    </ClaimProvider>
+  );
+}
+
+function TicketDrawerContent({ row, viewer, staffs, now, savedNotes }: { row: TicketRow; viewer: RowsViewer; staffs: AssignableStaff[]; now: number; savedNotes: number }) {
+  const claim = useClaim();
+  const canWork = viewer.role === "staff" || viewer.role === "manager";
   const manager = viewer.role === "manager";
   const open = row.status !== "completed";
   const [target, setTarget] = useState<AssignableStaff | null>(null);
@@ -100,6 +150,7 @@ function TicketDrawerBody({ row, viewer, staffs, now }: { row: TicketRow; viewer
         <div><dt className="text-xs text-[#6e6680]">Status</dt><dd className="mt-1 flex flex-wrap gap-1"><StatusPill row={row} />{row.escalated && row.status !== "completed" && <Pill className={PILL.red}>Escalated</Pill>}</dd></div>
         <div><dt className="text-xs text-[#6e6680]">Priority</dt><dd className="mt-1"><Pill className={PRIORITY_PILLS[row.priority]}>{PRIORITY_LABELS[row.priority]}</Pill></dd></div>
         <div><dt className="text-xs text-[#6e6680]">Service level</dt><dd className="mt-1"><ServiceCell clock={row.serviceLevel.current} /></dd></div>
+        <div><dt className="text-xs text-[#6e6680]">Created</dt><dd className="mt-1">{ago(row.createdAt, now)}</dd></div>
         <div><dt className="text-xs text-[#6e6680]">Last activity</dt><dd className="mt-1">{ago(row.lastActivity, now)}</dd></div>
         <div className="col-span-2"><dt className="text-xs text-[#6e6680]">Assigned to</dt><dd className="mt-1 font-medium">{claim.claimer?.name ?? "Unassigned"}</dd></div>
       </dl>
@@ -110,6 +161,7 @@ function TicketDrawerBody({ row, viewer, staffs, now }: { row: TicketRow; viewer
             {claim.claimer === null && viewer.role !== null && viewer.role !== "admin" && viewer.role !== "ceo" && (
               <button type="button" disabled={claim.pending} onClick={claim.claim} className="rounded-lg bg-[#5b2a86] px-[14px] py-[9px] text-sm font-medium text-white disabled:opacity-50">Claim</button>
             )}
+            {claim.isClaimer && !claim.escalation && !row.escalated && <EscalateDialog ticketId={row.id} />}
             {claim.isClaimer && (
               <button type="button" disabled={claim.pending} onClick={claim.release} className="rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium text-[#1f1a2e] disabled:opacity-50">Release</button>
             )}
@@ -152,6 +204,8 @@ function TicketDrawerBody({ row, viewer, staffs, now }: { row: TicketRow; viewer
         </div>
       )}
 
+      <DrawerNotes ticketId={row.id} canNote={canWork} refreshKey={savedNotes} />
+
       {canOpenConversation(row, viewer) && (
         <Link href={`/conversations?ticket=${row.id}${row.claimedById === null ? "&tab=unclaimed" : ""}`} prefetch className="mt-auto rounded-lg bg-[#5b2a86] px-[14px] py-[10px] text-center text-sm font-medium text-white">
           Open conversation
@@ -193,23 +247,20 @@ export function TicketRows({ rows, viewer, staffs, now, openId = null }: { rows:
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(r.id); } }}
             className="flex cursor-pointer items-center border-b border-[#efebf4] py-[11px] hover:bg-[#faf8fc]"
           >
-            <div className={cn(CELL, COLUMNS[0].className)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-              <Checkbox aria-label={`Select TKT-${r.id}`} />
-            </div>
-            <div className={cn(CELL, COLUMNS[1].className, "flex-col items-start gap-1 pr-3")}>
+            <div className={cn(CELL, COLUMNS[0].className, "flex-col items-start gap-1 pr-3")}>
               <span className="max-w-full truncate font-medium">(#{r.id}) {r.subject}</span>
               <span className="max-w-full truncate text-xs text-[#6e6680]"><span className="text-[#5b2a86]">{r.customerName}</span> · {r.orderId === null ? "No order" : `Order #${r.orderId}`} · {r.category}</span>
-              <span className="text-xs text-[#6e6680]">Modified {ago(r.lastActivity, now)}</span>
+              <span className="text-xs text-[#6e6680]">Created {ago(r.createdAt, now)} · Modified {ago(r.lastActivity, now)}</span>
             </div>
-            <div className={cn(CELL, COLUMNS[2].className)}><ServiceCell clock={r.serviceLevel.current} /></div>
-            <div className={cn(CELL, COLUMNS[3].className)}>
+            <div className={cn(CELL, COLUMNS[1].className)}><ServiceCell clock={r.serviceLevel.current} /></div>
+            <div className={cn(CELL, COLUMNS[2].className)}>
               {r.claimedById === null ? <span className="font-medium text-[#b45309]">Assign</span> : <span className="truncate pr-3">{r.claimedByName ?? r.claimedById}</span>}
             </div>
-            <div className={cn(CELL, COLUMNS[4].className)}><Pill className={PRIORITY_PILLS[r.priority]}>{PRIORITY_LABELS[r.priority]}</Pill></div>
-            <div className={cn(CELL, COLUMNS[5].className)}>
+            <div className={cn(CELL, COLUMNS[3].className)}><Pill className={PRIORITY_PILLS[r.priority]}>{PRIORITY_LABELS[r.priority]}</Pill></div>
+            <div className={cn(CELL, COLUMNS[4].className)}>
               <span className="flex items-center gap-1.5"><span aria-hidden className={cn("size-1.5 rounded-full", activity.dot)} />{activity.text}</span>
             </div>
-            <div className={cn(CELL, COLUMNS[6].className)}>
+            <div className={cn(CELL, COLUMNS[5].className)}>
               <span className="flex flex-wrap items-center gap-1">
                 <StatusPill row={r} />
                 {r.escalated && r.status !== "completed" && <Pill className={PILL.red}>Escalated</Pill>}
