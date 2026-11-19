@@ -36,7 +36,8 @@ const SCHEMA = `
     decided_by_id text,
     decided_by_name text,
     decline_reason text,
-    expires_on date
+    expires_on date,
+    same_id_as_verification_id integer references senior_pwd_verifications (id)
   );
   create table orders (
     id integer primary key generated always as identity,
