@@ -13,7 +13,7 @@ vi.mock("@/features/returns/actions", () => ({
 
 import { ApprovalsList } from "@/features/approvals/approvals-list";
 import { decideApproval } from "@/features/approvals/actions";
-import type { ApprovalView } from "@/features/approvals/view";
+import { idCheckToView, kindOf, type ApprovalView } from "@/features/approvals/view";
 import { ReturnActions } from "@/features/returns/return-actions";
 import { RoleStrip } from "@/features/dashboard/role-strip";
 import { approveReturn, markReturnRefunded } from "@/features/returns/actions";
@@ -137,5 +137,60 @@ describe("Role strips on the Dashboard", () => {
     cleanup();
     render(<RoleStrip role="admin" requests={[]} now={NOW} />);
     expect(screen.getByText(/every module is read-only/)).toBeTruthy();
+  });
+});
+
+describe("Approvals by type", () => {
+  const list = (requests: ApprovalView[], role: "staff" | "manager" | "ceo" | "admin" = "manager", initialKind?: "id-check") =>
+    render(<ApprovalsList requests={requests} role={role} now={NOW} initialKind={initialKind} />);
+  const idCheck = idCheckToView({ id: 7, customerName: "Maria Santos", idType: "senior", status: "pending", submittedAt: new Date(NOW - 3_600_000), decidedByName: null, declineReason: null });
+  const payment = request({ id: "p1", action: "payment.approve-anyway", module: "Payments", targetId: "1046", amountInCentavos: 0 });
+
+  it("sorts each action into its type", () => {
+    expect(["return.refund", "payment.approve-anyway", "order.cancel-after-dispatch", "order.cancel-settle", "write-off", "return.replace", "id-check"].map(a => kindOf(a as never)))
+      .toEqual(["refund", "payment", "cancellation", "cancellation", "write-off", "return", "id-check"]);
+  });
+
+  it("groups rows under a heading per type, with counts on the type filter", () => {
+    list([request(), payment, idCheck]);
+    expect(screen.getByRole("region", { name: "Refunds" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Payments" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "ID checks" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /ID checks 1/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /All types 3/ })).toBeTruthy();
+  });
+
+  it("narrows to one type", () => {
+    list([request(), payment, idCheck]);
+    fireEvent.click(screen.getByRole("button", { name: /Payments/ }));
+    expect(screen.getByRole("region", { name: "Payments" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Refunds" })).toBeNull();
+  });
+
+  it("opens on the ID checks from the address", () => {
+    list([request(), idCheck], "staff", "id-check");
+    expect(screen.getByRole("region", { name: "ID checks" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Refunds" })).toBeNull();
+  });
+
+  it("links a payment to its Order and an ID check to its review page, and Staff get Review", () => {
+    list([payment, idCheck], "staff");
+    expect(screen.getByRole("link", { name: "BR-1046" }).getAttribute("href")).toBe("/orders/1046");
+    expect(screen.getByRole("link", { name: "ID check #7" }).getAttribute("href")).toBe("/customer-profiles/senior-pwd/7");
+    expect(screen.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/customer-profiles/senior-pwd/7");
+  });
+
+  it("decides a payment under its own Module, not Returns", async () => {
+    vi.mocked(decideApproval).mockResolvedValue({ ok: true } as never);
+    list([payment]);
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Approve request" }));
+    await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("Payments", "p1", "approve"));
+  });
+
+  it("gives Admin and the CEO View, not Review, on an ID check", () => {
+    list([idCheck], "admin");
+    expect(screen.getByRole("link", { name: "View" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Review" })).toBeNull();
   });
 });

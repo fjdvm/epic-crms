@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
@@ -47,7 +48,7 @@ export function PaymentAccountForm() {
       {isBank && <div className="space-y-1.5"><Label htmlFor="pa-bank">Bank name</Label><Input id="pa-bank" value={form.bankName} onChange={set("bankName")} /></div>}
       <div className="space-y-1.5">
         <Label htmlFor="pa-number">Account number</Label>
-        <Input id="pa-number" inputMode="numeric" value={form.accountNumber} onChange={set("accountNumber")} aria-invalid={error ? true : undefined} aria-describedby={error ? "pa-error" : undefined} />
+        <NumericInput id="pa-number" kind="whole" value={form.accountNumber} onChange={set("accountNumber")} aria-invalid={error ? true : undefined} aria-describedby={error ? "pa-error" : undefined} />
         {error && <p id="pa-error" role="alert" className="text-xs text-[#dc2626]">{error}</p>}
       </div>
       <OrderActionDialog

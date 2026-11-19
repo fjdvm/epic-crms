@@ -35,7 +35,7 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
 
 ## Review screen and Order detail (#343)
 
-- `/orders/senior-pwd` (now moved, see the tab below): waiting reviews and latest decisions. Review shows the account name, ID type
+- `/orders/senior-pwd` (now moved, see Approvals below): waiting reviews and latest decisions. Review shows the account name, ID type
   and the private photo (fetched only when the dialog opens); Staff read the number off the photo, which is never stored.
   Approve needs the ID's expiry date; Decline needs a reason. Staff see "Request approval" on a declined, revoked or
   approved ID; Managers get Override and Revoke; Admin and CEO see no buttons. No Figma frame exists, so it is built from
@@ -53,13 +53,12 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
 - CREOMS can never read `id_hash`. The storefront compares the hashes when an ID is sent and saves `public.senior_pwd_verifications.same_id_as_verification_id`, the other account's verification that carries the same number (set for a number last seen declined, revoked or expired; a number pending or approved elsewhere is refused before it is saved). Grant it with `docs/db/creoms-senior-pwd-readonly.sql`.
 - The checks list shows "ID already used by another account" under the Customer, and the check detail shows a warning naming the other account (name, hidden email, status) with a link to its check. It warns; it does not block, and the storefront still refuses approving a number already verified on another account. Names are not copied: Staff compare the name on the ID with the account name as before.
 
-## Senior/PWD checks tab under Customers
+## Senior/PWD checks in Approvals
 
-- A sidebar item "Senior/PWD checks" in the CUSTOMERS group, at `/customer-profiles/senior-pwd` (the page is `SENIOR_PWD_PAGE` in `lib/portal/pages.ts`, held by
-  the Senior/PWD Portal Module, so Customer Profiles alone does not show it). `/orders/senior-pwd` redirects there.
-- List: tabs "Waiting for review (n)" and "Latest decisions". Waiting rows show the Customer with a hidden email (`lito.r@...`; the full address never reaches
-  the browser), ID type, upload time (Philippine Time), the Order the ID holds (`BR-<id>`, a link only for Staff who can open Orders) and how long the photo has
-  left ("6 days 23 h"). A privacy note says the photo is deleted right after review or after 7 days and the number is never stored.
+- The "Senior/PWD checks" sidebar tab is gone. ID checks are the "ID checks" type on Approvals (`/approvals?type=id-check`, `APPROVALS_ID_CHECKS` in
+  `lib/portal/pages.ts`). `/customer-profiles/senior-pwd` and `/orders/senior-pwd` redirect there. The review pages are still held by the Senior/PWD Portal Module.
+- Each ID check is a row: Customer, "Waiting for review" until decided, then Approved or Declined (revoked and expired count as declined), with Review (Staff and
+  Manager) or View (Admin and CEO) opening the detail page. The old per-row "ID already used by another account" flag now shows only on the detail page.
 - Detail (`/customer-profiles/senior-pwd/<id>`): the private photo (zoom, rotate, back of the ID when sent) beside "Check each field". The browser reads the
   photo and pre-fills Full name and Valid until; Staff confirm each. ID type shows as the Customer chose it. The ID number is never read into a field: the
   Figma shows it as "Shown only on the photo · not stored". Approve stays disabled until name (which must match the account) and expiry are confirmed; Decline

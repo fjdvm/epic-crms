@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
@@ -34,7 +34,7 @@ export function SeniorPwdDiscountForm({ current }: { current: SeniorPwdDiscount 
       <div className="grid grid-cols-[1fr_auto] items-end gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="pwd-discount-amount">Discount</Label>
-          <Input id="pwd-discount-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={error ? true : undefined} />
+          <NumericInput id="pwd-discount-amount" kind="peso" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={error ? true : undefined} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="pwd-discount-kind">Type</Label>
@@ -47,7 +47,7 @@ export function SeniorPwdDiscountForm({ current }: { current: SeniorPwdDiscount 
       <div className="grid grid-cols-[1fr_auto] items-end gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="pwd-discount-limit">Limit (₱)</Label>
-          <Input id="pwd-discount-limit" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} aria-invalid={error ? true : undefined} />
+          <NumericInput id="pwd-discount-limit" kind="peso" value={limit} onChange={(e) => setLimit(e.target.value)} aria-invalid={error ? true : undefined} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="pwd-discount-per">Per</Label>

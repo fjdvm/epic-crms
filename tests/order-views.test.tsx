@@ -218,7 +218,7 @@ describe("an Order's detail", () => {
   it("links to the review screen while the ID waits, and explains why Confirm and Quote are blocked", () => {
     render(<OrderDetailView role="staff" order={detail({ status: "placed", deliveryFee: null, seniorPwd: { id: 1, idType: "senior", status: "pending" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Senior Citizen · Waiting for review");
-    expect(screen.getByRole("link", { name: "Review the ID" }).getAttribute("href")).toBe("/customer-profiles/senior-pwd");
+    expect(screen.getByRole("link", { name: "Review the ID" }).getAttribute("href")).toBe("/approvals?type=id-check");
     expect(screen.getByRole("note", { name: "Senior/PWD review first" }).textContent).toContain("before confirming");
     expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
   });
@@ -587,10 +587,14 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
     const dialog = screen.getByRole("alertdialog");
 
-    for (const value of ["", "-5", "abc", "1.234", "1e3"]) {
+    // Letters and symbols never get into the field, so what is left is empty or a lone dot.
+    for (const value of ["", ".", "abc", "-", "e"]) {
       fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value } });
+      expect((within(dialog).getByLabelText(/Delivery fee/) as HTMLInputElement).value).toBe(value === "." ? "." : "");
       expect((within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement).disabled).toBe(true);
     }
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "1.234e3" } });
+    expect((within(dialog).getByLabelText(/Delivery fee/) as HTMLInputElement).value).toBe("1.23");
     expect(quoteDeliveryFee).not.toHaveBeenCalled();
   });
 

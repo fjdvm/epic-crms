@@ -534,7 +534,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     // A Delivery dispatch emails the Customer, so it is never shown as done before the server confirms.
     expect(toast.success).not.toHaveBeenCalled();
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 dispatched."));
-    expect(dispatchOrder).toHaveBeenCalledWith(1042, { courier: "Grab", trackingUrl: "https://grab.test/1", riderName: "", riderPlate: "", riderPhone: "0917 123 4567" });
+    expect(dispatchOrder).toHaveBeenCalledWith(1042, { courier: "Grab", trackingUrl: "https://grab.test/1", riderName: "", riderPlate: "", riderPhone: "09171234567" });
   });
 
   it("says why when the server refuses a Delivery dispatch", async () => {

@@ -56,7 +56,7 @@ export function CourierFields({ form, idPrefix = "" }: { form: ReturnType<typeof
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1.5">
           <Label htmlFor={`${idPrefix}rider-contact`} className="text-[13px] font-medium text-foreground">Rider contact (optional)</Label>
-          <Input id={`${idPrefix}rider-contact`} type="tel" autoComplete="off" value={input.riderPhone} onChange={e => set.riderPhone(e.target.value)} aria-invalid={riderErrors.phone ? true : undefined} />
+          <Input id={`${idPrefix}rider-contact`} type="tel" autoComplete="off" value={input.riderPhone} onChange={e => set.riderPhone(e.target.value.replace(/[^\d+]/g, ""))} aria-invalid={riderErrors.phone ? true : undefined} />
           {riderErrors.phone ? <p role="alert" className="text-xs text-[#dc2626]">{riderErrors.phone}</p> : null}
         </div>
         <div className="space-y-1.5">

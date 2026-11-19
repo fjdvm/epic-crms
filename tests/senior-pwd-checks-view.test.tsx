@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { approveVerification, declineVerification, loadVerificationPhoto } from "@/features/senior-pwd/actions";
 import { SeniorPwdCheckDetail } from "@/features/senior-pwd/check-detail";
-import { SeniorPwdChecksList } from "@/features/senior-pwd/checks-list";
 import { readIdPhoto } from "@/features/senior-pwd/read-id-photo";
 import { formatRemaining } from "@/features/senior-pwd/shared";
 import type { Verification } from "@/features/senior-pwd/verifications";
@@ -24,56 +23,6 @@ const v = (o: Partial<Verification> = {}): Verification => ({
   id: 1, customerId: "c1", customerName: "Maria Santos", customerEmailHint: "maria.@...", orderId: 1058, idType: "senior",
   status: "pending", submittedAt: new Date("2026-11-10T00:40:00Z"), photoFileId: "f", photoBackFileId: null,
   photoExpiresAt: new Date("2026-11-17T00:40:00Z"), decidedByName: null, decidedAt: null, declineReason: null, expiresOn: null, ...o,
-});
-const list = (pending: Verification[], decided: Verification[] = []) => ({ pending, decided });
-
-describe("the Senior/PWD checks list", () => {
-  it("shows what is waiting, with the order it holds and how long the photo has left", () => {
-    render(<SeniorPwdChecksList list={list([v({ photoExpiresAt: new Date("2026-11-24T00:00:00Z") })])} now={NOW} readOnly={false} canOpenOrder />);
-    const row = screen.getByRole("row", { name: /Maria Santos/ });
-    expect(within(row).getByText("maria.@...")).toBeTruthy();
-    expect(within(row).getByText("Senior citizen")).toBeTruthy();
-    expect(within(row).getByText("10 Nov, 8:40 AM")).toBeTruthy();
-    expect(within(row).getByRole("link", { name: "BR-1058" }).getAttribute("href")).toBe("/orders/1058");
-    expect(within(row).getByText("6 days 23 h")).toBeTruthy();
-    expect(within(row).getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/customer-profiles/senior-pwd/1");
-    expect(screen.getByRole("tab", { name: /Waiting for review/ }).textContent).toContain("1");
-    expect(screen.getByRole("note", { name: "Privacy" }).textContent).toContain("never stored");
-  });
-
-  it("shows a dash when no order is held, and a plain order number to Staff who cannot open Orders", () => {
-    const { rerender } = render(<SeniorPwdChecksList list={list([v({ orderId: null })])} now={NOW} readOnly={false} />);
-    expect(screen.getByText("—")).toBeTruthy();
-    rerender(<SeniorPwdChecksList list={list([v()])} now={NOW} readOnly={false} />);
-    expect(screen.queryByRole("link", { name: "BR-1058" })).toBeNull();
-    expect(screen.getByText("BR-1058")).toBeTruthy();
-  });
-
-  it("switches to the latest decisions", () => {
-    const decided = [v({ id: 2, customerName: "Lito Ramos", status: "declined", declineReason: "Blurry", decidedByName: "Ana" })];
-    render(<SeniorPwdChecksList list={list([v()], decided)} now={NOW} readOnly={false} />);
-    expect(screen.queryByText("Lito Ramos")).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "Latest decisions" }));
-    expect(screen.getByText("Lito Ramos")).toBeTruthy();
-    expect(screen.getByText("Declined")).toBeTruthy();
-    expect(screen.getByText("Blurry")).toBeTruthy();
-    expect(screen.getByText("Ana")).toBeTruthy();
-    expect(screen.queryByText("Maria Santos")).toBeNull();
-  });
-
-  it("says Read-only to Admin and CEO and offers View, not Review", () => {
-    render(<SeniorPwdChecksList list={list([v()])} now={NOW} readOnly />);
-    expect(screen.getByText("Read-only")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Review" })).toBeNull();
-    expect(screen.getByRole("link", { name: "View" })).toBeTruthy();
-  });
-
-  it("shows the empty states", () => {
-    render(<SeniorPwdChecksList list={list([])} now={NOW} readOnly={false} />);
-    expect(screen.getByText("Nothing is waiting for review.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "Latest decisions" }));
-    expect(screen.getByText("No decisions yet.")).toBeTruthy();
-  });
 });
 
 describe("how long the photo has left", () => {
@@ -195,7 +144,7 @@ describe("the Senior/PWD check screen", () => {
       manager.unmount();
       detail(declined, { readOnly: true, role: "ceo" });
       // Only the Back navigation is left; no decision button.
-      expect(screen.queryAllByRole("button").map((b) => b.textContent)).toEqual(["Senior/PWD checks"]);
+      expect(screen.queryAllByRole("button").map((b) => b.textContent)).toEqual(["Approvals"]);
     });
     it("lets a Manager revoke an approved ID", () => {
       detail(v({ status: "approved", expiresOn: "2031-03-15", decidedByName: "Ana", photoFileId: null }), { role: "manager" });
@@ -206,16 +155,6 @@ describe("the Senior/PWD check screen", () => {
 
 describe("an ID number already used by another account", () => {
   const holder = { verificationId: 9, customerName: "Lito Ramos", customerEmailHint: "lito.r@...", status: "revoked" as const };
-
-  it("flags the row in the list without showing the number", () => {
-    render(<SeniorPwdChecksList list={list([v({ sameIdAs: holder })])} now={NOW} readOnly={false} />);
-    expect(within(screen.getByRole("row", { name: /Maria Santos/ })).getByText("ID already used by another account")).toBeTruthy();
-  });
-
-  it("says nothing when the ID is only on this account", () => {
-    render(<SeniorPwdChecksList list={list([v()])} now={NOW} readOnly={false} />);
-    expect(screen.queryByText(/already used by another account/)).toBeNull();
-  });
 
   it("tells the reviewer who else used it and links to that check", () => {
     vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: false, reason: "n/a" } as never);

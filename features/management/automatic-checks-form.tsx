@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import type { AutomaticChecks } from "@/features/settings/automatic-checks";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
@@ -74,7 +74,7 @@ export function AutomaticChecksForm({ initial, overdueUrl = null }: { initial: A
   const setText = (key: string, value: string) => setDraft({ ...draft, text: { ...draft.text, [key]: value } });
 
   const number = (key: string, label: string, width = "w-16") => (
-    <Input aria-label={label} className={`inline-block h-8 ${width} px-2 text-center`} inputMode="numeric" value={draft.text[key]} onChange={(e) => setText(key, e.target.value)} />
+    <NumericInput aria-label={label} className={`inline-block h-8 ${width} px-2 text-center`} kind="whole" value={draft.text[key]} onChange={(e) => setText(key, e.target.value)} />
   );
   const rule = (name: string, enabled: boolean, onChange: (on: boolean) => void, label: ReactNode) => (
     <div className="flex items-start gap-2.5 text-sm text-[#1f1a2e]" key={name}>
@@ -107,7 +107,7 @@ export function AutomaticChecksForm({ initial, overdueUrl = null }: { initial: A
             {rule("First order over an amount", cod.firstOrderOverAmount.enabled,
               (on) => edit((c) => ({ ...c, cod: { ...c.cod, firstOrderOverAmount: { ...c.cod.firstOrderOverAmount, enabled: on } } })),
               <span className="flex flex-wrap items-center gap-1.5">First order over ₱
-                <Input aria-label="First order amount in pesos" className="inline-block h-8 w-24 px-2" inputMode="numeric" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
+                <NumericInput aria-label="First order amount in pesos" className="inline-block h-8 w-24 px-2" kind="whole" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
               </span>)}
             {rule("Past refused deliveries", cod.earlierRefusal.enabled, (on) => edit((c) => ({ ...c, cod: { ...c.cod, earlierRefusal: { enabled: on } } })), "Past refused deliveries")}
           </div>

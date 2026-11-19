@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
@@ -25,9 +25,9 @@ export function ApprovalLimitForm({ currentInCentavos }: { currentInCentavos: nu
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="approval-limit">Limit (₱)</Label>
-        <Input
+        <NumericInput
           id="approval-limit"
-          inputMode="decimal"
+          kind="peso"
           value={value}
           disabled={currentInCentavos === null}
           onChange={(e) => setValue(e.target.value)}

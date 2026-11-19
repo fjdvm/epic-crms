@@ -17,7 +17,7 @@ const type = (v: string) => fireEvent.change(screen.getByLabelText("Amount (₱)
 describe("FreeDeliveryForm", () => {
   it("shows a plain-word error for an invalid amount and cannot be confirmed", () => {
     render(<FreeDeliveryForm currentInCentavos={250000} />);
-    type("abc");
+    type(".");
     expect(screen.getByRole("alert").textContent).toMatch(/peso amount/);
     fireEvent.click(screen.getByRole("button", { name: "Save threshold" }));
     expect(screen.getAllByRole("button", { name: "Save threshold" }).at(-1)).toHaveProperty("disabled", true);

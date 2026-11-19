@@ -5,6 +5,7 @@ import { accessFor } from "./access";
 import { DEV_ROLE_COOKIE, isDevRole } from "./dev-bypass";
 import type { Staff } from "./client";
 import { LOGIN_PATH, MANAGEMENT_MODULE, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
+import { SENIOR_PWD_PAGE } from "./pages";
 import { safeReturnTo } from "./return-to";
 import { canManage, shopRole } from "./roles";
 
@@ -98,9 +99,10 @@ export async function getShell(): Promise<{ staff: Staff; permittedPages: string
     redirect(NO_ACCESS_PATH);
   }
 
-  // Approvals is not a Module: it follows the Role, and sits beside Returns, whose requests it lists.
-  const approver = ["manager", "ceo", "admin"].includes(shopRole(result.staff.role) ?? "");
-  const pages = approver && result.pages.includes("/returns") ? [...result.pages, "/approvals"] : result.pages;
+  // Approvals is not a Module: every Role sees it when it holds a Module whose requests it lists (Returns, Payments,
+  // Fulfilment or Senior/PWD). Staff see the ID checks and their own requests; the Manager, CEO and Admin see them all.
+  const lists = ["/returns", "/payments", "/fulfilment", SENIOR_PWD_PAGE].some(page => result.pages.includes(page));
+  const pages = lists && shopRole(result.staff.role) ? [...result.pages, "/approvals"] : result.pages;
 
   return { staff: result.staff, permittedPages: pages };
 }

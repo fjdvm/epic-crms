@@ -115,10 +115,11 @@ async function TicketsData({ raw }: { raw: Awaited<SearchParams> }) {
 
   const levels = await readServiceLevels(crmsDatabase);
   // The escalations are CREOMS's own; if they cannot be read the list still opens, without the badge.
-  const escalatedIds = await openEscalatedIds(crmsDatabase()).catch((error) => {
+  // crmsDatabase() itself throws when the connection setting is missing, so it is called inside the async wrapper.
+  const escalatedIds = await (async () => openEscalatedIds(crmsDatabase()))().catch((error) => {
     console.error("Escalations could not be read", error);
 
-    return [];
+    return [] as number[];
   });
   const result: TicketListResult = levels
     ? await loadTickets(ticketsDatabase, { ...params, viewerId: staff.username, levels, escalatedIds })

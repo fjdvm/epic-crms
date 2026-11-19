@@ -15,10 +15,8 @@ import {
   Package,
   ClipboardCheck,
   Landmark,
-  IdCard,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { SENIOR_PWD_PAGE } from "@/lib/portal/pages";
 
 export interface NavItem {
   /** The label above its section of the sidebar, as in the Figma. */
@@ -53,14 +51,6 @@ export const customerProfilesItem: NavItem = {
   name: "Customer Profiles",
   href: "/customer-profiles",
   icon: Users,
-};
-
-/** Its own Portal Module (Senior/PWD): Staff holding Customer Profiles do not see it unless they hold this too. */
-export const seniorPwdItem: NavItem = {
-  group: "CUSTOMERS",
-  name: "Senior/PWD checks",
-  href: SENIOR_PWD_PAGE,
-  icon: IdCard,
 };
 
 export const ordersItem: NavItem = {
@@ -138,7 +128,6 @@ export const commerceSettingsItem: NavItem = {
 export const sidebarItems: NavItem[] = [
   dashboardItem,
   customerProfilesItem,
-  seniorPwdItem,
   ordersItem,
   productsStocksItem,
   paymentsItem,

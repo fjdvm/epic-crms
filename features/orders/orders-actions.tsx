@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { formatPesos, parsePesos } from "@/features/customer-profiles/format";
 
@@ -79,9 +80,9 @@ function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFla
         <Label htmlFor="delivery-fee" className="text-[13px] font-medium text-foreground">
           Delivery fee to charge (₱) <span className="text-[#dc2626]">*</span>
         </Label>
-        <Input
+        <NumericInput
           id="delivery-fee"
-          inputMode="decimal"
+          kind="peso"
           autoComplete="off"
           placeholder="0.00"
           value={free ? "0.00" : text}
@@ -148,7 +149,7 @@ export function OrdersActions({ order, codFlags = [] }: { order: OrderDetail; co
       {waitingForId && (placed || order.deliveryFee === null) && (
         <p role="note" aria-label="Senior/PWD review first" className="text-sm text-[#8a5a00]">
           Review the Customer&apos;s Senior/PWD ID before confirming or quoting this Order.{" "}
-          <Link href="/customer-profiles/senior-pwd" className="font-medium text-[#5b2a86]">Review the ID</Link>
+          <Link href="/approvals?type=id-check" className="font-medium text-[#5b2a86]">Review the ID</Link>
         </p>
       )}
       {!waitingForId && !pickup && order.deliveryFee === null && CANCELLABLE_STATUSES.includes(order.status) && <QuoteFee order={order} flags={codFlags} />}

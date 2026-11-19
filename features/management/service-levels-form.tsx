@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
@@ -31,11 +31,11 @@ export function ServiceLevelsForm({ current }: { current: Targets | null }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="first-reply-hours">First reply (hours)</Label>
-          <Input id="first-reply-hours" inputMode="numeric" disabled={current === null} value={first} onChange={(e) => setFirst(e.target.value)} />
+          <NumericInput id="first-reply-hours" kind="whole" disabled={current === null} value={first} onChange={(e) => setFirst(e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="resolve-hours">Resolve (hours)</Label>
-          <Input id="resolve-hours" inputMode="numeric" disabled={current === null} value={resolve} onChange={(e) => setResolve(e.target.value)} />
+          <NumericInput id="resolve-hours" kind="whole" disabled={current === null} value={resolve} onChange={(e) => setResolve(e.target.value)} />
         </div>
       </div>
       {(first || resolve) && !valid && (

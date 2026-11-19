@@ -11,7 +11,10 @@ import {
   TICKETS_MODULE,
 } from "./config";
 
-/** The Senior/PWD checks tab under Customers. It has its own Portal Module. */
+/** The ID checks group on Approvals; the old Senior/PWD checks tab was folded into it. */
+export const APPROVALS_ID_CHECKS = "/approvals?type=id-check";
+
+/** The Senior/PWD review pages. Not in the sidebar, but they keep their own Portal Module. */
 export const SENIOR_PWD_PAGE = "/customer-profiles/senior-pwd";
 
 /** Every CREOMS page belongs to exactly one Module, in the order `/` tries them. */

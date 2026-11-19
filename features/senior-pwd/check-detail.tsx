@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
-import { SENIOR_PWD_PAGE } from "@/lib/portal/pages";
+import { APPROVALS_ID_CHECKS } from "@/lib/portal/pages";
 import type { ShopRole } from "@/lib/portal/roles";
 
 import { approveVerification, loadVerificationPhoto } from "./actions";
@@ -220,7 +220,7 @@ export function SeniorPwdCheckDetail({ verification: v, readOnly, role }: { veri
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 overflow-auto px-8 py-7">
-      <div className="shrink-0 self-start"><BackButton fallbackHref={SENIOR_PWD_PAGE} label="Senior/PWD checks" /></div>
+      <div className="shrink-0 self-start"><BackButton fallbackHref={APPROVALS_ID_CHECKS} label="Approvals" /></div>
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Review ID · {v.customerName}</h1>
