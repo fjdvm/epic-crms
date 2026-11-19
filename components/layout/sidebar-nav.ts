@@ -125,18 +125,11 @@ export const feedbackItem: NavItem = {
   icon: Star,
 };
 
-export const paymentManagementItem: NavItem = {
+export const commerceSettingsItem: NavItem = {
   group: "MANAGEMENT",
-  name: "Payment Management",
-  href: "/management/payment-management",
+  name: "Commerce Settings",
+  href: "/management/commerce-settings",
   icon: Landmark,
-};
-
-export const deliveryManagementItem: NavItem = {
-  group: "MANAGEMENT",
-  name: "Delivery Management",
-  href: "/management/delivery-management",
-  icon: Truck,
 };
 
 /** The Figma sidebar, top to bottom. */
@@ -153,8 +146,7 @@ export const sidebarItems: NavItem[] = [
   conversationsItem,
   feedbackItem,
   approvalsItem,
-  paymentManagementItem,
-  deliveryManagementItem,
+  commerceSettingsItem,
 ];
 
 export const systems: SystemItem[] = [

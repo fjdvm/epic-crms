@@ -17,7 +17,7 @@ export function FreeDeliveryForm({ currentInCentavos }: { currentInCentavos: num
   const unchanged = parsed.ok && parsed.thresholdInCentavos === currentInCentavos;
 
   return (
-    <section className="max-w-md space-y-4">
+    <section className="w-full max-w-[28rem] space-y-4">
       <div className="space-y-1">
         <h2 className="text-base font-semibold text-[#1f1a2e]">Free delivery threshold</h2>
         <p className="text-sm text-[#6e6680]">

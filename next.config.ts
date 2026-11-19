@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // A self-contained server for the container image (see Dockerfile).
   output: "standalone",
+  // The two old Management tabs became one screen; keep their bookmarks working.
+  async redirects() {
+    return [
+      { source: "/management/payment-management", destination: "/management/commerce-settings", permanent: true },
+      { source: "/management/delivery-management", destination: "/management/commerce-settings", permanent: true },
+    ];
+  },
   experimental: {
     // Revisiting a page within 3 minutes reuses the client cache, so it shows instantly instead of
     // refetching. Server Actions that change data call revalidatePath, which clears this cache.

@@ -22,6 +22,5 @@ export const pages = [
   { href: "/tickets", module: TICKETS_MODULE },
   { href: "/conversations", module: TICKETS_MODULE },
   { href: "/feedback", module: FEEDBACK_MODULE },
-  { href: "/management/payment-management", module: MANAGEMENT_MODULE },
-  { href: "/management/delivery-management", module: MANAGEMENT_MODULE },
+  { href: "/management/commerce-settings", module: MANAGEMENT_MODULE },
 ] as const;
