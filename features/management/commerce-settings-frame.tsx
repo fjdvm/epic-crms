@@ -5,7 +5,7 @@ export function CommerceSettingsFrame({ children }: { children?: React.ReactNode
       <div className="shrink-0 space-y-1">
         <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Commerce Settings</h1>
         <p className="text-sm leading-[normal] text-[#6e6680]">
-          Shop rules for payment accounts and delivery.
+          Shop rules for payment accounts, delivery, approvals, service levels and automatic checks.
         </p>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-[#e6e1ee] bg-white p-5">

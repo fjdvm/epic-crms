@@ -14,7 +14,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 let db: TestDatabase;
 const audit = vi.fn(async () => {});
-const admin = { id: "a1", name: "Ada Admin", role: "Super Admin" };
+const admin = { id: "a1", name: "Ada Admin", role: "CEO" };
 const manager = { id: "m1", name: "Mario", role: "CRMS Manager" };
 const edit = (change: (c: AutomaticChecks) => void) => { const c = structuredClone(DEFAULT_AUTOMATIC_CHECKS); change(c); return c; };
 const now = new Date("2026-11-16T08:00:00Z");
@@ -63,10 +63,10 @@ describe("defaults", () => {
 });
 
 describe("saving", () => {
-  it("is Admin only: everyone else is refused and nothing is saved or audited", async () => {
-    for (const role of ["Staff/Employee", "CRMS Manager", "CEO"]) {
+  it("is for a Manager or the CEO: Staff and Admin are refused and nothing is saved or audited", async () => {
+    for (const role of ["Staff/Employee", "Super Admin"]) {
       const result = await saveAutomaticChecks(db.sql, audit, { ...manager, role }, edit(c => { c.cod.firstOrder.enabled = false; }));
-      expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/^Only an Admin/) });
+      expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/^Only a Manager or the CEO/) });
     }
     expect(await loadAutomaticChecks(db.sql)).toEqual(DEFAULT_AUTOMATIC_CHECKS);
     expect(audit).not.toHaveBeenCalled();

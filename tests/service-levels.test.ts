@@ -76,7 +76,7 @@ describe("the Service level clock", () => {
 
 let db: TestDatabase;
 const audit = vi.fn(async () => {});
-const admin = { id: "ada", name: "Ada", role: "Super Admin" };
+const admin = { id: "ada", name: "Ada", role: "CRMS Manager" };
 
 beforeAll(async () => {
   db = await startTestDatabase();
@@ -99,8 +99,8 @@ async function ticket(openedHoursAgo: number, messages: ["customer" | "staff", n
 }
 
 describe("saving the Service levels", () => {
-  it("lets only an Admin change them, and audits the change with what it replaced", async () => {
-    for (const role of ["CRMS Manager", "CEO", "Staff/Employee"]) {
+  it("lets only a Manager or the CEO change them, and audits the change with what it replaced", async () => {
+    for (const role of ["Super Admin", "Staff/Employee"]) {
       const refused = await setServiceTargets(db.sql, audit, { id: "x", name: "X", role }, { firstReplyHours: 2, resolveHours: 6 });
       expect(refused.ok).toBe(false);
     }

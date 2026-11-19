@@ -48,24 +48,27 @@ Everything Staff can do, plus approvals and reports. Dashboard shows the whole t
 - **Tickets:** reassign tickets, move all of an absent teammate's tickets at once, take escalations.
 - **Customers and feedback:** merge duplicate customers, send win-back offers, publish or hide reviews, open the complaint themes.
 - **Reports:** view the fulfilment and ticket reports.
-- **Portal:** view settings only. Cannot manage users or open system logs or system health.
+- **Management:** Commerce Settings: Payment accounts, free-delivery threshold, Approval limit, Automatic checks and Service levels. The Portal is not for Managers.
 
 ### Admin
 
 Runs the system, not the shop.
-- **Portal:** full control of User management and user account requests (every account and role is created by an Admin); full control of Settings (general, automatic checks, service levels, loyalty and referrals, notifications); full control of Activity logs, System logs and System health.
+- **Portal:** full control of User management and user account requests (every account and role is created by an Admin); full control of Activity logs, System logs and System health. The Portal has no Settings screen: the Approval limit, Automatic checks and Service levels live in Commerce Settings under Management, with the Payment accounts.
 - **CREOMS:** can view every module, including reports. Does not approve business decisions such as refunds or write-offs.
 
 ### CEO
 
 The owner. Read-only everywhere: their own owner dashboard, every CREOMS module, all reports, and the Portal's users, settings, logs and system health.
 - The only thing the CEO acts on is the final approval of refunds and write-offs **over ₱5,000**. Amounts of ₱5,000 or less stop at the Manager.
+- **Owner exception:** the CEO, like a Manager, may also manage the shop's Payment accounts, the free-delivery threshold, the Approval limit, the Automatic checks and the Service levels, on the one Commerce Settings screen under Management (the Management Module). Only Manager and CEO can open Management; Staff and Admin cannot. The Figma "Roles & access" section (node `577:10412`) still needs the same change.
 
 ### For everyone
 
 AI never acts on its own. Anything sent to a customer, or that changes an order, ticket or payment, needs a person, and every accepted AI suggestion is logged with that person's name.
 
 **One exception, the Order assistant.** It may answer a signed-in Customer about their own Orders and the shop, read-only, and may show a Handoff summary that the Customer approves before it goes to the team. This is the one place AI words reach a Customer without a person reviewing them. Its limits: read-only (it never changes, cancels or refunds anything), own data only (never another Customer's Order), and no promises about refunds, discounts or replacements; those go to a person as a Ticket.
+
+**Second exception, the Proof reader.** The owner authorized OCR that reads a payment proof (Customer upload) or a refund proof (Staff upload) by itself, because Staff need the findings ready when they open it. Its limits: it runs in the background after the proof is saved, and the Customer's submit never waits for it; it only extracts details, compares them with the Order's facts and writes findings; it never approves or rejects a payment or refund, changes an Order or payment status, or sends anything to a Customer; if it fails or times out the proof is kept and shows Needs Review; findings are visible only to Staff and Managers (Admin and CEO view, never cause a call); the model gets only the proof image and the minimum comparison facts, no other personal details; one result is stored per saved proof, so retries never run it twice, and a replacement proof gets its own check; Staff must verify the real transfer with the payment provider before marking Paid or Refunded; outcomes and the deciding Staff member's name go to the Audit Logs. Matching details are supporting evidence only, not proof of payment or of the image's authenticity.
 
 **AI features have fixed defaults.** Their numbers, caps and lists are fixed in code. There are no Admin AI settings and no kill switch, and Admin and CEO view AI results but never cause a model call.
 

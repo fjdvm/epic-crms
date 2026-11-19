@@ -3,7 +3,7 @@ import type postgres from "postgres";
 
 import { crmsDatabase } from "@/lib/crms-db";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
-import { shopRole } from "@/lib/portal/roles";
+import { canManage } from "@/lib/portal/roles";
 
 import {
   AUTOMATIC_CHECK_GROUPS, DEFAULT_AUTOMATIC_CHECKS, loadAutomaticChecks, resolveAutomaticChecks, validateAutomaticChecks,
@@ -40,9 +40,9 @@ function changedRules(before: AutomaticChecks, after: AutomaticChecks): string[]
     .filter(([r]) => JSON.stringify(a[g][r]) !== JSON.stringify(b[g][r])).map(([, rule]) => rule.label));
 }
 
-/** Admin only. The whole set is saved at once; the change is audited under the Admin's name. */
+/** Manager or CEO only. The whole set is saved at once; the change is audited under their name. */
 export async function saveAutomaticChecks(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<ChecksResult> {
-  if (shopRole(staff.role) !== "admin") return { ok: false, reason: "Only an Admin can change the Automatic checks." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can change the Automatic checks." };
   const valid = validateAutomaticChecks(input);
   if (!valid.ok) return valid;
   const next = valid.checks;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 import type { Staff } from "@/lib/portal/client";
-import { shopRole } from "@/lib/portal/roles";
+import { canManage, shopRole } from "@/lib/portal/roles";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 
 export type ApprovalAction = "order.cancel-after-dispatch" | "order.cancel-settle" | "payment.approve-anyway" | "return.approve" | "return.decline" | "return.refund" | "return.replace" | "return.extend-window" | "return.change-destination" | "write-off";
@@ -54,7 +54,7 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
     }
   }
   async function setLimit(staff: Staff, amount: number) {
-    if (shopRole(staff.role) !== "admin") return failure("Only an Admin can change the Approval limit.");
+    if (!canManage(staff)) return failure("Only a Manager or the CEO can change the Approval limit.");
     if (!Number.isSafeInteger(amount) || amount < 0) return failure("Enter a nonnegative whole number of centavos.");
     const e = await sql.begin(async tx => {
       const [previous] = await tx`select limit_in_centavos from crms.approval_settings where singleton for update`;

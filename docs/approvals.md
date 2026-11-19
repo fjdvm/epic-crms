@@ -31,13 +31,8 @@ items' selling prices; it never removes stock. Ticket #348 owns inspection and I
 execution. Ticket #329 owns Role picker, request forms, waiting badges and approval
 screens. No UI is introduced here.
 
-The Portal Settings backend is `POST /api/creoms/approval-limit`: `{}` reads,
-`{amountInCentavos}` changes (Admin only). It issues a 60-second, centrally bound
-CREOMS handle, calls `POST /api/approvals/limit`, then revokes the handle. The
-CREOMS endpoint validates the Portal-owned `Portal Settings` capability against the live Portal. This capability admits only Admin, CEO and CREOMS Manager identities and does not depend on shop Module grants; no CREOMS page uses it. No extra shared
-secret or database credential is required. `setApprovalLimit` is the corresponding
-CREOMS action. The initial limit is 500000 centavos; every change is recorded with
-the Admin's identity and previous amount in an atomic local audit record and sent
+A Manager or the CEO changes the Approval limit in Commerce Settings (Management) through the `changeApprovalLimit` action; Staff and Admin are refused. The initial limit is 500000 centavos; every change is recorded with
+the changer's identity and previous amount in an atomic local audit record and sent
 to the shared Audit service.
 
 Approval notifications are durable outbox entries delivered through the existing

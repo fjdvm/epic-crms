@@ -14,11 +14,10 @@ Part of fjdvm/brenraphaels-authentication-microservice#290. Every flag-only rule
 - Reference reuse is still only a flag. Switched off, it reports no other Orders, so "Mark paid" is not held for a Manager either.
 - The Dashboard's failed-delivery count is unresolved Failed deliveries, not a window of days.
 - The Senior/PWD duplicate-ID check is not configurable.
-- `GET /api/automatic-checks` (Admin, CEO, Manager) reads; `PUT` saves the whole set (Admin only). Same Portal Settings bearer handle as the Approval limit. Staff are refused. Each save is audited as `automatic_checks.changed` under the Admin's name, with what changed.
-- No Portal screen here; the Portal's Automatic checks form calls the endpoint.
+- A Manager or the CEO reads and saves the whole set in Commerce Settings (Management); Staff and Admin are refused. Each save is audited as `automatic_checks.changed` under their name, with what changed.
 
 ## Orders not confirmed in time (#574)
 
-An Order still `placed` (any payment method, Delivery or Pickup) once the limit has passed since `created_at` is Overdue: it shows on the Dashboard's Needs attention list ("Orders Overdue to confirm", Staff with the Orders Module) and raises one `order-overdue` alert, once per Order, for Managers with the Orders Module. Confirming (or cancelling) the Order clears it. Nothing is cancelled. Limit: `dashboard.unconfirmedOrders.hours` (default 48; the switch off hides the row and stops new alerts). Admin edits through the same `PUT /api/automatic-checks`, which now needs this rule in the whole set; Manager and CEO read through `GET`.
+An Order still `placed` (any payment method, Delivery or Pickup) once the limit has passed since `created_at` is Overdue: it shows on the Dashboard's Needs attention list ("Orders Overdue to confirm", Staff with the Orders Module) and raises one `order-overdue` alert, once per Order, for Managers with the Orders Module. Confirming (or cancelling) the Order clears it. Nothing is cancelled. Limit: `dashboard.unconfirmedOrders.hours` (default 48; the switch off hides the row and stops new alerts). A Manager or the CEO edits it in Commerce Settings.
 
 The alert is created by the existing notification sync (storefront signal or on-request sync, no timer), so an Order that crosses the limit is alerted at the next sync. Apply `docs/db/crms-order-overdue.sql` as `creoms_writer` (`node --env-file=.env scripts/deploy/migrate-order-overdue.mjs`); it only widens the notification kind check.
