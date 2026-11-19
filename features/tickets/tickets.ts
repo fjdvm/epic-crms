@@ -6,9 +6,9 @@ import { withServiceLevels, type ServiceLevels } from "./service-level-store";
 
 export const TICKETS_PAGE_SIZE = 25;
 
-export type TicketTab = "open" | "waiting" | "on_hold" | "resolved" | "completed" | "all" | "mine";
+export type TicketTab = "open" | "waiting" | "on_hold" | "resolved" | "completed" | "all" | "mine" | "staffs";
 
-export const TICKET_TABS: TicketTab[] = ["open", "waiting", "on_hold", "resolved", "completed", "all", "mine"];
+export const TICKET_TABS: TicketTab[] = ["open", "waiting", "on_hold", "resolved", "completed", "all", "mine", "staffs"];
 
 export type TicketStatus = "open" | "on_hold" | "resolved" | "completed";
 
@@ -86,6 +86,8 @@ export interface TicketRow {
   overdue: boolean;
   /** A Manager has been asked and has not acted. */
   escalated: boolean;
+  /** When the Ticket was opened. */
+  createdAt: Date;
   lastActivity: Date;
   /** The countdown to the first reply or resolve target. */
   serviceLevel: ServiceLevel;
@@ -221,7 +223,9 @@ export async function listTickets(
       count(*) filter (where (claimed_by_id is null or claimed_by_id = ${query.viewerId ?? null})
         and (not ${query.overdue ?? false} or overdue))::int as all,
       count(*) filter (where claimed_by_id = ${query.viewerId ?? null}
-        and (not ${query.overdue ?? false} or overdue))::int as mine
+        and (not ${query.overdue ?? false} or overdue))::int as mine,
+      count(*) filter (where claimed_by_id is not null and status <> 'completed'
+        and (not ${query.overdue ?? false} or overdue))::int as staffs
     from derived`;
 
   const [totals] = await sql<{ open: number; overdue: number }[]>`
@@ -245,6 +249,8 @@ export async function listTickets(
     // Another person's claimed Ticket is theirs to work; it is not listed under All.
     all: sql`(claimed_by_id is null or claimed_by_id = ${query.viewerId ?? null})`,
     mine: sql`claimed_by_id = ${query.viewerId ?? null}`,
+    // Held by a teammate; the Staffs tab narrows this to one person with the Claimed by filter.
+    staffs: sql`claimed_by_id is not null and status <> 'completed'`,
   }[tab];
 
   const rows = await sql<Record<string, unknown>[]>`
@@ -292,6 +298,7 @@ export async function listTickets(
       waiting: r.waiting as boolean,
       overdue: r.overdue as boolean,
       escalated: escalatedIds.has(r.id as number),
+      createdAt: r.created_at as Date,
       lastActivity: r.last_activity as Date,
       serviceLevel: levelsById.get(r.id as number)!,
     })),
@@ -303,6 +310,7 @@ export async function listTickets(
       completed: counts.completed,
       all: counts.all,
       mine: counts.mine,
+      staffs: counts.staffs,
     },
     totalOpen: totals.open,
     overdue: totals.overdue,

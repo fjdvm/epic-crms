@@ -15,7 +15,7 @@ vi.mock("@/features/tickets/actions", () => ({
   addNote: vi.fn(), liveUrl: vi.fn(async () => null),
 }));
 vi.mock("@/features/tickets/reassign-actions", () => ({
-  reassignOne: vi.fn(), reassignAll: vi.fn(), reassignOptions: vi.fn(), absentTickets: vi.fn(),
+  reassignOne: vi.fn(), assignTicket: vi.fn(), reassignAll: vi.fn(), reassignOptions: vi.fn(), absentTickets: vi.fn(),
 }));
 vi.mock("@/features/tickets/escalate-actions", () => ({ escalate: vi.fn(), takeEscalated: vi.fn(), sendBack: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), warning: vi.fn(), promise: vi.fn() }) }));

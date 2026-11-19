@@ -33,9 +33,11 @@ export function EscalatedPill() {
 }
 
 /** The Claimer asks every Manager for help: one reason and a short note. Nothing else escalates. */
-export function EscalateDialog({ ticketId }: { ticketId: number }) {
+export function EscalateDialog({ ticketId, controlled }: { ticketId: number; /** Opened from a menu: no button of its own. */ controlled?: { open: boolean; onOpenChange: (open: boolean) => void } }) {
   const { escalate, pending } = useClaim();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlled ? controlled.open : ownOpen;
+  const setOpen = controlled ? controlled.onOpenChange : setOwnOpen;
   const [reason, setReason] = useState<EscalationReason | null>(null);
   const [note, setNote] = useState("");
   const [tried, setTried] = useState(false);
@@ -55,9 +57,11 @@ export function EscalateDialog({ ticketId }: { ticketId: number }) {
 
   return (
     <>
-      <button type="button" className={OUTLINE} disabled={pending} onClick={() => setOpen(true)}>
-        Escalate
-      </button>
+      {!controlled && (
+        <button type="button" className={OUTLINE} disabled={pending} onClick={() => setOpen(true)}>
+          Escalate
+        </button>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] max-w-[520px] gap-4 overflow-y-auto">
           <DialogTitle className="text-lg font-semibold text-[#1f1a2e]">Escalate TKT-{ticketId}?</DialogTitle>

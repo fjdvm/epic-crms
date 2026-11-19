@@ -21,7 +21,7 @@ import {
   storefrontTicketUrl,
 } from "@/lib/gateway";
 import { TICKETS_MODULE } from "@/lib/portal/config";
-import { canWork, READ_ONLY_REFUSAL } from "@/lib/portal/roles";
+import { canWork, READ_ONLY_REFUSAL, shopRole } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
@@ -233,6 +233,38 @@ export async function addNote(id: number, body: string) {
     console.error("Internal note could not be saved", error);
 
     return { ok: false as const, reason: "unavailable" as const };
+  }
+}
+
+export interface TicketNote {
+  id: number;
+  authorName: string;
+  body: string;
+  at: string;
+}
+
+/** The Internal notes on one Ticket, for the Tickets drawer. Staff only read Tickets that are theirs or Unclaimed. */
+export async function listTicketNotes(id: number): Promise<{ ok: true; notes: TicketNote[] } | { ok: false; reason: "forbidden" | "unavailable" }> {
+  const staff = await requireModule(TICKETS_MODULE);
+
+  try {
+    const sql = ticketsDatabase();
+    const [ticket] = await sql<{ claimed_by_id: string | null }[]>`select claimed_by_id from tickets where id = ${Number(id)}`;
+    if (!ticket) return { ok: false, reason: "unavailable" };
+    // Staff read only their own and Unclaimed Tickets; an unknown Role reads none.
+    const role = shopRole(staff.role);
+    if (role === null) return { ok: false, reason: "forbidden" };
+    if (role === "staff" && ticket.claimed_by_id !== null && ticket.claimed_by_id !== staff.username) return { ok: false, reason: "forbidden" };
+
+    const rows = await sql<{ id: number; author_name: string | null; body: string; created_at: Date }[]>`
+      select id, author_name, body, created_at from ticket_messages
+      where ticket_id = ${Number(id)} and internal order by created_at, id`;
+
+    return { ok: true, notes: rows.map((r) => ({ id: r.id, authorName: r.author_name ?? "Staff", body: r.body, at: r.created_at.toISOString() })) };
+  } catch (error) {
+    console.error("Internal notes could not be read", error);
+
+    return { ok: false, reason: "unavailable" };
   }
 }
 

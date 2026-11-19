@@ -125,10 +125,12 @@ export async function loadConversations(
   storage?: FileStorage,
   search?: string,
   scope: ChatScope = "mine",
+  /** A Manager-level Role may open any Ticket by id, even one outside the list. Staff never can: they see only their own and unclaimed. */
+  openAny = false,
 ): Promise<ConversationsResult> {
   try {
     const chats = await listConversations(connect(), viewerId, search, scope);
-    const id = chats.find((c) => c.ticketId === selectedId)?.ticketId ?? chats[0]?.ticketId;
+    const id = chats.find((c) => c.ticketId === selectedId)?.ticketId ?? (openAny ? selectedId : undefined) ?? chats[0]?.ticketId;
     if (id === undefined) return { ok: true, conversations: { chats, selected: null } };
 
     const result = await loadTicket(connect, id, storage);

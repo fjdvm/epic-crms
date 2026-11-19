@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { absentTickets, reassignAll, reassignOne, reassignOptions } from "@/features/tickets/reassign-actions";
+import { absentTickets, reassignAll, assignTicket, reassignOptions } from "@/features/tickets/reassign-actions";
 import { ReassignAllDialog } from "@/features/tickets/reassign-dialog";
 import { TicketDetailView } from "@/features/tickets/ticket-detail";
 import type { TicketDetail } from "@/features/tickets/ticket";
@@ -16,7 +16,7 @@ vi.mock("@/features/tickets/actions", () => ({
   liveUrl: vi.fn(async () => null),
 }));
 vi.mock("@/features/tickets/reassign-actions", () => ({
-  reassignOne: vi.fn(), reassignAll: vi.fn(), reassignOptions: vi.fn(), absentTickets: vi.fn(),
+  assignTicket: vi.fn(), reassignAll: vi.fn(), reassignOptions: vi.fn(), absentTickets: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), warning: vi.fn(), promise: vi.fn() }) }));
 const refresh = vi.fn();
@@ -46,7 +46,7 @@ describe("Reassign on the Ticket page", () => {
 
   it("requires a reason, then shows the new Claimer at once", async () => {
     vi.mocked(reassignOptions).mockResolvedValue({ ok: true, teammates });
-    vi.mocked(reassignOne).mockReturnValue(new Promise(() => {}));
+    vi.mocked(assignTicket).mockReturnValue(new Promise(() => {}));
     const user = userEvent.setup();
     render(<TicketDetailView ticket={ticket} viewerId="mara" canReassign />);
 
@@ -54,18 +54,18 @@ describe("Reassign on the Ticket page", () => {
     await user.click(await screen.findByLabelText(/Rhea/));
     await user.click(screen.getByRole("button", { name: "Reassign to Rhea" }));
     expect(screen.getByText("Write a reason.", { selector: "span[role=alert]" })).toBeTruthy();
-    expect(reassignOne).not.toHaveBeenCalled();
+    expect(assignTicket).not.toHaveBeenCalled();
 
     await user.type(screen.getByLabelText(/^Reason/), "Liza is off today");
     await user.click(screen.getByRole("button", { name: "Reassign to Rhea" }));
 
-    expect(reassignOne).toHaveBeenCalledWith(208, "liza", "rhea", "Liza is off today", expect.any(String));
+    expect(assignTicket).toHaveBeenCalledWith(208, "liza", "rhea", "Liza is off today", expect.any(String));
     expect(screen.getByText(/Claimed by Rhea/)).toBeTruthy();
   });
 
   it("rolls back and says plainly when someone else moved it first", async () => {
     vi.mocked(reassignOptions).mockResolvedValue({ ok: true, teammates });
-    vi.mocked(reassignOne).mockResolvedValue({ ok: false, reason: "claimer-changed" });
+    vi.mocked(assignTicket).mockResolvedValue({ ok: false, reason: "claimer-changed" });
     const user = userEvent.setup();
     render(<TicketDetailView ticket={ticket} viewerId="mara" canReassign />);
 
@@ -80,7 +80,7 @@ describe("Reassign on the Ticket page", () => {
 
   it("rolls back with a plain message when the server never answers", async () => {
     vi.mocked(reassignOptions).mockResolvedValue({ ok: true, teammates });
-    vi.mocked(reassignOne).mockRejectedValue(new Error("network"));
+    vi.mocked(assignTicket).mockRejectedValue(new Error("network"));
     const user = userEvent.setup();
     render(<TicketDetailView ticket={ticket} viewerId="mara" canReassign />);
 

@@ -44,10 +44,13 @@ const NotesContext = createContext<Notes | null>(null);
 export function NotesProvider({
   ticketId,
   viewerName,
+  onSaved,
   children,
 }: {
   ticketId: number;
   viewerName: string;
+  /** Called once the server has saved a note, for a view that lists notes itself. */
+  onSaved?: () => void;
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -75,6 +78,7 @@ export function NotesProvider({
 
           setPending((current) => current.map((n) => (n.key === key ? { ...n, savedId: result.messageId } : n)));
           router.refresh();
+          onSaved?.();
           resolve(true);
         } catch {
           rollBack("CREOMS could not save that. Try again in a moment.");
@@ -117,7 +121,7 @@ const PRIMARY =
   "rounded-lg bg-[#5b2a86] px-[14px] py-[9px] text-sm font-medium leading-[normal] whitespace-nowrap text-white disabled:opacity-50";
 
 /** Write an Internal note: Staff-only text, separate from the reply box so a note is never sent to the Customer by mistake. */
-export function NoteBox({ inline = false }: { /** Already chosen (its own tab): no button first, and no Cancel. */ inline?: boolean }) {
+export function NoteBox({ inline = false, onSaved }: { /** Already chosen (its own tab): no button first, and no Cancel. */ inline?: boolean; /** Called once the note is on its way, so a dialog around the box can close. */ onSaved?: () => void }) {
   const notes = useContext(NotesContext);
   const [text, setText] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -136,6 +140,7 @@ export function NoteBox({ inline = false }: { /** Already chosen (its own tab): 
 
     setText("");
     setOpen(inline);
+    onSaved?.();
     void notes.add(body).then((saved) => {
       if (!saved) {
         setText((current) => current || written);

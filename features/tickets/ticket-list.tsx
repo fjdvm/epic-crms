@@ -5,9 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import { describeClock, type Clock } from "./service-level";
-import { ClaimButton } from "./ticket-controls";
-import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
+import type { AssignableStaff } from "./staffs";
+import { CELL, COLUMNS, HEAD, TicketRows, type RowsViewer } from "./ticket-rows";
 import {
   hasTicketFilters,
   ticketsHref,
@@ -30,21 +29,8 @@ export const TAB_LABELS: Record<TicketTab, string> = {
   completed: "Completed",
   all: "All",
   mine: "Mine",
+  staffs: "Staffs",
 };
-
-/** The Figma frame's columns, minus Channel: a Ticket has no Channel. They share the table width in proportion, so the rows fill the card. */
-export const COLUMNS: { header: string; className: string }[] = [
-  { header: "Ticket", className: "flex-[1_1_100px]" },
-  { header: "Subject", className: "min-w-0 flex-[3_1_270px]" },
-  { header: "Customer", className: "min-w-0 flex-[2_1_150px]" },
-  { header: "Linked order", className: "flex-[1_1_120px]" },
-  { header: "Category", className: "min-w-0 flex-[1_1_130px]" },
-  { header: "Priority", className: "flex-[1_1_100px]" },
-  { header: "Claimed by", className: "min-w-0 flex-[1_1_130px]" },
-  { header: "Status", className: "flex-[1_1_110px]" },
-  { header: "Service level", className: "flex-[1_1_130px]" },
-  { header: "", className: "flex-[0_0_90px] justify-end" },
-];
 
 function href(
   params: TicketListParams,
@@ -53,45 +39,34 @@ function href(
   return ticketsHref({ ...params, ...change });
 }
 
-function ServiceCell({ clock }: { clock: Clock }) {
-  const tone =
-    clock.state === "missed"
-      ? "text-[#b91c1c]"
-      : clock.state === "breaching"
-        ? "text-[#b45309]"
-        : clock.state === "met"
-          ? "text-[#15803d]"
-          : "text-[#6e6680]";
+export { COLUMNS, HEAD, CELL };
 
-  return <span className={cn("font-medium", tone)}>{describeClock(clock)}</span>;
-}
-
-function StatusPill({ row }: { row: TicketRow }) {
-  if (row.status === "resolved")
-    return <Pill className={PILL.green}>Resolved</Pill>;
-  if (row.status === "completed")
-    return <Pill className={PILL.green}>Completed</Pill>;
-  if (row.overdue) return <Pill className={PILL.red}>Overdue</Pill>;
-  if (row.waiting) return <Pill className={PILL.amber}>Waiting</Pill>;
-
-  return <Pill className={PILL.red}>Open</Pill>;
-}
-
-export const HEAD = "flex items-start overflow-clip";
-export const CELL =
-  "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
+const NO_VIEWER: RowsViewer = { id: "", name: "", role: null };
 
 export function TicketListView({
   list,
   params,
+  viewer = NO_VIEWER,
+  staffs = [],
+  openId = null,
+  now = Date.now(),
 }: {
   list: TicketList;
   params: TicketListParams;
+  viewer?: RowsViewer;
+  /** Everyone a Ticket can be assigned to, for the Staffs tab and the drawer. */
+  staffs?: AssignableStaff[];
+  openId?: number | null;
+  now?: number;
 }) {
+  // Staff only ever see their own work, so the Staffs tab is for everyone else.
+  const tabs = TICKET_TABS.filter((t) => t !== "staffs" || viewer.role !== "staff");
+  const staffsOverview = params.tab === "staffs" && !params.claimedBy;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       <nav className="flex shrink-0 gap-1" aria-label="Ticket tabs">
-        {TICKET_TABS.map((tab) => {
+        {tabs.map((tab) => {
           const active = tab === params.tab;
 
           return (
@@ -112,7 +87,19 @@ export function TicketListView({
       </nav>
 
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
-        {list.rows.length === 0 ? (
+        {staffsOverview ? (
+          <ul className="min-h-0 flex-1 overflow-auto" aria-label="Staffs">
+            {staffs.length === 0 && <li className="p-8 text-center text-sm text-[#6e6680]">No one is available to assign.</li>}
+            {staffs.map((s) => (
+              <li key={s.id} className="border-b border-[#efebf4]">
+                <Link href={href(params, { tab: "staffs", claimedBy: s.id, page: 1 })} className="flex items-center justify-between py-3 text-sm text-[#1f1a2e]">
+                  <span className="font-medium">{s.name} <span className="text-xs font-normal text-[#6e6680]">{s.role === "manager" ? "Manager" : "Staff / Employee"}</span></span>
+                  <span className="text-[#6e6680]">{s.open} open</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : list.rows.length === 0 ? (
           <div className="p-8 text-center text-sm text-[#6e6680]">
             {hasTicketFilters(params)
               ? "No Tickets match this search and these filters."
@@ -122,68 +109,13 @@ export function TicketListView({
           <div className="min-h-0 flex-1 overflow-auto">
             <div className="min-w-[1130px]">
               <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
-                {COLUMNS.map((col) => (
-                  <div key={col.header} className={cn(HEAD, col.className)}>
+                {COLUMNS.map((col, c) => (
+                  <div key={c} className={cn(HEAD, col.className)}>
                     {col.header}
                   </div>
                 ))}
               </div>
-              {list.rows.map((row) => (
-                <div
-                  key={row.id}
-                  className="flex items-center border-b border-[#efebf4] py-[11px]"
-                >
-                  <div
-                    className={cn(
-                      CELL,
-                      COLUMNS[0].className,
-                      "font-medium text-[#5b2a86]",
-                    )}
-                  >
-                    <Link href={`/tickets/${row.id}`}>TKT-{row.id}</Link>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[1].className)}>
-                    <span className="truncate pr-3">{row.subject}</span>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[2].className)}>
-                    <span className="truncate pr-3">{row.customerName}</span>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[3].className)}>
-                    {row.orderId === null ? "None yet" : `#${row.orderId}`}
-                  </div>
-                  <div className={cn(CELL, COLUMNS[4].className)}>
-                    <span className="truncate pr-3">{row.category}</span>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[5].className)}>
-                    <Pill className={PRIORITY_PILLS[row.priority]}>
-                      {PRIORITY_LABELS[row.priority]}
-                    </Pill>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[6].className)}>
-                    {row.claimedById === null ? (
-                      <Pill className={PILL.amber}>Unclaimed</Pill>
-                    ) : (
-                      <span className="truncate pr-3">
-                        {row.claimedByName ?? row.claimedById}
-                      </span>
-                    )}
-                  </div>
-                  <div className={cn(CELL, COLUMNS[7].className)}>
-                    <span className="flex flex-wrap items-center gap-1">
-                      <StatusPill row={row} />
-                      {row.escalated && row.status !== "completed" && <Pill className={PILL.red}>Escalated</Pill>}
-                    </span>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[8].className)}>
-                    <ServiceCell clock={row.serviceLevel.current} />
-                  </div>
-                  <div className={cn(CELL, COLUMNS[9].className)}>
-                    {row.status !== "completed" && row.claimedById === null && (
-                      <ClaimButton ticketId={row.id} />
-                    )}
-                  </div>
-                </div>
-              ))}
+              <TicketRows rows={list.rows} viewer={viewer} staffs={staffs} now={now} openId={openId} />
             </div>
           </div>
         )}
@@ -230,7 +162,7 @@ export function TicketListSkeleton({
         className="flex shrink-0 gap-1 overflow-hidden"
         aria-label="Ticket tabs"
       >
-        {TICKET_TABS.map((tab) => (
+        {TICKET_TABS.filter((t) => t !== "staffs").map((tab) => (
           <span
             key={tab}
             className="flex items-center gap-1.5 rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] whitespace-nowrap text-[#6e6680]"

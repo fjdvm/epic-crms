@@ -43,6 +43,8 @@ Handle the shop's daily work and can do anything that is easy to undo. Dashboard
 
 ### CREOMS Manager
 
+**General Manager** is treated as a CREOMS Manager (same powers). Tickets can be assigned only to Staff / Employee, CREOMS Manager and General Manager; never to Admin, CEO or VP. Staff only claim for themselves; a Manager assigns anyone.
+
 Everything Staff can do, plus approvals and reports. Dashboard shows the whole team and the approvals waiting for them.
 - **Approves** anything involving money, removing stock, overriding an AI warning, or moving someone else's work: refunds and "approve anyway" on payments, cancelling an order after dispatch, approving replacements, refunds and store credit on returns, holding a bad batch, extending the 24-hour return window.
 - **Tickets:** reassign tickets, move all of an absent teammate's tickets at once, take escalations.

@@ -7,7 +7,7 @@ import { useOptimisticAction } from "@/hooks/use-optimistic-action";
 import { claim as claimAction, release as releaseAction } from "./actions";
 import { escalate as escalateAction, sendBack as sendBackAction, takeEscalated, type EscalateOutcome } from "./escalate-actions";
 import { ESCALATE_REFUSALS, type EscalationReason } from "./escalate-reasons";
-import { reassignOne, type ReassignOutcome } from "./reassign-actions";
+import { assignTicket, type ReassignOutcome } from "./reassign-actions";
 import { REASSIGN_REFUSALS } from "./reassign-refusals";
 import { refusalMessage } from "./refusals";
 
@@ -68,8 +68,7 @@ export function useClaimer(
     claim: () => run({ ...state, claimer: viewer }, () => claimAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
     release: () => run({ ...state, claimer: null }, () => releaseAction(ticketId, crypto.randomUUID()), { refusal: refusalMessage }),
     reassign: (to, reason, onDone) => {
-      if (!server) return;
-      run({ ...state, claimer: to }, () => reassignOne(ticketId, server.id, to.id, reason, crypto.randomUUID()), {
+      run({ ...state, claimer: to }, () => assignTicket(ticketId, server?.id ?? null, to.id, reason, crypto.randomUUID()), {
         refusal: (o) => REASSIGN_REFUSALS[(o as Exclude<ReassignOutcome, { ok: true }>).reason],
         onDone: () => onDone?.(),
       });
