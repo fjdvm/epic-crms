@@ -209,10 +209,11 @@ describe("the Ticket page as designed", () => {
 describe("working the Ticket", () => {
   const buttons = () => actionButtons().map((b) => b.textContent);
 
-  it("offers Release and Mark resolved to the Claimer, and not Claim", () => {
+  it("offers Release, Escalate and Put on hold to the Claimer, and not Claim", () => {
     render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
-    expect(buttons()).toEqual(["Release", "Escalate", "Put on hold", "Mark resolved"]);
+    expect(buttons()).toEqual(["Release", "Escalate", "Put on hold"]);
+    expect(buttons()).not.toContain("Mark resolved");
   });
 
   it("offers Claim on an Unclaimed Ticket, and no Release", () => {
@@ -229,7 +230,7 @@ describe("working the Ticket", () => {
     expect(buttons()).not.toContain("Release");
   });
 
-  it("offers no Mark resolved once Resolved, and no buttons at all once Completed", () => {
+  it("never offers Mark resolved, and no buttons at all once Completed", () => {
     render(<TicketDetailView ticket={ticket({ status: "resolved" })} viewerId="bernice" />);
     expect(buttons()).not.toContain("Mark resolved");
     cleanup();

@@ -92,8 +92,8 @@ export function AutomaticChecksForm({ initial, overdueUrl = null }: { initial: A
         <h2 className="text-base font-semibold text-[#1f1a2e]">Automatic checks</h2>
         <p className="text-sm text-[#6e6680]">Simple rules that run every time. They flag things for staff; they never cancel, reject or steer a customer on their own.</p>
       </div>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-0">
+        <div className="space-y-6 md:pr-6">
           <div className={group}>
             <h3 className={groupTitle}>GCash payment proof</h3>
             {rule("Reference already used", proof.reference.enabled, setProof("reference"), "Flag a reference number already used on another order")}
@@ -112,7 +112,7 @@ export function AutomaticChecksForm({ initial, overdueUrl = null }: { initial: A
             {rule("Past refused deliveries", cod.earlierRefusal.enabled, (on) => edit((c) => ({ ...c, cod: { ...c.cod, earlierRefusal: { enabled: on } } })), "Past refused deliveries")}
           </div>
         </div>
-        <div className="space-y-6">
+        <div className="space-y-6 border-t border-[#e6e1ee] pt-6 md:border-t-0 md:border-l md:pt-0 md:pl-6">
           <div className={group}>
             <h3 className={groupTitle}>Senior/PWD IDs</h3>
             <div className="flex items-start gap-2.5 text-sm text-[#1f1a2e]">

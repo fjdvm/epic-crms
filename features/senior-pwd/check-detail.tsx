@@ -2,9 +2,10 @@
 
 import { BackButton } from "@/components/shared/back-button";
 
-import { Check, IdCard, Lock, RotateCw, Sparkles, ZoomIn, ZoomOut } from "lucide-react";
+import { Check, IdCard, Lock, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ImageViewer } from "@/components/image-viewer";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
@@ -21,13 +22,19 @@ type Photos = { url: string; backUrl: string | null };
 
 /** The private photo with zoom and rotate controls. Fetched only while the ID is waiting; deleted right after review. */
 function PhotoCard({ v, photos }: { v: Verification; photos: Photos | { error: string } | null }) {
-  const [zoom, setZoom] = useState(1);
-  const [turn, setTurn] = useState(0);
-  const control = "inline-flex size-7 items-center justify-center rounded-md border border-[#e4ddee] bg-white text-[#52525b] hover:bg-[#f7f5fa]";
+  const [viewing, setViewing] = useState<number | null>(null);
   const frame = "flex min-h-72 items-center justify-center overflow-auto rounded-lg bg-[#ece8f2]";
-  const picture = (src: string, alt: string) => (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={alt} style={{ transform: `rotate(${turn}deg) scale(${zoom})` }} className="max-h-96 w-full object-contain transition-transform" />
+  const sides = photos && "url" in photos
+    ? [
+        { id: 0, url: photos.url, name: null, caption: `ID photo of ${v.customerName}` },
+        ...(photos.backUrl ? [{ id: 1, url: photos.backUrl, name: null, caption: `Back of the ID of ${v.customerName}` }] : []),
+      ]
+    : [];
+  const picture = (side: number) => (
+    <button type="button" aria-label={`Zoom ${sides[side].caption}`} onClick={() => setViewing(side)} className="cursor-zoom-in">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={sides[side].url} alt={sides[side].caption} className="max-h-96 w-full object-contain" />
+    </button>
   );
   return (
     <section aria-label="ID photo" className="min-w-0 space-y-3 rounded-xl border border-[#e6e1ee] bg-white p-5">
@@ -45,18 +52,14 @@ function PhotoCard({ v, photos }: { v: Verification; photos: Photos | { error: s
       )}
       {photos && "url" in photos && (
         <div className="space-y-3">
-          <div className="flex justify-end gap-1.5">
-            <button type="button" aria-label="Zoom out" className={control} onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}><ZoomOut aria-hidden className="size-4" /></button>
-            <button type="button" aria-label="Zoom in" className={control} onClick={() => setZoom((z) => Math.min(3, z + 0.25))}><ZoomIn aria-hidden className="size-4" /></button>
-            <button type="button" aria-label="Rotate" className={control} onClick={() => setTurn((t) => (t + 90) % 360)}><RotateCw aria-hidden className="size-4" /></button>
-          </div>
-          <div className={frame}>{picture(photos.url, `ID photo of ${v.customerName}`)}</div>
-          {photos.backUrl && <div className={frame}>{picture(photos.backUrl, `Back of the ID of ${v.customerName}`)}</div>}
+          <div className={frame}>{picture(0)}</div>
+          {sides[1] && <div className={frame}>{picture(1)}</div>}
+          {viewing !== null && <ImageViewer images={sides} start={viewing} onClose={() => setViewing(null)} />}
         </div>
       )}
       <p className="text-xs text-[#6e6680]">
         {photos && "url" in photos
-          ? "Zoom and rotate with the image controls. Ask the customer for a clearer photo from the ticket if needed."
+          ? "Click the photo to zoom and rotate. Ask the customer for a clearer photo from the ticket if needed."
           : v.status === "pending" ? "" : `The photo was deleted. The Customer uploads a new one if needed.`}
       </p>
     </section>

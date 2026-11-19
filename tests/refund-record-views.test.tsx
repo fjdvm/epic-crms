@@ -207,7 +207,7 @@ describe("the saved proof's findings before Mark refunded (#615)", () => {
     for (const role of ["admin", "ceo"] as const) {
       const { unmount } = render(<ReturnDetailView detail={detail()} imageUrls={[]} role={role} refundProofUrl="https://files.test/p.png" refundRead={read} savedProof={saved} />);
       expect(card().getByText("Mismatch")).toBeTruthy();
-      expect(card().queryByRole("button")).toBeNull();
+      expect(card().queryAllByRole("button").filter((b) => !b.getAttribute("aria-label")?.startsWith("Zoom "))).toEqual([]);
       expect(screen.queryByRole("button", { name: "Mark refunded" })).toBeNull();
       unmount();
     }

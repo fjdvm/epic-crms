@@ -153,25 +153,27 @@ describe("the Tickets list as designed", () => {
 
     render(<TicketListView list={list} params={{ tab: "all", page: 1 }} viewer={{ id: "m", name: "M", role: "manager" }} staffs={staffs} />);
     fireEvent.click(screen.getByRole("button", { name: "Open TKT-207" }));
-    expect(screen.getByRole("button", { name: /Rhea/ })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Assign to" })).toBeTruthy();
     cleanup();
 
     render(<TicketListView list={list} params={{ tab: "all", page: 1 }} viewer={{ id: "s", name: "S", role: "staff" }} staffs={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "Open TKT-207" }));
-    expect(screen.queryByRole("button", { name: /Rhea/ })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Assign to" })).toBeNull();
     expect(screen.getByText(/Request approval/)).toBeTruthy();
     // Someone else's Ticket is not Staff's to read.
     expect(screen.queryByRole("link", { name: "Open conversation" })).toBeNull();
   });
 
   it("confirms before assigning from the drawer, and rolls back with the reason when refused", async () => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
     vi.mocked(assignTicket).mockResolvedValue({ ok: false, reason: "claimer-changed" });
     const staffs = [{ id: "rhea", name: "Rhea", role: "staff" as const, open: 3 }];
     const list = { rows: [row({ id: 207 })], counts: { open: 1, waiting: 0, on_hold: 0, resolved: 0, completed: 0, all: 1, mine: 0, staffs: 0 }, totalOpen: 1, overdue: 0, page: 1, pageSize: 25, totalPages: 1 };
 
     render(<TicketListView list={list} params={{ tab: "open", page: 1 }} viewer={{ id: "m", name: "M", role: "manager" }} staffs={staffs} />);
     fireEvent.click(screen.getByRole("button", { name: "Open TKT-207" }));
-    fireEvent.click(screen.getByRole("button", { name: /Rhea/ }));
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Assign to" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: /Rhea/ }));
     expect(assignTicket).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));

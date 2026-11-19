@@ -1,3 +1,4 @@
+import { ZoomableImage } from "@/components/zoomable-image";
 import { FileText } from "lucide-react";
 
 import type { TicketMessage } from "./ticket";
@@ -59,10 +60,5 @@ export function MessageAttachment({
       </button>
     );
 
-  return (
-    <a href={url} target="_blank" rel="noreferrer" className="block">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={`Image attached by ${message.senderName}`} className={imageClassName} />
-    </a>
-  );
+  return <ZoomableImage src={url} alt={`Image attached by ${message.senderName}`} className={imageClassName} />;
 }

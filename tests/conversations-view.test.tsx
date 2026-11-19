@@ -127,26 +127,24 @@ describe("the Conversations page as designed", () => {
     expect(within(tabs).getByRole("tab", { name: "Mine" }).getAttribute("href")).toBe("/conversations?q=maria");
   });
 
-  it("keeps Internal note under the three-dots menu, not beside the reply box", async () => {
+  it("puts Add internal note in the header button row, not beside the reply box", async () => {
     view();
 
     expect(screen.queryByRole("tab", { name: "Internal note" })).toBeNull();
-    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "Enter" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Add internal note" }));
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add internal note" }));
 
     expect(await screen.findByPlaceholderText("Write a note for your teammates…")).toBeTruthy();
   });
 
-  it("offers Escalate under the three dots only while the Ticket is not already escalated", async () => {
+  it("offers Escalate as a button only while the Ticket is not already escalated", async () => {
     const first = view();
-    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "Enter" });
-    expect(await screen.findByRole("menuitem", { name: "Escalate" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Escalate" })).toBeTruthy();
     first.unmount();
 
     view(ticket(), "bernice", false, [208]);
-    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "Enter" });
-    expect(await screen.findByRole("menuitem", { name: "Add internal note" })).toBeTruthy();
-    expect(screen.queryByRole("menuitem", { name: "Escalate" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Add internal note" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Escalate" })).toBeNull();
   });
 
   it("opens an image full screen, steps through the chat's images and closes it", () => {

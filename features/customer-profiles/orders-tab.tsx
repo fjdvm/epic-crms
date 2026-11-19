@@ -8,6 +8,7 @@ import { formatDate, formatPesos } from "./format";
 import { isViewableScreenshot } from "@/features/orders/payment-screenshot";
 import { orderAnchor, type CustomerOrder } from "./orders";
 import { orderLabel as label, paymentStatusOf } from "./rules";
+import { ZoomableImage } from "@/components/zoomable-image";
 
 const PAYMENT_VARIANTS: Record<ReturnType<typeof paymentStatusOf>, BadgeProps["variant"]> = {
   Paid: "success",
@@ -90,8 +91,7 @@ function OrderDetails({ order }: { order: CustomerOrder }) {
           </p>
           {proof.screenshot &&
             (isViewableScreenshot(proof.screenshot) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={proof.screenshot} alt={`Payment proof for order ${order.id}`} className="max-h-64 rounded-md border border-border" />
+              <ZoomableImage src={proof.screenshot} alt={`Payment proof for order ${order.id}`} className="max-h-64 rounded-md border border-border" />
             ) : (
               <p className="text-xs text-muted-foreground">Screenshot: {proof.screenshot}</p>
             ))}

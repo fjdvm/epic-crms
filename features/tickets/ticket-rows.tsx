@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
@@ -160,21 +161,24 @@ function TicketDrawerContent({ row, viewer, staffs, now, savedNotes }: { row: Ti
             <div className="flex flex-col gap-1">
               <p className="text-xs font-medium text-[#6e6680]">Assign to</p>
               {staffs.length === 0 && <p className="text-sm text-[#6e6680]">No one is available to assign.</p>}
-              <ul className="flex flex-col">
-                {staffs.map((s) => (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      disabled={claim.pending || claim.claimer?.id === s.id}
-                      onClick={() => setTarget(s)}
-                      className={cn("flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#f6f2fa] disabled:opacity-60", claim.claimer?.id === s.id && "bg-[#efe6f8]")}
-                    >
-                      <span>{s.name} <span className="text-xs text-[#6e6680]">{s.role === "manager" ? "Manager" : "Staff"}</span></span>
-                      <span className="text-xs text-[#6e6680]">{s.open} open</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {staffs.length > 0 && (
+                <Select
+                  value=""
+                  disabled={claim.pending}
+                  onValueChange={(id) => setTarget(staffs.find((s) => s.id === id) ?? null)}
+                >
+                  <SelectTrigger aria-label="Assign to" className="bg-white text-[#1f1a2e]">
+                    <SelectValue placeholder="Choose a staff member" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {staffs.map((s) => (
+                      <SelectItem key={s.id} value={s.id} disabled={claim.claimer?.id === s.id}>
+                        {s.name} · {s.role === "manager" ? "Manager" : "Staff"} · {s.open} open
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {target && (
                 <div role="alertdialog" aria-label="Confirm assign" className="mt-2 flex flex-col gap-2 rounded-lg border border-[#e6e1ee] p-3 text-sm">
                   <p>Assign TKT-{row.id} to {target.name}?</p>

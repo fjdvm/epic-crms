@@ -33,7 +33,7 @@ import { approveReturn, changeRefundDestination, declineReturn, extendRefundWind
 
 /** Every button except the Back navigation, which is not an action. */
 const NAV = new Set(["Orders", "Returns", "Tickets"]);
-const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? ""));
+const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? "") && !b.getAttribute("aria-label")?.startsWith("Zoom "));
 
 
 beforeEach(() => vi.clearAllMocks());
