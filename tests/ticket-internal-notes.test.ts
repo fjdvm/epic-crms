@@ -75,7 +75,7 @@ describe("Internal notes", () => {
     await addInternalNote(db.sql, id, bernice, "note");
     await replyToTicket(db.sql, id, bernice, "On it");
 
-    const list = await listTickets(db.sql, { tab: "all", now: NOW });
+    const list = await listTickets(db.sql, { tab: "open", now: NOW });
     expect(list.rows.find((r) => r.id === id)).toMatchObject({ overdue: false });
   });
 

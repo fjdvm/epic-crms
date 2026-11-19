@@ -218,7 +218,8 @@ export async function listTickets(
       count(*) filter (where status = 'on_hold' and not ${query.overdue ?? false})::int as on_hold,
       count(*) filter (where status = 'resolved' and not ${query.overdue ?? false})::int as resolved,
       count(*) filter (where status = 'completed' and not ${query.overdue ?? false})::int as completed,
-      count(*) filter (where not ${query.overdue ?? false} or overdue)::int as all,
+      count(*) filter (where (claimed_by_id is null or claimed_by_id = ${query.viewerId ?? null})
+        and (not ${query.overdue ?? false} or overdue))::int as all,
       count(*) filter (where claimed_by_id = ${query.viewerId ?? null}
         and (not ${query.overdue ?? false} or overdue))::int as mine
     from derived`;
@@ -240,7 +241,8 @@ export async function listTickets(
     on_hold: sql`status = 'on_hold'`,
     resolved: sql`status = 'resolved'`,
     completed: sql`status = 'completed'`,
-    all: sql`true`,
+    // Another person's claimed Ticket is theirs to work; it is not listed under All.
+    all: sql`(claimed_by_id is null or claimed_by_id = ${query.viewerId ?? null})`,
     mine: sql`claimed_by_id = ${query.viewerId ?? null}`,
   }[tab];
 

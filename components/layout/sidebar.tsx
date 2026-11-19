@@ -36,7 +36,9 @@ export function Sidebar() {
       else acc.push({ label: item.group, items: [item] });
 
       return acc;
-    }, []);
+    }, [])
+    // A "coming soon" entry never stands alone: its group shows only with a page the viewer may open.
+    .filter((g) => g.items.some((item) => item.href !== null));
 
   const isOpen = isMobile ? openMobile : open;
 

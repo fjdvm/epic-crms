@@ -44,7 +44,7 @@ async function chat(
 }
 
 describe("the inbox tabs", () => {
-  it("shows the viewer's chats on Mine, nobody's on Unclaimed and every chat on All", async () => {
+  it("shows the viewer's chats on Mine, nobody's on Unclaimed and all but other people's on All", async () => {
     const mine = await chat("c1", "Leak", [{ body: "hi", minutes: 5 }]);
     const open = await chat("c2", "Receipt", [{ body: "hi", minutes: 6 }], 1_000, null);
     const theirs = await chat("c2", "Late", [{ body: "hi", minutes: 7 }], 1_000, "staff-2");
@@ -53,7 +53,9 @@ describe("the inbox tabs", () => {
 
     expect(await ids("mine")).toEqual([mine]);
     expect(await ids("unclaimed")).toEqual([open]);
-    expect(await ids("all")).toEqual([mine, open, theirs]);
+    // All never lists a chat someone else Claimed.
+    expect(await ids("all")).toEqual([mine, open]);
+    expect(await ids("all")).not.toContain(theirs);
   });
 });
 
