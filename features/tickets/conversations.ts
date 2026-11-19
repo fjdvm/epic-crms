@@ -7,6 +7,11 @@ import type { FileStorage } from "./attachments";
 import { loadTicket, type TicketDetail } from "./ticket";
 import { ticketSearch } from "./tickets";
 
+/** The inbox tabs: the viewer's own chats, chats nobody has claimed, or every chat. */
+export type ChatScope = "mine" | "unclaimed" | "all";
+
+export const CHAT_SCOPES: ChatScope[] = ["mine", "unclaimed", "all"];
+
 export interface ConversationRow {
   /** The Ticket number is this id, written TKT-<id>. */
   ticketId: number;
@@ -17,14 +22,22 @@ export interface ConversationRow {
 }
 
 /**
- * The chats of the Tickets this Staff member Claimed, newest activity first, narrowed by the same search as
+ * The chats of the Tickets this Staff member Claimed (or the Unclaimed or all ones, by `scope`), newest activity first, narrowed by the same search as
  * the Tickets list when one is given. A chat is a Ticket's Conversation; there is none without a Ticket.
  */
 export async function listConversations(
   sql: postgres.Sql,
   viewerId: string,
   search?: string,
+  scope: ChatScope = "mine",
 ): Promise<ConversationRow[]> {
+  const owner =
+    scope === "mine"
+      ? sql`t.claimed_by_id = ${viewerId}`
+      : scope === "unclaimed"
+        ? sql`t.claimed_by_id is null`
+        : sql`true`;
+
   const rows = await sql<Record<string, unknown>[]>`
     select
       t.id,
@@ -41,7 +54,7 @@ export async function listConversations(
       order by created_at desc, id desc
       limit 1
     ) m on true
-    where t.claimed_by_id = ${viewerId} and ${ticketSearch(sql, search)}
+    where ${owner} and ${ticketSearch(sql, search)}
     order by last_activity desc, t.id desc`;
 
   return rows.map((r) => ({
@@ -85,9 +98,10 @@ export async function loadConversations(
   selectedId?: number,
   storage?: FileStorage,
   search?: string,
+  scope: ChatScope = "mine",
 ): Promise<ConversationsResult> {
   try {
-    const chats = await listConversations(connect(), viewerId, search);
+    const chats = await listConversations(connect(), viewerId, search, scope);
     const id = chats.find((c) => c.ticketId === selectedId)?.ticketId ?? chats[0]?.ticketId;
     if (id === undefined) return { ok: true, conversations: { chats, selected: null } };
 

@@ -2,15 +2,19 @@ import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { accessFor } from "./access";
+import { DEV_ROLE_COOKIE, isDevRole } from "./dev-bypass";
 import type { Staff } from "./client";
 import { LOGIN_PATH, MANAGEMENT_MODULE, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
 import { safeReturnTo } from "./return-to";
 import { canManage, shopRole } from "./roles";
 
 /** One access checker per page load, so the Portal is asked once however many callers there are. */
-const requestAccess = cache(async () =>
-  accessFor((await cookies()).get(SESSION_COOKIE)?.value),
-);
+const requestAccess = cache(async () => {
+  const jar = await cookies();
+  const devRole = jar.get(DEV_ROLE_COOKIE)?.value;
+
+  return accessFor(jar.get(SESSION_COOKIE)?.value, { devRole: isDevRole(devRole) ? devRole : undefined });
+});
 
 /** Stops the request when the Portal can't answer or the session is gone; otherwise hands the answer back. */
 async function proceed<T extends { decision: string }>(

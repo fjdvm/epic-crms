@@ -117,11 +117,11 @@ const PRIMARY =
   "rounded-lg bg-[#5b2a86] px-[14px] py-[9px] text-sm font-medium leading-[normal] whitespace-nowrap text-white disabled:opacity-50";
 
 /** Write an Internal note: Staff-only text, separate from the reply box so a note is never sent to the Customer by mistake. */
-export function NoteBox() {
+export function NoteBox({ inline = false }: { /** Already chosen (its own tab): no button first, and no Cancel. */ inline?: boolean }) {
   const notes = useContext(NotesContext);
   const [text, setText] = useState("");
   const [confirming, setConfirming] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(inline);
 
   if (!notes) return null;
 
@@ -135,7 +135,7 @@ export function NoteBox() {
     const written = text;
 
     setText("");
-    setOpen(false);
+    setOpen(inline);
     void notes.add(body).then((saved) => {
       if (!saved) {
         setText((current) => current || written);
@@ -166,16 +166,18 @@ export function NoteBox() {
         className="block w-full resize-none rounded-lg border border-[#e6e1ee] bg-white px-3 py-2 text-sm leading-[normal] text-[#1f1a2e] outline-none placeholder:text-[#9a93a8]"
       />
       <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          className={OUTLINE}
-          onClick={() => {
-            setText("");
-            setOpen(false);
-          }}
-        >
-          Cancel
-        </button>
+        {!inline && (
+          <button
+            type="button"
+            className={OUTLINE}
+            onClick={() => {
+              setText("");
+              setOpen(false);
+            }}
+          >
+            Cancel
+          </button>
+        )}
         <button type="button" className={PRIMARY} disabled={!body} onClick={() => setConfirming(true)}>
           Add note
         </button>

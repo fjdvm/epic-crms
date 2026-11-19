@@ -7,7 +7,16 @@ import type { TicketMessage } from "./ticket";
  * next/image's optimizer cannot cache it. An attachment whose address or type could not be read
  * still says one is there.
  */
-export function MessageAttachment({ message, imageClassName }: { message: TicketMessage; imageClassName: string }) {
+export function MessageAttachment({
+  message,
+  imageClassName,
+  onOpenImage,
+}: {
+  message: TicketMessage;
+  imageClassName: string;
+  /** When given, an image opens in the viewer instead of a new tab. */
+  onOpenImage?: () => void;
+}) {
   const { attachmentUrl: url, attachmentType: type, attachmentName: name } = message;
 
   if (!url) {
@@ -41,6 +50,14 @@ export function MessageAttachment({ message, imageClassName }: { message: Ticket
       </a>
     );
   }
+
+  if (onOpenImage)
+    return (
+      <button type="button" aria-label={`Open image from ${message.senderName}`} onClick={onOpenImage} className="block cursor-zoom-in">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={`Image attached by ${message.senderName}`} className={imageClassName} />
+      </button>
+    );
 
   return (
     <a href={url} target="_blank" rel="noreferrer" className="block">
