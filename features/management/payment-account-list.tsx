@@ -1,6 +1,6 @@
 import { PaymentAccountForm } from "./payment-account-form";
-import { PaymentAccountQr } from "./payment-account-qr";
-import { PaymentAccountControls, PaymentMethodToggle } from "./payment-account-controls";
+import { PaymentAccountCard } from "./payment-account-card";
+import { PaymentMethodToggle } from "./payment-account-controls";
 import { methodLabel, PAYMENT_METHODS } from "./payment-account-format";
 import type { PaymentAccountRow } from "./payment-accounts";
 
@@ -23,18 +23,7 @@ export function PaymentAccountList({ accounts, failed, disabledMethods = [] }: {
         <p className="text-sm text-[#6e6680]">No Payment accounts yet.</p>
       ) : (
         <ul className="divide-y divide-[#f0f0f2] rounded-lg border border-[#e6e1ee]">
-          {accounts.map((a) => (
-            <li key={a.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3 text-sm">
-              <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 font-medium text-[#1f1a2e]">{a.label} <span className="text-xs font-normal text-[#6e6680]">{a.active ? "Active" : "Inactive"}</span></p>
-                <p className="text-[#6e6680]">{methodLabel(a.method)}{a.bankName ? ` · ${a.bankName}` : ""} · {a.accountName} · {a.maskedNumber}</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <PaymentAccountQr accountId={a.id} label={a.label} hasQr={a.hasQr} />
-                <PaymentAccountControls account={a} />
-              </div>
-            </li>
-          ))}
+          {accounts.map((a) => <PaymentAccountCard key={a.id} account={a} />)}
         </ul>
       )}
     </section>
