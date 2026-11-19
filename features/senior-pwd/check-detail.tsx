@@ -14,7 +14,7 @@ import type { ShopRole } from "@/lib/portal/roles";
 import { approveVerification, loadVerificationPhoto } from "./actions";
 import { nameMatches, parseIdText } from "./id-reading";
 import { readIdPhoto } from "./read-id-photo";
-import { DecidedActions, DeclineDialog, ID_KIND, ReadOnlyBadge, STATUS_LABEL, StatusPill, formatUploadedFull } from "./shared";
+import { DecidedActions, DeclineDialog, ID_KIND, ReadOnlyBadge, STATUS_LABEL, SameIdWarning, StatusPill, formatUploadedFull } from "./shared";
 import type { Verification } from "./verifications";
 
 type Photos = { url: string; backUrl: string | null };
@@ -232,6 +232,7 @@ export function SeniorPwdCheckDetail({ verification: v, readOnly, role }: { veri
           {v.orderId !== null && waiting && ` · holds order BR-${v.orderId}`}
         </p>
       </div>
+      {v.sameIdAs && <SameIdWarning holder={v.sameIdAs} />}
       <div className="grid items-start gap-5 md:grid-cols-[1.35fr_1fr]">
         {/* The photo is not shown at all once the ID is decided: it has been deleted. */}
         {waiting ? <PhotoCard v={v} photos={photos} /> : (

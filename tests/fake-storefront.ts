@@ -302,8 +302,10 @@ export class FakeStorefront {
       const [taken] = await tx`select 1 from senior_pwd_verifications where id_hash = ${idHash} and customer_id <> ${customerId}
         and status in ('pending', 'approved') limit 1`;
       if (taken) return { error: "This ID is already used on another account." };
-      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at)
-        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}) returning id`;
+      // Like the storefront: an ID that was used on another account before (declined, revoked) is accepted but flagged.
+      const [before] = await tx`select id from senior_pwd_verifications where id_hash = ${idHash} and customer_id <> ${customerId} order by id desc limit 1`;
+      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at, same_id_as_verification_id)
+        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}, ${before?.id ?? null}) returning id`;
       return Number(row.id);
     });
   }

@@ -11,6 +11,14 @@ export type IdType = "senior" | "pwd";
  * What Staff may see of one verification. The ID number and its hash are never selected: the
  * storefront keeps only the keyed hash, and CREOMS has no grant on that column.
  */
+export interface SameIdHolder {
+  /** The other account's verification that carries the same ID number. */
+  verificationId: number;
+  customerName: string;
+  customerEmailHint: string;
+  status: VerificationStatus;
+}
+
 export interface Verification {
   id: number;
   customerId: string;
@@ -32,6 +40,11 @@ export interface Verification {
   declineReason: string | null;
   /** The ID's expiry date, `YYYY-MM-DD`. The discount stops on this date. */
   expiresOn: string | null;
+  /**
+   * Set when the storefront saw this ID number on another account too. The number itself is never read: the storefront
+   * compares the hashes and points to the other account's verification, so Staff can tell who else used it.
+   */
+  sameIdAs?: SameIdHolder | null;
 }
 
 export interface VerificationList { pending: Verification[]; decided: Verification[] }
@@ -41,8 +54,11 @@ type Row = Record<string, unknown>;
 const SELECT = (sql: postgres.Sql) => sql<Row[]>`
   select v.id, v.customer_id, c.full_name, v.id_type, v.status, v.submitted_at, v.photo_file_id, v.photo_back_file_id,
     v.decided_by_name, v.decided_at, v.decline_reason, to_char(v.expires_on, 'YYYY-MM-DD') as expires_on,
-    c.email, held.id as order_id
+    c.email, held.id as order_id,
+    same.id as same_id, same_c.full_name as same_full_name, same_c.email as same_email, same.status as same_status
   from public.senior_pwd_verifications v join public.customers c on c.id = v.customer_id
+  left join public.senior_pwd_verifications same on same.id = v.same_id_as_verification_id
+  left join public.customers same_c on same_c.id = same.customer_id
   left join lateral (
     select o.id from public.orders o where o.senior_pwd_verification_id = v.id order by o.id desc limit 1
   ) held on true`;
@@ -64,6 +80,10 @@ function toVerification(row: Row): Verification {
     photoExpiresAt: new Date(submittedAt.getTime() + PHOTO_REVIEW_DAYS * DAY),
     decidedByName: (row.decided_by_name as string | null) ?? null, decidedAt: (row.decided_at as Date | null) ?? null,
     declineReason: (row.decline_reason as string | null) ?? null, expiresOn: (row.expires_on as string | null) ?? null,
+    sameIdAs: row.same_id == null ? null : {
+      verificationId: row.same_id as number, customerName: row.same_full_name as string,
+      customerEmailHint: emailHint(row.same_email), status: row.same_status as VerificationStatus,
+    },
   };
 }
 

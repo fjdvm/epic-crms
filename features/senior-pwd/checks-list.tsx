@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { SENIOR_PWD_PAGE } from "@/lib/portal/pages";
 
-import { ID_KIND, ReadOnlyBadge, StatusPill, formatRemaining, formatUploaded } from "./shared";
+import { ID_KIND, ReadOnlyBadge, SameIdWarning, StatusPill, formatRemaining, formatUploaded } from "./shared";
 import type { Verification, VerificationList } from "./verifications";
 
 type Tab = "waiting" | "decisions";
@@ -34,6 +34,7 @@ export function SeniorPwdChecksList({
     <Cell>
       <p className="font-medium text-[#1f1a2e]">{v.customerName}</p>
       <p className="text-xs text-[#6e6680]">{v.customerEmailHint}</p>
+      {v.sameIdAs && <SameIdWarning compact holder={v.sameIdAs} />}
     </Cell>
   );
 
