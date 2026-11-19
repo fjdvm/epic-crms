@@ -94,6 +94,18 @@ export async function listDisabledMethods(sql: postgres.Sql): Promise<string[]> 
   return rows.map((r) => r.method);
 }
 
+export type MethodAvailability = Record<(typeof PAYMENT_METHODS)[number]["value"], boolean>;
+
+/** Per method: on only when a Manager or the CEO has not switched it off and at least one account is active. The storefront reads this, nothing more. */
+export async function listMethodAvailability(sql: postgres.Sql): Promise<MethodAvailability> {
+  const [disabled, withAccount] = await Promise.all([
+    listDisabledMethods(sql),
+    sql<{ method: string }[]>`select distinct method from crms.payment_accounts where active`,
+  ]);
+  const active = new Set(withAccount.map((r) => r.method));
+  return Object.fromEntries(PAYMENT_METHODS.map((m) => [m.value, active.has(m.value) && !disabled.includes(m.value)])) as MethodAvailability;
+}
+
 type Found = { label: string; method: string; active: boolean; account_number: string; bank_name: string | null; first_used_at: Date | null };
 const find = async (sql: postgres.Sql, id: string) => (await sql<Found[]>`
   select label, method, active, account_number, bank_name, first_used_at from crms.payment_accounts where id::text = ${id}`)[0];
