@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { initials } from "./initials";
+
 /** One image in the chat, with who sent it and when, for the full-screen viewer. */
 export interface ViewerImage {
   id: number;
@@ -17,14 +19,6 @@ export interface ViewerImage {
 }
 
 const ZOOMS = [25, 50, 75, 100, 150, 200, 300];
-export const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-
 const TOOL = "flex size-7 items-center justify-center rounded-md text-white/80 hover:bg-white/10 disabled:opacity-30";
 
 /** The image full screen: step through the chat's images, zoom, turn, download. Esc or the X closes it. */
