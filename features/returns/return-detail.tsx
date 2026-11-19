@@ -21,6 +21,7 @@ import { ReturnActions } from "./return-actions";
 import { ReturnFlagNotes } from "./return-flag-notes";
 import type { ReturnFlag } from "./return-flags";
 import type { ReturnDetail } from "./returns";
+import { ZoomableImage } from "@/components/zoomable-image";
 
 /** A short-lived address per image, null when that image exists but could not be reached. */
 export type ImageUrls = (string | null)[];
@@ -31,8 +32,7 @@ const dateTime = (date: Date) => `${formatDate(date)}, ${time.format(date)}`;
 function Photo({ url, alt }: { url: string | null; alt: string }) {
   if (!url) return <p className="text-sm text-[#6e6680]">This image could not be loaded. Reload to try again.</p>;
 
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={url} alt={alt} className="max-h-64 rounded-md border border-[#e6e1ee]" />;
+  return <ZoomableImage src={url} alt={alt} className="max-h-64 rounded-md border border-[#e6e1ee]" />;
 }
 
 /** The details Staff saved with the proof, shown until the Return is marked Refunded. */

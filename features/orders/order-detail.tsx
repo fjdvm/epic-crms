@@ -26,6 +26,7 @@ import { CancelDispatched, CancellationNote } from "./cancel-dispatched";
 import type { CancellationState } from "./cancellation-state";
 import { DispatchRecordCard } from "./dispatch-record-card";
 import type { DispatchRecord } from "./dispatch-record";
+import { ZoomableImage } from "@/components/zoomable-image";
 
 /** A Delivery Order whose entered Delivery fee is ₱0 ships free, whatever the subtotal. */
 export function hasFreeDelivery(order: OrderDetail): boolean {
@@ -94,8 +95,7 @@ function DeliveryFee({ order }: { order: OrderDetail }) {
 
 function Screenshot({ source, alt }: { source: string | null; alt: string }) {
   if (!source) return null;
-  // eslint-disable-next-line @next/next/no-img-element
-  return isViewableScreenshot(source) ? <img src={source} alt={alt} className="max-h-64 rounded-md border border-[#e6e1ee]" /> : <p className="text-xs text-[#6e6680]">Screenshot: {source}</p>;
+  return isViewableScreenshot(source) ? <ZoomableImage src={source} alt={alt} className="max-h-64 rounded-md border border-[#e6e1ee]" /> : <p className="text-xs text-[#6e6680]">Screenshot: {source}</p>;
 }
 
 /** Every proof the Customer sent, oldest first, with who rejected each and why. */
@@ -138,8 +138,7 @@ function DeliveryPhoto({ order, url }: { order: OrderDetail; url: string | null 
     <section className={CARD}>
       <h2 className={CARD_TITLE}>Delivery photo</h2>
       {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={`Delivery photo for Order #${order.id}`} className="max-h-64 rounded-md border border-[#e6e1ee]" />
+        <ZoomableImage src={url} alt={`Delivery photo for Order #${order.id}`} className="max-h-64 rounded-md border border-[#e6e1ee]" />
       ) : order.deliveryPhotoFileId ? (
         <p className="text-sm text-[#6e6680]">The Delivery photo could not be loaded. Reload to try again.</p>
       ) : order.deliveryPhotoRemovedAt ? (

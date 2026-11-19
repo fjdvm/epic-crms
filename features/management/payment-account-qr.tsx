@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { changePaymentAccountQr } from "./payment-actions";
+import { ZoomableImage } from "@/components/zoomable-image";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -68,8 +69,7 @@ export function PaymentAccountQr({ accountId, label, hasQr }: { accountId: strin
           </Button>
           {open && (
             <div id={`qr-${accountId}`} className="flex flex-col items-center gap-2">
-              {/* eslint-disable-next-line @next/next/no-img-element -- the route redirects to a short-lived signed address */}
-              <img src={`/api/payment-accounts/${accountId}/qr`} alt={`QR for ${label}`} className="size-24 rounded-md border border-[#e6e1ee] object-contain" />
+              <ZoomableImage src={`/api/payment-accounts/${accountId}/qr`} alt={`QR for ${label}`} className="size-24 rounded-md border border-[#e6e1ee] object-contain" />
               <div className="flex items-center gap-2">
                 <Button type="button" variant="outline" className="h-auto rounded-lg border border-[#e6e1ee] bg-transparent px-4 py-[9px] leading-[normal] text-[#1f1a2e] shadow-none hover:bg-[#f7f5fa]" disabled={busy} onClick={() => input.current?.click()}>
                   {busy ? "Saving…" : "Replace QR"}
