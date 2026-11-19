@@ -117,6 +117,7 @@ describe("the Conversations page as designed", () => {
         viewerName="Bernice"
         query="maria"
         scope="unclaimed"
+        scopes={["mine", "unclaimed", "all"]}
       />,
     );
     const tabs = screen.getByRole("tablist", { name: "Inbox" });

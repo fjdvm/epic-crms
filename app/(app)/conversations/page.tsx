@@ -2,13 +2,13 @@ import { Eye } from "lucide-react";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CHAT_SCOPES, loadConversations } from "@/features/tickets/conversations";
+import { allowedScope, loadConversations, scopesFor } from "@/features/tickets/conversations";
 import { ConversationsView } from "@/features/tickets/conversations-view";
 import { ChatSearchInput } from "@/features/tickets/ticket-toolbar";
 import { ticketFileStorage } from "@/features/files/server";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
-import { canWork } from "@/lib/portal/roles";
+import { canWork, shopRole } from "@/lib/portal/roles";
 import { ticketsDatabase } from "@/lib/tickets-db";
 import { searchParamsKey } from "@/lib/search-params-key";
 import { ConversationsSkeleton } from "@/features/tickets/conversations-skeleton";
@@ -75,7 +75,8 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
   const query = ((Array.isArray(asking) ? asking[0] : asking) ?? "").trim();
 
   const picked = Array.isArray(raw.tab) ? raw.tab[0] : raw.tab;
-  const scope = CHAT_SCOPES.find((s) => s === picked) ?? "mine";
+  const role = shopRole(staff.role);
+  const scope = allowedScope(role, picked);
 
   const result = await loadConversations(
     ticketsDatabase,
@@ -105,6 +106,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
       viewerName={staff.name}
       query={query}
       scope={scope}
+      scopes={scopesFor(role)}
       canDraft={canWork(staff)}
       readOnly={!canWork(staff)}
     />
