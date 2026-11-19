@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
+import { CELL, COLUMNS } from "./ticket-layout";
 import { ClaimProvider, useClaim } from "./claim";
 import { listTicketNotes, type TicketNote } from "./actions";
 import { EscalateDialog } from "./escalate-ui";
@@ -14,18 +15,6 @@ import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
 import { describeClock, type Clock } from "./service-level";
 import type { AssignableStaff } from "./staffs";
 import type { TicketRow } from "./tickets";
-
-export const COLUMNS: { header: string; className: string }[] = [
-  { header: "Details", className: "min-w-0 flex-[4_1_340px]" },
-  { header: "Service level", className: "flex-[1_1_110px]" },
-  { header: "Assigned", className: "min-w-0 flex-[1.5_1_150px]" },
-  { header: "Priority", className: "flex-[1_1_100px]" },
-  { header: "Activity status", className: "min-w-0 flex-[1.5_1_150px]" },
-  { header: "Status", className: "flex-[1_1_110px]" },
-];
-
-export const HEAD = "flex items-start overflow-clip";
-export const CELL = "flex items-center overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
 export interface RowsViewer {
   id: string;
