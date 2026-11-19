@@ -8,19 +8,12 @@ import { Conversation } from "./conversation";
 import { draftDisabledReason } from "./draft";
 import { NotesProvider } from "./notes";
 import { CHAT_SCOPES, inboxTime, type ChatScope, type Conversations } from "./conversations";
+import { initials } from "./image-viewer";
 import { ClaimedBy, ClaimProvider } from "./claim";
 import { HoldProvider, HoldSummary } from "./hold";
 import { TicketActions } from "./ticket-controls";
 
 const TAB_LABELS: Record<ChatScope, string> = { mine: "Mine", unclaimed: "Unclaimed", all: "All" };
-
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
 
 /** The Conversations page as designed: one card with the inbox on the left and the open chat on the right. */
 export function ConversationsView({
@@ -30,6 +23,7 @@ export function ConversationsView({
   now = new Date(),
   query = "",
   scope = "mine",
+  scopes = CHAT_SCOPES,
   canDraft = false,
   readOnly = false,
 }: {
@@ -41,6 +35,8 @@ export function ConversationsView({
   query?: string;
   /** The inbox tab: kept in every link so opening a chat stays on the same tab. */
   scope?: ChatScope;
+  /** The tabs this Role may open, in order; the server has already clamped `scope` to one of them. */
+  scopes?: ChatScope[];
   /** Staff and Managers only; Admin and CEO see no draft button. */
   canDraft?: boolean;
   /** Admin and CEO: read the chats, no reply box, notes, AI or claim buttons. */
@@ -51,7 +47,7 @@ export function ConversationsView({
   const href = (tab: ChatScope, ticket?: number) => {
     const params = new URLSearchParams();
     if (ticket !== undefined) params.set("ticket", String(ticket));
-    if (tab !== "mine") params.set("tab", tab);
+    if (tab !== scopes[0]) params.set("tab", tab);
     if (searching) params.set("q", query);
     const text = params.toString();
 
@@ -62,7 +58,7 @@ export function ConversationsView({
     <div className="flex w-full flex-col overflow-hidden rounded-xl border border-[#e6e1ee] bg-white lg:min-h-0 lg:flex-1 lg:flex-row">
       <div className="flex h-[40vh] w-full flex-col border-b border-[#e6e1ee] lg:h-full lg:w-[300px] lg:shrink-0 lg:border-r lg:border-b-0">
         <div role="tablist" aria-label="Inbox" className="flex shrink-0 gap-1 p-3">
-          {CHAT_SCOPES.map((tab) => (
+          {scopes.map((tab) => (
             <Link
               key={tab}
               role="tab"
