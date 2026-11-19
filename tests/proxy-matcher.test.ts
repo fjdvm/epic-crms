@@ -9,6 +9,15 @@ describe("proxy matcher", () => {
     expect(matches("/api/health")).toBe(false);
   });
 
+  it("leaves the storefront's payment-methods route outside the Portal session, since it authenticates with the service secret", () => {
+    expect(matches("/api/payment-methods")).toBe(false);
+  });
+
+  it("still guards the payment accounts routes and similarly named paths", () => {
+    expect(matches("/api/payment-accounts/1/qr")).toBe(true);
+    expect(matches("/api/payment-methods-admin")).toBe(true);
+  });
+
   it("still guards the other approval routes", () => {
     expect(matches("/api/approvals/requests")).toBe(true);
   });
