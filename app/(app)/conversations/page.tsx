@@ -1,4 +1,3 @@
-import { Eye } from "lucide-react";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,41 +24,20 @@ export default async function ConversationsPage({
   const raw = await searchParams;
 
   return (
-    <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1 space-y-1">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold leading-[normal] text-[#1f1a2e]">
-            Conversations
-            <Suspense fallback={null}>
-              <ReadOnlyBadge />
-            </Suspense>
-          </h1>
-          <p className="text-sm leading-[normal] text-[#6e6680]">
-            The live chat inside each ticket. Escalate from the ticket page.
-          </p>
+    <div className="px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
+      {/* One card: the search sits at the top of the inbox column, outside the keyed Suspense so typing keeps its focus. */}
+      <div className="grid w-full grid-cols-1 overflow-hidden rounded-xl border border-[#e6e1ee] bg-white lg:h-full lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]">
+        <div className="border-b border-[#e6e1ee] p-3 lg:col-start-1 lg:row-start-1 lg:border-r">
+          <ChatSearchInput
+            label="Search chats"
+            placeholder="Ticket no., customer, email or order"
+          />
         </div>
-        <ChatSearchInput
-          label="Search chats"
-          placeholder="Ticket no., customer, email or order"
-        />
+        <Suspense key={searchParamsKey(raw)} fallback={<ConversationsSkeleton />}>
+          <ConversationsData raw={raw} />
+        </Suspense>
       </div>
-      <Suspense key={searchParamsKey(raw)} fallback={<ConversationsSkeleton />}>
-        <ConversationsData raw={raw} />
-      </Suspense>
     </div>
-  );
-}
-
-/** Admin and CEO see a Read-only tag beside the title; Staff and Managers see nothing. */
-async function ReadOnlyBadge() {
-  const staff = await requireModule(TICKETS_MODULE);
-  if (canWork(staff)) return null;
-
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-[#f3f1f6] px-2 py-0.5 text-[11px] font-medium text-[#6e6680]">
-      <Eye aria-hidden className="size-3" />
-      Read-only
-    </span>
   );
 }
 
@@ -89,7 +67,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
 
   if (!result.ok) {
     return (
-      <Alert variant="destructive">
+      <Alert variant="destructive" className="col-span-full m-5 w-auto">
         <AlertTitle>Conversations are temporarily unavailable</AlertTitle>
         <AlertDescription>
           CREOMS could not read the store&apos;s Tickets. Reload to try again;
