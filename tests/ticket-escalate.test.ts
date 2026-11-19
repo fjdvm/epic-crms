@@ -126,7 +126,7 @@ describe("Escalate", () => {
     const id = await ticket();
     await db.sql`update tickets set created_at = now() - interval '10 days' where id = ${id}`;
 
-    const list = await listTickets(db.sql, { tab: "open", escalatedIds: await openEscalatedIds(db.sql) });
+    const list = await listTickets(db.sql, { tab: "mine", viewerId: "liza", escalatedIds: await openEscalatedIds(db.sql) });
     expect(list.rows.find((r) => r.id === id)).toMatchObject({ overdue: true, escalated: false });
   });
 });
@@ -221,11 +221,11 @@ describe("The Escalated list filter", () => {
     await escalate(a);
     const escalatedIds = await openEscalatedIds(db.sql);
 
-    const all = await listTickets(db.sql, { tab: "open", escalatedIds });
-    const only = await listTickets(db.sql, { tab: "open", escalated: true, escalatedIds });
+    const all = await listTickets(db.sql, { tab: "mine", viewerId: "liza", escalatedIds });
+    const only = await listTickets(db.sql, { tab: "mine", viewerId: "liza", escalated: true, escalatedIds });
 
     expect(all.rows.filter((r) => r.escalated).map((r) => r.id)).toEqual([a]);
     expect(only.rows.map((r) => r.id)).toEqual([a]);
-    expect(only.counts.open).toBe(1);
+    expect(only.counts.mine).toBe(1);
   });
 });

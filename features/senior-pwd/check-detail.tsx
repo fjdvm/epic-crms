@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, ChevronLeft, IdCard, Lock, RotateCw, Sparkles, ZoomIn, ZoomOut } from "lucide-react";
-import Link from "next/link";
+import { BackButton } from "@/components/shared/back-button";
+
+import { Check, IdCard, Lock, RotateCw, Sparkles, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
@@ -219,9 +220,7 @@ export function SeniorPwdCheckDetail({ verification: v, readOnly, role }: { veri
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 overflow-auto px-8 py-7">
-      <Link href={SENIOR_PWD_PAGE} prefetch className="inline-flex w-fit items-center gap-1 text-sm text-[#5b2a86]">
-        <ChevronLeft aria-hidden className="size-4" /> Senior/PWD checks
-      </Link>
+      <div className="shrink-0 self-start"><BackButton fallbackHref={SENIOR_PWD_PAGE} label="Senior/PWD checks" /></div>
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Review ID · {v.customerName}</h1>

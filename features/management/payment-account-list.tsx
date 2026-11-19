@@ -26,15 +26,12 @@ export function PaymentAccountList({ accounts, failed, disabledMethods = [] }: {
           {accounts.map((a) => (
             <li key={a.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3 text-sm">
               <div className="min-w-0 flex-1">
-                <p className="font-medium text-[#1f1a2e]">{a.label}</p>
+                <p className="flex items-center gap-2 font-medium text-[#1f1a2e]">{a.label} <span className="text-xs font-normal text-[#6e6680]">{a.active ? "Active" : "Inactive"}</span></p>
                 <p className="text-[#6e6680]">{methodLabel(a.method)}{a.bankName ? ` · ${a.bankName}` : ""} · {a.accountName} · {a.maskedNumber}</p>
               </div>
               <div className="flex items-center gap-4">
                 <PaymentAccountQr accountId={a.id} label={a.label} hasQr={a.hasQr} />
-                <div className="flex flex-col items-end gap-2">
-                  <span className="text-xs text-[#6e6680]">{a.active ? "Active" : "Inactive"}</span>
-                  <PaymentAccountControls account={a} />
-                </div>
+                <PaymentAccountControls account={a} />
               </div>
             </li>
           ))}

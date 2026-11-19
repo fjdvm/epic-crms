@@ -51,17 +51,17 @@ export function PaymentAccountQr({ accountId, label, hasQr }: { accountId: strin
   }
 
   return (
-    <div className="flex flex-col items-start gap-2">
+    <div className="flex flex-col items-center gap-2">
       {hasQr && (
         // eslint-disable-next-line @next/next/no-img-element -- the route redirects to a short-lived signed address
         <img src={`/api/payment-accounts/${accountId}/qr`} alt={`QR for ${label}`} className="size-24 rounded-md border border-[#e6e1ee] object-contain" />
       )}
       <input ref={input} type="file" accept="image/jpeg,image/png" className="sr-only" aria-label={`QR image for ${label}`} onChange={onPick} />
-      <div className="flex gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="outline" className="h-auto rounded-lg border border-[#e6e1ee] bg-transparent px-4 py-[9px] leading-[normal] text-[#1f1a2e] shadow-none hover:bg-[#f7f5fa]" disabled={busy} onClick={() => input.current?.click()}>
           {busy ? "Saving…" : hasQr ? "Replace QR" : "Add QR"}
         </Button>
-        {hasQr && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onRemove}>Remove QR</Button>}
+        {hasQr && <Button type="button" variant="outline" className="h-auto rounded-lg border border-[#e6e1ee] bg-transparent px-4 py-[9px] leading-[normal] text-[#1f1a2e] shadow-none hover:bg-[#f7f5fa]" disabled={busy} onClick={onRemove}>Remove QR</Button>}
       </div>
       {error && <p role="alert" className="text-xs text-[#dc2626]">{error}</p>}
     </div>

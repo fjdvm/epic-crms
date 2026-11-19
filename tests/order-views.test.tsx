@@ -25,6 +25,11 @@ vi.mock("@/features/orders/actions", () => ({
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
+/** Every button except the Back navigation, which is not an action. */
+const NAV = new Set(["Orders", "Returns", "Tickets"]);
+const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? ""));
+
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -142,7 +147,7 @@ describe("the Orders list", () => {
   it("has no action buttons", () => {
     list([row({})]);
 
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(actionButtons()).toHaveLength(0);
   });
 });
 
@@ -408,7 +413,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
   it("offers cancel up to preparing, and nothing to confirm once past placed", () => {
     for (const status of ["confirmed", "awaiting payment", "paid", "preparing"]) {
       const { unmount } = render(<OrderDetailView order={detail({ status })} modules={ORDERS} />);
-      expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel order"]);
+      expect(actionButtons().map((b) => b.textContent)).toEqual(["Cancel order"]);
       unmount();
     }
   });
@@ -416,14 +421,14 @@ describe("the Orders Module's actions on an Order's detail", () => {
   it("never offers cancel once dispatched, and says so plainly", () => {
     render(<OrderDetailView order={detail({ status: "dispatched" })} modules={ORDERS} />);
 
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(actionButtons()).toHaveLength(0);
     expect(screen.getByText("A dispatched Order cannot be cancelled.")).toBeTruthy();
   });
 
   it("offers nothing on a delivered or cancelled Order", () => {
     for (const status of ["delivered", "cancelled"]) {
       const { unmount } = render(<OrderDetailView order={detail({ status })} modules={ORDERS} />);
-      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      expect(actionButtons()).toHaveLength(0);
       unmount();
     }
   });
@@ -853,7 +858,7 @@ describe("the Payments Module's actions on an Order's detail", () => {
   it("offers Mark paid and Cancel order for a GCash Order awaiting payment, and nothing from the Orders Module", () => {
     render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
 
-    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel order", "Reject receipt", "Ask for a new proof", "Mark paid"]);
+    expect(actionButtons().map((b) => b.textContent)).toEqual(["Cancel order", "Reject receipt", "Ask for a new proof", "Mark paid"]);
   });
 
   it("marks paid through the dialog, and cancels through the Payments action", async () => {
@@ -878,7 +883,7 @@ describe("the Payments Module's actions on an Order's detail", () => {
 
     for (const status of ["confirmed", "paid", "preparing", "dispatched", "delivered", "cancelled"]) {
       const view = render(<OrderDetailView order={awaiting({ status })} modules={PAYMENTS} />);
-      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      expect(actionButtons()).toHaveLength(0);
       view.unmount();
     }
   });
@@ -913,8 +918,8 @@ describe("Returns-only Order detail access", () => {
     for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing", "dispatched", "delivered"]) {
       const view = render(<OrderDetailView order={detail({ status })} modules={["Returns"]} />);
       expect(screen.getByRole("heading", { name: "Order #1042" })).toBeTruthy();
-      expect(screen.getByRole("link", { name: /← Returns/ }).getAttribute("href")).toBe("/returns");
-      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      expect(screen.getByRole("button", { name: "Returns" })).toBeTruthy();
+      expect(actionButtons()).toHaveLength(0);
       view.unmount();
     }
   });
@@ -927,7 +932,7 @@ describe("received Orders", () => {
     const progress = screen.getByRole("list", { name: "Order progress" });
     const current = within(progress).getAllByRole("listitem").find(item => item.getAttribute("aria-current") === "step");
     expect(current?.textContent).toBe("Received");
-    expect(screen.queryAllByRole("button").map(b => b.textContent)).toEqual(["Print packing slip"]);
+    expect(actionButtons().map(b => b.textContent)).toEqual(["Print packing slip"]);
   });
 });
 

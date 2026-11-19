@@ -22,6 +22,11 @@ vi.mock("@/features/tickets/actions", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
+/** Every button except the Back navigation, which is not an action. */
+const NAV = new Set(["Orders", "Returns", "Tickets"]);
+const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? ""));
+
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -202,7 +207,7 @@ describe("the Ticket page as designed", () => {
 });
 
 describe("working the Ticket", () => {
-  const buttons = () => screen.getAllByRole("button").map((b) => b.textContent);
+  const buttons = () => actionButtons().map((b) => b.textContent);
 
   it("offers Release and Mark resolved to the Claimer, and not Claim", () => {
     render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
@@ -230,7 +235,7 @@ describe("working the Ticket", () => {
     cleanup();
 
     render(<TicketDetailView ticket={ticket({ status: "completed" })} viewerId="bernice" />);
-    expect(screen.queryAllByRole("button")).toEqual([]);
+    expect(actionButtons()).toEqual([]);
   });
 });
 

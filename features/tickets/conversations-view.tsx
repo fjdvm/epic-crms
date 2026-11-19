@@ -15,7 +15,7 @@ import { TicketActions } from "./ticket-controls";
 
 const TAB_LABELS: Record<ChatScope, string> = { mine: "Mine", unclaimed: "Unclaimed", all: "All" };
 
-/** The Conversations page as designed: one card with the inbox on the left and the open chat on the right. */
+/** The inbox on the left and the open chat on the right. The page's card grid holds them: the search sits above the inbox, and the chat spans the full height. */
 export function ConversationsView({
   conversations,
   viewerId,
@@ -55,8 +55,8 @@ export function ConversationsView({
   };
 
   return (
-    <div className="flex w-full flex-col overflow-hidden rounded-xl border border-[#e6e1ee] bg-white lg:min-h-0 lg:flex-1 lg:flex-row">
-      <div className="flex h-[40vh] w-full flex-col border-b border-[#e6e1ee] lg:h-full lg:w-[300px] lg:shrink-0 lg:border-r lg:border-b-0">
+    <>
+      <div className="flex h-[40vh] w-full min-h-0 flex-col border-b border-[#e6e1ee] lg:col-start-1 lg:row-start-2 lg:h-auto lg:border-r lg:border-b-0">
         <div role="tablist" aria-label="Inbox" className="flex shrink-0 gap-1 p-3">
           {scopes.map((tab) => (
             <Link
@@ -115,13 +115,13 @@ export function ConversationsView({
       {selected ? (
         <SelectedChat ticket={selected} viewerId={viewerId} viewerName={viewerName} canDraft={canDraft} readOnly={readOnly} />
       ) : (
-        <section className="flex h-[30vh] w-full min-w-0 items-center justify-center p-5 lg:h-full lg:flex-1">
+        <section className="flex h-[30vh] w-full min-w-0 items-center justify-center p-5 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:h-auto">
           <p className="text-sm leading-[normal] text-[#6e6680]">
             {searching ? "No chat matches this search." : "When a Customer opens a Ticket, its chat appears here."}
           </p>
         </section>
       )}
-    </div>
+    </>
   );
 }
 
@@ -149,7 +149,7 @@ function SelectedChat({
     >
       <HoldProvider ticketId={ticket.id} status={ticket.status} hold={ticket.hold}>
         <NotesProvider key={ticket.id} ticketId={ticket.id} viewerName={viewerName}>
-          <section aria-label="Chat" className="flex h-[70vh] min-h-0 w-full min-w-0 flex-col lg:h-full lg:flex-1">
+          <section aria-label="Chat" className="flex h-[70vh] min-h-0 w-full min-w-0 flex-col lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:h-auto">
             <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[#e6e1ee] px-5 py-3">
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-[13px] font-semibold leading-[normal] text-[#1f1a2e]">

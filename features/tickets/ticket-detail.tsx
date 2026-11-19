@@ -1,3 +1,4 @@
+import { BackButton } from "@/components/shared/back-button";
 import type { ReactNode } from "react";
 import Link from "next/link";
 
@@ -103,6 +104,7 @@ export function TicketDetailView({
     <HoldProvider ticketId={ticket.id} status={ticket.status} hold={ticket.hold}>
     <NotesProvider ticketId={ticket.id} viewerName={viewerName}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
+      <div className="shrink-0 self-start"><BackButton fallbackHref="/tickets" label="Tickets" /></div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2.5">

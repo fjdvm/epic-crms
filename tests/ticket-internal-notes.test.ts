@@ -63,7 +63,7 @@ describe("Internal notes", () => {
     expect(detail.serviceLevel.firstReply.state).toBe("missed");
     expect(detail.serviceLevel.firstReply.state).not.toBe("met");
 
-    const list = await listTickets(db.sql, { tab: "open", now: NOW });
+    const list = await listTickets(db.sql, { tab: "mine", viewerId: "bernice", now: NOW });
     expect(list.rows[0]).toMatchObject({ overdue: true, waiting: false });
 
     const chats = await listConversations(db.sql, "bernice");
@@ -75,7 +75,7 @@ describe("Internal notes", () => {
     await addInternalNote(db.sql, id, bernice, "note");
     await replyToTicket(db.sql, id, bernice, "On it");
 
-    const list = await listTickets(db.sql, { tab: "open", now: NOW });
+    const list = await listTickets(db.sql, { tab: "mine", viewerId: "bernice", now: NOW });
     expect(list.rows.find((r) => r.id === id)).toMatchObject({ overdue: false });
   });
 

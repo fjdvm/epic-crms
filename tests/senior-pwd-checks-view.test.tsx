@@ -194,7 +194,8 @@ describe("the Senior/PWD check screen", () => {
       expect(screen.getByRole("button", { name: "Override" })).toBeTruthy();
       manager.unmount();
       detail(declined, { readOnly: true, role: "ceo" });
-      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      // Only the Back navigation is left; no decision button.
+      expect(screen.queryAllByRole("button").map((b) => b.textContent)).toEqual(["Senior/PWD checks"]);
     });
     it("lets a Manager revoke an approved ID", () => {
       detail(v({ status: "approved", expiresOn: "2031-03-15", decidedByName: "Ana", photoFileId: null }), { role: "manager" });

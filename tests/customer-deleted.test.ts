@@ -94,7 +94,7 @@ describe("Tickets and Conversations of a Deleted Customer", () => {
     try {
       const ticket = await getTicket(db.sql, id as number);
       expect(ticket?.customer).toMatchObject({ name: "Deleted customer", deleted: true });
-      const list = await listTickets(db.sql);
+      const list = await listTickets(db.sql, { tab: "mine", viewerId: "bernice" });
       expect(list.rows.map((r) => r.customerName)).toContain("Deleted customer");
       const convos = await listConversations(db.sql, 'bernice');
       expect(convos.map((c) => c.customerName)).toEqual(["Deleted customer"]);

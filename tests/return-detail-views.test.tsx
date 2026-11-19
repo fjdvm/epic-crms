@@ -31,6 +31,11 @@ import { resendStatusEmail } from "@/features/orders/actions";
 import { saveRefundProof } from "@/features/returns/refund-proof-actions";
 import { approveReturn, changeRefundDestination, declineReturn, extendRefundWindow, revealRefundDestination, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
 
+/** Every button except the Back navigation, which is not an action. */
+const NAV = new Set(["Orders", "Returns", "Tickets"]);
+const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? ""));
+
+
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
@@ -72,7 +77,7 @@ const view = (
 
 const picture = (name = "proof.png", type = "image/png") => new File([new Uint8Array([1, 2, 3])], name, { type });
 
-const buttons = () => screen.queryAllByRole("button").map((b) => b.textContent);
+const buttons = () => actionButtons().map((b) => b.textContent);
 
 describe("the Return detail", () => {
   it("says the Delivery photo was removed, and No photo when the Order never had one", () => {

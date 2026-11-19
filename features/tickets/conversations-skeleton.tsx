@@ -3,14 +3,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** The inbox and chat as skeleton, shown at once while a chat or a search loads. */
 export function ConversationsSkeleton() {
   return (
-    <div
-      role="status"
-      aria-label="Loading Conversations"
-      className="flex w-full flex-col overflow-hidden rounded-xl border border-[#e6e1ee] bg-white lg:min-h-0 lg:flex-1 lg:flex-row"
-    >
+    <div role="status" aria-label="Loading Conversations" className="contents">
       <nav
         aria-label="Chats"
-        className="flex h-[40vh] w-full flex-col overflow-hidden border-b border-[#e6e1ee] lg:h-full lg:w-[300px] lg:shrink-0 lg:border-r lg:border-b-0"
+        className="flex h-[40vh] w-full min-h-0 flex-col overflow-hidden border-b border-[#e6e1ee] lg:col-start-1 lg:row-start-2 lg:h-auto lg:border-r lg:border-b-0"
       >
         <div className="flex gap-1 p-3">
           <Skeleton className="h-6 w-14" />
@@ -28,7 +24,7 @@ export function ConversationsSkeleton() {
         ))}
       </nav>
 
-      <section aria-label="Chat" className="flex h-[70vh] min-h-0 w-full min-w-0 flex-col lg:h-full lg:flex-1">
+      <section aria-label="Chat" className="flex h-[70vh] min-h-0 w-full min-w-0 flex-col lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:h-auto">
         <div className="flex items-center gap-2 border-b border-[#e6e1ee] px-5 py-3">
           <div className="flex-1 space-y-1.5">
             <Skeleton className="h-4 w-40" />
