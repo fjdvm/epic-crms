@@ -132,6 +132,11 @@ export async function reassignOne(ticketId: number, fromId: string, toId: string
   return move([Number(ticketId)], fromId, toId, reason, operationId, false);
 }
 
+/** Assign from the Tickets list or drawer: `fromId` is the Claimer the Manager saw, or null for an Unclaimed Ticket. A reason is optional here and defaults to a plain note. */
+export async function assignTicket(ticketId: number, fromId: string | null, toId: string, reason: string | undefined, operationId: string) {
+  return move([Number(ticketId)], fromId ?? "", toId, reason?.trim() || "Assigned from the Tickets list.", operationId, false);
+}
+
 /** `ticketIds` are the Tickets the Manager saw; any no longer held by `fromId` are skipped and counted. */
 export async function reassignAll(ticketIds: number[], fromId: string, toId: string, reason: string, operationId: string) {
   return move(Array.isArray(ticketIds) ? ticketIds.map(Number) : [], fromId, toId, reason, operationId, true);

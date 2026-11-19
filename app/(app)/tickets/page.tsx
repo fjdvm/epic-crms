@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { mayReadTicketReport } from "@/features/reports/ticket-report";
 import { shopRole } from "@/lib/portal/roles";
+import { loadAssignableStaff } from "@/features/tickets/staffs";
 import { NewTicketDialog } from "@/features/tickets/new-ticket-dialog";
 import {
   TicketListSkeleton,
@@ -107,7 +108,10 @@ async function TicketToolbarData() {
 
 async function TicketsData({ raw }: { raw: Awaited<SearchParams> }) {
   const staff = await requireModule(TICKETS_MODULE);
-  const params = parseTicketParams(raw);
+  const role = shopRole(staff.role);
+  const parsed = parseTicketParams(raw);
+  // Staff see only their own and unclaimed Tickets, so the Staffs tab is not theirs even by address.
+  const params = role === "staff" && parsed.tab === "staffs" ? { ...parsed, tab: "open" as const, claimedBy: undefined } : parsed;
 
   const levels = await readServiceLevels(crmsDatabase);
   // The escalations are CREOMS's own; if they cannot be read the list still opens, without the badge.
@@ -132,10 +136,16 @@ async function TicketsData({ raw }: { raw: Awaited<SearchParams> }) {
     );
   }
 
+  const staffs = role === "staff" ? [] : await loadAssignableStaff(ticketsDatabase);
+  const asked = Array.isArray(raw.ticket) ? raw.ticket[0] : raw.ticket;
+
   return (
     <TicketListView
       list={result.list}
       params={{ ...params, page: result.list.page }}
+      viewer={{ id: staff.username, name: staff.name, role }}
+      staffs={staffs}
+      openId={asked && /^\d{1,9}$/.test(asked) ? Number(asked) : null}
     />
   );
 }

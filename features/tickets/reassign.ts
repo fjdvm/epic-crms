@@ -37,7 +37,7 @@ export type ReassignResult =
 
 export interface ReassignRequest {
   ticketIds: number[];
-  /** The Claimer the Manager saw; a Ticket held by anyone else is left alone. */
+  /** The Claimer the Manager saw; a Ticket held by anyone else is left alone. Empty assigns an Unclaimed Ticket. */
   fromId: string;
   to: Teammate;
   reason: string;
@@ -78,21 +78,22 @@ export async function reassignTickets(deps: ReassignDeps, mover: Mover, req: Rea
     where operation_id = ${req.operationId} and moved_by_id = ${mover.id} order by ticket_id`;
   if (earlier.length) return { ok: true, moved: earlier.map((r) => r.ticket_id), skipped: [] };
 
+  const unclaimed = !req.fromId;
   const rows = await deps.tickets<{ id: number; from_name: string }[]>`
     with held as (
       select id, claimed_by_name from tickets
-      where id = any(${ids}::int[]) and claimed_by_id = ${req.fromId} and status <> 'completed'
+      where id = any(${ids}::int[]) and claimed_by_id is not distinct from ${req.fromId || null}::text and status <> 'completed'
       for update
     )
     update tickets t set claimed_by_id = ${req.to.id}, claimed_by_name = ${req.to.name}
     from held where t.id = held.id
     returning t.id, held.claimed_by_name as from_name`;
 
-  if (!rows.length) return { ok: false, reason: await whyNothingMoved(deps.tickets, ids) };
+  if (!rows.length) return { ok: false, reason: await whyNothingMoved(deps.tickets, ids, unclaimed) };
 
   const moved = rows.map((r) => r.id).sort((a, b) => a - b);
   const skipped = ids.filter((id) => !moved.includes(id));
-  const fromName = rows[0].from_name ?? "the previous Claimer";
+  const fromName = unclaimed ? "Unclaimed" : (rows[0].from_name ?? "the previous Claimer");
 
   try {
     await recordMoves(deps.crms, mover, req, reason, moved, fromName);
@@ -120,13 +121,13 @@ export async function reassignTickets(deps: ReassignDeps, mover: Mover, req: Rea
   return { ok: true, moved, skipped };
 }
 
-async function whyNothingMoved(sql: postgres.Sql, ids: number[]): Promise<ReassignFailure> {
+async function whyNothingMoved(sql: postgres.Sql, ids: number[], unclaimed = false): Promise<ReassignFailure> {
   const found = await sql<{ status: string; claimed_by_id: string | null }[]>`
     select status, claimed_by_id from tickets where id = any(${ids}::int[])`;
 
   if (!found.length) return "not-found";
   if (found.every((t) => t.status === "completed")) return "completed";
-  if (found.every((t) => t.claimed_by_id === null)) return "not-claimed";
+  if (!unclaimed && found.every((t) => t.claimed_by_id === null)) return "not-claimed";
 
   return "claimer-changed";
 }
@@ -143,7 +144,7 @@ async function recordMoves(
     await tx`
       insert into crms.ticket_reassignments
         (ticket_id, from_id, from_name, to_id, to_name, reason, moved_by_id, moved_by_name, operation_id, bulk)
-      select id, ${req.fromId}, ${fromName}, ${req.to.id}, ${req.to.name}, ${reason}, ${mover.id}, ${mover.name}, ${req.operationId}, ${req.bulk}
+      select id, ${req.fromId || "unclaimed"}, ${fromName}, ${req.to.id}, ${req.to.name}, ${reason}, ${mover.id}, ${mover.name}, ${req.operationId}, ${req.bulk}
       from unnest(${moved}::int[]) as id
       on conflict (operation_id, ticket_id) do nothing`;
 
@@ -157,7 +158,7 @@ async function recordMoves(
           ${moved.length === 1 ? moved[0] : null}, ${recipientId}, ${tx.json(detail as unknown as import("postgres").JSONValue)})`;
     };
 
-    await alert(req.fromId, "previous");
+    if (req.fromId) await alert(req.fromId, "previous");
     await alert(req.to.id, "new");
   });
 }

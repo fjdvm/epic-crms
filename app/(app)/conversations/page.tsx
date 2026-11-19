@@ -63,6 +63,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
     ticketFileStorage,
     query,
     scope,
+    role === "manager" || role === "admin" || role === "ceo",
   );
 
   if (!result.ok) {
