@@ -285,7 +285,7 @@ describe("filtering the Tickets list", () => {
   });
 
   const find = async (query: Parameters<typeof listTickets>[1]) =>
-    subjects((await listTickets(db.sql, { tab: "all", now: NOW, ...query })).rows).sort();
+    subjects((await listTickets(db.sql, { tab: "open", now: NOW, ...query })).rows).sort();
 
   it("by Priority", async () => {
     expect(await find({ priority: "high" })).toEqual(["a", "b", "d"]);
@@ -312,7 +312,7 @@ describe("filtering the Tickets list", () => {
   });
 
   it("applies to the tab counts, and Overdue shows only Open Tickets", async () => {
-    const list = await listTickets(db.sql, { tab: "open", now: NOW, overdue: true, priority: "high" });
+    const list = await listTickets(db.sql, { tab: "open", now: NOW, overdue: true, priority: "high", viewerId: RHEA[0] });
 
     expect(list.counts).toMatchObject({ open: 2, all: 2 });
   });
@@ -343,5 +343,18 @@ describe("loadTickets", () => {
     }, { tab: "open" });
 
     expect(result).toEqual({ ok: false });
+  });
+});
+
+describe("the All tab", () => {
+  it("hides Tickets another person Claimed, in the rows and the count", async () => {
+    await ticket({ subject: "unclaimed", messages: [["customer", 1]] });
+    await ticket({ subject: "mine", claimedBy: BERNICE, messages: [["customer", 1]] });
+    await ticket({ subject: "hers", claimedBy: RHEA, messages: [["customer", 1]] });
+
+    const list = await listTickets(db.sql, { tab: "all", viewerId: BERNICE[0], now: NOW });
+
+    expect(subjects(list.rows).sort()).toEqual(["mine", "unclaimed"]);
+    expect(list.counts.all).toBe(2);
   });
 });

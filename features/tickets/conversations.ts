@@ -48,7 +48,7 @@ export interface ConversationRow {
 }
 
 /**
- * The chats of the Tickets this Staff member Claimed (or the Unclaimed ones; All adds Resolved and Closed too), by `scope`, newest activity first, narrowed by the same search as
+ * The chats of the Tickets this Staff member Claimed (or the Unclaimed ones; All adds Resolved and Closed too, but never a Ticket someone else Claimed), by `scope`, newest activity first, narrowed by the same search as
  * the Tickets list when one is given. A chat is a Ticket's Conversation; there is none without a Ticket.
  */
 export async function listConversations(
@@ -62,7 +62,7 @@ export async function listConversations(
       ? sql`t.claimed_by_id = ${viewerId} and t.status in ('open', 'on_hold')`
       : scope === "unclaimed"
         ? sql`t.claimed_by_id is null and t.status in ('open', 'on_hold')`
-        : sql`true`;
+        : sql`(t.claimed_by_id is null or t.claimed_by_id = ${viewerId})`;
 
   const rows = await sql<Record<string, unknown>[]>`
     select
