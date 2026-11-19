@@ -18,7 +18,7 @@ export function PaymentAccountControls({ account }: { account: PaymentAccountRow
   const id = `pa-${account.id}`;
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       <OrderActionDialog
         trigger="Edit"
         triggerClassName="bg-transparent !text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa]"

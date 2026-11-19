@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
@@ -11,8 +13,12 @@ import { maskNumber, methodLabel, PAYMENT_METHODS, validateAccount, type Payment
 
 const empty = { method: "gcash" as PaymentMethod, label: "", accountName: "", accountNumber: "", bankName: "" };
 
-/** Adds a Payment account: validated here for quick feedback and again on the server. Never optimistic. */
+/**
+ * The "Add payment account" button and the modal with the fields. Validated here for quick feedback and again on the
+ * server; the confirm dialog still comes first, and saving is never optimistic.
+ */
 export function PaymentAccountForm() {
+  const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const set = (k: keyof typeof empty) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const valid = validateAccount(form);
@@ -21,8 +27,15 @@ export function PaymentAccountForm() {
   const isBank = form.method === "bank_transfer";
 
   return (
-    <section className="w-full max-w-[28rem] space-y-4">
-      <h2 className="text-base font-semibold text-[#1f1a2e]">Add a Payment account</h2>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" className="h-auto rounded-lg px-4 py-[9px] leading-[normal] shadow-none">Add payment account</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-[28rem] space-y-4 sm:max-w-[28rem] md:max-w-[28rem] lg:max-w-[28rem]">
+      <DialogHeader>
+        <DialogTitle className="text-base font-semibold text-[#1f1a2e]">Add a Payment account</DialogTitle>
+        <DialogDescription className="text-[13px] text-[#6e6680]">The number is shown masked everywhere after you save.</DialogDescription>
+      </DialogHeader>
       <div className="space-y-1.5">
         <Label htmlFor="pa-method">Method</Label>
         <select id="pa-method" value={form.method} onChange={set("method")} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
@@ -46,7 +59,7 @@ export function PaymentAccountForm() {
         disabled={!valid.ok}
         run={async () => {
           const result = await createPaymentAccount(form);
-          if (result.ok) setForm(empty);
+          if (result.ok) { setForm(empty); setOpen(false); }
           return result;
         }}
         successMessage="Payment account added."
@@ -60,6 +73,7 @@ export function PaymentAccountForm() {
           </dl>
         )}
       </OrderActionDialog>
-    </section>
+      </DialogContent>
+    </Dialog>
   );
 }

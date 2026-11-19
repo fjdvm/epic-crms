@@ -18,7 +18,6 @@ export const SENIOR_PWD_PAGE = "/customer-profiles/senior-pwd";
 export const pages = [
   { href: "/dashboard", module: DASHBOARD_MODULE },
   { href: "/customer-profiles", module: CUSTOMER_PROFILES_MODULE },
-  { href: "/my-tasks", module: CUSTOMER_PROFILES_MODULE },
   { href: SENIOR_PWD_PAGE, module: SENIOR_PWD_MODULE },
   { href: "/orders", module: ORDERS_MODULE },
   { href: "/payments", module: PAYMENTS_MODULE },

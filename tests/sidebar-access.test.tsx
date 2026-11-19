@@ -57,12 +57,6 @@ describe("the sidebar", () => {
     expect(link.getAttribute("href")).toBe("/customer-profiles/senior-pwd");
   });
 
-  it("lists My Tasks beside Customer Profiles only with its page", async () => {
-    renderSidebar(["/customer-profiles", "/my-tasks"]);
-
-    expect(await screen.findByRole("link", { name: "My Tasks" })).toBeTruthy();
-  });
-
   it("groups Customer Profiles under CUSTOMERS and shows the system name", async () => {
     renderSidebar(["/customer-profiles"]);
 
@@ -115,11 +109,11 @@ describe("the sidebar", () => {
   });
 
   it("lists the groups in order, with Products & Stocks dimmed beside Orders and Approvals under Management", async () => {
-    renderSidebar(["/dashboard", "/my-tasks", "/customer-profiles", "/orders", "/payments", "/tickets", "/approvals"]);
+    renderSidebar(["/dashboard", "/customer-profiles", "/orders", "/payments", "/tickets", "/approvals"]);
 
     await screen.findByText("OVERVIEW");
     const text = document.body.textContent ?? "";
-    const order = ["OVERVIEW", "Dashboard", "My Tasks", "CUSTOMERS", "Customer Profiles", "COMMERCE", "Orders", "Products & Stocks", "Payments", "CUSTOMER SUPPORT", "Tickets", "MANAGEMENT", "Approvals"];
+    const order = ["OVERVIEW", "Dashboard", "CUSTOMERS", "Customer Profiles", "COMMERCE", "Orders", "Products & Stocks", "Payments", "CUSTOMER SUPPORT", "Tickets", "MANAGEMENT", "Approvals"];
     const at = order.map((t) => text.indexOf(t));
 
     expect(at.every((n) => n >= 0)).toBe(true);

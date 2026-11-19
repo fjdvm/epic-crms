@@ -98,7 +98,6 @@ async function changeTask(customerId: string, taskId: string | null, change: Cha
         }
       }).catch(error => console.error("Customer Task audit delivery failed", error));
       revalidatePath(`/customer-profiles/${customerId}`);
-      revalidatePath("/my-tasks");
     }
     return result;
   } catch (error) {

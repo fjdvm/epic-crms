@@ -14,7 +14,6 @@ import {
   Users2,
   Package,
   ClipboardCheck,
-  ListChecks,
   Landmark,
   IdCard,
 } from "lucide-react";
@@ -62,13 +61,6 @@ export const seniorPwdItem: NavItem = {
   name: "Senior/PWD checks",
   href: SENIOR_PWD_PAGE,
   icon: IdCard,
-};
-
-export const myTasksItem: NavItem = {
-  group: "OVERVIEW",
-  name: "My Tasks",
-  href: "/my-tasks",
-  icon: ListChecks,
 };
 
 export const ordersItem: NavItem = {
@@ -145,7 +137,6 @@ export const commerceSettingsItem: NavItem = {
 /** The Figma sidebar, top to bottom. */
 export const sidebarItems: NavItem[] = [
   dashboardItem,
-  myTasksItem,
   customerProfilesItem,
   seniorPwdItem,
   ordersItem,
