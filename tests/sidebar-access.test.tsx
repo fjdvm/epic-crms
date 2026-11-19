@@ -46,10 +46,10 @@ describe("the sidebar", () => {
     expect(screen.queryByRole("link", { name: "Customer Profiles" })).toBeNull();
   });
 
-  it("lists My tasks beside Customer Profiles only with its page", async () => {
+  it("lists My Tasks beside Customer Profiles only with its page", async () => {
     renderSidebar(["/customer-profiles", "/my-tasks"]);
 
-    expect(await screen.findByRole("link", { name: "My tasks" })).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "My Tasks" })).toBeTruthy();
   });
 
   it("groups Customer Profiles under CUSTOMERS and shows the system name", async () => {
@@ -82,11 +82,11 @@ describe("the sidebar", () => {
     expect(screen.queryByRole("link", { name: "Conversations" })).toBeNull();
   });
 
-  it("puts Tickets and Conversations under their own SERVICE label, after CUSTOMERS", async () => {
+  it("puts Tickets and Conversations under their own CUSTOMER SUPPORT label, after CUSTOMERS", async () => {
     renderSidebar(["/customer-profiles", "/tickets", "/conversations"]);
 
     const customers = await screen.findByText("CUSTOMERS");
-    const service = screen.getByText("SERVICE");
+    const service = screen.getByText("CUSTOMER SUPPORT");
 
     expect(customers.compareDocumentPosition(service) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
@@ -96,11 +96,32 @@ describe("the sidebar", () => {
     ]);
   });
 
-  it("shows only the SERVICE label with just the Tickets Module", async () => {
+  it("shows only the CUSTOMER SUPPORT label with just the Tickets Module", async () => {
     renderSidebar(["/tickets", "/conversations"]);
 
-    expect(await screen.findByText("SERVICE")).toBeTruthy();
+    expect(await screen.findByText("CUSTOMER SUPPORT")).toBeTruthy();
     expect(screen.queryByText("CUSTOMERS")).toBeNull();
+  });
+
+  it("lists the groups in order, with Products & Stocks dimmed beside Orders and Approvals under Management", async () => {
+    renderSidebar(["/dashboard", "/my-tasks", "/customer-profiles", "/orders", "/payments", "/tickets", "/approvals"]);
+
+    await screen.findByText("OVERVIEW");
+    const text = document.body.textContent ?? "";
+    const order = ["OVERVIEW", "Dashboard", "My Tasks", "CUSTOMERS", "Customer Profiles", "COMMERCE", "Orders", "Products & Stocks", "Payments", "CUSTOMER SUPPORT", "Tickets", "MANAGEMENT", "Approvals"];
+    const at = order.map((t) => text.indexOf(t));
+
+    expect(at.every((n) => n >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(screen.queryByRole("link", { name: "Products & Stocks" })).toBeNull();
+  });
+
+  it("hides Products & Stocks when no Commerce page is permitted", async () => {
+    renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+
+    expect(screen.queryByText("Products & Stocks")).toBeNull();
+    expect(screen.queryByText("COMMERCE")).toBeNull();
   });
 
   it("links the Dashboard only for Staff who hold its Module", async () => {

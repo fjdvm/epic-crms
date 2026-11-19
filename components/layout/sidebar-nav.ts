@@ -41,7 +41,7 @@ export interface SystemItem {
 export type SystemChild = SystemItem;
 
 export const dashboardItem: NavItem = {
-  group: "",
+  group: "OVERVIEW",
   name: "Dashboard",
   href: "/dashboard",
   icon: LayoutDashboard,
@@ -55,63 +55,71 @@ export const customerProfilesItem: NavItem = {
 };
 
 export const myTasksItem: NavItem = {
-  group: "CUSTOMERS",
-  name: "My tasks",
+  group: "OVERVIEW",
+  name: "My Tasks",
   href: "/my-tasks",
   icon: ListChecks,
 };
 
 export const ordersItem: NavItem = {
-  group: "SALES",
+  group: "COMMERCE",
   name: "Orders",
   href: "/orders",
   icon: ShoppingCart,
 };
 
+/** No page yet: shown dimmed and not clickable until Products & Stocks is built. */
+export const productsStocksItem: NavItem = {
+  group: "COMMERCE",
+  name: "Products & Stocks",
+  href: null,
+  icon: Package,
+};
+
 export const paymentsItem: NavItem = {
-  group: "SALES",
+  group: "COMMERCE",
   name: "Payments",
   href: "/payments",
   icon: CreditCard,
 };
 
 export const fulfilmentItem: NavItem = {
-  group: "SALES",
+  group: "COMMERCE",
   name: "Fulfilment",
   href: "/fulfilment",
   icon: Truck,
 };
 
 export const returnsItem: NavItem = {
-  group: "SALES",
+  group: "COMMERCE",
   name: "Returns",
   href: "/returns",
   icon: RotateCcw,
 };
 
 export const approvalsItem: NavItem = {
-  group: "SALES",
+  group: "MANAGEMENT",
   name: "Approvals",
   href: "/approvals",
   icon: ClipboardCheck,
 };
 
 export const ticketsItem: NavItem = {
-  group: "SERVICE",
+  group: "CUSTOMER SUPPORT",
   name: "Tickets",
   href: "/tickets",
   icon: Ticket,
 };
 
 export const conversationsItem: NavItem = {
-  group: "SERVICE",
+  group: "CUSTOMER SUPPORT",
   name: "Conversations",
   href: "/conversations",
   icon: MessageCircle,
 };
 
 export const feedbackItem: NavItem = {
-  group: "SERVICE",
+  group: "CUSTOMER SUPPORT",
   name: "Feedback",
   href: "/feedback",
   icon: Star,
@@ -134,16 +142,17 @@ export const deliveryManagementItem: NavItem = {
 /** The Figma sidebar, top to bottom. */
 export const sidebarItems: NavItem[] = [
   dashboardItem,
-  customerProfilesItem,
   myTasksItem,
+  customerProfilesItem,
   ordersItem,
+  productsStocksItem,
   paymentsItem,
   fulfilmentItem,
   returnsItem,
-  approvalsItem,
   ticketsItem,
   conversationsItem,
   feedbackItem,
+  approvalsItem,
   paymentManagementItem,
   deliveryManagementItem,
 ];
