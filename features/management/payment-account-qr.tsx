@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { uploadFile } from "@/features/files/client";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { changePaymentAccountQr } from "./payment-actions";
 
@@ -24,6 +26,7 @@ export function PaymentAccountQr({ accountId, label, hasQr }: { accountId: strin
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fail = (reason: string) => { setError(reason); toast.error(reason); };
@@ -52,17 +55,31 @@ export function PaymentAccountQr({ accountId, label, hasQr }: { accountId: strin
 
   return (
     <div className="flex flex-col items-center gap-2">
-      {hasQr && (
-        // eslint-disable-next-line @next/next/no-img-element -- the route redirects to a short-lived signed address
-        <img src={`/api/payment-accounts/${accountId}/qr`} alt={`QR for ${label}`} className="size-24 rounded-md border border-[#e6e1ee] object-contain" />
-      )}
       <input ref={input} type="file" accept="image/jpeg,image/png" className="sr-only" aria-label={`QR image for ${label}`} onChange={onPick} />
-      <div className="flex items-center gap-2">
+      {!hasQr ? (
         <Button type="button" variant="outline" className="h-auto rounded-lg border border-[#e6e1ee] bg-transparent px-4 py-[9px] leading-[normal] text-[#1f1a2e] shadow-none hover:bg-[#f7f5fa]" disabled={busy} onClick={() => input.current?.click()}>
-          {busy ? "Saving…" : hasQr ? "Replace QR" : "Add QR"}
+          {busy ? "Saving…" : "Add QR"}
         </Button>
-        {hasQr && <Button type="button" variant="outline" className="h-auto rounded-lg border border-[#e6e1ee] bg-transparent px-4 py-[9px] leading-[normal] text-[#1f1a2e] shadow-none hover:bg-[#f7f5fa]" disabled={busy} onClick={onRemove}>Remove QR</Button>}
-      </div>
+      ) : (
+        <>
+          <Button type="button" variant="outline" aria-expanded={open} aria-controls={`qr-${accountId}`} className="h-auto rounded-lg border border-[#e6e1ee] bg-transparent px-4 py-[9px] leading-[normal] text-[#1f1a2e] shadow-none hover:bg-[#f7f5fa] inline-flex items-center gap-1.5" onClick={() => setOpen((v) => !v)}>
+            QR
+            <ChevronDown aria-hidden className={cn("size-4 transition-transform", open && "rotate-180")} />
+          </Button>
+          {open && (
+            <div id={`qr-${accountId}`} className="flex flex-col items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element -- the route redirects to a short-lived signed address */}
+              <img src={`/api/payment-accounts/${accountId}/qr`} alt={`QR for ${label}`} className="size-24 rounded-md border border-[#e6e1ee] object-contain" />
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" className="h-auto rounded-lg border border-[#e6e1ee] bg-transparent px-4 py-[9px] leading-[normal] text-[#1f1a2e] shadow-none hover:bg-[#f7f5fa]" disabled={busy} onClick={() => input.current?.click()}>
+                  {busy ? "Saving…" : "Replace QR"}
+                </Button>
+                <Button type="button" variant="outline" className="h-auto rounded-lg border border-[#e6e1ee] bg-transparent px-4 py-[9px] leading-[normal] text-[#1f1a2e] shadow-none hover:bg-[#f7f5fa]" disabled={busy} onClick={onRemove}>Remove QR</Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
       {error && <p role="alert" className="text-xs text-[#dc2626]">{error}</p>}
     </div>
   );
