@@ -12,7 +12,7 @@ import { useOptimisticAction } from "@/hooks/use-optimistic-action";
 import { uploadFile } from "@/features/files/client";
 import { checkFileInfo, FILE_TYPES, type FileContentType } from "@/features/files/policy";
 
-import { claim, reply, resolve, type ReplyOutcome, type TicketActionOutcome } from "./actions";
+import { claim, reply, type ReplyOutcome, type TicketActionOutcome } from "./actions";
 import { useClaim } from "./claim";
 import { refusalMessage } from "./refusals";
 import { HoldDialog } from "./hold-dialog";
@@ -84,7 +84,6 @@ export function TicketActions({
   withReply?: boolean;
   className?: string;
 }) {
-  const { pending, run } = useTicketAction();
   const { claimer, isClaimer, escalation, pending: claiming, claim: claimTicket, release: releaseTicket } = useClaim();
   const claimed = claimer !== null;
   const { status, pending: holding, takeOffHold } = useHold();
@@ -118,31 +117,6 @@ export function TicketActions({
       {status === "on_hold" && isClaimer && (
         <button type="button" className={OUTLINE} disabled={holding} onClick={takeOffHold}>
           Take off hold
-        </button>
-      )}
-      {status === "open" && (
-        <button
-          type="button"
-          className={OUTLINE}
-          disabled={pending}
-          onClick={() =>
-            run(
-              () => resolve(ticketId, crypto.randomUUID()),
-              (r) => {
-                if (!r.ok) return;
-                if ("emailed" in r && r.emailed === false)
-                  toast.warning(
-                    "Marked resolved, but the confirmation email could not be sent to the Customer.",
-                  );
-                else
-                  toast.success(
-                    "Marked resolved. The Customer has been asked to confirm.",
-                  );
-              },
-            )
-          }
-        >
-          Mark resolved
         </button>
       )}
       {withReply && status !== "completed" && (!claimed || isClaimer) && (
