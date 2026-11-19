@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
@@ -26,9 +26,9 @@ export function FreeDeliveryForm({ currentInCentavos }: { currentInCentavos: num
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="free-delivery-threshold">Amount (₱)</Label>
-        <Input
+        <NumericInput
           id="free-delivery-threshold"
-          inputMode="decimal"
+          kind="peso"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           aria-invalid={error ? true : undefined}

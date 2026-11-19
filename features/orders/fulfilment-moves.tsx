@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { uploadFile } from "@/features/files/client";
 
-import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 
 import { OrderActionDialog } from "./action-dialog";
@@ -31,7 +31,7 @@ function CollectedAmount({ move, total, value, onChange }: { move: string; total
     <div className="space-y-1.5">
       <p className="text-[13px] font-medium text-foreground">{move}</p>
       <Label htmlFor="collected-amount" className="text-[13px] font-medium text-foreground">Payment collected (₱)</Label>
-      <Input id="collected-amount" inputMode="decimal" autoComplete="off" value={value} onChange={e => onChange(e.target.value)} />
+      <NumericInput id="collected-amount" kind="peso" autoComplete="off" value={value} onChange={e => onChange(e.target.value)} />
       <p className="text-xs text-[#71717a]">Order total {formatPesos(total)}. Recorded as Payment collected with your name and the time.</p>
     </div>
   );

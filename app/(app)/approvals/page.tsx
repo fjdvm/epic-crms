@@ -1,19 +1,35 @@
-import { redirect } from "next/navigation";
-
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ApprovalsList } from "@/features/approvals/approvals-list";
-import { approvals } from "@/features/approvals/server";
-import { toView } from "@/features/approvals/view";
-import { NO_ACCESS_PATH, RETURNS_MODULE } from "@/lib/portal/config";
+import { loadApprovalRows } from "@/features/approvals/overview";
+import { isKindFilter } from "@/features/approvals/view";
 import { shopRole } from "@/lib/portal/roles";
-import { requireModule } from "@/lib/portal/staff";
+import { redirect } from "next/navigation";
+import { NO_ACCESS_PATH } from "@/lib/portal/config";
 
-/** Figma "Manager · Approvals": Manager and CEO (view, plus the final step); Admin views; Staff have no access. */
-export default async function ApprovalsPage() {
-  const staff = await requireModule(RETURNS_MODULE);
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+/**
+ * Figma "Manager · Approvals". Everything that waits for a person's decision, grouped by type: ID checks, Refunds,
+ * Payments, Cancellations, Write-offs, Returns. Staff see the ID checks and the requests they raised; a Manager sees
+ * all and decides; the CEO takes the final step on large refunds and write-offs; Admin views.
+ */
+export default async function ApprovalsPage({ searchParams }: { searchParams: SearchParams }) {
+  const { type } = await searchParams;
+  const { staff, rows, unavailable } = await loadApprovalRows();
   const role = shopRole(staff.role);
-  if (role !== "manager" && role !== "ceo" && role !== "admin") redirect(NO_ACCESS_PATH);
+  if (!role) redirect(NO_ACCESS_PATH);
 
-  const now = new Date().getTime();
-  const rows = await approvals().list(staff, RETURNS_MODULE);
-  return <ApprovalsList requests={rows.map(row => toView(row as unknown as Record<string, unknown>))} role={role} now={now} />;
+  const kind = Array.isArray(type) ? type[0] : type;
+
+  return (
+    <>
+      {unavailable.length > 0 && (
+        <Alert variant="destructive" className="mx-8 mt-7">
+          <AlertTitle>Some approvals are temporarily unavailable</AlertTitle>
+          <AlertDescription>The {unavailable.join(", ")} requests could not be read. Reload to try again.</AlertDescription>
+        </Alert>
+      )}
+      <ApprovalsList requests={rows} role={role} now={new Date().getTime()} initialKind={isKindFilter(kind) ? kind : "all"} />
+    </>
+  );
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
@@ -34,7 +35,7 @@ export function PaymentAccountControls({ account }: { account: PaymentAccountRow
           <div className="space-y-1"><Label htmlFor={`${id}-label`}>Label</Label><Input id={`${id}-label`} value={form.label} onChange={set("label")} /></div>
           <div className="space-y-1"><Label htmlFor={`${id}-name`}>Account name</Label><Input id={`${id}-name`} value={form.accountName} onChange={set("accountName")} /></div>
           {account.method === "bank_transfer" && <div className="space-y-1"><Label htmlFor={`${id}-bank`}>Bank name</Label><Input id={`${id}-bank`} value={form.bankName} onChange={set("bankName")} /></div>}
-          <div className="space-y-1"><Label htmlFor={`${id}-number`}>Account number</Label><Input id={`${id}-number`} inputMode="numeric" value={form.accountNumber} onChange={set("accountNumber")} /></div>
+          <div className="space-y-1"><Label htmlFor={`${id}-number`}>Account number</Label><NumericInput id={`${id}-number`} kind="whole" value={form.accountNumber} onChange={set("accountNumber")} /></div>
           {!valid.ok && <p role="alert" className="text-xs text-[#dc2626]">{valid.reason}</p>}
         </div>
       </OrderActionDialog>

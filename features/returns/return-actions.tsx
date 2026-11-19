@@ -1,5 +1,6 @@
 "use client";
 
+import { maskNumeric } from "@/lib/numeric-mask";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { uploadFile } from "@/features/files/client";
@@ -231,7 +232,7 @@ function SaveProof({ id, number, context, canIncludeFee = false }: { id: number;
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor={`refund-amount-${id}`} className="text-[13px] font-medium text-foreground">Amount sent (₱) <span className="text-[#dc2626]">*</span></Label>
-          <input id={`refund-amount-${id}`} inputMode="decimal" className={FIELD} value={typedAmount} onChange={(e) => setSentAmount(e.target.value)} />
+          <input id={`refund-amount-${id}`} inputMode="decimal" className={FIELD} value={typedAmount} onChange={(e) => setSentAmount(maskNumeric("peso", e.target.value))} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor={`refund-method-${id}`} className="text-[13px] font-medium text-foreground">Sent by <span className="text-[#dc2626]">*</span></Label>

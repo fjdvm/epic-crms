@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { WAITING, type ApprovalView } from "@/features/approvals/view";
@@ -117,7 +118,7 @@ export function RefundDestinationCard({ returnId, destination, locked, canReveal
             </div>
             <div className="space-y-1.5">
               <Label htmlFor={`dest-number-${returnId}`} className="text-[13px] font-medium text-foreground">Account number <span className="text-[#dc2626]">*</span></Label>
-              <Input id={`dest-number-${returnId}`} inputMode="numeric" autoComplete="off" value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} />
+              <NumericInput id={`dest-number-${returnId}`} kind="whole" autoComplete="off" value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor={`dest-reason-${returnId}`} className="text-[13px] font-medium text-foreground">Reason <span className="text-[#dc2626]">*</span></Label>
