@@ -205,10 +205,12 @@ describe("the read-only chat for Admin and CEO", () => {
 describe("the draft panel on the chat", () => {
   it("shows the panel to Staff and Managers, and none to Admin or CEO", () => {
     const staff = view(ticket(), "bernice", true);
+    expect(screen.queryByRole("region", { name: "Draft reply" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "AI suggestion" }));
     expect(screen.getByRole("region", { name: "Draft reply" })).toBeTruthy();
     staff.unmount();
     view(ticket(), "bernice", false);
     expect(screen.queryByRole("region", { name: "Draft reply" })).toBeNull();
-    expect(screen.queryByText("Use in conversation")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "AI suggestion" })).toBeNull();
   });
 });

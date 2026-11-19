@@ -32,6 +32,8 @@ export function DraftPanel({
   disabledReason,
   replyText,
   onUse,
+  canSend = false,
+  onSend,
 }: {
   ticketId: number;
   /** Why drafting is off for this viewer, or null. */
@@ -40,7 +42,13 @@ export function DraftPanel({
   replyText: string;
   /** Put the draft in the reply box; `id` lets the server record "sent as drafted" or "sent as edited". */
   onUse: (text: string, id: number) => void;
+  /** Only the claimer can send; false disables Send. */
+  canSend?: boolean;
+  /** Send the draft to the Customer as the reply (after the confirm here); `id` records "sent as drafted". */
+  onSend?: (text: string, id: number) => void;
 }) {
+  const [sending, setSending] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [language, setLanguage] = useState<DraftRequest["language"]>("Taglish");
   const [draft, setDraft] = useState<DraftedReply | null>(null);
   const [loading, setLoading] = useState(false);
@@ -66,6 +74,17 @@ export function DraftPanel({
     } finally {
       busy.current = false;
       setLoading(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!draft) return;
+    try {
+      await navigator.clipboard.writeText(draft.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setProblem("Could not copy. Select the text and copy it by hand.");
     }
   };
 
@@ -107,8 +126,14 @@ export function DraftPanel({
       <div className="flex flex-wrap gap-2">
         {draft ? (
           <>
-            <button type="button" className={PRIMARY} disabled={loading || !!disabledReason} title={disabledReason ?? undefined} onClick={use}>
-              Use in conversation
+            <button type="button" className={OUTLINE} disabled={loading || !!disabledReason} title={disabledReason ?? undefined} onClick={use}>
+              Edit in reply
+            </button>
+            <button type="button" className={OUTLINE} onClick={copy}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+            <button type="button" className={PRIMARY} disabled={loading || !canSend || !onSend} title={canSend ? undefined : "Only the claimer can send."} onClick={() => setSending(true)}>
+              Send
             </button>
             <button type="button" className={OUTLINE} disabled={loading || !!disabledReason} onClick={() => ask(true)}>
               Make shorter
@@ -124,7 +149,21 @@ export function DraftPanel({
           </button>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">Nothing is sent until you press Send in the conversation.</p>
+      <p className="text-xs text-muted-foreground">Nothing is sent until you press Send.</p>
+      <AlertDialog open={sending} onOpenChange={setSending}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send this draft?</AlertDialogTitle>
+            <AlertDialogDescription>The Customer will see this draft as your reply.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <button type="button" className={PRIMARY} onClick={() => { setSending(false); if (draft) { onSend?.(draft.text, draft.id); } }}>
+              Send reply
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>

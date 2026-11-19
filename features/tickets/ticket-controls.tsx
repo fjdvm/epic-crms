@@ -2,7 +2,7 @@
 
 import { FileText, Loader2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -191,7 +191,16 @@ export function Composer({
     onValueChange?.(resolved);
   };
   const picker = useRef<HTMLInputElement>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
   const { pending, run } = useTicketAction();
+
+  // The box grows with what is typed (up to its max height, then scrolls) and shrinks back when text is removed or sent.
+  useLayoutEffect(() => {
+    const box = area.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${box.scrollHeight}px`;
+  }, [text]);
   const [confirming, setConfirming] = useState(false);
   const [picked, setPicked] = useState<{ file: File; url?: string } | null>(
     null,
@@ -321,12 +330,13 @@ export function Composer({
       )}
       <div
         className={cn(
-          "flex items-center gap-2 rounded-[10px] border border-[#e6e1ee] bg-white py-1.5 pr-1.5 pl-[14px]",
+          "flex items-end gap-2 rounded-[10px] border border-[#e6e1ee] bg-white py-1.5 pr-1.5 pl-[14px]",
         )}
       >
         <textarea
           id="reply"
           rows={1}
+          ref={area}
           aria-label="Write a reply"
           placeholder="Write a reply…"
           value={text}
@@ -335,7 +345,7 @@ export function Composer({
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !pending && (text.trim() || file)) setConfirming(true);
           }}
-          className="max-h-40 min-w-0 flex-1 resize-none bg-transparent text-sm leading-[normal] text-[#1f1a2e] outline-none placeholder:text-[#9a93a8]"
+          className="my-1 max-h-40 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-sm leading-[normal] text-[#1f1a2e] outline-none placeholder:text-[#9a93a8]"
         />
         <input
           ref={picker}

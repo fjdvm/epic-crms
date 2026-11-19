@@ -14,6 +14,9 @@ import { MessageAttachment } from "./message-attachment";
 import type { TicketMessage } from "./ticket";
 import { NoteBox, Sending, useMessagesWithNotes } from "./notes";
 import { Composer } from "./ticket-controls";
+import { reply as replyAction } from "./actions";
+import { refusalMessage } from "./refusals";
+import { toast } from "sonner";
 import { DraftPanel } from "./draft-panel";
 
 const TIME = new Intl.DateTimeFormat("en-US", {
@@ -262,19 +265,43 @@ export function Conversation({
   const [reply, setReply] = useState("");
   const [draftId, setDraftId] = useState<number | null>(null);
 
-  const [mode, setMode] = useState<"reply" | "note">("reply");
+  const [mode, setMode] = useState<"reply" | "note" | "ai">("reply");
+
+  /** Send an AI suggestion as the reply. Saved first, then shown and relayed; a refusal says why. */
+  const sendDraft = async (text: string, id: number) => {
+    try {
+      const form = new FormData();
+      form.set("body", text);
+      form.set("draftId", String(id));
+      const result = await replyAction(ticketId, form);
+      if (!result.ok) {
+        toast.error(refusalMessage(result));
+        return;
+      }
+      if ("messageId" in result) sent({ id: result.messageId, body: text.trim() });
+      router.refresh();
+      setMode("reply");
+    } catch (error) {
+      console.error("Drafted reply could not be sent", error);
+      toast.error("Could not send the reply. Please try again.");
+    }
+  };
+
+  const draftPanel = draftDisabledReason !== undefined && (
+    <DraftPanel
+      ticketId={ticketId}
+      disabledReason={draftDisabledReason}
+      replyText={reply}
+      canSend={canReply}
+      onSend={sendDraft}
+      onUse={(text, id) => { setReply(text); setDraftId(id); setMode("reply"); }}
+    />
+  );
   const bubbles = <Bubbles messages={shown} chat={scrollable} />;
 
   const replyArea = (
     <>
-      {draftDisabledReason !== undefined && (
-        <DraftPanel
-          ticketId={ticketId}
-          disabledReason={draftDisabledReason}
-          replyText={reply}
-          onUse={(text, id) => { setReply(text); setDraftId(id); }}
-        />
-      )}
+      {!scrollable && draftPanel}
       {canReply ? (
         <Composer ticketId={ticketId} onSent={sent} value={reply} onValueChange={setReply} draftId={draftId} onDraftSent={() => setDraftId(null)} />
       ) : (
@@ -282,6 +309,8 @@ export function Conversation({
       )}
     </>
   );
+
+  const tabs = (["reply", ...(canNote ? ["note"] : []), ...(draftDisabledReason !== undefined ? ["ai"] : [])]) as ("reply" | "note" | "ai")[];
 
   const footer = (
     <>
@@ -311,9 +340,9 @@ export function Conversation({
         </p>
       ) : (
       <div className="flex flex-col gap-3 border-t border-[#e6e1ee] bg-white px-5 pt-3 pb-4">
-        {canNote && (
-          <div role="tablist" aria-label="Reply or note" className="flex gap-4 border-b border-[#e6e1ee]">
-            {(["reply", "note"] as const).map((m) => (
+        {tabs.length > 1 && (
+          <div role="tablist" aria-label="Reply, note or AI suggestion" className="flex gap-4 border-b border-[#e6e1ee]">
+            {tabs.map((m) => (
               <button
                 key={m}
                 type="button"
@@ -325,12 +354,12 @@ export function Conversation({
                   mode === m ? "border-[#5b2a86] text-[#5b2a86]" : "border-transparent text-[#6e6680]",
                 )}
               >
-                {m === "reply" ? "Reply" : "Internal note"}
+                {m === "reply" ? "Reply" : m === "note" ? "Internal note" : "AI suggestion"}
               </button>
             ))}
           </div>
         )}
-        {mode === "reply" || !canNote ? replyArea : <NoteBox inline />}
+        {mode === "note" && canNote ? <NoteBox inline /> : mode === "ai" && draftPanel ? draftPanel : replyArea}
         <p className="text-[11px] leading-[normal] text-[#6e6680]">
           Only the claimer can reply. Nothing sends until you press Send. Images: JPG or PNG up to 5 MB.
         </p>

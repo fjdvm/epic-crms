@@ -21,7 +21,7 @@ describe("Draft panel", () => {
     vi.mocked(requestDraftedReply).mockReturnValue(new Promise((r) => { resolve = r; }) as never);
     render(<Harness />);
     expect(requestDraftedReply).not.toHaveBeenCalled();
-    expect(screen.getByText("Nothing is sent until you press Send in the conversation.")).toBeTruthy();
+    expect(screen.getByText("Nothing is sent until you press Send.")).toBeTruthy();
     fireEvent.click(screen.getByText("English"));
     fireEvent.click(screen.getByText("Draft a reply"));
     expect(screen.getByRole("status", { name: "Making a draft" })).toBeTruthy();
@@ -34,7 +34,7 @@ describe("Draft panel", () => {
     vi.mocked(requestDraftedReply).mockResolvedValue(ok("Hi po") as never);
     render(<Harness />);
     fireEvent.click(screen.getByText("Draft a reply"));
-    fireEvent.click(await screen.findByText("Use in conversation"));
+    fireEvent.click(await screen.findByText("Edit in reply"));
     expect(screen.getByLabelText("box").textContent).toBe("Hi po");
   });
 
@@ -42,13 +42,35 @@ describe("Draft panel", () => {
     vi.mocked(requestDraftedReply).mockResolvedValue(ok("Hi po") as never);
     render(<Harness initial="my own words" />);
     fireEvent.click(screen.getByText("Draft a reply"));
-    fireEvent.click(await screen.findByText("Use in conversation"));
+    fireEvent.click(await screen.findByText("Edit in reply"));
     expect(screen.getByLabelText("box").textContent).toBe("my own words");
     fireEvent.click(screen.getByText("Keep my text"));
     expect(screen.getByLabelText("box").textContent).toBe("my own words");
-    fireEvent.click(screen.getByText("Use in conversation"));
+    fireEvent.click(screen.getByText("Edit in reply"));
     fireEvent.click(screen.getByText("Replace with draft"));
     await waitFor(() => expect(screen.getByLabelText("box").textContent).toBe("Hi po"));
+  });
+
+  it("Copy puts the draft on the clipboard; Send confirms first, then sends the draft and clears it", async () => {
+    vi.mocked(requestDraftedReply).mockResolvedValue(ok("Hi po") as never);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const onSend = vi.fn();
+    render(<DraftPanel ticketId={1} disabledReason={null} replyText="" onUse={() => {}} canSend onSend={onSend} />);
+    fireEvent.click(screen.getByText("Draft a reply"));
+    fireEvent.click(await screen.findByText("Copy"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Hi po"));
+    fireEvent.click(screen.getByText("Send"));
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Send reply"));
+    expect(onSend).toHaveBeenCalledWith("Hi po", 7);
+  });
+
+  it("disables Send when the viewer is not the claimer", async () => {
+    vi.mocked(requestDraftedReply).mockResolvedValue(ok("Hi po") as never);
+    render(<DraftPanel ticketId={1} disabledReason={null} replyText="" onUse={() => {}} onSend={vi.fn()} />);
+    fireEvent.click(screen.getByText("Draft a reply"));
+    expect((await screen.findByText("Send") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("keeps the earlier draft and says why when Make shorter is refused; Discard clears", async () => {
