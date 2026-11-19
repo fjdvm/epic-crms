@@ -21,7 +21,7 @@ export function PaymentAccountForm() {
   const isBank = form.method === "bank_transfer";
 
   return (
-    <section className="max-w-md space-y-4">
+    <section className="w-full max-w-[28rem] space-y-4">
       <h2 className="text-base font-semibold text-[#1f1a2e]">Add a Payment account</h2>
       <div className="space-y-1.5">
         <Label htmlFor="pa-method">Method</Label>

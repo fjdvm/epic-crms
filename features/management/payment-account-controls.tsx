@@ -21,7 +21,7 @@ export function PaymentAccountControls({ account }: { account: PaymentAccountRow
     <div className="flex flex-wrap gap-2">
       <OrderActionDialog
         trigger="Edit"
-        triggerClassName="bg-transparent text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa]"
+        triggerClassName="bg-transparent !text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa]"
         title={`Edit ${account.label}?`}
         description="The method cannot change. The number is shown masked everywhere after this."
         confirm="Save changes"
@@ -40,7 +40,7 @@ export function PaymentAccountControls({ account }: { account: PaymentAccountRow
       </OrderActionDialog>
       <OrderActionDialog
         trigger={account.active ? "Switch off" : "Switch on"}
-        triggerClassName="bg-transparent text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa]"
+        triggerClassName="bg-transparent !text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa]"
         title={account.active ? `Switch off ${account.label}?` : `Switch on ${account.label}?`}
         description={account.active ? "Customers will no longer be offered it. Its history is kept." : "Customers can be offered it again."}
         confirm={account.active ? "Switch off" : "Switch on"}
@@ -70,7 +70,7 @@ export function PaymentMethodToggle({ method, enabled }: { method: string; enabl
   return (
     <OrderActionDialog
       trigger={enabled ? `Disable ${label}` : `Enable ${label}`}
-      triggerClassName="bg-transparent text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa]"
+      triggerClassName="bg-transparent !text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa]"
       title={enabled ? `Disable ${label}?` : `Enable ${label}?`}
       description={enabled ? `Customers will not be offered ${label} at all. The accounts and history are kept.` : `Customers can be offered ${label} again.`}
       confirm={enabled ? "Disable method" : "Enable method"}

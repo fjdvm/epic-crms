@@ -37,16 +37,16 @@ async function signIn(role: string, modules: string[]) {
   session.handle = (await exchange.json()).handle;
 }
 
-const TABS = ["/management/payment-management", "/management/delivery-management"];
+const TABS = ["/management/commerce-settings"];
 
 describe("Management access", () => {
-  it.each(["CRMS Manager", "CEO"])("opens both tabs for a %s holding the Module", async (role) => {
+  it.each(["CRMS Manager", "CEO"])("opens Commerce settings for a %s holding the Module", async (role) => {
     await signIn(role, ["Orders", MANAGEMENT_MODULE]);
     await expect(requireManagement()).resolves.toMatchObject({ id: "u" });
     expect((await getShell()).permittedPages).toEqual(expect.arrayContaining(TABS));
   });
 
-  it("refuses a Manager without the Module on the server and hides the tabs", async () => {
+  it("refuses a Manager without the Module on the server and hides the page", async () => {
     await signIn("CRMS Manager", ["Orders"]);
     await expect(requireManagement()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     expect((await getShell()).permittedPages).not.toContain(TABS[0]);
