@@ -17,7 +17,7 @@ export interface ViewerImage {
 }
 
 const ZOOMS = [25, 50, 75, 100, 150, 200, 300];
-const initials = (name: string) =>
+export const initials = (name: string) =>
   name
     .split(/\s+/)
     .filter(Boolean)

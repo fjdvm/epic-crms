@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 import { customerNameSql } from "@/lib/deleted-customer";
 
+import type { ShopRole } from "@/lib/portal/roles";
 import { formatDate } from "@/features/customer-profiles/format";
 
 import type { FileStorage } from "./attachments";
@@ -11,6 +12,31 @@ import { ticketSearch } from "./tickets";
 export type ChatScope = "mine" | "unclaimed" | "all";
 
 export const CHAT_SCOPES: ChatScope[] = ["mine", "unclaimed", "all"];
+
+/**
+ * The tabs a Role may open: Mine for Staff and Managers, Unclaimed for everyone with the Tickets Module, All
+ * (Resolved and Closed too) for Managers, Admin and CEO. The first one is the Role's default tab.
+ */
+export function scopesFor(role: ShopRole | null): ChatScope[] {
+  switch (role) {
+    case "staff":
+      return ["mine", "unclaimed"];
+    case "manager":
+      return ["mine", "unclaimed", "all"];
+    case "admin":
+    case "ceo":
+      return ["unclaimed", "all"];
+    default:
+      return ["unclaimed"];
+  }
+}
+
+/** The tab asked for when the Role may open it, otherwise the Role's default; the page never trusts the address. */
+export function allowedScope(role: ShopRole | null, asked: string | undefined): ChatScope {
+  const allowed = scopesFor(role);
+
+  return allowed.find((s) => s === asked) ?? allowed[0];
+}
 
 export interface ConversationRow {
   /** The Ticket number is this id, written TKT-<id>. */

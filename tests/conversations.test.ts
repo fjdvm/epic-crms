@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { inboxTime, listConversations, loadConversations } from "@/features/tickets/conversations";
+import { allowedScope, inboxTime, scopesFor, listConversations, loadConversations } from "@/features/tickets/conversations";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -54,6 +54,24 @@ describe("the inbox tabs", () => {
     expect(await ids("mine")).toEqual([mine]);
     expect(await ids("unclaimed")).toEqual([open]);
     expect(await ids("all")).toEqual([mine, open, theirs]);
+  });
+});
+
+describe("who may open which tab", () => {
+  it("gives Staff Mine and Unclaimed, Managers all three, Admin and CEO Unclaimed and All", () => {
+    expect(scopesFor("staff")).toEqual(["mine", "unclaimed"]);
+    expect(scopesFor("manager")).toEqual(["mine", "unclaimed", "all"]);
+    expect(scopesFor("admin")).toEqual(["unclaimed", "all"]);
+    expect(scopesFor("ceo")).toEqual(["unclaimed", "all"]);
+    expect(scopesFor(null)).toEqual(["unclaimed"]);
+  });
+
+  it("never lets an address open a tab the Role has no access to", () => {
+    expect(allowedScope("staff", "all")).toBe("mine");
+    expect(allowedScope("admin", "mine")).toBe("unclaimed");
+    expect(allowedScope("admin", undefined)).toBe("unclaimed");
+    expect(allowedScope("manager", "all")).toBe("all");
+    expect(allowedScope("staff", "nonsense")).toBe("mine");
   });
 });
 
