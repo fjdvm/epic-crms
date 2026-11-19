@@ -48,7 +48,6 @@ export async function addCustomerNote(customerId: string, text: string, operatio
       operationId: JSON.stringify(["customer_note.created", staff.id, operationId]),
     });
     revalidatePath(`/customer-profiles/${customerId}`);
-    revalidatePath("/my-tasks");
     return { ok: true, note: customerNote(saved) };
   } catch {
     return { ok: false, unavailable: true, message: "Customer notes are unavailable. Try again with the same request." };
