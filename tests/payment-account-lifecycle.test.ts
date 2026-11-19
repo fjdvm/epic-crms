@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  addPaymentAccount, deletePaymentAccount, editPaymentAccount, listDisabledMethods, listPaymentAccounts, setPaymentAccountActive, setPaymentMethodEnabled,
+  addPaymentAccount, deletePaymentAccount, editPaymentAccount, listDisabledMethods, listMethodAvailability, listPaymentAccounts, setPaymentAccountActive, setPaymentMethodEnabled,
 } from "@/features/management/payment-accounts";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -109,5 +109,18 @@ describe("Payment account lifecycle", () => {
     expect(events()[0]).toMatchObject({ action: "payment_account.deleted", metadata: { number_last4: "1212" } });
     expect(JSON.stringify(events())).not.toMatch(/0918|555/);
     expect((await deletePaymentAccount(db.sql, audit, files, manager, b)).ok).toBe(false);
+  });
+  it("reports a method available only when it is enabled and has an active account", async () => {
+    const [a, b] = await ids();
+    expect(await listMethodAvailability(db.sql)).toEqual({ gcash: true, maya: false, bank_transfer: false });
+    await setPaymentAccountActive(db.sql, audit, manager, a, false);
+    expect((await listMethodAvailability(db.sql)).gcash).toBe(true);
+    await setPaymentMethodEnabled(db.sql, audit, manager, "gcash", false);
+    expect((await listMethodAvailability(db.sql)).gcash).toBe(false);
+    await setPaymentMethodEnabled(db.sql, audit, manager, "gcash", true);
+    expect((await listMethodAvailability(db.sql)).gcash).toBe(true);
+    // A method switched off by hand with every account inactive stays unavailable.
+    await db.sql`update crms.payment_accounts set active = false where id = ${b}`;
+    expect((await listMethodAvailability(db.sql)).gcash).toBe(false);
   });
 });
