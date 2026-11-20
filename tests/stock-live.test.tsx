@@ -3,7 +3,6 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const { liveUrl, refetchAll, refetchOne } = vi.hoisted(() => ({ liveUrl: vi.fn(), refetchAll: vi.fn(), refetchOne: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/features/orders/stock-live-actions", () => ({ staffStockLiveUrl: liveUrl, refetchStock: refetchAll, refetchStockSize: refetchOne }));
 
 import { LiveStock } from "@/features/orders/stock-live";
@@ -44,13 +43,14 @@ it("updates the affected Size on an event without refetching the rest, and shows
   expect(refetchAll).toHaveBeenCalledTimes(1);
 });
 
-it("keeps what it shows when a refetch fails, and ignores frames that are not stock events", async () => {
+it("falls back to one full refetch when a Size cannot be refetched, and ignores frames that are not stock events", async () => {
   render(<LiveStock page={pageOf([row(1, "Alpha", 20)])} />); await elapse();
   refetchOne.mockResolvedValueOnce({ ok: false });
   await send({ type: "stock.changed", sizeId: 1 });
   await send({ type: "other", sizeId: 1 });
   await act(async () => { Socket.all[0].onmessage?.({ data: "pong" }); });
   expect(refetchOne).toHaveBeenCalledTimes(1);
+  expect(refetchAll).toHaveBeenCalledTimes(1); // the failed Size falls back to one full refetch, not a loop
   expect(screen.getByText("Alpha")).toBeTruthy();
 });
 

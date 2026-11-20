@@ -48,6 +48,8 @@ export function LiveStock({ page: initial }: { page: StockPage }) {
               sizes.delete(id);
               const result = await refetchStockSize(id);
               if (result.ok && !stopped) apply.current((current) => withSize(current, id, result.row));
+              // Without the product feed one Size cannot be built, so catch up with a single full refetch.
+              else if (!result.ok) everything = true;
             }
           } catch (error) {
             console.error("Stock refetch failed", error);
