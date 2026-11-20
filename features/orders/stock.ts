@@ -4,6 +4,7 @@ import { customerNameSql } from "@/lib/deleted-customer";
 import { readProductFeed, readProductStock, readStock, type ImsProduct, type ImsSizeStock } from "@/lib/storefront";
 
 import type { ProductContent } from "./product-content";
+import type { StockMirror } from "./stock-mirror";
 
 /** A Size with fewer than this many available is low stock; the shop then says "Only N left". Matches the storefront. */
 export const LOW_STOCK_BELOW = 10;
@@ -60,8 +61,10 @@ export interface StockRow {
 
 export interface StockPage {
   rows: StockRow[];
-  /** False when the IMS could not be read, so every quantity is unknown. */
+  /** False when the IMS could not be read and CREOMS has no earlier copy, so every quantity is unknown. */
   imsReachable: boolean;
+  /** Set when some of what is shown comes from CREOMS's last copy of the IMS, not a read just now; `asOf` is that copy's time (ISO). */
+  stale: { asOf: string } | null;
   summary: { sizes: number; soldOut: number; reserved: number; low: number };
 }
 
@@ -102,22 +105,40 @@ export async function loadStock(
   read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
   readPublished: ContentReader = noContent,
+  mirror?: StockMirror,
 ): Promise<StockResult> {
   try {
-    const feed = await readFeed();
-    if (!feed) return { ok: true, page: { rows: [], imsReachable: false, summary: summarize([]) } };
+    const liveFeed = await readFeed();
+    const liveStock = liveFeed ? await read(liveFeed.map((item) => item.productId)) : null;
+    if (liveFeed && liveStock) await remember(() => mirror?.save(liveFeed, liveStock));
+
+    // Whatever the IMS did not answer for now comes from the last copy, and the page says so.
+    const copy = liveFeed && liveStock ? null : await recall(mirror);
+    const feed = liveFeed ?? copy?.feed ?? null;
+    const stock = liveStock ?? copy?.stock ?? null;
+    const stale = copy && (!liveFeed || !liveStock) ? { asOf: copy.syncedAt.toISOString() } : null;
+    if (!feed) return { ok: true, page: { rows: [], imsReachable: false, stale: null, summary: summarize([]) } };
+
     const published = await readContent(feed.map((item) => item.productId), readPublished);
     const sizes: SizeSource[] = feed
       .map((item) => sizeSource(item, published.get(item.productId)))
       .sort((a, b) => a.product.localeCompare(b.product) || a.id - b.id);
-    const stock = await read(sizes.map((size) => size.id));
     const holding = await loadHoldingOrders(connect);
     const rows = sizes.map((size) => toRow(size, stock, holding));
-    return { ok: true, page: { rows, imsReachable: stock !== null, summary: summarize(rows) } };
+    return { ok: true, page: { rows, imsReachable: stock !== null, stale, summary: summarize(rows) } };
   } catch (error) {
     console.error("Products & stock could not read the ecommerce database", error);
     return { ok: false };
   }
+}
+
+/** The copy is a help, never a dependency: a failed write or read is logged and the page carries on without it. */
+async function remember(write: () => Promise<void> | undefined): Promise<void> {
+  try { await write(); } catch (error) { console.error("The stock copy could not be written", error); }
+}
+async function recall(mirror: StockMirror | undefined) {
+  try { return (await mirror?.load()) ?? null; }
+  catch (error) { console.error("The stock copy could not be read", error); return null; }
 }
 
 interface SizeSource { id: number; product: string; size: string; image: string | null; description: string; marker: StockMarker | null }
@@ -163,6 +184,7 @@ export async function loadStockSize(
   read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
   readPublished: ContentReader = noContent,
+  mirror?: StockMirror,
 ): Promise<StockSizeResult> {
   try {
     const feed = await readFeed();
@@ -170,6 +192,7 @@ export async function loadStockSize(
     const item = feed.find((entry) => entry.productId === sizeId);
     if (!item) return { ok: true, row: null };
     const stock = await read([sizeId]);
+    if (stock) await remember(() => mirror?.saveOne(item, stock.get(sizeId)));
     const holding = await loadHoldingOrders(connect);
     const published = await readContent([sizeId], readPublished);
     return { ok: true, row: toRow(sizeSource(item, published.get(sizeId)), stock, holding) };

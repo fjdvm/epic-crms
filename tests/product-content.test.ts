@@ -48,6 +48,12 @@ describe("saveProductContent", () => {
     expect(JSON.stringify(audit.mock.calls[0])).toContain("Sam");
   });
 
+  it("reads only the asked-for products", async () => {
+    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "A", image: null });
+    await saveProductContent(db.sql, audit, staff, { productId: 8, description: "B", image: null });
+    expect([...(await loadProductContent(db.sql, [8, 99])).keys()]).toEqual([8]);
+  });
+
   it("keeps the saved image when the edit leaves it unchanged, and replaces it when a new one is given", async () => {
     await saveProductContent(db.sql, audit, staff, { productId: 7, description: "A", image: { fileId: "f1", url: "https://files.example/f1.png" } });
     await saveProductContent(db.sql, audit, staff, { productId: 7, description: "B", image: undefined });

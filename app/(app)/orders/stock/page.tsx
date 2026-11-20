@@ -2,7 +2,7 @@ import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LiveStock } from "@/features/orders/stock-live";
-import { readPublishedContent } from "@/features/orders/published-content";
+import { readPublishedContent, stockMirror } from "@/features/orders/published-content";
 import { loadStock } from "@/features/orders/stock";
 import { StockHeader, StockSkeleton } from "@/features/orders/stock-view";
 import { ORDERS_MODULE } from "@/lib/portal/config";
@@ -25,7 +25,7 @@ export default function ProductsStockPage() {
 async function StockData() {
   // Orders gates this page for Staff, Manager, and the read-only Admin and CEO alike; only Staff and Manager may edit a product.
   const staff = await requireModule(ORDERS_MODULE);
-  const result = await loadStock(ticketsDatabase, undefined, undefined, readPublishedContent);
+  const result = await loadStock(ticketsDatabase, undefined, undefined, readPublishedContent, stockMirror);
   if (!result.ok) {
     return (
       <Alert variant="destructive">
