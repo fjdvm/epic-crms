@@ -1,8 +1,9 @@
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { LiveStock } from "@/features/orders/stock-live";
 import { loadStock } from "@/features/orders/stock";
-import { StockHeader, StockSkeleton, StockView } from "@/features/orders/stock-view";
+import { StockHeader, StockSkeleton } from "@/features/orders/stock-view";
 import { ORDERS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -31,5 +32,5 @@ async function StockData() {
       </Alert>
     );
   }
-  return <StockView page={result.page} />;
+  return <LiveStock page={result.page} />;
 }

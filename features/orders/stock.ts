@@ -87,30 +87,67 @@ export async function loadStock(
           order by p.name, s.price_in_centavos, s.id`).map((size) => ({ ...size, image: null, marker: null }));
     const stock = await read(sizes.map((size) => size.id));
     const holding = await loadHoldingOrders(connect);
-    const rows: StockRow[] = sizes.map((size) => {
-      const held = stock?.get(size.id);
-      const available = held?.available ?? null;
-      return {
-        sizeId: size.id, product: size.product, size: size.size, image: size.image, marker: size.marker,
-        inStock: held?.quantity ?? null, reserved: held?.reserved ?? null, available, shows: shopShows(available),
-        orders: holding?.get(size.id) ?? (holding ? [] : null),
-      };
-    });
-    const live = rows.filter((row) => row.marker === null);
-    return {
-      ok: true,
-      page: {
-        rows, imsReachable: stock !== null,
-        summary: {
-          sizes: live.length,
-          soldOut: live.filter((row) => row.shows === "Sold out").length,
-          reserved: rows.reduce((sum, row) => sum + (row.reserved ?? 0), 0),
-          low: live.filter((row) => typeof row.shows === "object").length,
-        },
-      },
-    };
+    const rows = sizes.map((size) => toRow(size, stock, holding));
+    return { ok: true, page: { rows, imsReachable: stock !== null, summary: summarize(rows) } };
   } catch (error) {
     console.error("Products & stock could not read the ecommerce database", error);
+    return { ok: false };
+  }
+}
+
+interface SizeSource { id: number; product: string; size: string; image: string | null; marker: StockMarker | null }
+
+function toRow(size: SizeSource, stock: Map<number, ImsSizeStock> | null, holding: Map<number, HoldingOrder[]> | null): StockRow {
+  const held = stock?.get(size.id);
+  const available = held?.available ?? null;
+  return {
+    sizeId: size.id, product: size.product, size: size.size, image: size.image, marker: size.marker,
+    inStock: held?.quantity ?? null, reserved: held?.reserved ?? null, available, shows: shopShows(available),
+    orders: holding?.get(size.id) ?? (holding ? [] : null),
+  };
+}
+
+/** The tile figures, from the rows on the page. */
+export function summarize(rows: StockRow[]): StockPage["summary"] {
+  const live = rows.filter((row) => row.marker === null);
+  return {
+    sizes: live.length,
+    soldOut: live.filter((row) => row.shows === "Sold out").length,
+    reserved: rows.reduce((sum, row) => sum + (row.reserved ?? 0), 0),
+    low: live.filter((row) => typeof row.shows === "object").length,
+  };
+}
+
+/** Puts one refetched Size into the page: replaces it, adds a new one in list order, or drops one the IMS no longer lists. */
+export function withSize(page: StockPage, sizeId: number, row: StockRow | null): StockPage {
+  const rest = page.rows.filter((r) => r.sizeId !== sizeId);
+  const rows = row ? [...rest, row].sort((a, b) => a.product.localeCompare(b.product) || a.sizeId - b.sizeId) : rest;
+  return { ...page, rows, summary: summarize(rows) };
+}
+
+export type StockSizeResult = { ok: true; row: StockRow | null } | { ok: false };
+
+/**
+ * One Size, refetched after the IMS announces a change to it. Reads that Size's quantity only. Null row
+ * means the IMS no longer lists it. Without the product feed there is no honest row, so it fails and the
+ * page keeps what it has.
+ */
+export async function loadStockSize(
+  connect: () => postgres.Sql,
+  sizeId: number,
+  read: (sizeIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readStock,
+  readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
+): Promise<StockSizeResult> {
+  try {
+    const feed = await readFeed();
+    if (!feed) return { ok: false };
+    const item = feed.find((entry) => entry.productId === sizeId);
+    if (!item) return { ok: true, row: null };
+    const stock = await read([sizeId]);
+    const holding = await loadHoldingOrders(connect);
+    return { ok: true, row: toRow({ id: item.productId, product: item.name, size: item.variant ?? "", image: item.image, marker: markerOf(item) }, stock, holding) };
+  } catch (error) {
+    console.error("A Size could not be refetched", error);
     return { ok: false };
   }
 }
