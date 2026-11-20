@@ -16,9 +16,9 @@ import { StockSkeleton, StockView } from "@/features/orders/stock-view";
 afterEach(cleanup);
 
 const row = (sizeId: number, product: string, available: number | null, shows: StockPage["rows"][number]["shows"]) =>
-  ({ sizeId, product, size: "250 g", image: null, description: "", marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
+  ({ sizeId, product, size: "250 g", image: null, price: 120.5, description: "", marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
 const page: StockPage = {
-  imsReachable: true, stale: null,
+  hasStock: true,
   summary: { sizes: 3, soldOut: 1, reserved: 6, low: 1 },
   rows: [row(1, "Plenty", 40, "In stock"), row(2, "Few", 7, { left: 7 }), row(3, "None", 0, "Sold out")],
 };
@@ -54,8 +54,8 @@ it("searches by product and combines with the tab", () => {
 });
 
 it("says so when the IMS cannot be read and implies no polling", () => {
-  render(<StockView page={{ ...page, imsReachable: false, stale: null }} />);
-  expect(screen.getByRole("alert").textContent).toContain("could not be reached");
+  render(<StockView page={{ ...page, hasStock: false }} />);
+  expect(screen.getByRole("alert").textContent).toContain("no stock copy yet");
   expect(document.body.textContent).not.toMatch(/updated .* ago/i);
 });
 
@@ -71,7 +71,7 @@ it("shows each Order line's reserved quantity", () => {
 });
 
 it("shows dashes in every tile, not zeros, when the IMS cannot be read", () => {
-  render(<StockView page={{ ...page, imsReachable: false, stale: null, summary: { sizes: 3, soldOut: 0, reserved: 0, low: 0 } }} />);
+  render(<StockView page={{ ...page, hasStock: false, summary: { sizes: 3, soldOut: 0, reserved: 0, low: 0 } }} />);
   const tile = (label: string) => screen.getAllByText(label)[0].parentElement as HTMLElement;
   for (const label of ["Sizes on sale", "Reserved by open orders", "Low stock", "Sold out"]) expect(tile(label).textContent).toContain("–");
   expect(tile("Reserved by open orders").textContent).not.toContain("0 items");
@@ -156,29 +156,29 @@ it("shows a plain tile that does nothing for a product with no image", () => {
   expect(screen.queryByRole("button", { name: /Zoom/ })).toBeNull();
 });
 
-it("shows the unreachable alert and an empty list, not stale rows, when the feed is down", () => {
-  render(<StockView page={{ rows: [], imsReachable: false, stale: null, summary: { sizes: 0, soldOut: 0, reserved: 0, low: 0 } }} />);
-  expect(screen.getByRole("alert").textContent).toContain("could not be reached");
+it("says there is no stock copy yet, and lists nothing, when CREOMS has never read the IMS", () => {
+  render(<StockView page={{ rows: [], hasStock: false, summary: { sizes: 0, soldOut: 0, reserved: 0, low: 0 } }} />);
+  expect(screen.getByRole("alert").textContent).toContain("no stock copy yet");
   expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(0);
 });
 
-it("has only the Products, Stocks, Reserved and Shop shows columns", () => {
+it("has the Products, Price, Stocks, Reserved and Shop shows columns", () => {
   render(<StockView page={page} />);
   const header = screen.getByText("Products").parentElement as HTMLElement;
-  expect(Array.from(header.children).map((cell) => cell.textContent).filter(Boolean)).toEqual(["Products", "Stocks", "Reserved", "Shop shows"]);
+  expect(Array.from(header.children).map((cell) => cell.textContent).filter(Boolean)).toEqual(["Products", "Price", "Stocks", "Reserved", "Shop shows"]);
   expect(screen.queryByText("Available online")).toBeNull();
   expect(screen.queryByText("In stock (IMS)")).toBeNull();
 });
 
-it("says when the numbers come from CREOMS's last copy of the IMS, with the time, and still shows them", () => {
-  render(<StockView page={{ ...page, stale: { asOf: "2026-11-20T08:00:00.000Z" } }} />);
-  const note = screen.getByRole("status", { name: "Stock copy" });
-  expect(note.textContent).toContain("The IMS could not be reached");
-  expect(note.textContent).toContain("Nov 20, 2026, 4:00 PM");
-  expect(screen.getByText("Only 7 left")).toBeTruthy();
+it("shows each product's price from the copy, and a dash when there is none", () => {
+  render(<StockView page={{ ...page, rows: [row(1, "Plenty", 40, "In stock"), { ...row(2, "Free", 5, { left: 5 }), price: null }] }} />);
+  expect(screen.getByText("₱120.50")).toBeTruthy();
+  expect(document.querySelectorAll("[data-stock-row]")[1].textContent).toContain("–");
 });
 
-it("shows no copy note when the numbers are current", () => {
+it("never says the IMS could not be reached while it shows the copy", () => {
   render(<StockView page={page} />);
+  expect(screen.queryByText(/could not be reached/)).toBeNull();
   expect(screen.queryByRole("status", { name: "Stock copy" })).toBeNull();
+  expect(screen.getByText("Only 7 left")).toBeTruthy();
 });

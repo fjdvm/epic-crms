@@ -1,6 +1,6 @@
 -- Additive migration (#677). Run as creoms_writer (owner of crms); no storefront writes. Safe to re-run.
--- CREOMS's copy of what the IMS last reported for each product, so Products & Stocks still shows numbers when the IMS
--- cannot be reached. The IMS stays the only owner of physical stock: this table is only ever written from an IMS read.
+-- CREOMS's copy of what the IMS last reported for each product, which Products & Stocks opens on (name, image,
+-- price, stock) without waiting on the IMS. The IMS stays the only owner of physical stock: this table is only ever written from an IMS read.
 BEGIN;
 CREATE TABLE IF NOT EXISTS crms.stock_mirror (
   ims_product_id integer PRIMARY KEY,

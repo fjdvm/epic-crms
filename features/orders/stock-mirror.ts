@@ -2,7 +2,7 @@ import type postgres from "postgres";
 
 import type { ImsProduct, ImsSizeStock } from "@/lib/storefront";
 
-/** What CREOMS last read from the IMS. The IMS owns physical stock; this is only ever written from an IMS read. */
+/** What CREOMS last read from the IMS. The IMS owns physical stock; this is only ever written from an IMS read, and it is what Products & Stocks opens on. */
 export interface MirrorSnapshot { feed: ImsProduct[]; stock: Map<number, ImsSizeStock>; syncedAt: Date }
 
 /** The copy as `loadStock` uses it, so `stock.ts` stays free of database code (it is bundled for the browser). */

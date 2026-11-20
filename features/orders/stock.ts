@@ -50,8 +50,11 @@ export interface StockRow {
   /** What Staff published for the shop; empty until they add one. */
   description: string;
   marker: StockMarker | null;
-  /** Null when the IMS could not answer for this Size. */
+  /** The price in pesos from CREOMS's copy of the IMS; null when the IMS has none. */
+  price: number | null;
+  /** Null when CREOMS has no quantity for this Size yet. */
   inStock: number | null;
+  /** What open Orders hold in CREOMS's own Reservations; null when those Orders could not be read. */
   reserved: number | null;
   available: number | null;
   shows: ShopShows;
@@ -61,10 +64,8 @@ export interface StockRow {
 
 export interface StockPage {
   rows: StockRow[];
-  /** False when the IMS could not be read and CREOMS has no earlier copy, so every quantity is unknown. */
-  imsReachable: boolean;
-  /** Set when some of what is shown comes from CREOMS's last copy of the IMS, not a read just now; `asOf` is that copy's time (ISO). */
-  stale: { asOf: string } | null;
+  /** False when CREOMS has no copy of the IMS yet (nothing was ever read), so every quantity is unknown. */
+  hasStock: boolean;
   summary: { sizes: number; soldOut: number; reserved: number; low: number };
 }
 
@@ -91,14 +92,31 @@ type ContentReader = (productIds: number[]) => Promise<Map<number, ProductConten
 const noContent: ContentReader = async () => new Map();
 
 const sizeSource = (item: ImsProduct, content: ProductContent | undefined): SizeSource => ({
-  id: item.productId, product: item.name, size: item.variant ?? "", image: content?.imageUrl ?? item.image,
+  id: item.productId, product: item.name, size: item.variant ?? "", image: content?.imageUrl ?? item.image, price: item.price,
   description: content?.description ?? "", marker: markerOf(item, content),
 });
 
 /**
- * Every Size the IMS holds, with its stock. Read on demand; the IMS stays the source of truth. When the
- * IMS product feed cannot be read, the page lists nothing and says so: the storefront's own Sizes are a
- * different catalogue and would pass for the IMS list.
+ * Products & Stocks as the page opens: CREOMS's own copy of the IMS, with no wait on the IMS. The copy is
+ * written by `loadStock`, whenever an IMS read succeeds.
+ */
+export async function loadStockCopy(
+  connect: () => postgres.Sql,
+  readPublished: ContentReader,
+  mirror: StockMirror,
+): Promise<StockResult> {
+  try {
+    const copy = await recall(mirror);
+    return { ok: true, page: await buildPage(connect, copy?.feed ?? null, copy?.stock ?? null, readPublished) };
+  } catch (error) {
+    console.error("Products & stock could not read the ecommerce database", error);
+    return { ok: false };
+  }
+}
+
+/**
+ * Reads the IMS now and saves what it says to CREOMS's copy. The IMS stays where stock is owned; CREOMS
+ * never sends it a quantity. When the IMS cannot be read the page is built from the copy, silently.
  */
 export async function loadStock(
   connect: () => postgres.Sql,
@@ -111,28 +129,33 @@ export async function loadStock(
     const liveFeed = await readFeed();
     const liveStock = liveFeed ? await read(liveFeed.map((item) => item.productId)) : null;
     if (liveFeed && liveStock) await remember(() => mirror?.save(liveFeed, liveStock));
-
-    // Whatever the IMS did not answer for now comes from the last copy, and the page says so.
     const copy = liveFeed && liveStock ? null : await recall(mirror);
     const feed = liveFeed ?? copy?.feed ?? null;
     const stock = liveStock ?? copy?.stock ?? null;
-    const stale = copy && (!liveFeed || !liveStock) ? { asOf: copy.syncedAt.toISOString() } : null;
-    if (!feed) return { ok: true, page: { rows: [], imsReachable: false, stale: null, summary: summarize([]) } };
-
-    const published = await readContent(feed.map((item) => item.productId), readPublished);
-    const sizes: SizeSource[] = feed
-      .map((item) => sizeSource(item, published.get(item.productId)))
-      .sort((a, b) => a.product.localeCompare(b.product) || a.id - b.id);
-    const holding = await loadHoldingOrders(connect);
-    const rows = sizes.map((size) => toRow(size, stock, holding));
-    return { ok: true, page: { rows, imsReachable: stock !== null, stale, summary: summarize(rows) } };
+    return { ok: true, page: await buildPage(connect, feed, stock, readPublished) };
   } catch (error) {
     console.error("Products & stock could not read the ecommerce database", error);
     return { ok: false };
   }
 }
 
-/** The copy is a help, never a dependency: a failed write or read is logged and the page carries on without it. */
+async function buildPage(
+  connect: () => postgres.Sql,
+  feed: ImsProduct[] | null,
+  stock: Map<number, ImsSizeStock> | null,
+  readPublished: ContentReader,
+): Promise<StockPage> {
+  if (!feed) return { rows: [], hasStock: false, summary: summarize([]) };
+  const published = await readContent(feed.map((item) => item.productId), readPublished);
+  const sizes: SizeSource[] = feed
+    .map((item) => sizeSource(item, published.get(item.productId)))
+    .sort((a, b) => a.product.localeCompare(b.product) || a.id - b.id);
+  const holding = await loadHoldingOrders(connect);
+  const rows = sizes.map((size) => toRow(size, stock, holding));
+  return { rows, hasStock: stock !== null, summary: summarize(rows) };
+}
+
+/** The copy is a help for the live read, never a dependency: a failed write is logged and the page carries on. */
 async function remember(write: () => Promise<void> | undefined): Promise<void> {
   try { await write(); } catch (error) { console.error("The stock copy could not be written", error); }
 }
@@ -141,15 +164,18 @@ async function recall(mirror: StockMirror | undefined) {
   catch (error) { console.error("The stock copy could not be read", error); return null; }
 }
 
-interface SizeSource { id: number; product: string; size: string; image: string | null; description: string; marker: StockMarker | null }
+interface SizeSource { id: number; product: string; size: string; image: string | null; price: number | null; description: string; marker: StockMarker | null }
 
+/** Reserved is CREOMS's own count of what open Orders hold; available is what is physically there less that. */
 function toRow(size: SizeSource, stock: Map<number, ImsSizeStock> | null, holding: Map<number, HoldingOrder[]> | null): StockRow {
   const held = stock?.get(size.id);
-  const available = held?.available ?? null;
+  const orders = holding?.get(size.id) ?? (holding ? [] : null);
+  const reserved = orders ? orders.reduce((sum, order) => sum + order.quantity, 0) : null;
+  const inStock = held?.quantity ?? null;
+  const available = inStock !== null && reserved !== null ? inStock - reserved : held?.available ?? null;
   return {
-    sizeId: size.id, product: size.product, size: size.size, image: size.image, description: size.description, marker: size.marker,
-    inStock: held?.quantity ?? null, reserved: held?.reserved ?? null, available, shows: shopShows(available),
-    orders: holding?.get(size.id) ?? (holding ? [] : null),
+    sizeId: size.id, product: size.product, size: size.size, image: size.image, price: size.price, description: size.description, marker: size.marker,
+    inStock, reserved, available, shows: shopShows(available), orders,
   };
 }
 

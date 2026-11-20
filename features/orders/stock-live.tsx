@@ -7,7 +7,7 @@ import { withSize, type StockPage } from "./stock";
 import { StockView } from "./stock-view";
 
 /**
- * Products & Stocks, kept current by the Staff stock channel. A Size-ID event refetches that Size; a connect
+ * Products & Stocks. It opens on CREOMS's own copy of the IMS, refreshes it once in the background, and is kept current by the Staff stock channel. A Size-ID event refetches that Size; a connect
  * or reconnect refetches everything. Nothing here runs on a timer, focus or visibility: the only timers are
  * the reconnect back-off, which makes no data request.
  */
@@ -27,6 +27,7 @@ export function LiveStock({ page: initial, canEdit = false }: { page: StockPage;
     let socket: WebSocket | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let attempts = 0;
+    let connected = false;
 
     // One fetch at a time, so a slow answer never lands over a newer one. A full refetch covers every queued Size.
     const sizes = new Set<number>();
@@ -79,7 +80,9 @@ export function LiveStock({ page: initial, canEdit = false }: { page: StockPage;
       let openedAt = Infinity;
       ws.onopen = () => {
         openedAt = Date.now();
-        everything = true;
+        // The first connection follows the refresh made on open; every reconnect catches up on what it missed.
+        if (connected) everything = true;
+        connected = true;
         void drain();
       };
       ws.onmessage = ({ data }) => {
@@ -98,6 +101,9 @@ export function LiveStock({ page: initial, canEdit = false }: { page: StockPage;
         reconnect();
       };
     };
+    // Opening the page is a user action: bring CREOMS's copy up to date once, quietly. A failure changes nothing on screen.
+    everything = true;
+    void drain();
     void connect();
     return () => {
       stopped = true;
