@@ -501,9 +501,6 @@ export class FakeStorefront {
     const mayPrepare = update.status === "preparing" && (order.status === "paid" ||
       (order.status === "confirmed" && order.payment_method === "cash-on-delivery"));
     const mayDispatch = update.status === "dispatched" && order.status === "preparing" && order.fulfillment_method === "delivery";
-    const mayReady = update.status === "ready for pickup" && order.status === "preparing" && order.fulfillment_method === "pickup";
-    // A legacy Pickup Order already dispatched is completable.
-    const mayCollect = update.status === "collected" && order.fulfillment_method === "pickup" && ["ready for pickup", "dispatched"].includes(order.status);
     const mayDeliver = update.status === "delivered" && order.status === "dispatched" && order.fulfillment_method === "delivery";
     const mayMarkPaid = update.status === "paid" && order.status === "awaiting payment";
     if (mayDeliver && (!update.deliveryPhotoFileId || order.delivery_photo_file_id)) {
@@ -520,17 +517,17 @@ export class FakeStorefront {
       return Response.json({ error: "The proof was rejected. Wait for another." }, { status: 409 });
     }
     // COD completion saves the collection with the status; any other amount is refused and nothing is kept.
-    const cod = order.payment_method === "cash-on-delivery" && (mayDeliver || mayCollect);
+    const cod = order.payment_method === "cash-on-delivery" && mayDeliver;
     if (cod) {
       const total = order.subtotal_in_centavos - (order.discount_in_centavos ?? 0) + (order.delivery_fee_in_centavos ?? 0);
       if (!update.codCollection || update.codCollection.amountInCentavos !== total || !update.codCollection.staffId || !update.codCollection.staffName) {
         return Response.json({ error: "The collected amount must equal the saved total." }, { status: 400 });
       }
     }
-    if ((mayMarkPaid || mayPrepare || mayReady || mayCollect) && (!update.staffId || !update.staffName)) {
+    if ((mayMarkPaid || mayPrepare) && (!update.staffId || !update.staffName)) {
       return Response.json({ error: "Staff attribution is required." }, { status: 400 });
     }
-    if (!mayConfirm && !mayCancel && !mayPrepare && !mayDispatch && !mayDeliver && !mayMarkPaid && !mayReady && !mayCollect) return Response.json({ error: "Order already changed." }, { status: 409 });
+    if (!mayConfirm && !mayCancel && !mayPrepare && !mayDispatch && !mayDeliver && !mayMarkPaid) return Response.json({ error: "Order already changed." }, { status: 409 });
     if (mayConfirm && order.fulfillment_method === "delivery" &&
       (!Number.isSafeInteger(update.deliveryFeeInCentavos) || update.deliveryFeeInCentavos < 0)) {
       return Response.json({ error: "A Delivery fee is required." }, { status: 400 });
@@ -548,7 +545,6 @@ export class FakeStorefront {
         delivery_photo_file_id = ${mayDeliver ? update.deliveryPhotoFileId : order.delivery_photo_file_id},
         dispatched_at = ${mayDispatch ? new Date() : order.dispatched_at},
         delivered_at = ${mayDeliver ? new Date() : order.delivered_at},
-        collected_at = ${mayCollect ? new Date() : order.collected_at},
         cod_collected_amount_in_centavos = ${cod ? update.codCollection.amountInCentavos : order.cod_collected_amount_in_centavos},
         cod_collected_at = ${cod ? new Date() : order.cod_collected_at},
         cod_collected_by_id = ${cod ? update.codCollection.staffId : order.cod_collected_by_id},

@@ -106,28 +106,26 @@ describe("the New vs returning Buyers card", () => {
 });
 
 describe("the How customers pay card", () => {
-  it("shows GCash vs Cash on Delivery and Pickup vs Delivery, and never Maya or Bank transfer", () => {
+  it("shows GCash vs Cash on Delivery, and never Maya or Bank transfer", () => {
     render(
       <PaymentCard
         widget={{
           ok: true,
           payment: [{ method: "cash-on-delivery", orders: 1, sales: 100 }, { method: "gcash", orders: 3, sales: 300 }, { method: "maya", orders: 2, sales: 200 }],
-          receiving: [{ method: "pickup", orders: 4, sales: 400 }],
         }}
       />,
     );
 
     expect(screen.getByText("GCash")).toBeTruthy();
     expect(screen.getByText("Cash on Delivery")).toBeTruthy();
-    expect(screen.getByText("Pickup")).toBeTruthy();
-    expect(screen.getByText("Delivery")).toBeTruthy();
+    expect(screen.queryByText("Pickup")).toBeNull();
     expect(screen.getByText("3 Orders")).toBeTruthy();
     expect(screen.getByText("50%")).toBeTruthy();
     expect(screen.queryByText(/Maya|Bank transfer/)).toBeNull();
   });
 
   it("says there are no Orders in an empty period", () => {
-    render(<PaymentCard widget={{ ok: true, payment: [], receiving: [] }} />);
+    render(<PaymentCard widget={{ ok: true, payment: [] }} />);
     expect(screen.getByText("No Orders in this period")).toBeTruthy();
   });
 

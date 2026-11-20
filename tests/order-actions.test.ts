@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, confirmPickup as realConfirm, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
-  resendStatusEmail, loadPackingSlip, startPreparing, dispatchOrder, updateDispatchRecord, deliverOrder, markReadyForPickup, markPickedUp, getFulfilmentBoard, reconcileDeliveryPhoto,
+  cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
+  resendStatusEmail, loadPackingSlip, startPreparing, dispatchOrder, updateDispatchRecord, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { loadDispatchRecord } from "@/features/orders/dispatch-record-read";
@@ -42,7 +42,6 @@ async function shownTotal(id: number, fee: number) {
   return row ? row.s - row.d + fee : 0;
 }
 const quoteDeliveryFee = async (id: number, fee: number, choice?: Parameters<typeof realQuote>[3]) => realQuote(id, fee, await shownTotal(id, fee), choice);
-const confirmPickup = async (id: number, choice?: Parameters<typeof realConfirm>[2]) => realConfirm(id, await shownTotal(id, 0), choice);
 let storefront: FakeStorefront;
 beforeAll(async () => { db = await startTestDatabase(); }, 60_000);
 afterAll(async () => { await db.close(); });
@@ -105,7 +104,7 @@ describe("Order actions", () => {
   });
 
   it("does not accept packing confirmation without the expected Staff identity and time", async () => {
-    const id = await order("pickup", "confirmed");
+    const id = await order("delivery", "confirmed");
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id, status: "preparing", deliveryFeeInCentavos: null, packedBy: { id: "someone-else", name: "Other", at: "invalid" } })));
     expect(await startPreparing(id)).toMatchObject({ ok: false, reason: expect.stringContaining("did not confirm") });
     expect(audit).not.toHaveBeenCalled();
@@ -120,10 +119,10 @@ describe("Order actions", () => {
   });
 
   it("packs under the Portal Staff identity once and exposes the packing slip", async () => {
-    const id = await order("pickup", "confirmed");
+    const id = await order("delivery", "confirmed");
     await db.sql`insert into order_lines (order_id, product_name, size_label, quantity) values (${id}, 'Halaya', '250g', 2)`;
     expect(await startPreparing(id)).toMatchObject({ ok: true, order: { status: "preparing" } });
-    expect(await loadPackingSlip(id)).toMatchObject({ ok: true, slip: { id, fulfillmentMethod: "pickup", address: null,
+    expect(await loadPackingSlip(id)).toMatchObject({ ok: true, slip: { id, fulfillmentMethod: "delivery", address: null,
       lines: [{ product: "Halaya", size: "250g", quantity: 2 }], packedBy: { id: "ana", name: "Ana", at: expect.any(Date) } } });
     expect(await startPreparing(id)).toMatchObject({ ok: false });
     expect(storefront.packedEvents).toEqual([{ action: "order.packed", actor: { id: "ana", name: "Ana" }, at: expect.any(String) }]);
@@ -144,15 +143,12 @@ describe("Order actions", () => {
   });
 
   it("refuses a confirmation whose total no longer matches and saves nothing", async () => {
-    const pickup = await order("pickup");
-    await db.sql`update orders set subtotal_in_centavos = 100000 where id = ${pickup}`;
-    expect(await realConfirm(pickup, 90_000)).toMatchObject({ ok: false, reason: expect.stringContaining("The total is now ₱1000.00") });
     const delivery = await order();
     await db.sql`update orders set subtotal_in_centavos = 100000 where id = ${delivery}`;
     expect(await realQuote(delivery, 15_000, 100_000)).toMatchObject({ ok: false, reason: expect.stringContaining("₱1150.00") });
     expect(storefront.requests).toBe(0);
     expect(audit).not.toHaveBeenCalled();
-    expect(await db.sql`select status from orders where id in ${db.sql([pickup, delivery])}`).toEqual([{ status: "placed" }, { status: "placed" }]);
+    expect(await db.sql`select status from orders where id in ${db.sql([delivery])}`).toEqual([{ status: "placed" }]);
   });
 
   it("confirms with subtotal, discount, fee and total, and audits order.confirmed with the amounts and Staff", async () => {
@@ -205,17 +201,6 @@ describe("Order actions", () => {
       expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.confirmed", metadata: expect.not.objectContaining({ free_delivery_applied: true }) }));
     });
 
-    it("has no fee for a Pickup Order", async () => {
-      const id = await order("pickup");
-      expect(await confirmPickup(id)).toMatchObject({ ok: true, order: { status: "confirmed" } });
-      expect(await quoteDeliveryFee(await order("pickup"), 0)).toMatchObject({ ok: false });
-    });
-  });
-
-  it("refuses a Delivery fee quote on a Pickup Order", async () => {
-    const id = await order("pickup");
-    expect(await quoteDeliveryFee(id, 0)).toMatchObject({ ok: false });
-    expect(storefront.requests).toBe(0);
   });
 
   it.each(["confirmed", "awaiting payment", "paid", "preparing"])("requires a new quote after cancelling an item from a Free delivery Order in %s", async status => {
@@ -250,7 +235,7 @@ describe("Order actions", () => {
 
   it("refuses direct calls when the Portal grants Payments and Fulfilment but no Orders Module", async () => {
     await signInWithModules(["Payments", "Fulfilment"]);
-    for (const action of [() => quoteDeliveryFee(1, 15000), () => confirmPickup(1), () => cancelOrder(1)]) {
+    for (const action of [() => quoteDeliveryFee(1, 15000), () => cancelOrder(1)]) {
       await expect(action()).rejects.toMatchObject({ digest: expect.stringContaining("/no-access") });
     }
     expect(storefront.requests).toBe(0);
@@ -280,16 +265,16 @@ describe("Order actions", () => {
     expect(results.filter(result => result.ok)).toHaveLength(1);
     expect(results.find(result => !result.ok)).toMatchObject({ ok: false, reason: expect.stringMatching(/already changed/) });
   });
-  it("reports missing Orders and an already confirmed Pickup without sending a change", async () => {
-    for (const action of [() => quoteDeliveryFee(999, 0), () => confirmPickup(999), () => cancelOrder(999)]) {
+  it("reports missing Orders and an already confirmed Order without sending a change", async () => {
+    for (const action of [() => quoteDeliveryFee(999, 0), () => cancelOrder(999)]) {
       expect(await action()).toEqual({ ok: false, reason: "Order was not found." });
     }
-    expect(await confirmPickup(await order("pickup", "confirmed"))).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
+    expect(await quoteDeliveryFee(await order("delivery", "dispatched"), 15000)).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
     expect(storefront.requests).toBe(0);
   });
   it("refuses invalid Order numbers before reading or calling the storefront", async () => {
     for (const id of [0, -1, 1.5, NaN, Infinity, "1", null]) {
-      for (const action of [() => quoteDeliveryFee(id as number, 0), () => confirmPickup(id as number), () => cancelOrder(id as number)]) {
+      for (const action of [() => quoteDeliveryFee(id as number, 0), () => cancelOrder(id as number)]) {
         expect(await action()).toEqual({ ok: false, reason: "Invalid Order number." });
       }
     }
@@ -298,10 +283,10 @@ describe("Order actions", () => {
   it("checks the Orders Module on every direct call", async () => {
     const id = await order();
     vi.mocked(requireModule).mockImplementation(async () => { throw new Error("NEXT_REDIRECT:/no-access"); });
-    for (const action of [() => quoteDeliveryFee(id, 15000), () => confirmPickup(id), () => cancelOrder(id)]) {
+    for (const action of [() => quoteDeliveryFee(id, 15000), () => cancelOrder(id)]) {
       await expect(action()).rejects.toThrow("NEXT_REDIRECT:/no-access");
     }
-    expect(vi.mocked(requireModule).mock.calls).toEqual([["Orders"], ["Orders"], ["Orders"]]);
+    expect(vi.mocked(requireModule).mock.calls).toEqual([["Orders"], ["Orders"]]);
     expect(storefront.requests).toBe(0);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
@@ -320,12 +305,11 @@ describe("Order actions", () => {
     storefront.refusal = null;
     expect((await quoteDeliveryFee(id, 15000)).ok).toBe(true);
   });
-  it("refuses invalid fees and quoting a Pickup without making a storefront request", async () => {
+  it("refuses invalid fees without making a storefront request", async () => {
     const id = await order();
     for (const fee of [-1, 0.5, NaN, Infinity, "15000", undefined]) {
       expect(await quoteDeliveryFee(id, fee as number)).toEqual({ ok: false, reason: "Enter a nonnegative whole number of centavos." });
     }
-    expect(await quoteDeliveryFee(await order("pickup"), 15000)).toEqual({ ok: false, reason: "Only a placed Delivery Order can be quoted." });
     expect(storefront.requests).toBe(0);
   });
   it("cancels up to preparing, and refuses dispatched, delivered and cancelled Orders", async () => {
@@ -339,12 +323,6 @@ describe("Order actions", () => {
       expect(await cancelOrder(id)).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
       expect(storefront.requests).toBe(requests);
     }
-  });
-  it("confirms Pickup without a fee, but refuses Delivery without one", async () => {
-    const pickup = await order("pickup");
-    expect(await confirmPickup(pickup)).toEqual({ ok: true, order: { id: pickup, status: "confirmed", deliveryFeeInCentavos: null } });
-    const delivery = await order();
-    expect(await confirmPickup(delivery)).toEqual({ ok: false, reason: "A Delivery Order needs a Delivery fee." });
   });
   it("quotes a Delivery fee in centavos and reports confirmation only after the storefront accepts", async () => {
     const id = await order();
@@ -410,14 +388,13 @@ describe("Changing the dispatch record later", () => {
     expect(await updateDispatchRecord(id, { courier: "Lalamove", riderName: "Juan", riderPhone: "0917 123 4567" })).toMatchObject({ ok: false, reason: expect.stringContaining("Nothing changed") });
     expect(storefront.requests).toBe(requests);
   });
-  it("refuses a bad link, a Pickup Order and an Order that is not dispatched, before the storefront", async () => {
+  it("refuses a bad link and an Order that is not dispatched, before the storefront", async () => {
     const id = await dispatched();
-    const pickup = await order("pickup", "ready for pickup");
     const preparing = await order("delivery", "preparing");
     const delivered = await order("delivery", "delivered", "gcash");
     const requests = storefront.requests;
     expect(await updateDispatchRecord(id, { courier: "Grab", trackingUrl: "http://x.example/a" })).toMatchObject({ ok: false });
-    for (const other of [pickup, preparing, delivered]) expect(await updateDispatchRecord(other, { courier: "Grab" })).toMatchObject({ ok: false });
+    for (const other of [preparing, delivered]) expect(await updateDispatchRecord(other, { courier: "Grab" })).toMatchObject({ ok: false });
     expect(storefront.requests).toBe(requests);
     expect(audit).not.toHaveBeenCalled();
   });
@@ -434,20 +411,12 @@ describe("Changing the dispatch record later", () => {
     expect(await updateDispatchRecord(id, { courier: "Grab" })).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
     expect(audit).not.toHaveBeenCalled();
   });
-  it("hands rider details only to a reader who may see them, and none for a Pickup Order", async () => {
+  it("hands rider details only to a reader who may see them", async () => {
     const id = await dispatched();
     expect(await loadDispatchRecord(db.sql, id, true)).toMatchObject({ rider: { name: "Juan", phone: "09171234567" } });
     const hidden = await loadDispatchRecord(db.sql, id, false);
     expect(hidden).toEqual({ courier: "Lalamove", trackingUrl: null, rider: null });
     expect(JSON.stringify(hidden)).not.toMatch(/Juan|0917/);
-    expect(await loadDispatchRecord(db.sql, await order("pickup", "ready for pickup"), true)).toBeNull();
-  });
-  it("refuses to dispatch a Pickup Order, before the storefront", async () => {
-    const id = await order("pickup", "preparing");
-    const requests = storefront.requests;
-    expect(await dispatch(id)).toMatchObject({ ok: false, reason: expect.stringContaining("Ready for pickup") });
-    expect(storefront.requests).toBe(requests);
-    expect(audit).not.toHaveBeenCalled();
   });
   it("reports the storefront's refusal without auditing", async () => {
     const id = await order("delivery", "preparing");
@@ -656,9 +625,9 @@ describe("Fulfilment Order actions", () => {
     expect(storefront.requests).toBe(0);
   });
 
-  it("allows preparation of paid GCash and confirmed Pickup Orders", async () => {
+  it("allows preparation of paid GCash and confirmed Cash on Delivery Orders", async () => {
     expect((await startPreparing(await order("delivery", "paid", "gcash"))).ok).toBe(true);
-    expect((await startPreparing(await order("pickup", "confirmed"))).ok).toBe(true);
+    expect((await startPreparing(await order("delivery", "confirmed"))).ok).toBe(true);
   });
 
   it("preserves the storefront refusal for each move without reporting success", async () => {
@@ -870,7 +839,6 @@ describe("Payments Module access", () => {
 describe("Order and Payment Audit Events", () => {
   const cases = [
     { action: "order.confirmed", module: "Orders", method: "delivery", status: "placed", run: (id: number) => quoteDeliveryFee(id, 15000), description: "Ana quoted a Delivery fee of ₱150.00 and confirmed Order #" },
-    { action: "order.confirmed", module: "Orders", method: "pickup", status: "placed", run: confirmPickup, description: "Ana confirmed Order #" },
     { action: "order.cancelled", module: "Orders", method: "delivery", status: "confirmed", run: cancelOrder, description: "Ana cancelled Order #" },
     { action: "order.cancelled", module: "Payments", method: "delivery", status: "awaiting payment", run: cancelPaymentOrder, description: "Ana cancelled Order #" },
     { action: "payment.marked_paid", module: "Payments", method: "delivery", status: "awaiting payment", run: markPaid, description: "Ana marked Order #" },
@@ -1087,128 +1055,52 @@ describe("resendStatusEmail", () => {
   });
 });
 
-describe("Pickup Order moves", () => {
-  it("moves preparing to ready for pickup to collected, audited with who made each move", async () => {
-    const id = await order("pickup", "preparing", "gcash");
-    expect(await markReadyForPickup(id)).toEqual({ ok: true, order: { id, status: "ready for pickup", deliveryFeeInCentavos: null } });
-    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({ action: "order.ready_for_pickup", description: "Ana marked Pickup Order #" + id + " Ready for pickup.", actor: expect.objectContaining({ id: "ana" }) }));
-    expect(await markPickedUp(id)).toEqual({ ok: true, order: { id, status: "collected", deliveryFeeInCentavos: null } });
-    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({ action: "order.picked_up", description: "Ana marked Pickup Order #" + id + " Picked up." }));
-    const [row] = await db.sql`select collected_at, delivered_at from orders where id = ${id}`;
-    expect(row.collected_at).toBeInstanceOf(Date);
-    expect(row.delivered_at).toBeNull();
-    expect(await markPickedUp(id)).toMatchObject({ ok: false });
-    expect(revalidatePath).toHaveBeenCalledWith("/fulfilment");
-  });
-  it("records no collection for an Order that is not Cash on Delivery", async () => {
-    const id = await order("pickup", "ready for pickup", "gcash");
-    expect(await markPickedUp(id)).toMatchObject({ ok: true });
-    const [row] = await db.sql`select cod_collected_amount_in_centavos as amount, cod_collected_at as at from orders where id = ${id}`;
-    expect(row).toEqual({ amount: null, at: null });
-  });
-});
-
 describe("COD collection", () => {
-  async function codOrder(method: "pickup" | "delivery", status: string) {
-    const id = await order(method, status);
+  async function codOrder(status: string) {
+    const id = await order("delivery", status);
     await db.sql`update orders set subtotal_in_centavos = 150000, delivery_fee_in_centavos = 5000 where id = ${id}`;
     return id;
   }
   const collection = (id: number) => db.sql`
     select status, cod_collected_amount_in_centavos as amount, cod_collected_at as at, cod_collected_by_name as by from orders where id = ${id}`.then(rows => rows[0]);
 
-  it("saves the amount, time and Staff member with the pickup, and audits them in the one event", async () => {
-    const id = await codOrder("pickup", "ready for pickup");
-    expect(await markPickedUp(id, 155000)).toMatchObject({ ok: true, order: { status: "collected" } });
-    expect(await collection(id)).toMatchObject({ status: "collected", amount: 155000, by: "Ana", at: expect.any(Date) });
-    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({
-      action: "order.picked_up", description: expect.stringContaining("₱1550.00"), metadata: expect.objectContaining({ cod_collected_in_centavos: 155000, cod_collected_by: "Ana", from_status: "ready for pickup", to_status: "collected" }),
-    }));
-  });
   it("saves the amount, time and Staff member with the delivery", async () => {
-    const id = await codOrder("delivery", "dispatched");
+    const id = await codOrder("dispatched");
     expect(await deliverOrder(id, deliveryPhoto(), 155000)).toMatchObject({ ok: true, order: { status: "delivered" } });
     expect(await collection(id)).toMatchObject({ status: "delivered", amount: 155000, by: "Ana" });
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.delivered", metadata: expect.objectContaining({ cod_collected_in_centavos: 155000, cod_collected_by: "Ana", cod_collected_at: expect.any(String), from_status: expect.any(String), to_status: expect.any(String) }) }));
   });
   it("refuses any other amount, or none, with the reason, before the storefront, keeping the status", async () => {
-    for (const method of ["pickup", "delivery"] as const) {
-      const id = await codOrder(method, method === "pickup" ? "ready for pickup" : "dispatched");
-      const before = storefront.requests;
-      for (const amount of [154999, 155001, 0, Number.NaN, undefined]) {
-        const result = method === "pickup" ? await markPickedUp(id, amount) : await deliverOrder(id, deliveryPhoto(), amount);
-        expect(result).toEqual({ ok: false, reason: expect.stringContaining("must equal the Order total of ₱1550.00") });
-      }
-      expect(storefront.requests).toBe(before);
-      expect(await collection(id)).toMatchObject({ status: method === "pickup" ? "ready for pickup" : "dispatched", amount: null, at: null });
+    const id = await codOrder("dispatched");
+    const before = storefront.requests;
+    for (const amount of [154999, 155001, 0, Number.NaN, undefined]) {
+      const result = await deliverOrder(id, deliveryPhoto(), amount);
+      expect(result).toEqual({ ok: false, reason: expect.stringContaining("must equal the Order total of ₱1550.00") });
     }
+    expect(storefront.requests).toBe(before);
+    expect(await collection(id)).toMatchObject({ status: "dispatched", amount: null, at: null });
     expect(audit).not.toHaveBeenCalled();
   });
   it("keeps neither the status nor the collection when the storefront save fails", async () => {
-    for (const method of ["pickup", "delivery"] as const) {
-      const id = await codOrder(method, method === "pickup" ? "ready for pickup" : "dispatched");
-      storefront.refusal = "The save failed.";
-      const result = method === "pickup" ? await markPickedUp(id, 155000) : await deliverOrder(id, deliveryPhoto(), 155000);
-      expect(result).toEqual({ ok: false, reason: "The save failed." });
-      expect(await collection(id)).toMatchObject({ status: method === "pickup" ? "ready for pickup" : "dispatched", amount: null, at: null, by: null });
-      storefront.refusal = null;
-    }
+    const id = await codOrder("dispatched");
+    storefront.refusal = "The save failed.";
+    const result = await deliverOrder(id, deliveryPhoto(), 155000);
+    expect(result).toEqual({ ok: false, reason: "The save failed." });
+    expect(await collection(id)).toMatchObject({ status: "dispatched", amount: null, at: null, by: null });
+    storefront.refusal = null;
   });
   it("makes no second record on a retry", async () => {
-    const id = await codOrder("pickup", "ready for pickup");
-    expect((await markPickedUp(id, 155000)).ok).toBe(true);
+    const id = await codOrder("dispatched");
+    expect((await deliverOrder(id, deliveryPhoto(), 155000)).ok).toBe(true);
     const first = await collection(id);
-    expect((await markPickedUp(id, 155000)).ok).toBe(false);
+    expect((await deliverOrder(id, deliveryPhoto(), 155000)).ok).toBe(false);
     expect(await collection(id)).toEqual(first);
   });
   it("loads the collection for the Order page, and null before it", async () => {
-    const id = await codOrder("pickup", "ready for pickup");
+    const id = await codOrder("dispatched");
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { codCollection: null } });
-    await markPickedUp(id, 155000);
+    await deliverOrder(id, deliveryPhoto(), 155000);
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { codCollection: { amountInCentavos: 155000, byName: "Ana", at: expect.any(Date) } } });
   });
 });
 
-describe("Pickup Order refusals", () => {
-  it("refuses out-of-order pickup moves before the storefront", async () => {
-    const requests = () => storefront.requests;
-    for (const status of ["paid", "confirmed", "ready for pickup", "collected", "received", "cancelled"]) {
-      const id = await order("pickup", status);
-      const before = requests();
-      expect((await markReadyForPickup(id)).ok).toBe(false);
-      expect(requests()).toBe(before);
-    }
-    for (const status of ["preparing", "collected", "received", "cancelled", "paid"]) {
-      const id = await order("pickup", status);
-      const before = requests();
-      expect((await markPickedUp(id)).ok).toBe(false);
-      expect(requests()).toBe(before);
-    }
-    expect(audit).not.toHaveBeenCalled();
-  });
-  it("completes a legacy Pickup Order that is already dispatched", async () => {
-    const id = await order("pickup", "dispatched", "gcash");
-    expect(await markPickedUp(id)).toMatchObject({ ok: true, order: { status: "collected" } });
-  });
-  it("refuses Delivery Orders the pickup steps, and Pickup Orders the delivery steps", async () => {
-    const delivery = await order("delivery", "preparing");
-    expect(await markReadyForPickup(delivery)).toMatchObject({ ok: false, reason: expect.stringContaining("Pickup Order") });
-    const deliveryDispatched = await order("delivery", "dispatched", "gcash");
-    expect(await markPickedUp(deliveryDispatched)).toMatchObject({ ok: false, reason: expect.stringContaining("Pickup Order") });
-    const pickup = await order("pickup", "dispatched", "gcash");
-    expect(await deliverOrder(pickup)).toMatchObject({ ok: false, reason: expect.stringContaining("Ready for pickup") });
-    expect(storefront.requests).toBe(0);
-  });
-  it("reports the storefront's refusal in plain words without auditing", async () => {
-    const id = await order("pickup", "preparing");
-    storefront.refusal = "Another Staff member has already moved this Order.";
-    expect(await markReadyForPickup(id)).toEqual({ ok: false, reason: storefront.refusal });
-    expect(audit).not.toHaveBeenCalled();
-  });
-  it("keeps the moves read-only for Admin and CEO", async () => {
-    const id = await order("pickup", "preparing");
-    vi.mocked(requireModule).mockResolvedValue({ id: "owner", username: "owner", name: "Owner", email: "o@example.com", role: "CEO" });
-    expect(await markReadyForPickup(id)).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
-    expect(storefront.requests).toBe(0);
-  });
-});

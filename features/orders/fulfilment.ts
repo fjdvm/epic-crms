@@ -7,7 +7,7 @@ import type { OrderRow } from "./orders";
 export interface FulfilmentOrder extends OrderRow {
   fulfillmentMethod: string;
   paymentMethod: string;
-  /** When the Order was completed: `delivered_at`, or `collected_at` for Pickup. Kept after the Customer marks it received. */
+  /** When the Order was delivered (`delivered_at`). Kept after the Customer marks it received. */
   deliveredAt: Date | null;
   /** True when a failed delivery is still open: not rebooked. */
   failedOpen: boolean;
@@ -19,7 +19,6 @@ export const TABS = [
   { key: "all-active", label: "All active" },
   { key: "to-pack", label: "To pack" },
   { key: "preparing", label: "Preparing" },
-  { key: "ready-for-pickup", label: "Ready for pickup" },
   { key: "out-for-delivery", label: "Out for delivery" },
   { key: "failed", label: "Failed" },
   { key: "completed", label: "Completed" },
@@ -30,13 +29,12 @@ export type FulfilmentTab = (typeof TABS)[number]["key"];
 export type FulfilmentBoard = { orders: FulfilmentOrder[] };
 export type FulfilmentBoardResult = { ok: true; board: FulfilmentBoard } | { ok: false };
 
-const COMPLETED = ["delivered", "collected", "received"];
+const COMPLETED = ["delivered", "received"];
 
 /** The one tab an Order belongs to; a tab is a view, never a status. */
 export function tabOf(order: FulfilmentOrder): Exclude<FulfilmentTab, "all-active" | "all"> | null {
   if (readyToPrepare(order)) return "to-pack";
   if (order.status === "preparing") return "preparing";
-  if (order.status === "ready for pickup") return "ready-for-pickup";
   if (order.status === "dispatched") return order.failedOpen ? "failed" : "out-for-delivery";
   if (COMPLETED.includes(order.status)) return "completed";
   return null;
@@ -72,16 +70,16 @@ export async function loadFulfilmentBoard(
       completed_at: Date | null; packed_by_name: string | null; failed_open: boolean; created_at: Date; customer_id: string; full_name: string; total: number;
     }[]>`
       select o.id, o.status, o.fulfillment_method, o.payment_method,
-        coalesce(o.delivered_at, (to_jsonb(o)->>'collected_at')::timestamptz) as completed_at,
+        o.delivered_at as completed_at,
         to_jsonb(o)->>'packed_by_name' as packed_by_name,
         exists (select 1 from public.failed_deliveries f where f.order_id = o.id and f.rebooked_at is null) as failed_open,
         o.created_at, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name,
         o.subtotal_in_centavos - coalesce((to_jsonb(o)->>'discount_in_centavos')::int, 0) + coalesce(o.delivery_fee_in_centavos, 0) as total
       from public.orders o join public.customers c on c.id = o.customer_id
-      where o.status in ('confirmed', 'paid', 'preparing', 'ready for pickup', 'dispatched')
-        or (o.status in ('delivered', 'collected', 'received')
-          and coalesce(o.delivered_at, (to_jsonb(o)->>'collected_at')::timestamptz) >= ${completedSince}
-          and coalesce(o.delivered_at, (to_jsonb(o)->>'collected_at')::timestamptz) <= ${now})
+      where o.status in ('confirmed', 'paid', 'preparing', 'dispatched')
+        or (o.status in ('delivered', 'received')
+          and o.delivered_at >= ${completedSince}
+          and o.delivered_at <= ${now})
       order by o.created_at, o.id`;
     const lines = rows.length === 0 ? [] : await sql<{ order_id: number; product_name: string; quantity: number }[]>`
       select order_id, product_name, quantity from public.order_lines

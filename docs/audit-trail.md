@@ -181,12 +181,12 @@ when it saves one.
 
 Order Details shows "Email not sent" with the reason for every `order_email_outcomes` row whose status is
 `failed`, for any of the nine Status emails (`confirmation`, `payment-verified`, `payment-rejected`, `payment-expired`, `manager-review-started`,
-`preparing`, `dispatched`, `ready-for-pickup`, `completed`; `features/orders/status-emails.ts`). A row is one event
+`preparing`, `dispatched`, `completed`; `features/orders/status-emails.ts`). A row is one event
 occurrence: the storefront adds a nullable `occurrence` text column (for example the rejection number) so two
 rejections are two rows (`""` for an event that happens once; storefront migration 0053, applied to production and
 granted to the read-only role by the storefront's `docs/sql/creoms-email-outcomes-grant.sql`), so no CREOMS migration is
 needed. Staff and Managers holding the email's owning Module (confirmation: Orders; payment verified, rejected, expired,
-Manager review: Payments; Preparing, dispatched, Ready for pickup, completed: Fulfilment) can resend it after a
+Manager review: Payments; Preparing, dispatched, completed: Fulfilment) can resend it after a
 confirm dialog; Admin and the CEO only read.
 `resendStatusEmail` asks the storefront (`POST /api/internal/orders/:id/email/resend`, body `{kind, occurrence,
 staffId, staffName}`). The storefront resends under the email's stable id, so a repeat never sends twice; when

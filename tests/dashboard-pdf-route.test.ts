@@ -97,7 +97,7 @@ describe("Dashboard PDF export", () => {
       monthlySales: { ok: true, months: [{ label: "2026-10", start: now, end: now, soFar: true, sales: 123456 }] },
       bestSellers: { ok: true, products: [{ productName: "Ube & Leche Flan", sales: 100000, units: 2, share: 0.8 }], remainder: { sales: 25000, share: 0.2 } },
       monthlyBuyers: { ok: true, months: [{ label: "2026-10", soFar: true, new: 3, returning: 1, share: 0.25 }] },
-      paymentAndReceiving: { ok: true, payment: [{ method: "gcash", orders: 4, sales: 123456 }], receiving: [] },
+      paymentAndReceiving: { ok: true, payment: [{ method: "gcash", orders: 4, sales: 123456 }] },
       customersByStage: { ok: true, counts: { new: 1, "first-order": 2, repeat: 3, "at-risk": 4, lost: 5 } },
       atRisk: { ok: true, count: 4 }, newCustomers: { ok: true, current: 7, previous: 6 },
       unverifiedLeads: { ok: true, count: 9 },

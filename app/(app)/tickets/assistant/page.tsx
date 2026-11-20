@@ -177,7 +177,7 @@ export default async function AssistantTickets() {
             How the assistant decides to hand off
           </p>
           <p className="text-xs">
-            Assistant answers are based only on live order, payment and pickup
+            Assistant answers are based only on live order, payment and delivery
             data. It never promises refunds, discounts or replacements — those
             always come to a person.
           </p>

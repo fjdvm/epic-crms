@@ -72,11 +72,11 @@ A Customer's request to buy, placed on the storefront. CREOMS never creates an O
 _Avoid_: Purchase, transaction
 
 **Order status**:
-Where an Order is in its life: `placed`, `confirmed`, `awaiting payment`, `paid`, `preparing`, `dispatched`, `delivered`, `received` or `cancelled`. Only the Customer marks an Order `received`; it acknowledges delivery without resetting the Refund window. Pickup and Cash on Delivery Orders skip the payment steps. These are the storefront's statuses; the design's "Pending", "Packed" and "Shipped" mean `placed`, `preparing` and `dispatched`. Payment is part of the status, not a separate field. Staff can cancel an Order up to `preparing`; cancelling a `dispatched` Order needs a Manager's approval.
+Where an Order is in its life: `placed`, `confirmed`, `awaiting payment`, `paid`, `preparing`, `dispatched`, `delivered`, `received` or `cancelled`. Only the Customer marks an Order `received`; it acknowledges delivery without resetting the Refund window. Cash on Delivery Orders skip the payment steps. These are the storefront's statuses; the design's "Pending", "Packed" and "Shipped" mean `placed`, `preparing` and `dispatched`. Payment is part of the status, not a separate field. Staff can cancel an Order up to `preparing`; cancelling a `dispatched` Order needs a Manager's approval.
 _Avoid_: Order state, fulfillment status, payment status
 
 **Delivery fee**:
-The courier cost of a Delivery Order, quoted by Staff by hand after the Order is `placed`. Quoting it confirms the Order. A Pickup Order has none.
+The courier cost of a Delivery Order, quoted by Staff by hand after the Order is `placed`. Quoting it confirms the Order.
 _Avoid_: Shipping fee, shipping
 
 **Payment proof**:
@@ -100,7 +100,7 @@ An alert shown to Staff when a Ticket needs them: a new Ticket (to every Staff m
 _Avoid_: Ticket alert, support alert
 
 **Order notification**:
-An alert shown to every Staff member with the Orders Module when any new Order is placed, including Pickup and Cash on Delivery. A Delivery Order waiting for a quote says a Delivery fee is needed. A GCash Order whose Payment proof was just submitted separately alerts every Staff member with the Payments Module. Nothing alerts Fulfilment Staff.
+An alert shown to every Staff member with the Orders Module when any new Order is placed, including Cash on Delivery. A Delivery Order waiting for a quote says a Delivery fee is needed. A GCash Order whose Payment proof was just submitted separately alerts every Staff member with the Payments Module. Nothing alerts Fulfilment Staff.
 _Avoid_: New order alert, payment alert
 
 **Feedback notification**:
@@ -179,7 +179,7 @@ Up to five groups of similar complaints an AI finds in a chosen period, each wit
 _Avoid_: Trends, insights, alerts
 
 **Order assistant**:
-A chat on the storefront's Support page and My orders where a signed-in Customer asks about their own Orders (status, payment, pickup, courier link, delivery fee estimates) and about the shop (product details, hours, rules). The Customer's questions are answered by an AI from the live records, with the facts shown by the system itself; it never changes, cancels or refunds anything, never promises a refund, discount or replacement, and never reads another Customer's Order. It hands over to a person, as a Ticket with the Order as its Linked order, when the Customer asks for one, the question is about damaged, spoiled or wrong items, food safety, refunds, discounts or replacements, or it cannot answer from the records. Staff can mark an answer wrong, with a reason; a Manager sees those and the counts. It is the one place an AI writes words a Customer reads without a person reviewing them, an exception the owner agreed.
+A chat on the storefront's Support page and My orders where a signed-in Customer asks about their own Orders (status, payment, courier link, delivery fee estimates) and about the shop (product details, hours, rules). The Customer's questions are answered by an AI from the live records, with the facts shown by the system itself; it never changes, cancels or refunds anything, never promises a refund, discount or replacement, and never reads another Customer's Order. It hands over to a person, as a Ticket with the Order as its Linked order, when the Customer asks for one, the question is about damaged, spoiled or wrong items, food safety, refunds, discounts or replacements, or it cannot answer from the records. Staff can mark an answer wrong, with a reason; a Manager sees those and the counts. It is the one place an AI writes words a Customer reads without a person reviewing them, an exception the owner agreed.
 _Avoid_: Chatbot, bot
 
 **Handoff summary**:
@@ -237,11 +237,11 @@ _Avoid_: Hold (a batch Hold is different)
 A Delivery Order whose Delivery fee Staff or a Manager entered as ₱0. There is no automatic free delivery: every Delivery Order waits for a Delivery fee entered by Staff or a Manager, and ₱0 is allowed.
 
 **Senior/PWD verified**:
-A Customer whose Senior Citizen or PWD ID Staff have checked and approved. They get 5% off one item per ID, for personal use. The ID photo is private and is deleted right after review; if nobody reviews it within 7 days it is removed anyway and the Customer uploads it again. Only the verified mark, a hash of the ID number, the approver's name and the ID's expiry date are kept: the ID number itself is never stored in plain text, shown in an email, or written to a log. Staff check the name against the one already on the account, and the Customer is never asked for a detail the system already holds. The same ID number cannot verify a second account. The discount stops on the expiry date and the Customer verifies again. For Pickup, Staff also see the original ID at collection.
+A Customer whose Senior Citizen or PWD ID Staff have checked and approved. They get 5% off one item per ID, for personal use. The ID photo is private and is deleted right after review; if nobody reviews it within 7 days it is removed anyway and the Customer uploads it again. Only the verified mark, a hash of the ID number, the approver's name and the ID's expiry date are kept: the ID number itself is never stored in plain text, shown in an email, or written to a log. Staff check the name against the one already on the account, and the Customer is never asked for a detail the system already holds. The same ID number cannot verify a second account. The discount stops on the expiry date and the Customer verifies again.
 _Avoid_: Discount ID, senior account
 
 **Courier details**:
-What Staff record when a Delivery Order is dispatched: Lalamove or Grab, the booking's share link (`https`), and optionally the rider's name, plate number and phone. The Customer sees "Track your delivery". Pickup Orders have none.
+What Staff record when a Delivery Order is dispatched: Lalamove or Grab, the booking's share link (`https`), and optionally the rider's name, plate number and phone. The Customer sees "Track your delivery".
 _Avoid_: Tracking, tracking number
 
 **Failed delivery**:
@@ -251,3 +251,6 @@ _Avoid_: Returned to sender
 **COD flag**:
 A plain rule that marks a Cash on Delivery Order for Staff to double-check before confirming: a first order, a first order over ₱1,500 (an Admin setting), a phone number that refused an earlier Order, or an earlier failed delivery. Staff see which rule fired; nothing is blocked and no AI scores it.
 _Avoid_: Fraud score, risk percentage
+
+**Pickup (retired)**:
+The Pickup Order type is retired; the shop delivers only. Existing Pickup Orders are deleted and the Pickup statuses, tabs and instructions removed. Cash on Delivery Orders remain Delivery Orders and never expire.

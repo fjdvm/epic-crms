@@ -161,24 +161,6 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
   });
 }
 
-export async function confirmPickup(id: number, expectedTotalInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
-  let confirmed: ConfirmedAmounts | undefined;
-  return act(id, async (order, staff) => {
-    if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
-    if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
-    if (order.fulfillment_method !== "pickup") {
-      return { ok: false, reason: "A Delivery Order needs a Delivery fee." };
-    }
-    const final = finalAmounts(order, staff, 0, expectedTotalInCentavos);
-    if (!final.ok) return final;
-    confirmed = final.amounts;
-    return changeOrderStatus(id, { status: "confirmed", amounts: final.amounts });
-  }, ORDERS_MODULE, {
-    action: "order.confirmed", description: staff => `${staff.name} confirmed Order #${id}${choiceNote(codChoice)}.`,
-    get metadata() { return confirmed ? amountsMetadata(confirmed) : undefined; },
-  });
-}
-
 /** The same cancel limit applies in Orders and Payments. */
 async function cancel(id: number, module: string): Promise<OrderChangeResult> {
   return act(id, async (order) => {
@@ -369,16 +351,13 @@ export async function startPreparing(id: number): Promise<OrderChangeResult> {
   }, FULFILMENT_MODULE);
 }
 
-const DELIVERY_ONLY = "That step is for a Delivery Order. A Pickup Order is marked Ready for pickup and then Picked up.";
-
 /** A booking's audit values: the courier and link, never the rider's name, phone or plate. */
 const bookingAudit = (booking: CourierBooking | undefined) => ({ courier: booking?.name ?? null, tracking_url: booking?.trackingUrl ?? null });
 
-/** A Delivery Order needs its courier; the https link and rider details are optional and its storefront emails the link once. A Pickup Order is never dispatched. */
+/** A Delivery Order needs its courier; the https link and rider details are optional and its storefront emails the link once. */
 export async function dispatchOrder(id: number, courier?: CourierInput): Promise<OrderChangeResult> {
   let booking: CourierBooking | undefined;
   return act(id, async (order) => {
-    if (order.fulfillment_method !== "delivery") return { ok: false, reason: DELIVERY_ONLY };
     if (order.status !== "preparing") {
       return { ok: false, reason: "Only a preparing Order can be dispatched; it may have already changed. Refresh it before trying again." };
     }
@@ -398,7 +377,6 @@ export async function updateDispatchRecord(id: number, courier?: CourierInput): 
   let booking: CourierBooking | undefined;
   let riderChanged = false;
   return act(id, async (order, staff) => {
-    if (order.fulfillment_method !== "delivery") return { ok: false, reason: DELIVERY_ONLY };
     if (order.status !== "dispatched") {
       return { ok: false, reason: "The booking can only be changed while the Order is dispatched; it may have already changed. Refresh it before trying again." };
     }
@@ -437,45 +415,9 @@ function codCollection(order: CurrentOrder, staff: Staff, collectedInCentavos: n
 const collectionAudit = (collection: CodCollection | undefined, from: string, to: string) =>
   collection ? { cod_collected_in_centavos: collection.amountInCentavos, cod_collected_by: collection.staffName, cod_collected_at: new Date().toISOString(), from_status: from, to_status: to } : undefined;
 
-/** A Pickup Order is packed and waiting at the shop; the storefront tells the Customer it can be collected. */
-export async function markReadyForPickup(id: number): Promise<OrderChangeResult> {
-  return act(id, async (order, staff) => {
-    if (order.fulfillment_method !== "pickup") return { ok: false, reason: DELIVERY_ONLY };
-    if (order.status !== "preparing") {
-      return { ok: false, reason: "Only a preparing Pickup Order can be marked Ready for pickup; it may have already changed. Refresh it before trying again." };
-    }
-    return changeOrderStatus(id, { status: "ready for pickup", staffId: staff.username, staffName: staff.name });
-  }, FULFILMENT_MODULE, {
-    action: "order.ready_for_pickup", description: staff => `${staff.name} marked Pickup Order #${id} Ready for pickup.`,
-  });
-}
-
-/** The Customer collected it. The storefront records collected_at, which counts like delivered_at. A legacy Pickup Order still `dispatched` can be completed too. */
-export async function markPickedUp(id: number, collectedInCentavos?: number): Promise<OrderChangeResult> {
-  let collection: CodCollection | undefined;
-  let from = "ready for pickup";
-  return act(id, async (order, staff) => {
-    if (order.fulfillment_method !== "pickup") return { ok: false, reason: DELIVERY_ONLY };
-    if (order.status !== "ready for pickup" && order.status !== "dispatched") {
-      return { ok: false, reason: "Only a Pickup Order that is Ready for pickup can be marked Picked up; it may have already changed. Refresh it before trying again." };
-    }
-    from = order.status;
-    const checked = codCollection(order, staff, collectedInCentavos);
-    if (!checked.ok) return checked;
-    collection = checked.collection;
-    return changeOrderStatus(id, { status: "collected", staffId: staff.username, staffName: staff.name, ...(collection && { codCollection: collection }) });
-  }, FULFILMENT_MODULE, {
-    action: "order.picked_up",
-    description: staff => `${staff.name} marked Pickup Order #${id} Picked up${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`,
-    // Read when the audit is written, after the move saved.
-    get metadata() { return collectionAudit(collection, from, "collected"); },
-  });
-}
-
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
 export async function deliverOrder(id: number, form?: FormData, collectedInCentavos?: number): Promise<OrderChangeResult> {
   return act(id, async (order, staff) => {
-    if (order.fulfillment_method !== "delivery") return { ok: false, reason: DELIVERY_ONLY };
     if (order.status !== "dispatched") {
       return { ok: false, reason: "Only a dispatched Order can be delivered; it may have already changed. Refresh it before trying again." };
     }
@@ -546,7 +488,7 @@ export async function loadPackingSlip(id: number) {
       select to_jsonb(o)->>'packed_by_id' as staff_id, to_jsonb(o)->>'packed_by_name' as staff_name,
         to_jsonb(o)->>'packed_at' as at from public.orders o where id = ${id}`;
     return { ok: true as const, slip: { id: orderId, createdAt, customer, fulfillmentMethod, lines,
-      address: fulfillmentMethod === "pickup" ? null : address,
+      address,
       packedBy: row?.staff_id && row.staff_name && row.at ? { id: row.staff_id, name: row.staff_name, at: new Date(row.at) } : null,
     } };
   } catch { return { ok: false as const, reason: "Packing slip is temporarily unavailable." }; }

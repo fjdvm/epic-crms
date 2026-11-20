@@ -35,10 +35,10 @@ export function LiveStatus() {
   return <StatusPill status={useLiveStatus().status} />;
 }
 
-/** The steps an Order moves through. Only GCash Delivery Orders go through the payment steps, plus any Order already in one. */
+/** The steps an Order moves through. Only GCash Orders go through the payment steps, plus any Order already in one. */
 function progressFor(order: OrderDetail): string[] {
   const pays =
-    (order.paymentMethod === "gcash" && order.fulfillmentMethod !== "pickup") ||
+    order.paymentMethod === "gcash" ||
     order.status === "awaiting payment" ||
     order.status === "paid";
 
@@ -47,7 +47,8 @@ function progressFor(order: OrderDetail): string[] {
     "confirmed",
     ...(pays ? ["awaiting payment", "paid"] : []),
     "preparing",
-    ...(order.fulfillmentMethod === "pickup" && order.status !== "dispatched" ? ["ready for pickup", "collected"] : ["dispatched", order.fulfillmentMethod === "pickup" ? "collected" : "delivered"]),
+    "dispatched",
+    "delivered",
     ...(order.status === "received" ? ["received"] : []),
   ];
 }

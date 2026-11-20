@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { formatPesos, parsePesos } from "@/features/customer-profiles/format";
 
 import { OrderActionDialog, type ChangeResult } from "./action-dialog";
-import { cancelOrder, confirmPickup, quoteDeliveryFee } from "./actions";
+import { cancelOrder, quoteDeliveryFee } from "./actions";
 import { recordAskGcashFirst } from "./cod-actions";
 import { CodConfirmPanel, type CodFlagLine } from "./cod-confirm";
 import type { CodChoice } from "./cod-flags";
@@ -32,13 +32,12 @@ function useCodChoice(order: OrderDetail, flags: readonly CodFlagLine[], confirm
 
 /** Subtotal − Approved Discount + Delivery Fee = Total, shown before Confirm Order; the Delivery fee is "—" until Staff enter it. */
 function TotalFormula({ order, fee }: { order: OrderDetail; fee: number | null }) {
-  const pickup = order.fulfillmentMethod === "pickup";
-  const total = pickup ? order.subtotal - order.discount : fee === null ? null : order.subtotal - order.discount + fee;
+  const total = fee === null ? null : order.subtotal - order.discount + fee;
   return (
     <dl role="group" aria-label="Order total" className="grid grid-cols-[repeat(4,auto)] items-end gap-x-3 text-sm text-[#1f1a2e]">
       <div><dt className="text-xs text-[#6e6680]">Subtotal</dt><dd>{formatPesos(order.subtotal)}</dd></div>
       <div><dt className="text-xs text-[#6e6680]">− Approved discount</dt><dd>{formatPesos(order.discount)}</dd></div>
-      <div><dt className="text-xs text-[#6e6680]">+ Delivery fee{order.freeDelivery?.qualifies && !pickup ? " (Free delivery)" : ""}</dt><dd>{pickup ? formatPesos(0) : fee === null ? "—" : formatPesos(fee)}</dd></div>
+      <div><dt className="text-xs text-[#6e6680]">+ Delivery fee{order.freeDelivery?.qualifies ? " (Free delivery)" : ""}</dt><dd>{fee === null ? "—" : formatPesos(fee)}</dd></div>
       <div className="font-medium"><dt className="text-xs font-normal text-[#6e6680]">= Total</dt><dd>{total === null ? "—" : formatPesos(total)}</dd></div>
     </dl>
   );
@@ -102,33 +101,13 @@ function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFla
   );
 }
 
-function ConfirmPickup({ order, flags }: { order: OrderDetail; flags: readonly CodFlagLine[] }) {
-  const cod = useCodChoice(order, flags, (choice) => (choice ? confirmPickup(order.id, order.subtotal - order.discount, choice) : confirmPickup(order.id, order.subtotal - order.discount)), `Order #${order.id} confirmed.`);
-  return (
-    <OrderActionDialog
-      trigger="Confirm order"
-      title={`Confirm Order #${order.id}?`}
-      description="This Pickup Order needs no Delivery fee. Check the total before you confirm."
-      confirm={cod.asking ? "Save" : cod.flagged ? "Save & continue" : "Confirm order"}
-      busy={cod.asking ? "Saving…" : "Confirming…"}
-      disabled={cod.disabled}
-      run={cod.run}
-      successMessage={cod.successMessage}
-    >
-      {cod.panel}
-      <TotalFormula order={order} fee={null} />
-    </OrderActionDialog>
-  );
-}
-
-/** The Orders Module's actions: quote a fee or confirm a Pickup Order, and cancel. */
+/** The Orders Module's actions: quote a Delivery fee, and cancel. */
 export function OrdersActions({ order, codFlags = [] }: { order: OrderDetail; codFlags?: readonly CodFlagLine[] }) {
   if (order.status === "dispatched") {
     return <p className="text-sm text-[#6e6680]">A dispatched Order cannot be cancelled.</p>;
   }
 
   const placed = order.status === "placed";
-  const pickup = order.fulfillmentMethod === "pickup";
   const waitingForId = order.seniorPwd?.status === "pending";
 
   return (
@@ -152,9 +131,7 @@ export function OrdersActions({ order, codFlags = [] }: { order: OrderDetail; co
           <Link href="/approvals?type=id-check" className="font-medium text-[#5b2a86]">Review the ID</Link>
         </p>
       )}
-      {!waitingForId && !pickup && order.deliveryFee === null && CANCELLABLE_STATUSES.includes(order.status) && <QuoteFee order={order} flags={codFlags} />}
-      {!waitingForId && placed && pickup && <TotalFormula order={order} fee={null} />}
-      {!waitingForId && placed && pickup && <ConfirmPickup order={order} flags={codFlags} />}
+      {!waitingForId && order.deliveryFee === null && CANCELLABLE_STATUSES.includes(order.status) && <QuoteFee order={order} flags={codFlags} />}
     </>
   );
 }

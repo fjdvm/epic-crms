@@ -193,7 +193,7 @@ export interface ReturnDetail extends ReturnRow {
   refundDestinationLocked: boolean;
   /** What Staff recorded when they marked it Refunded (#613); null before that, and on a refund made before these details existed. */
   refundRecord?: { amountInCentavos: number; method: string; refundedOn: string; reference: string } | null;
-  /** What the Order charged for delivery; ₱0 for free delivery or pickup. */
+  /** What the Order charged for delivery; ₱0 for free delivery. */
   orderDeliveryFee: number;
   /** The Delivery fee included in this Return's refund (₱0 when only the items were refunded). */
   deliveryFeeRefunded: number;

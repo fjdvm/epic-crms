@@ -15,8 +15,6 @@ export const METHOD_LABELS: Record<string, string> = {
   maya: "Maya",
   "bank-transfer": "Bank transfer",
   "cash-on-delivery": "Cash on Delivery",
-  pickup: "Pickup",
-  delivery: "Delivery",
 };
 
 export function bestSellersHeadline(products: BestSellers["products"]): string {

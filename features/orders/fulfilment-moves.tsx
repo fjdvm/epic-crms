@@ -7,14 +7,14 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 
 import { OrderActionDialog } from "./action-dialog";
-import { deliverOrder, dispatchOrder, markPickedUp, markReadyForPickup, startPreparing } from "./actions";
+import { deliverOrder, dispatchOrder, startPreparing } from "./actions";
 import { CourierFields, useCourierForm } from "./courier-fields";
 import { DeliveryPhotoPicker } from "./delivery-photo-picker";
 import { formatPesos } from "@/features/customer-profiles/format";
 import { readyToPrepare } from "./fulfilment";
 
 /** The status an Order shows at once after Staff confirm a move. */
-export type MoveStatus = "preparing" | "dispatched" | "delivered" | "ready for pickup" | "collected";
+export type MoveStatus = "preparing" | "dispatched" | "delivered";
 
 /** What Staff typed as pesos, in centavos; NaN when it is not an amount. */
 function centavosOf(text: string): number {
@@ -100,32 +100,9 @@ function DispatchDelivery({ id, triggerClassName, onMove }: { id: number; trigge
   );
 }
 
-function MarkPickedUp({ id, cod, total, pickupFrom, triggerClassName, onMove }: { id: number; cod: boolean; total: number; pickupFrom: string; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
-  const [collected, setCollected] = useState(totalText(total));
-
-  return (
-    <OrderActionDialog
-      trigger="Mark as picked up"
-      triggerClassName={triggerClassName}
-      title={`Mark Order #${id} as picked up?`}
-      description={cod
-        ? "Confirm the Customer has collected it and paid. The store records the pickup time and the payment now; Feedback is requested 2 days later."
-        : "Confirm the Customer has collected it. The store records the pickup time now; Feedback is requested 2 days later."}
-      confirm="Mark as picked up"
-      busy="Marking picked up…"
-      disabled={cod && Number.isNaN(centavosOf(collected))}
-      run={() => markPickedUp(id, cod ? centavosOf(collected) : undefined)}
-      onOptimistic={onMove && (() => onMove("collected"))}
-      successMessage={`Order #${id} picked up.`}
-    >
-      {cod && <CollectedAmount move={`${pickupFrom} → Picked up`} total={total} value={collected} onChange={setCollected} />}
-    </OrderActionDialog>
-  );
-}
-
 /**
- * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. A Delivery Order is
- * dispatched with its courier booking and delivered; a Pickup Order is marked Ready for pickup and then Picked up.
+ * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. An Order is
+ * dispatched with its courier booking and then delivered.
  * Every move shows at once and rolls back with the reason if the server refuses.
  */
 export function FulfilmentMove({
@@ -133,13 +110,12 @@ export function FulfilmentMove({
   triggerClassName,
   onMove,
 }: {
-  order: { id: number; status: string; paymentMethod: string; fulfillmentMethod: string; total: number };
+  order: { id: number; status: string; paymentMethod: string; total: number };
   triggerClassName?: string;
   /** Shows the Order in its next status at once; every move calls it, and a refusal rolls it back. */
   onMove?: (status: MoveStatus) => void;
 }) {
   const { id } = order;
-  const pickup = order.fulfillmentMethod === "pickup";
 
   if (readyToPrepare(order)) {
     return (
@@ -156,29 +132,8 @@ export function FulfilmentMove({
       />
     );
   }
-  if (order.status === "preparing" && pickup) {
-    return (
-      <OrderActionDialog
-        trigger="Mark ready for pickup"
-        triggerClassName={triggerClassName}
-        title={`Mark Order #${id} ready for pickup?`}
-        description="The Customer is told their Order can be collected. A Pickup Order needs no courier or tracking link."
-        confirm="Mark ready for pickup"
-        busy="Marking ready…"
-        run={() => markReadyForPickup(id)}
-        onOptimistic={onMove && (() => onMove("ready for pickup"))}
-        successMessage={`Order #${id} is ready for pickup.`}
-      />
-    );
-  }
   if (order.status === "preparing") {
     return <DispatchDelivery id={id} triggerClassName={triggerClassName} onMove={onMove} />;
-  }
-  // A legacy Pickup Order already dispatched is completed the same way.
-  if (pickup && (order.status === "ready for pickup" || order.status === "dispatched")) {
-    return (
-      <MarkPickedUp id={id} pickupFrom={order.status === "dispatched" ? "Out for delivery" : "Ready for pickup"} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />
-    );
   }
   if (order.status === "dispatched") {
     return <MarkDelivered id={id} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />;

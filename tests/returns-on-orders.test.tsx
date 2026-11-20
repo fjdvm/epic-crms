@@ -11,7 +11,6 @@ import type { ReturnRow } from "@/features/returns/returns";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), back: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/features/orders/actions", () => ({
   quoteDeliveryFee: vi.fn(),
-  confirmPickup: vi.fn(),
   cancelOrder: vi.fn(),
   cancelPaymentOrder: vi.fn(),
   markPaid: vi.fn(),
