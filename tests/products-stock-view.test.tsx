@@ -10,7 +10,8 @@ vi.mock("@/features/orders/actions", () => ({
 import { OrderDetailView } from "@/features/orders/order-detail";
 import type { OrderDetail } from "@/features/orders/orders";
 import { type StockPage } from "@/features/orders/stock";
-import { StockView } from "@/features/orders/stock-view";
+import { PILL } from "@/features/tickets/pill";
+import { StockSkeleton, StockView } from "@/features/orders/stock-view";
 
 afterEach(cleanup);
 
@@ -37,7 +38,7 @@ it("shows four tiles, counts only sizes still on sale, and has no Low at column"
   const tile = (label: string) => screen.getAllByText(label)[0].parentElement as HTMLElement;
   expect(tile("Sizes on sale").textContent).toContain("2");
   expect(tile("Sizes on sale").textContent).toContain("1 sold out");
-  expect(tile("Sold out").textContent).toContain("1 sizes");
+  expect(tile("Sold out").textContent).toContain("1 size");
   expect(tile("Sold out").textContent).toContain("Checkout blocks at 0");
   expect(tile("Reserved by open orders").textContent).toContain("Released if the order is cancelled");
   expect(screen.queryByText("Low at")).toBeNull();
@@ -67,4 +68,31 @@ it("shows each Order line's reserved quantity", () => {
   } as unknown as OrderDetail;
   render(<OrderDetailView order={order} modules={["Orders"]} reservations={new Map([[11, { reserved: 4, left: 18 }]])} />);
   expect(screen.getByText(/Reserved 4 · 18 left/)).toBeTruthy();
+});
+
+it("shows dashes in every tile, not zeros, when the IMS cannot be read", () => {
+  render(<StockView page={{ ...page, imsReachable: false, summary: { sizes: 3, soldOut: 0, reserved: 0, low: 0 } }} />);
+  const tile = (label: string) => screen.getAllByText(label)[0].parentElement as HTMLElement;
+  for (const label of ["Sizes on sale", "Reserved by open orders", "Low stock", "Sold out"]) expect(tile(label).textContent).toContain("–");
+  expect(tile("Reserved by open orders").textContent).not.toContain("0 items");
+});
+
+it("says '1 size' for a single size", () => {
+  render(<StockView page={page} />);
+  expect((screen.getAllByText("Sold out")[0].parentElement as HTMLElement).textContent).toContain("1 size");
+  expect((screen.getAllByText("Sold out")[0].parentElement as HTMLElement).textContent).not.toContain("1 sizes");
+});
+
+it("tints a sold-out row red and keeps the pill red", () => {
+  render(<StockView page={page} />);
+  fireEvent.click(screen.getByRole("tab", { name: /Sold out/ }));
+  const soldOut = document.querySelector("[data-stock-row]") as HTMLElement;
+  expect(soldOut.className).toContain("bg-[#fff7f7]");
+  expect(within(soldOut).getByText("Sold out").className).toContain(PILL.red);
+});
+
+it("loads a skeleton with four tiles, a search box and rows, and the Open IMS button is in the header", () => {
+  render(<><StockSkeleton /></>);
+  expect(document.querySelectorAll("[data-skeleton-tile]")).toHaveLength(4);
+  expect(document.querySelectorAll("[data-skeleton-row]")).toHaveLength(7);
 });

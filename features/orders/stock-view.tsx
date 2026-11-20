@@ -22,8 +22,13 @@ function ShowsPill({ row }: { row: StockRow }) {
 }
 
 const quantity = (value: number | null) => (value === null ? "–" : value);
+const rowLabel = (row: StockRow) => `${row.product} · ${row.size}`;
+const sizes = (count: number) => `${count} ${count === 1 ? "size" : "sizes"}`;
 
-export function StockHeader({ children }: { children?: React.ReactNode }) {
+const IMS_URL = process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/";
+
+/** Shared by the page and its loading state, so the Open IMS button never pops in after load. */
+export function StockHeader() {
   return (
     <div className="flex shrink-0 items-start gap-2">
       <div className="min-w-0 flex-1 space-y-1">
@@ -33,7 +38,10 @@ export function StockHeader({ children }: { children?: React.ReactNode }) {
         </div>
         <p className="text-sm text-[#6e6680]">What the online shop can sell. Read-only; quantities come from IMS.</p>
       </div>
-      {children}
+      <a href={IMS_URL} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
+        <Link2 className="size-4" aria-hidden />
+        Open IMS
+      </a>
     </div>
   );
 }
@@ -60,7 +68,7 @@ export function StockView({ page }: { page: StockPage }) {
   const needle = query.trim().toLowerCase();
   const rows = page.rows
     .filter((row) => (tab === "low" ? isLow(row) : tab === "sold-out" ? isSoldOut(row) : true))
-    .filter((row) => !needle || `${row.product} · ${row.size}`.toLowerCase().includes(needle));
+    .filter((row) => !needle || rowLabel(row).toLowerCase().includes(needle));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
@@ -70,10 +78,21 @@ export function StockView({ page }: { page: StockPage }) {
         </p>
       )}
       <div className="flex flex-wrap gap-4">
-        <Tile label="Sizes on sale" value={String(summary.sizes - summary.soldOut)} note={`${summary.soldOut} sold out`} />
-        <Tile label="Reserved by open orders" value={`${summary.reserved} items`} note="Released if the order is cancelled" />
-        <Tile label="Low stock" value={`${summary.low} sizes`} note={`Below ${LOW_STOCK_BELOW} left`} tone={summary.low > 0 ? "text-[#b45309]" : undefined} />
-        <Tile label="Sold out" value={`${summary.soldOut} sizes`} note="Checkout blocks at 0" tone={summary.soldOut > 0 ? "text-[#b42318]" : undefined} />
+        {page.imsReachable ? (
+          <>
+            <Tile label="Sizes on sale" value={String(summary.sizes - summary.soldOut)} note={`${summary.soldOut} sold out`} />
+            <Tile label="Reserved by open orders" value={`${summary.reserved} items`} note="Released if the order is cancelled" />
+            <Tile label="Low stock" value={sizes(summary.low)} note={`Below ${LOW_STOCK_BELOW} left`} tone={summary.low > 0 ? "text-[#b45309]" : undefined} />
+            <Tile label="Sold out" value={sizes(summary.soldOut)} note="Checkout blocks at 0" tone={summary.soldOut > 0 ? "text-[#b42318]" : undefined} />
+          </>
+        ) : (
+          <>
+            <Tile label="Sizes on sale" value="–" note="Unknown until the IMS answers" />
+            <Tile label="Reserved by open orders" value="–" note="Released if the order is cancelled" />
+            <Tile label="Low stock" value="–" note={`Below ${LOW_STOCK_BELOW} left`} />
+            <Tile label="Sold out" value="–" note="Checkout blocks at 0" />
+          </>
+        )}
       </div>
       <div role="tablist" aria-label="Stock filter" className="flex gap-1">
         {tabs.map(({ id, label, count }) => (
@@ -107,7 +126,7 @@ export function StockView({ page }: { page: StockPage }) {
           {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">No sizes here.</p>}
           {rows.map((row) => (
             <div key={row.sizeId} data-stock-row className={cn(GRID, "border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", isSoldOut(row) && "bg-[#fff7f7]")}>
-              <div className="min-w-0 flex-1 truncate font-medium">{row.product} · {row.size}</div>
+              <div className="min-w-0 flex-1 truncate font-medium">{rowLabel(row)}</div>
               <div className={COLUMN.stock}>{quantity(row.inStock)}</div>
               <div className={COLUMN.reserved}>{quantity(row.reserved)}</div>
               <div className={cn(COLUMN.available, "font-semibold", isSoldOut(row) && "text-[#b42318]")}>{quantity(row.available)}</div>
@@ -124,9 +143,12 @@ export function StockView({ page }: { page: StockPage }) {
 export function StockSkeleton() {
   return (
     <div role="status" aria-label="Loading Stock" className="flex flex-col gap-4">
-      <div className="flex gap-4">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[92px] flex-1 animate-pulse rounded-xl bg-[#efebf4]" />)}</div>
+      <div className="flex gap-4">{[0, 1, 2, 3].map((i) => <div key={i} data-skeleton-tile className="h-[92px] flex-1 animate-pulse rounded-xl bg-[#efebf4]" />)}</div>
       <div className="h-8 w-72 animate-pulse rounded-lg bg-[#efebf4]" />
-      <div className="h-80 animate-pulse rounded-xl bg-[#efebf4]" />
+      <div className="rounded-xl border border-[#e6e1ee] bg-white">
+        <div className="p-3"><div className="h-8 w-[260px] animate-pulse rounded-lg bg-[#efebf4]" /></div>
+        {[0, 1, 2, 3, 4, 5, 6].map((i) => <div key={i} data-skeleton-row className="border-t border-[#f0edf4] px-4 py-3"><div className="h-4 animate-pulse rounded bg-[#efebf4]" /></div>)}
+      </div>
     </div>
   );
 }

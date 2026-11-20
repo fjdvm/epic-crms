@@ -17,6 +17,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  path.current = "/";
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -124,7 +125,6 @@ describe("the sidebar", () => {
     const stock = await screen.findByRole("link", { name: "Products & Stocks" });
     expect(stock.closest("[data-active=true]")).not.toBeNull();
     expect(screen.getByRole("link", { name: "Orders" }).closest("[data-active=true]")).toBeNull();
-    path.current = "/";
   });
 
   it("hides Products & Stocks when no Commerce page is permitted", async () => {
