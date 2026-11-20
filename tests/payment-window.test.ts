@@ -6,10 +6,10 @@ import { parseWindowHours } from "@/features/management/payment-window-format";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 describe("parseWindowHours", () => {
-  it.each([["24", 24], [" 48 ", 48], [1, 1], ["720", 720]])("accepts %j", (input, hours) => {
+  it.each([["24", 24], [" 48 ", 48], [1, 1], ["336", 336]])("accepts %j", (input, hours) => {
     expect(parseWindowHours(input)).toEqual({ ok: true, hours });
   });
-  it.each(["", "  ", "abc", "-5", "1.5", "0", "721", "12345", null, undefined, {}])("refuses %j in plain words", (input) => {
+  it.each(["", "  ", "abc", "-5", "1.5", "0", "337", "12345", null, undefined, {}])("refuses %j in plain words", (input) => {
     const r = parseWindowHours(input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/[A-Za-z]/);
@@ -22,12 +22,19 @@ describe("changePaymentWindow", () => {
   beforeAll(async () => {
     db = await startTestDatabase();
     await db.sql`create schema crms`;
+    await db.sql.unsafe(readFileSync("docs/db/crms-delivery-settings.sql", "utf8"));
     await db.sql.unsafe(readFileSync("docs/db/crms-payment-window.sql", "utf8"));
   }, 60_000);
   afterAll(async () => { await db.close(); });
   beforeEach(async () => {
     audit.mockClear();
-    await db.sql`update crms.payment_window_settings set hours = 24`;
+    await db.sql`update crms.delivery_settings set payment_window_hours = 24, free_delivery_threshold_in_centavos = 250000`;
+  });
+
+  it("leaves the Free delivery threshold alone when the window changes", async () => {
+    await changePaymentWindow(db.sql, audit, { id: "m", name: "Mario", role: "CEO" }, "48");
+    const [row] = await db.sql`select free_delivery_threshold_in_centavos::text as t from crms.delivery_settings where singleton`;
+    expect(row.t).toBe("250000");
   });
 
   it("defaults to 24 hours", async () => {
