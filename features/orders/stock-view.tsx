@@ -16,16 +16,17 @@ type Tab = "all" | "low" | "sold-out";
 const GRID = "flex items-center gap-2 px-4";
 const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", available: "w-[140px] shrink-0 text-right", shows: "w-[170px] shrink-0" };
 
-const isLow = (row: StockRow) => typeof row.shows === "object";
-const isSoldOut = (row: StockRow) => row.shows === "Sold out";
+const isLow = (row: StockRow) => row.marker === null && typeof row.shows === "object";
+const isSoldOut = (row: StockRow) => row.marker === null && row.shows === "Sold out";
 
 function ShowsPill({ row }: { row: StockRow }) {
+  if (row.marker) return <Pill className={PILL.grey}>{row.marker.kind === "discontinued" ? "Discontinued" : "Not on shop"}</Pill>;
   const tone = isSoldOut(row) ? PILL.red : isLow(row) ? PILL.amber : row.shows === "Unknown" ? PILL.grey : PILL.green;
   return <Pill className={tone}>{shopLabel(row.shows)}</Pill>;
 }
 
 const quantity = (value: number | null) => (value === null ? "–" : value);
-const rowLabel = (row: StockRow) => `${row.product} · ${row.size}`;
+const rowLabel = (row: StockRow) => (row.size ? `${row.product} · ${row.size}` : row.product);
 const sizes = (count: number) => `${count} ${count === 1 ? "size" : "sizes"}`;
 
 const orderCount = (count: number) => `${count} ${count === 1 ? "Order" : "Orders"}`;
@@ -171,7 +172,10 @@ export function StockView({ page }: { page: StockPage }) {
           {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">No sizes here.</p>}
           {rows.map((row) => (
             <div key={row.sizeId} data-stock-row className={cn(GRID, "border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", isSoldOut(row) && "bg-[#fff7f7]")}>
-              <div className="min-w-0 flex-1 truncate font-medium">{rowLabel(row)}</div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{rowLabel(row)}</p>
+                {row.marker?.kind === "not-on-shop" && <p data-missing className="truncate text-xs font-normal text-[#6e6680]">Missing: {row.marker.missing.join(", ")}</p>}
+              </div>
               <div className={COLUMN.stock}>{quantity(row.inStock)}</div>
               <div className={COLUMN.reserved}><ReservedCell row={row} onOpen={setOpened} /></div>
               <div className={cn(COLUMN.available, "font-semibold", isSoldOut(row) && "text-[#b42318]")}>{quantity(row.available)}</div>

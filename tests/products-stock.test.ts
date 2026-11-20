@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { loadLineReservations, loadStock, shopShows } from "@/features/orders/stock";
-import type { ImsSizeStock } from "@/lib/storefront";
+import type { ImsProduct, ImsSizeStock } from "@/lib/storefront";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -138,5 +138,51 @@ describe("Order detail reservations", () => {
 
   it("never fails the Order detail when the Reservation cannot be read", async () => {
     expect((await loadLineReservations(() => { throw new Error("no grant"); }, 7, ims([]))).size).toBe(0);
+  });
+});
+
+describe("Products & stock from the IMS product feed", () => {
+  const product = (productId: number, over: Partial<ImsProduct> = {}): ImsProduct =>
+    ({ productId, name: `Product ${productId}`, variant: "250g", image: `img-${productId}`, price: 120, active: true, ...over });
+  const load = async (products: ImsProduct[] | null, stock: [number, number, number, number][] = []) => {
+    const result = await loadStock(() => db.sql, ims(stock), async () => products);
+    if (!result.ok) throw new Error("expected stock");
+    return result.page;
+  };
+
+  it("lists a product the IMS holds even though the storefront has no Size for it", async () => {
+    const page = await load([product(1), product(99, { name: "Ube Jam", variant: "500g" })], [[99, 5, 1, 4]]);
+    const added = page.rows.find((r) => r.sizeId === 99)!;
+    expect([added.product, added.size, added.available, added.marker]).toEqual(["Ube Jam", "500g", 4, null]);
+    expect(page.rows.map((r) => r.sizeId).sort((a, b) => a - b)).toEqual([1, 99]);
+  });
+
+  it("shows a blank Variant as one unlabelled default Size", async () => {
+    const page = await load([product(5, { variant: null })]);
+    expect(page.rows[0].size).toBe("");
+  });
+
+  it("marks a product missing its name, image or price as Not on shop and lists what is missing", async () => {
+    const page = await load([product(1, { name: "", image: null }), product(2, { price: null }), product(3)]);
+    const marker = (id: number) => page.rows.find((r) => r.sizeId === id)!.marker;
+    expect(marker(1)).toEqual({ kind: "not-on-shop", missing: ["name", "image"] });
+    expect(marker(2)).toEqual({ kind: "not-on-shop", missing: ["price"] });
+    expect(marker(3)).toBeNull();
+  });
+
+  it("keeps a discontinued product visible with its image and last known numbers", async () => {
+    const page = await load([product(1, { active: false })], [[1, 9, 2, 7]]);
+    expect(page.rows[0]).toMatchObject({ marker: { kind: "discontinued" }, image: "img-1", inStock: 9, reserved: 2, available: 7 });
+  });
+
+  it("does not count Not on shop or Discontinued products as on sale, low or sold out", async () => {
+    const page = await load([product(1), product(2, { active: false }), product(3, { image: null })], [[1, 20, 0, 20], [2, 0, 0, 0], [3, 0, 0, 0]]);
+    expect(page.summary).toEqual({ sizes: 1, soldOut: 0, reserved: 0, low: 0 });
+  });
+
+  it("shows dashes for the Sizes it already knows when the feed cannot be read", async () => {
+    const page = await load(null);
+    expect(page.rows).toHaveLength(3);
+    expect(page.rows.every((r) => r.available === null && r.marker === null && r.image === null)).toBe(true);
   });
 });

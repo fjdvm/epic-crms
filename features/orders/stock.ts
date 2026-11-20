@@ -1,7 +1,7 @@
 import type postgres from "postgres";
 
 import { customerNameSql } from "@/lib/deleted-customer";
-import { readStock, type ImsSizeStock } from "@/lib/storefront";
+import { readProductFeed, readStock, type ImsProduct, type ImsSizeStock } from "@/lib/storefront";
 
 /** A Size with fewer than this many available is low stock; the shop then says "Only N left". Matches the storefront. */
 export const LOW_STOCK_BELOW = 10;
@@ -31,10 +31,17 @@ const HOLDING_STATUS: Record<string, HoldingStatus> = {
   preparing: "Paid and waiting to dispatch",
 };
 
+/** What the IMS holds that the shop does not sell: missing details, or a product the IMS removed or deactivated. */
+export type StockMarker = { kind: "not-on-shop"; missing: ("name" | "image" | "price")[] } | { kind: "discontinued" };
+
 export interface StockRow {
   sizeId: number;
   product: string;
+  /** The IMS Variant; empty for a product with no Variant (one unlabelled default Size). */
   size: string;
+  /** The IMS image reference, or null when the product has none. */
+  image: string | null;
+  marker: StockMarker | null;
   /** Null when the IMS could not answer for this Size. */
   inStock: number | null;
   reserved: number | null;
@@ -53,36 +60,52 @@ export interface StockPage {
 
 export type StockResult = { ok: true; page: StockPage } | { ok: false };
 
-/** The Sizes the shop sells, with what the IMS holds. Read on demand; the IMS stays the source of truth. */
+const markerOf = (item: ImsProduct): StockMarker | null => {
+  if (!item.active) return { kind: "discontinued" };
+  const missing = ([["name", !item.name], ["image", !item.image], ["price", item.price === null]] as const)
+    .filter(([, absent]) => absent).map(([what]) => what);
+  return missing.length > 0 ? { kind: "not-on-shop", missing } : null;
+};
+
+/**
+ * Every Size the IMS holds, with its stock. Read on demand; the IMS stays the source of truth. When the
+ * IMS product feed cannot be read, it lists the Sizes the storefront already sells, with dashes.
+ */
 export async function loadStock(
   connect: () => postgres.Sql,
   read: (sizeIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readStock,
+  readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
 ): Promise<StockResult> {
   try {
-    const sizes = await connect()<{ id: number; product: string; size: string }[]>`
-      select s.id, p.name as product, s.label as size
-      from public.sizes s join public.products p on p.slug = s.product_slug
-      order by p.name, s.price_in_centavos, s.id`;
+    const feed = await readFeed();
+    const sizes: { id: number; product: string; size: string; image: string | null; marker: StockMarker | null }[] = feed
+      ? feed.map((item) => ({ id: item.productId, product: item.name, size: item.variant ?? "", image: item.image, marker: markerOf(item) }))
+          .sort((a, b) => a.product.localeCompare(b.product) || a.id - b.id)
+      : (await connect()<{ id: number; product: string; size: string }[]>`
+          select s.id, p.name as product, s.label as size
+          from public.sizes s join public.products p on p.slug = s.product_slug
+          order by p.name, s.price_in_centavos, s.id`).map((size) => ({ ...size, image: null, marker: null }));
     const stock = await read(sizes.map((size) => size.id));
     const holding = await loadHoldingOrders(connect);
     const rows: StockRow[] = sizes.map((size) => {
       const held = stock?.get(size.id);
       const available = held?.available ?? null;
       return {
-        sizeId: size.id, product: size.product, size: size.size,
+        sizeId: size.id, product: size.product, size: size.size, image: size.image, marker: size.marker,
         inStock: held?.quantity ?? null, reserved: held?.reserved ?? null, available, shows: shopShows(available),
         orders: holding?.get(size.id) ?? (holding ? [] : null),
       };
     });
+    const live = rows.filter((row) => row.marker === null);
     return {
       ok: true,
       page: {
         rows, imsReachable: stock !== null,
         summary: {
-          sizes: rows.length,
-          soldOut: rows.filter((row) => row.shows === "Sold out").length,
+          sizes: live.length,
+          soldOut: live.filter((row) => row.shows === "Sold out").length,
           reserved: rows.reduce((sum, row) => sum + (row.reserved ?? 0), 0),
-          low: rows.filter((row) => typeof row.shows === "object").length,
+          low: live.filter((row) => typeof row.shows === "object").length,
         },
       },
     };
