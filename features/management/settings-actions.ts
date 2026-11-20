@@ -4,6 +4,7 @@ import { approvals } from "@/features/approvals/server";
 import { saveAutomaticChecks as save } from "@/features/settings/automatic-checks-server";
 import { setServiceTargets } from "@/features/tickets/service-level-store";
 import { crmsDatabase } from "@/lib/crms-db";
+import { changePaymentWindow } from "./payment-window";
 import { gatewayAuditTrail } from "@/lib/gateway";
 import { requireManagement } from "@/lib/portal/staff";
 
@@ -40,5 +41,17 @@ export async function changeAutomaticChecks(checks: unknown): Promise<Saved> {
   } catch (error) {
     console.error("Automatic checks could not be saved", error);
     return { ok: false, reason: "CREOMS could not save the Automatic checks. Nothing was saved." };
+  }
+}
+
+/** Never optimistic: the window decides how long Customers have to pay. */
+export async function changePaymentWindowHours(input: string): Promise<Saved> {
+  const staff = await requireManagement();
+  try {
+    const result = await changePaymentWindow(crmsDatabase(), gatewayAuditTrail, staff, input);
+    return result.ok ? { ok: true } : result;
+  } catch (error) {
+    console.error("Payment window could not be saved", error);
+    return { ok: false, reason: "CREOMS could not save the payment window. Nothing was saved." };
   }
 }
