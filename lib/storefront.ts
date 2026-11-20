@@ -216,6 +216,39 @@ export async function readStock(sizeIds: number[]): Promise<Map<number, ImsSizeS
   }
 }
 
+/** One Size the IMS holds, as its product feed lists it. A blank Variant is one unlabelled default Size. */
+export interface ImsProduct { productId: number; name: string; variant: string | null; image: string | null; price: number | null; active: boolean }
+
+/**
+ * Reads the IMS product feed through the storefront, which holds the IMS credential. Called when Staff open
+ * the page, never on a timer. Null means the feed could not be read, so the page shows dashes.
+ */
+export async function readProductFeed(): Promise<ImsProduct[] | null> {
+  const origin = process.env.CREOMS_STOREFRONT_URL;
+  const secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return null;
+  try {
+    const response = await fetch(new URL("/api/internal/products", origin), {
+      headers: { Authorization: `Bearer ${credential(secret, "stock")}` },
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (!Array.isArray(body.products)) return null;
+    return (body.products as Record<string, unknown>[]).flatMap((item) =>
+      Number.isSafeInteger(item.productId) ? [{
+        productId: item.productId as number,
+        name: typeof item.name === "string" ? item.name.trim() : "",
+        variant: typeof item.variant === "string" && item.variant.trim() ? item.variant.trim() : null,
+        image: typeof item.image === "string" && item.image.trim() ? item.image : null,
+        price: typeof item.price === "number" && Number.isFinite(item.price) && item.price > 0 ? item.price : null,
+        active: item.active !== false,
+      }] : []);
+  } catch {
+    return null;
+  }
+}
+
 export type VerificationChange =
   | { action: "approve"; expiresOn: string; override?: boolean }
   | { action: "decline"; reason: string }

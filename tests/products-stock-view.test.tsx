@@ -16,7 +16,7 @@ import { StockSkeleton, StockView } from "@/features/orders/stock-view";
 afterEach(cleanup);
 
 const row = (sizeId: number, product: string, available: number | null, shows: StockPage["rows"][number]["shows"]) =>
-  ({ sizeId, product, size: "250 g", inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
+  ({ sizeId, product, size: "250 g", image: null, marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
 const page: StockPage = {
   imsReachable: true,
   summary: { sizes: 3, soldOut: 1, reserved: 6, low: 1 },
@@ -111,4 +111,27 @@ it("shows only the reserved units when the Orders could not be read", () => {
   render(<StockView page={{ ...page, rows: [{ ...page.rows[0], orders: null }] }} />);
   expect(document.body.textContent).toContain("2 reserved");
   expect(screen.queryByRole("button", { name: /holding/ })).toBeNull();
+});
+
+it("shows Not on shop with what is missing, and Discontinued, and keeps them out of the Sold out tab", () => {
+  const flagged: StockPage = {
+    ...page,
+    rows: [
+      { ...row(4, "Half made", 0, "Sold out"), marker: { kind: "not-on-shop", missing: ["image", "price"] } },
+      { ...row(5, "Gone", 3, { left: 3 }), marker: { kind: "discontinued" } },
+      row(6, "Plain", 40, "In stock"),
+    ],
+  };
+  render(<StockView page={flagged} />);
+  expect(screen.getByText("Not on shop")).toBeTruthy();
+  expect(screen.getByText("Missing: image, price")).toBeTruthy();
+  expect(screen.getByText("Discontinued")).toBeTruthy();
+  expect(screen.getByText("Gone · 250 g")).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: /Sold out/ }));
+  expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(0);
+});
+
+it("shows a product with no Variant by its name alone", () => {
+  render(<StockView page={{ ...page, rows: [{ ...row(7, "Ube Jam", 40, "In stock"), size: "" }] }} />);
+  expect(screen.getByText("Ube Jam")).toBeTruthy();
 });
