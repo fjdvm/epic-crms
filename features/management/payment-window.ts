@@ -9,7 +9,7 @@ import { hoursText, parseWindowHours, type WindowResult } from "./payment-window
 
 /** The saved payment window in hours, or null when the setting cannot be read. */
 export async function loadPaymentWindow(sql: postgres.Sql): Promise<number | null> {
-  const [row] = await sql<{ hours: number }[]>`select hours from crms.payment_window_settings where singleton`;
+  const [row] = await sql<{ hours: number }[]>`select payment_window_hours as hours from crms.delivery_settings where singleton`;
   return row ? Number(row.hours) : null;
 }
 
@@ -23,11 +23,10 @@ export async function changePaymentWindow(sql: postgres.Sql, audit: AuditTrail, 
   const next = valid.hours;
 
   const previous = await sql.begin(async (tx) => {
-    const [row] = await tx<{ hours: number }[]>`select hours from crms.payment_window_settings where singleton for update`;
-    await tx`insert into crms.payment_window_settings (singleton, hours, changed_by_id, changed_by_name, changed_at)
-      values (true, ${next}, ${staff.id}, ${staff.name}, now())
-      on conflict (singleton) do update set hours = excluded.hours,
-        changed_by_id = excluded.changed_by_id, changed_by_name = excluded.changed_by_name, changed_at = excluded.changed_at`;
+    const [row] = await tx<{ hours: number }[]>`select payment_window_hours as hours from crms.delivery_settings where singleton for update`;
+    // The changer is in the Audit Event; the row's changed_by columns belong to the Free delivery threshold.
+    await tx`insert into crms.delivery_settings (singleton, payment_window_hours) values (true, ${next})
+      on conflict (singleton) do update set payment_window_hours = excluded.payment_window_hours`;
     return row ? Number(row.hours) : null;
   });
 
