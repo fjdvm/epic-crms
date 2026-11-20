@@ -188,28 +188,45 @@ export interface ImsSizeStock { sizeId: number; quantity: number | null; reserve
 /**
  * Reads IMS stock through the storefront, which holds the IMS credential and the Size mapping.
  * Called when Staff open a page, never on a timer. Null means the storefront could not be reached.
+ * Ids are storefront Size ids (Order lines); the Stock page uses readProductStock with IMS product ids.
  */
-export async function readStock(sizeIds: number[]): Promise<Map<number, ImsSizeStock> | null> {
+export const readStock = (sizeIds: number[]): Promise<Map<number, ImsSizeStock> | null> => readStockBy("sizeIds", sizeIds);
+
+/** The same read by IMS product id, which needs no Size mapping. The result's `sizeId` is the IMS product id. */
+export const readProductStock = (productIds: number[]): Promise<Map<number, ImsSizeStock> | null> => readStockBy("productIds", productIds);
+
+async function readStockBy(by: "sizeIds" | "productIds", ids: number[]): Promise<Map<number, ImsSizeStock> | null> {
   const origin = process.env.CREOMS_STOREFRONT_URL;
   const secret = process.env.CREOMS_SERVICE_SECRET;
-  if (!origin || !secret || secret.length < 32 || sizeIds.length === 0) return null;
+  if (!origin || !secret || secret.length < 32 || ids.length === 0) return null;
+  const listKey = by === "sizeIds" ? "sizes" : "products";
+  const idKey = by === "sizeIds" ? "sizeId" : "productId";
   try {
-    const sizes = new Map<number, ImsSizeStock>();
-    // The storefront answers at most 200 Sizes per request.
-    for (let start = 0; start < sizeIds.length; start += 200) {
+    const found = new Map<number, ImsSizeStock>();
+    // The storefront answers at most 200 ids per request.
+    for (let start = 0; start < ids.length; start += 200) {
       const url = new URL("/api/internal/stock", origin);
-      url.searchParams.set("sizeIds", sizeIds.slice(start, start + 200).join(","));
+      url.searchParams.set(by, ids.slice(start, start + 200).join(","));
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${credential(secret, "stock")}` },
         cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.error(`The storefront stock read answered ${response.status}`);
+        return null;
+      }
       const body = await response.json();
-      if (!Array.isArray(body.sizes)) return null;
-      for (const size of body.sizes as ImsSizeStock[]) sizes.set(size.sizeId, size);
+      if (!Array.isArray(body[listKey])) {
+        console.error(`The storefront stock read answered without a ${listKey} list`);
+        return null;
+      }
+      for (const item of body[listKey] as ({ quantity: number | null; reserved: number | null; available: number | null } & Record<string, number>)[]) {
+        found.set(item[idKey], { sizeId: item[idKey], quantity: item.quantity, reserved: item.reserved, available: item.available });
+      }
     }
-    return sizes;
-  } catch {
+    return found;
+  } catch (error) {
+    console.error("The storefront stock read failed", error);
     return null;
   }
 }
@@ -219,7 +236,7 @@ export interface ImsProduct { productId: number; name: string; variant: string |
 
 /**
  * Reads the IMS product feed through the storefront, which holds the IMS credential. Called when Staff open
- * the page, never on a timer. Null means the feed could not be read, so the page shows dashes.
+ * the page, never on a timer. Null means the feed could not be read, so the page lists nothing and says the IMS could not be reached.
  */
 export async function readProductFeed(): Promise<ImsProduct[] | null> {
   const origin = process.env.CREOMS_STOREFRONT_URL;
@@ -230,9 +247,15 @@ export async function readProductFeed(): Promise<ImsProduct[] | null> {
       headers: { Authorization: `Bearer ${credential(secret, "stock")}` },
       cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error(`The storefront product feed answered ${response.status}`);
+      return null;
+    }
     const body = await response.json();
-    if (!Array.isArray(body.products)) return null;
+    if (!Array.isArray(body.products)) {
+      console.error("The storefront product feed answered without a products list");
+      return null;
+    }
     return (body.products as Record<string, unknown>[]).flatMap((item) =>
       Number.isSafeInteger(item.productId) ? [{
         productId: item.productId as number,
@@ -242,7 +265,8 @@ export async function readProductFeed(): Promise<ImsProduct[] | null> {
         price: typeof item.price === "number" && Number.isFinite(item.price) && item.price > 0 ? item.price : null,
         active: item.active !== false,
       }] : []);
-  } catch {
+  } catch (error) {
+    console.error("The storefront product feed failed", error);
     return null;
   }
 }

@@ -9,7 +9,7 @@ let db: TestDatabase;
 beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create table products (slug text primary key, name text not null)`;
-  await db.sql`create table sizes (id integer primary key, product_slug text not null, label text not null, price_in_centavos integer not null)`;
+  await db.sql`create table sizes (id integer primary key, product_slug text not null, label text not null, price_in_centavos integer not null, ims_product_id integer)`;
   await db.sql`create table stock_reservations (id text primary key, order_id integer, state text not null, lines jsonb not null)`;
 }, 60_000);
 afterAll(async () => { await db.close(); });
@@ -20,34 +20,39 @@ beforeEach(async () => {
   await db.sql`insert into customers (id, full_name, first_name, email) values ('c1', 'Maria', 'Maria', 'm@example.com')`;
   await db.sql`insert into orders (id, customer_id, status) overriding system value values (7, 'c1', 'confirmed')`;
   await db.sql`insert into products values ('halaya', 'Ube Halaya Smooth'), ('powder', '120 Mesh Ube Powder')`;
-  await db.sql`insert into sizes values (1, 'halaya', 'Tub 340 g', 39000), (2, 'halaya', 'Jar 250 g', 25000), (3, 'powder', '500 g', 90000)`;
+  await db.sql`insert into sizes values (1, 'halaya', 'Tub 340 g', 39000, 101), (2, 'halaya', 'Jar 250 g', 25000, 102), (3, 'powder', '500 g', 90000, 103)`;
 });
+
+/** The IMS product feed for the Sizes seeded above. IMS product ids are the Size id + 100, so the two id spaces never coincide. */
+const feedOfSeed = async (): Promise<ImsProduct[]> => (await db.sql<{ id: number; name: string; label: string }[]>`
+  select s.ims_product_id as id, p.name, s.label from sizes s join products p on p.slug = s.product_slug order by s.id`)
+  .map((row) => ({ productId: row.id, name: row.name, variant: row.label, image: "img", price: 100, active: true }));
 
 const ims = (entries: [number, number, number, number][]) => async () =>
   new Map<number, ImsSizeStock>(entries.map(([sizeId, quantity, reserved, available]) => [sizeId, { sizeId, quantity, reserved, available }]));
 
 describe("Products & stock", () => {
   it("shows in stock, reserved, available and what the shop shows, with low and sold-out counted", async () => {
-    const result = await loadStock(() => db.sql, ims([[1, 26, 8, 18], [2, 12, 5, 7], [3, 0, 0, 0]]));
+    const result = await loadStock(() => db.sql, ims([[101, 26, 8, 18], [102, 12, 5, 7], [103, 0, 0, 0]]), feedOfSeed);
     if (!result.ok) throw new Error("expected stock");
     expect(result.page.rows.map((r) => [r.product, r.size, r.inStock, r.reserved, r.available, r.shows])).toEqual([
       ["120 Mesh Ube Powder", "500 g", 0, 0, 0, "Sold out"],
-      ["Ube Halaya Smooth", "Jar 250 g", 12, 5, 7, { left: 7 }],
       ["Ube Halaya Smooth", "Tub 340 g", 26, 8, 18, "In stock"],
+      ["Ube Halaya Smooth", "Jar 250 g", 12, 5, 7, { left: 7 }],
     ]);
     expect(result.page.summary).toEqual({ sizes: 3, soldOut: 1, reserved: 13, low: 1 });
     expect(result.page.imsReachable).toBe(true);
   });
 
   it("says the IMS is unreachable and shows no quantity rather than guessing", async () => {
-    const result = await loadStock(() => db.sql, async () => null);
+    const result = await loadStock(() => db.sql, async () => null, feedOfSeed);
     if (!result.ok) throw new Error("expected stock");
     expect(result.page.imsReachable).toBe(false);
     expect(result.page.rows.every((r) => r.available === null && r.shows === "Unknown")).toBe(true);
   });
 
-  it("is unavailable when the database cannot be read", async () => {
-    expect(await loadStock(() => { throw new Error("down"); }, ims([]))).toEqual({ ok: false });
+  it("is unavailable when the IMS feed throws", async () => {
+    expect(await loadStock(() => db.sql, ims([]), async () => { throw new Error("down"); })).toEqual({ ok: false });
   });
 
   it("matches the shop's wording: Only N left under 10, sold out at 0", () => {
@@ -63,9 +68,9 @@ describe("Orders holding a Size's Reservation", () => {
     await db.sql`insert into orders (id, customer_id, status) overriding system value values (${id}, ${`c${id}`}, ${status})`;
   };
   const holders = async (sizeId: number) => {
-    const result = await loadStock(() => db.sql, ims([[1, 26, 8, 18], [2, 12, 5, 7], [3, 0, 0, 0]]));
+    const result = await loadStock(() => db.sql, ims([[101, 26, 8, 18], [102, 12, 5, 7], [103, 0, 0, 0]]), feedOfSeed);
     if (!result.ok) throw new Error("expected stock");
-    return result.page.rows.find((r) => r.sizeId === sizeId)!.orders;
+    return result.page.rows.find((r) => r.sizeId === sizeId + 100)!.orders;
   };
 
   it("lists each Order holding the Size with Customer, status label and quantity", async () => {
@@ -180,10 +185,10 @@ describe("Products & stock from the IMS product feed", () => {
     expect(page.summary).toEqual({ sizes: 1, soldOut: 0, reserved: 0, low: 0 });
   });
 
-  it("shows dashes for the Sizes it already knows when the feed cannot be read", async () => {
+  it("lists nothing and says the IMS is unreachable when the feed cannot be read, never the storefront's own Sizes", async () => {
     const page = await load(null);
-    expect(page.rows).toHaveLength(3);
-    expect(page.rows.every((r) => r.available === null && r.marker === null && r.image === null)).toBe(true);
+    expect(page.rows).toEqual([]);
+    expect(page.imsReachable).toBe(false);
   });
 });
 

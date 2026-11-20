@@ -155,3 +155,9 @@ it("shows a plain tile that does nothing for a product with no image", () => {
   expect(document.querySelector("[data-image-tile]")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Zoom/ })).toBeNull();
 });
+
+it("shows the unreachable alert and an empty list, not stale rows, when the feed is down", () => {
+  render(<StockView page={{ rows: [], imsReachable: false, summary: { sizes: 0, soldOut: 0, reserved: 0, low: 0 } }} />);
+  expect(screen.getByRole("alert").textContent).toContain("could not be reached");
+  expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(0);
+});
