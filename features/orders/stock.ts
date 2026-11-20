@@ -1,10 +1,9 @@
 import type postgres from "postgres";
 
-import { crmsDatabase } from "@/lib/crms-db";
 import { customerNameSql } from "@/lib/deleted-customer";
 import { readProductFeed, readProductStock, readStock, type ImsProduct, type ImsSizeStock } from "@/lib/storefront";
 
-import { loadProductContent, type ProductContent } from "./product-content";
+import type { ProductContent } from "./product-content";
 
 /** A Size with fewer than this many available is low stock; the shop then says "Only N left". Matches the storefront. */
 export const LOW_STOCK_BELOW = 10;
@@ -85,7 +84,8 @@ async function readContent(ids: number[], read: ContentReader): Promise<Map<numb
 }
 
 type ContentReader = (productIds: number[]) => Promise<Map<number, ProductContent>>;
-const defaultContent: ContentReader = (ids) => loadProductContent(crmsDatabase(), ids);
+/** Stock.ts is also bundled for the browser, so the server reader (`published-content.ts`) is passed in by its callers. */
+const noContent: ContentReader = async () => new Map();
 
 const sizeSource = (item: ImsProduct, content: ProductContent | undefined): SizeSource => ({
   id: item.productId, product: item.name, size: item.variant ?? "", image: content?.imageUrl ?? item.image,
@@ -101,7 +101,7 @@ export async function loadStock(
   connect: () => postgres.Sql,
   read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
-  readPublished: ContentReader = defaultContent,
+  readPublished: ContentReader = noContent,
 ): Promise<StockResult> {
   try {
     const feed = await readFeed();
@@ -162,7 +162,7 @@ export async function loadStockSize(
   sizeId: number,
   read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
-  readPublished: ContentReader = defaultContent,
+  readPublished: ContentReader = noContent,
 ): Promise<StockSizeResult> {
   try {
     const feed = await readFeed();

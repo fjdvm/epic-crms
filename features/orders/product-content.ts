@@ -5,7 +5,9 @@ import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail
 import { ORDERS_MODULE } from "@/lib/portal/config";
 import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 
-export const MAX_DESCRIPTION = 2000;
+import { MAX_DESCRIPTION } from "./product-content-limits";
+
+export { MAX_DESCRIPTION } from "./product-content-limits";
 
 /** What Staff published for one IMS product. */
 export interface ProductContent { description: string; imageUrl: string | null }

@@ -13,7 +13,7 @@ import { uploadFile } from "@/features/files/client";
 
 import { OrderActionDialog } from "./action-dialog";
 import { publishProductContent } from "./product-content-actions";
-import { MAX_DESCRIPTION } from "./product-content";
+import { MAX_DESCRIPTION } from "./product-content-limits";
 import { rowLabel, type StockRow } from "./stock";
 
 const quantity = (value: number | null) => (value === null ? "–" : String(value));
