@@ -135,3 +135,23 @@ it("shows a product with no Variant by its name alone", () => {
   render(<StockView page={{ ...page, rows: [{ ...row(7, "Ube Jam", 40, "In stock"), size: "" }] }} />);
   expect(screen.getByText("Ube Jam")).toBeTruthy();
 });
+
+const withImage = { ...row(8, "Ube Jam", 40, "In stock"), size: "", image: "https://img.test/ube.jpg" };
+
+it("shows the product image before its name and zooms it with the name as caption", () => {
+  render(<StockView page={{ ...page, rows: [withImage] }} />);
+  const open = screen.getByRole("button", { name: "Zoom Ube Jam" });
+  expect(open.compareDocumentPosition(screen.getByText("Ube Jam")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(open);
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.querySelector("img")?.getAttribute("src")).toBe("https://img.test/ube.jpg");
+  expect(within(dialog).getByText("Ube Jam")).toBeTruthy();
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("shows a plain tile that does nothing for a product with no image", () => {
+  render(<StockView page={{ ...page, rows: [row(9, "Bare", 40, "In stock")] }} />);
+  expect(document.querySelector("[data-image-tile]")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Zoom/ })).toBeNull();
+});
