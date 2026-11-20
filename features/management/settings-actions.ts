@@ -7,6 +7,8 @@ import { crmsDatabase } from "@/lib/crms-db";
 import { gatewayAuditTrail } from "@/lib/gateway";
 import { requireManagement } from "@/lib/portal/staff";
 
+import { changePaymentWindow } from "./payment-window";
+
 type Saved = { ok: true } | { ok: false; reason: string };
 
 /** Each action re-checks the Module and the Manager or CEO Role on the server; the store checks the Role again. Never optimistic. */
@@ -40,5 +42,17 @@ export async function changeAutomaticChecks(checks: unknown): Promise<Saved> {
   } catch (error) {
     console.error("Automatic checks could not be saved", error);
     return { ok: false, reason: "CREOMS could not save the Automatic checks. Nothing was saved." };
+  }
+}
+
+/** Never optimistic: the window decides how long Customers have to pay. */
+export async function changePaymentWindowHours(input: string): Promise<Saved> {
+  const staff = await requireManagement();
+  try {
+    const result = await changePaymentWindow(crmsDatabase(), gatewayAuditTrail, staff, input);
+    return result.ok ? { ok: true } : result;
+  } catch (error) {
+    console.error("Payment window could not be saved", error);
+    return { ok: false, reason: "CREOMS could not save the payment window. Nothing was saved." };
   }
 }

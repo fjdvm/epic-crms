@@ -50,7 +50,7 @@ Everything Staff can do, plus approvals and reports. Dashboard shows the whole t
 - **Tickets:** reassign tickets, move all of an absent teammate's tickets at once, take escalations.
 - **Customers and feedback:** merge duplicate customers, send win-back offers, publish or hide reviews, open the complaint themes.
 - **Reports:** view the fulfilment and ticket reports.
-- **Management:** Commerce Settings: Payment accounts, free-delivery threshold, Approval limit, Automatic checks and Service levels. The Portal is not for Managers.
+- **Management:** Commerce Settings: Payment accounts, free-delivery threshold, Payment window, Approval limit, Automatic checks and Service levels. The Portal is not for Managers.
 
 ### Admin
 
@@ -62,7 +62,7 @@ Runs the system, not the shop.
 
 The owner. Read-only everywhere: their own owner dashboard, every CREOMS module, all reports, and the Portal's users, settings, logs and system health.
 - The only thing the CEO acts on is the final approval of refunds and write-offs **over ₱5,000**. Amounts of ₱5,000 or less stop at the Manager.
-- **Owner exception:** the CEO, like a Manager, may also manage the shop's Payment accounts, the free-delivery threshold, the Approval limit, the Automatic checks and the Service levels, on the one Commerce Settings screen under Management (the Management Module). Only Manager and CEO can open Management; Staff and Admin cannot. The Figma "Roles & access" section (node `577:10412`) still needs the same change.
+- **Owner exception:** the CEO, like a Manager, may also manage the shop's Payment accounts, the free-delivery threshold, the Payment window, the Approval limit, the Automatic checks and the Service levels, on the one Commerce Settings screen under Management (the Management Module). Only Manager and CEO can open Management; Staff and Admin cannot. The Figma "Roles & access" section (node `577:10412`) still needs the same change.
 
 ### For everyone
 
