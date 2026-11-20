@@ -93,7 +93,7 @@ it("tells Staff why a refused publish did not go through", async () => {
   await waitFor(() => expect(toastError).toHaveBeenCalledWith("Your Role can only view shop work."));
 });
 
-const page = { imsReachable: true, summary: { sizes: 1, soldOut: 0, reserved: 4, low: 0 }, rows: [row] };
+const page = { imsReachable: true, stale: null, summary: { sizes: 1, soldOut: 0, reserved: 4, low: 0 }, rows: [row] };
 
 it("opens from the row's edit button for Staff, and shows no edit button to a read-only Role", () => {
   const { unmount } = render(<StockView page={page} canEdit />);

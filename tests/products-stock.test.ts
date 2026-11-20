@@ -218,12 +218,83 @@ describe("Refetching one Size", () => {
 
   it("merges a refetched Size into the page: replace, insert in order, drop, and recount", () => {
     const mk = (sizeId: number, product: string, available: number) => ({ sizeId, product, size: "", image: null, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
-    const base = { imsReachable: true, rows: [mk(1, "A", 20), mk(3, "C", 20)], summary: summarize([mk(1, "A", 20), mk(3, "C", 20)]) };
+    const base = { imsReachable: true, stale: null, rows: [mk(1, "A", 20), mk(3, "C", 20)], summary: summarize([mk(1, "A", 20), mk(3, "C", 20)]) };
     const inserted = withSize(base, 2, mk(2, "B", 0));
     expect(inserted.rows.map((r) => r.sizeId)).toEqual([1, 2, 3]);
     expect(inserted.summary.soldOut).toBe(1);
     const replaced = withSize(inserted, 2, mk(2, "B", 5));
     expect(replaced.summary).toMatchObject({ soldOut: 0, low: 1 });
     expect(withSize(replaced, 3, null).rows.map((r) => r.sizeId)).toEqual([1, 2]);
+  });
+});
+
+describe("Products & stock with a local copy of the IMS", () => {
+  const stockOf = (rows: [number, number][]): Map<number, ImsSizeStock> =>
+    new Map(rows.map(([id, qty]) => [id, { sizeId: id, quantity: qty, reserved: 0, available: qty }]));
+  const memory = (initial: { feed: ImsProduct[]; stock: Map<number, ImsSizeStock>; syncedAt: Date } | null) => {
+    const state = { mirror: initial, saved: 0, savedOne: 0, failWrites: false };
+    return {
+      state,
+      load: async () => state.mirror,
+      save: async (feed: ImsProduct[], stock: Map<number, ImsSizeStock>) => {
+        if (state.failWrites) throw new Error("mirror down");
+        state.saved++;
+        state.mirror = { feed, stock, syncedAt: new Date() };
+      },
+      saveOne: async () => { if (state.failWrites) throw new Error("mirror down"); state.savedOne++; },
+    };
+  };
+  const live = async () => (await feedOfSeed());
+  const none = async () => null;
+  const noContent = async () => new Map();
+  const asOf = new Date("2026-11-20T08:00:00Z");
+
+  it("writes what the IMS said to the copy and shows it as current", async () => {
+    const mirror = memory(null);
+    const result = await loadStock(() => db.sql, async () => stockOf([[101, 12]]), live, noContent, mirror);
+    expect(result.ok && result.page.stale).toBeNull();
+    expect(mirror.state.saved).toBe(1);
+  });
+
+  it("shows the copy, marked stale with its time, when the IMS feed cannot be read", async () => {
+    const feed = await feedOfSeed();
+    const mirror = memory({ feed, stock: stockOf([[101, 12], [102, 0], [103, 50]]), syncedAt: asOf });
+    const result = await loadStock(() => db.sql, async () => null, none, noContent, mirror);
+    if (!result.ok) throw new Error("expected a page");
+    expect(result.page.stale).toEqual({ asOf: asOf.toISOString() });
+    expect(result.page.imsReachable).toBe(true);
+    expect(result.page.rows.find((r) => r.sizeId === 101)?.inStock).toBe(12);
+    expect(result.page.rows.find((r) => r.sizeId === 102)?.shows).toBe("Sold out");
+  });
+
+  it("uses the copy's quantities when the feed answers but the stock read does not", async () => {
+    const feed = await feedOfSeed();
+    const mirror = memory({ feed, stock: stockOf([[101, 12], [102, 3], [103, 50]]), syncedAt: asOf });
+    const result = await loadStock(() => db.sql, async () => null, live, noContent, mirror);
+    if (!result.ok) throw new Error("expected a page");
+    expect(result.page.stale).toEqual({ asOf: asOf.toISOString() });
+    expect(result.page.rows.find((r) => r.sizeId === 101)?.inStock).toBe(12);
+    expect(mirror.state.saved).toBe(0);
+  });
+
+  it("still shows live rows when writing the copy fails", async () => {
+    const mirror = memory(null);
+    mirror.state.failWrites = true;
+    const result = await loadStock(() => db.sql, async () => stockOf([[101, 12]]), live, noContent, mirror);
+    expect(result.ok && result.page.rows.length).toBe(3);
+    expect(result.ok && result.page.stale).toBeNull();
+  });
+
+  it("keeps today's unreachable page when the IMS is down and the copy is empty or unreadable", async () => {
+    for (const mirror of [memory(null), { ...memory(null), load: async () => { throw new Error("no table"); } }]) {
+      const result = await loadStock(() => db.sql, async () => null, none, noContent, mirror);
+      expect(result.ok && result.page).toMatchObject({ rows: [], imsReachable: false, stale: null });
+    }
+  });
+
+  it("writes a refetched Size through to the copy", async () => {
+    const mirror = memory(null);
+    await loadStockSize(() => db.sql, 101, async () => stockOf([[101, 7]]), live, noContent, mirror);
+    expect(mirror.state.savedOne).toBe(1);
   });
 });

@@ -80,6 +80,9 @@ function ProductImage({ row }: { row: StockRow }) {
   );
 }
 
+/** Fixed to Manila time so the server and the browser print the same thing. */
+const asOfLabel = (iso: string) => new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" });
+
 const IMS_URL = process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/";
 
 /** Shared by the page and its loading state, so the Open IMS button never pops in after load. */
@@ -133,6 +136,11 @@ export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?
       {!page.imsReachable && (
         <p role="alert" className="rounded-[10px] bg-[#fdf1d8] p-3 text-sm text-[#8a5a00]">
           The IMS could not be reached, so quantities are not shown. Reload to try again. The shop still refuses to sell what is not there.
+        </p>
+      )}
+      {page.stale && (
+        <p role="status" aria-label="Stock copy" className="rounded-[10px] bg-[#fdf1d8] p-3 text-sm text-[#8a5a00]">
+          The IMS could not be reached. Showing the last numbers CREOMS read from it, as of {asOfLabel(page.stale.asOf)}. Reload to try again.
         </p>
       )}
       <div className="flex flex-wrap gap-4">

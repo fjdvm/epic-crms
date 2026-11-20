@@ -4,7 +4,7 @@ import { ORDERS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
-import { readPublishedContent } from "./published-content";
+import { readPublishedContent, stockMirror } from "./published-content";
 import { loadStock, loadStockSize, type StockResult, type StockSizeResult } from "./stock";
 
 /** A single-use pass for the Staff stock channel, issued only to Staff who hold the Orders Module. */
@@ -32,12 +32,12 @@ export async function staffStockLiveUrl(): Promise<string | null> {
 /** Everything again, after a connect or reconnect. */
 export async function refetchStock(): Promise<StockResult> {
   await requireModule(ORDERS_MODULE);
-  return loadStock(ticketsDatabase, undefined, undefined, readPublishedContent);
+  return loadStock(ticketsDatabase, undefined, undefined, readPublishedContent, stockMirror);
 }
 
 /** One Size again, after the IMS announced a change to it. */
 export async function refetchStockSize(sizeId: number): Promise<StockSizeResult> {
   await requireModule(ORDERS_MODULE);
   if (!Number.isSafeInteger(sizeId)) return { ok: false };
-  return loadStockSize(ticketsDatabase, sizeId, undefined, undefined, readPublishedContent);
+  return loadStockSize(ticketsDatabase, sizeId, undefined, undefined, readPublishedContent, stockMirror);
 }
