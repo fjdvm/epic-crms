@@ -4,9 +4,10 @@ import { approvals } from "@/features/approvals/server";
 import { saveAutomaticChecks as save } from "@/features/settings/automatic-checks-server";
 import { setServiceTargets } from "@/features/tickets/service-level-store";
 import { crmsDatabase } from "@/lib/crms-db";
-import { changePaymentWindow } from "./payment-window";
 import { gatewayAuditTrail } from "@/lib/gateway";
 import { requireManagement } from "@/lib/portal/staff";
+
+import { changePaymentWindow } from "./payment-window";
 
 type Saved = { ok: true } | { ok: false; reason: string };
 

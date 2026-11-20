@@ -39,5 +39,3 @@ export async function changePaymentWindow(sql: postgres.Sql, audit: AuditTrail, 
   });
   return { ok: true, hours: next };
 }
-
-
