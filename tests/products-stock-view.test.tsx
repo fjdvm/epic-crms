@@ -16,7 +16,7 @@ import { StockSkeleton, StockView } from "@/features/orders/stock-view";
 afterEach(cleanup);
 
 const row = (sizeId: number, product: string, available: number | null, shows: StockPage["rows"][number]["shows"]) =>
-  ({ sizeId, product, size: "250 g", inStock: available, reserved: available === null ? null : 2, available, shows });
+  ({ sizeId, product, size: "250 g", inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
 const page: StockPage = {
   imsReachable: true,
   summary: { sizes: 3, soldOut: 1, reserved: 6, low: 1 },
@@ -95,4 +95,20 @@ it("loads a skeleton with four tiles, a search box and rows, and the Open IMS bu
   render(<><StockSkeleton /></>);
   expect(document.querySelectorAll("[data-skeleton-tile]")).toHaveLength(4);
   expect(document.querySelectorAll("[data-skeleton-row]")).toHaveLength(7);
+});
+
+it("shows '2 reserved · 1 Order' and lists the Orders with Customer and status on click", () => {
+  render(<StockView page={page} />);
+  const first = document.querySelectorAll("[data-stock-row]")[0] as HTMLElement;
+  expect(first.textContent).toContain("2 reserved · 1 Order");
+  fireEvent.click(within(first).getByRole("button", { name: /1 Order holding/ }));
+  const listed = document.querySelector("[data-holding-order]") as HTMLElement;
+  expect(listed.textContent).toContain("Customer 1");
+  expect(listed.textContent).toContain("Awaiting payment");
+});
+
+it("shows only the reserved units when the Orders could not be read", () => {
+  render(<StockView page={{ ...page, rows: [{ ...page.rows[0], orders: null }] }} />);
+  expect(document.body.textContent).toContain("2 reserved");
+  expect(screen.queryByRole("button", { name: /holding/ })).toBeNull();
 });
