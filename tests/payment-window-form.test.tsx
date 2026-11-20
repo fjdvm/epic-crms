@@ -20,7 +20,7 @@ describe("PaymentWindowForm", () => {
   it("shows a plain-word error for invalid hours and cannot be confirmed", () => {
     render(<PaymentWindowForm currentHours={24} />);
     type("0");
-    expect(screen.getByRole("alert").textContent).toMatch(/1 to 720/);
+    expect(screen.getByRole("alert").textContent).toMatch(/1 to 336/);
     open();
     expect(screen.getAllByRole("button", { name: "Save payment window" }).at(-1)).toHaveProperty("disabled", true);
     expect(changePaymentWindowHours).not.toHaveBeenCalled();
