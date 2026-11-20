@@ -18,7 +18,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load Geist.
 
 ## Learn More
 
@@ -28,12 +28,6 @@ To learn more about Next.js, take a look at the following resources:
 - [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
 ## Signing in through the Portal
 
@@ -52,6 +46,6 @@ Sign out posts to `/api/portal/logout`, which forgets the session cookie and sen
 Two ways, both on `http://localhost:3000`:
 
 1. **Real Portal (default).** Set the variables above and run `npm run dev`. Sign-in goes through the deployed Portal via the registered `localhost` callback.
-2. **Dev bypass (offline work and automated tests).** Set `CREOMS_DEV_BYPASS=true` in `.env.local`. Every page opens as a fully-permitted Staff member ("Dev Staff"); no Portal, session or `PORTAL_*` variables are needed, and sign out just returns to `/`.
+2. **Dev bypass (offline work and automated tests).** Set `CREOMS_DEV_BYPASS=true` in `.env.local`. Every page opens as "Dev Staff" by default; switch to the other three Roles by visiting `/api/dev/role?role=manager`, `admin` or `ceo` (or `staff` to go back), which sets a cookie and returns you to the page you were on. No Portal, session or `PORTAL_*` variables are needed, and sign out just returns to `/`.
 
-The bypass is for development and tests only. CREOMS refuses to start (`instrumentation.ts`) if `CREOMS_DEV_BYPASS=true` is set when `NODE_ENV=production` on Vercel, or when `CREOMS_APP_URL` is not a `localhost` address, so it cannot open a deployed CREOMS to the public. Never set it in a deployment's environment.
+The bypass is for development and tests only. CREOMS refuses to start (`instrumentation.ts`) if `CREOMS_DEV_BYPASS=true` is set when `NODE_ENV=production`, or when `CREOMS_APP_URL` is not a `localhost` address, so it cannot open a deployed CREOMS to the public. Never set it in a deployment's environment.

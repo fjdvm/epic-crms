@@ -1,7 +1,7 @@
 name: Feedback analysis
 
 # Labels each Feedback's Sentiment 5 times a day. Times are UTC: 08:00, 11:00, 14:00, 17:00 and 20:00 Philippines time.
-# Vercel Cron on the Hobby plan runs once a day at most, so GitHub Actions calls the route instead.
+# GitHub Actions calls the route on a schedule.
 on:
   schedule:
     - cron: "0 0,3,6,9,12 * * *"

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { loadLineReservations, loadStock, shopShows } from "@/features/orders/stock";
+import { loadLineReservations, loadStock, loadStockSize, shopShows, summarize, withSize } from "@/features/orders/stock";
 import type { ImsProduct, ImsSizeStock } from "@/lib/storefront";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -184,5 +184,33 @@ describe("Products & stock from the IMS product feed", () => {
     const page = await load(null);
     expect(page.rows).toHaveLength(3);
     expect(page.rows.every((r) => r.available === null && r.marker === null && r.image === null)).toBe(true);
+  });
+});
+
+describe("Refetching one Size", () => {
+  const item = (productId: number, name: string): ImsProduct => ({ productId, name, variant: "250 g", image: "/a.png", price: 100, active: true });
+  const feed = async () => [item(1, "Ube Halaya"), item(9, "New Jam")];
+
+  it("reads only that Size's quantity and returns its row", async () => {
+    const asked: number[][] = [];
+    const result = await loadStockSize(() => db.sql, 9, async (ids) => { asked.push(ids); return new Map([[9, { sizeId: 9, quantity: 5, reserved: 1, available: 4 }]]); }, feed);
+    expect(asked).toEqual([[9]]);
+    expect(result).toMatchObject({ ok: true, row: { sizeId: 9, product: "New Jam", available: 4, shows: { left: 4 } } });
+  });
+
+  it("returns a null row when the IMS no longer lists the Size, and fails without the feed", async () => {
+    expect(await loadStockSize(() => db.sql, 77, ims([]), feed)).toEqual({ ok: true, row: null });
+    expect(await loadStockSize(() => db.sql, 1, ims([]), async () => null)).toEqual({ ok: false });
+  });
+
+  it("merges a refetched Size into the page: replace, insert in order, drop, and recount", () => {
+    const mk = (sizeId: number, product: string, available: number) => ({ sizeId, product, size: "", image: null, marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
+    const base = { imsReachable: true, rows: [mk(1, "A", 20), mk(3, "C", 20)], summary: summarize([mk(1, "A", 20), mk(3, "C", 20)]) };
+    const inserted = withSize(base, 2, mk(2, "B", 0));
+    expect(inserted.rows.map((r) => r.sizeId)).toEqual([1, 2, 3]);
+    expect(inserted.summary.soldOut).toBe(1);
+    const replaced = withSize(inserted, 2, mk(2, "B", 5));
+    expect(replaced.summary).toMatchObject({ soldOut: 0, low: 1 });
+    expect(withSize(replaced, 3, null).rows.map((r) => r.sizeId)).toEqual([1, 2]);
   });
 });
