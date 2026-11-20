@@ -4,22 +4,23 @@ import { IMAGE_REFUSALS, MAX_IMAGE_BYTES } from "@/features/tickets/attachments"
 export const FILE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf", "video/mp4", "video/quicktime"] as const;
 export type FileContentType = (typeof FILE_TYPES)[number];
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
-export type UploadModule = "Tickets" | "Fulfilment" | "Returns" | "Management";
+export type UploadModule = "Tickets" | "Fulfilment" | "Returns" | "Management" | "Orders";
 export interface FileInfo { filename: string; contentType: FileContentType; size: number }
 export interface UploadContext { ticketId: number | null }
 export type FileFailure = { ok: false; reason: string; cleanupFailed?: boolean };
 export type ReadyFile = { ok: true; reference: string } & FileInfo;
 
+/** Orders uploads are product images the shop shows to Customers, so they are the one public kind. */
 export function filePolicy(module: UploadModule) {
-  return { visibility: "private" as const,
+  return { visibility: module === "Orders" ? "public" as const : "private" as const,
     retentionType: module === "Fulfilment" || module === "Returns" ? "temporary" as const : "permanent" as const };
 }
 export const isUploadModule = (value: unknown): value is UploadModule =>
-  ["Tickets", "Fulfilment", "Returns", "Management"].includes(value as string);
+  ["Tickets", "Fulfilment", "Returns", "Management", "Orders"].includes(value as string);
 
 export function checkFileInfo(module: UploadModule, file: FileInfo): string | null {
   if (!file || typeof file.filename !== "string" || !file.filename.trim() || file.filename.length > 255) return "Choose a file with a name of at most 255 characters.";
-  if (module === "Fulfilment" || module === "Returns" || module === "Management") {
+  if (module === "Fulfilment" || module === "Returns" || module === "Management" || module === "Orders") {
     if (file.size === 0) return IMAGE_REFUSALS["empty-image"];
     if (file.size > MAX_IMAGE_BYTES) return IMAGE_REFUSALS["image-too-large"];
     if (file.contentType !== "image/jpeg" && file.contentType !== "image/png") return IMAGE_REFUSALS["invalid-image-type"];
