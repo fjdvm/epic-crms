@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { loadLineReservations, loadStock, loadStockSize, shopShows, summarize, withSize } from "@/features/orders/stock";
+import { loadLineReservations, loadStock, loadStockCopy, loadStockSize, shopShows, summarize, withSize } from "@/features/orders/stock";
 import type { ImsProduct, ImsSizeStock } from "@/lib/storefront";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -32,22 +32,22 @@ const ims = (entries: [number, number, number, number][]) => async () =>
   new Map<number, ImsSizeStock>(entries.map(([sizeId, quantity, reserved, available]) => [sizeId, { sizeId, quantity, reserved, available }]));
 
 describe("Products & stock", () => {
-  it("shows in stock, reserved, available and what the shop shows, with low and sold-out counted", async () => {
+  it("shows in stock, CREOMS's own reserved, available and what the shop shows, with low and sold-out counted", async () => {
     const result = await loadStock(() => db.sql, ims([[101, 26, 8, 18], [102, 12, 5, 7], [103, 0, 0, 0]]), feedOfSeed);
     if (!result.ok) throw new Error("expected stock");
     expect(result.page.rows.map((r) => [r.product, r.size, r.inStock, r.reserved, r.available, r.shows])).toEqual([
       ["120 Mesh Ube Powder", "500 g", 0, 0, 0, "Sold out"],
-      ["Ube Halaya Smooth", "Tub 340 g", 26, 8, 18, "In stock"],
-      ["Ube Halaya Smooth", "Jar 250 g", 12, 5, 7, { left: 7 }],
+      ["Ube Halaya Smooth", "Tub 340 g", 26, 0, 26, "In stock"],
+      ["Ube Halaya Smooth", "Jar 250 g", 12, 0, 12, "In stock"],
     ]);
-    expect(result.page.summary).toEqual({ sizes: 3, soldOut: 1, reserved: 13, low: 1 });
-    expect(result.page.imsReachable).toBe(true);
+    expect(result.page.summary).toEqual({ sizes: 3, soldOut: 1, reserved: 0, low: 0 });
+    expect(result.page.hasStock).toBe(true);
   });
 
   it("says the IMS is unreachable and shows no quantity rather than guessing", async () => {
     const result = await loadStock(() => db.sql, async () => null, feedOfSeed);
     if (!result.ok) throw new Error("expected stock");
-    expect(result.page.imsReachable).toBe(false);
+    expect(result.page.hasStock).toBe(false);
     expect(result.page.rows.every((r) => r.available === null && r.shows === "Unknown")).toBe(true);
   });
 
@@ -166,7 +166,7 @@ describe("Products & stock from the IMS product feed", () => {
   it("lists a product the IMS holds even though the storefront has no Size for it", async () => {
     const page = await load([product(1), product(99, { name: "Ube Jam", variant: "500g" })], [[99, 5, 1, 4]]);
     const added = page.rows.find((r) => r.sizeId === 99)!;
-    expect([added.product, added.size, added.available, added.marker]).toEqual(["Ube Jam", "500g", 4, null]);
+    expect([added.product, added.size, added.available, added.marker]).toEqual(["Ube Jam", "500g", 5, null]);
     expect(page.rows.map((r) => r.sizeId).sort((a, b) => a - b)).toEqual([1, 99]);
   });
 
@@ -185,7 +185,7 @@ describe("Products & stock from the IMS product feed", () => {
 
   it("keeps a discontinued product visible with its image and last known numbers", async () => {
     const page = await load([product(1, { active: false })], [[1, 9, 2, 7]]);
-    expect(page.rows[0]).toMatchObject({ marker: { kind: "discontinued" }, image: "img-1", inStock: 9, reserved: 2, available: 7 });
+    expect(page.rows[0]).toMatchObject({ marker: { kind: "discontinued" }, image: "img-1", inStock: 9, reserved: 0, available: 9 });
   });
 
   it("does not count Not on shop or Discontinued products as on sale, low or sold out", async () => {
@@ -196,7 +196,7 @@ describe("Products & stock from the IMS product feed", () => {
   it("lists nothing and says the IMS is unreachable when the feed cannot be read, never the storefront's own Sizes", async () => {
     const page = await load(null);
     expect(page.rows).toEqual([]);
-    expect(page.imsReachable).toBe(false);
+    expect(page.hasStock).toBe(false);
   });
 });
 
@@ -208,7 +208,7 @@ describe("Refetching one Size", () => {
     const asked: number[][] = [];
     const result = await loadStockSize(() => db.sql, 9, async (ids) => { asked.push(ids); return new Map([[9, { sizeId: 9, quantity: 5, reserved: 1, available: 4 }]]); }, feed);
     expect(asked).toEqual([[9]]);
-    expect(result).toMatchObject({ ok: true, row: { sizeId: 9, product: "New Jam", available: 4, shows: { left: 4 } } });
+    expect(result).toMatchObject({ ok: true, row: { sizeId: 9, product: "New Jam", available: 5, shows: { left: 5 } } });
   });
 
   it("returns a null row when the IMS no longer lists the Size, and fails without the feed", async () => {
@@ -217,8 +217,8 @@ describe("Refetching one Size", () => {
   });
 
   it("merges a refetched Size into the page: replace, insert in order, drop, and recount", () => {
-    const mk = (sizeId: number, product: string, available: number) => ({ sizeId, product, size: "", image: null, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
-    const base = { imsReachable: true, stale: null, rows: [mk(1, "A", 20), mk(3, "C", 20)], summary: summarize([mk(1, "A", 20), mk(3, "C", 20)]) };
+    const mk = (sizeId: number, product: string, available: number) => ({ sizeId, product, size: "", image: null, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
+    const base = { hasStock: true, rows: [mk(1, "A", 20), mk(3, "C", 20)], summary: summarize([mk(1, "A", 20), mk(3, "C", 20)]) };
     const inserted = withSize(base, 2, mk(2, "B", 0));
     expect(inserted.rows.map((r) => r.sizeId)).toEqual([1, 2, 3]);
     expect(inserted.summary.soldOut).toBe(1);
@@ -249,20 +249,39 @@ describe("Products & stock with a local copy of the IMS", () => {
   const noContent = async () => new Map();
   const asOf = new Date("2026-11-20T08:00:00Z");
 
-  it("writes what the IMS said to the copy and shows it as current", async () => {
+  it("writes what the IMS said to the copy", async () => {
     const mirror = memory(null);
     const result = await loadStock(() => db.sql, async () => stockOf([[101, 12]]), live, noContent, mirror);
-    expect(result.ok && result.page.stale).toBeNull();
+    expect(result.ok && result.page.hasStock).toBe(true);
     expect(mirror.state.saved).toBe(1);
   });
 
-  it("shows the copy, marked stale with its time, when the IMS feed cannot be read", async () => {
+  it("opens on the copy without asking the IMS: name, image, price, stock and CREOMS's own reserved", async () => {
+    const feed = (await feedOfSeed()).map((item) => ({ ...item, price: 250 }));
+    const mirror = memory({ feed, stock: new Map([[101, { sizeId: 101, quantity: 12, reserved: 99, available: 1 }]]), syncedAt: asOf });
+    await db.sql`insert into stock_reservations values ('r1', 7, 'placed', ${db.sql.json([{ orderLineId: 1, sizeId: 1, quantity: 4 }] as never)})`;
+    const result = await loadStockCopy(() => db.sql, noContent, mirror);
+    if (!result.ok) throw new Error("expected a page");
+    expect(result.page.hasStock).toBe(true);
+    expect(result.page.rows.find((r) => r.sizeId === 101)).toMatchObject({
+      product: "Ube Halaya Smooth", image: "img", price: 250, inStock: 12, reserved: 4, available: 8,
+    });
+    expect(mirror.state.saved).toBe(0);
+  });
+
+  it("opens with nothing, and says so, when CREOMS has no copy yet or cannot read it", async () => {
+    for (const mirror of [memory(null), { ...memory(null), load: async () => { throw new Error("no table"); } }]) {
+      const result = await loadStockCopy(() => db.sql, noContent, mirror);
+      expect(result.ok && result.page).toMatchObject({ rows: [], hasStock: false });
+    }
+  });
+
+  it("falls back to the copy, silently, when the IMS feed cannot be read", async () => {
     const feed = await feedOfSeed();
     const mirror = memory({ feed, stock: stockOf([[101, 12], [102, 0], [103, 50]]), syncedAt: asOf });
     const result = await loadStock(() => db.sql, async () => null, none, noContent, mirror);
     if (!result.ok) throw new Error("expected a page");
-    expect(result.page.stale).toEqual({ asOf: asOf.toISOString() });
-    expect(result.page.imsReachable).toBe(true);
+    expect(result.page).not.toHaveProperty("stale");
     expect(result.page.rows.find((r) => r.sizeId === 101)?.inStock).toBe(12);
     expect(result.page.rows.find((r) => r.sizeId === 102)?.shows).toBe("Sold out");
   });
@@ -272,7 +291,6 @@ describe("Products & stock with a local copy of the IMS", () => {
     const mirror = memory({ feed, stock: stockOf([[101, 12], [102, 3], [103, 50]]), syncedAt: asOf });
     const result = await loadStock(() => db.sql, async () => null, live, noContent, mirror);
     if (!result.ok) throw new Error("expected a page");
-    expect(result.page.stale).toEqual({ asOf: asOf.toISOString() });
     expect(result.page.rows.find((r) => r.sizeId === 101)?.inStock).toBe(12);
     expect(mirror.state.saved).toBe(0);
   });
@@ -282,13 +300,12 @@ describe("Products & stock with a local copy of the IMS", () => {
     mirror.state.failWrites = true;
     const result = await loadStock(() => db.sql, async () => stockOf([[101, 12]]), live, noContent, mirror);
     expect(result.ok && result.page.rows.length).toBe(3);
-    expect(result.ok && result.page.stale).toBeNull();
   });
 
-  it("keeps today's unreachable page when the IMS is down and the copy is empty or unreadable", async () => {
+  it("has nothing to show when the IMS is down and the copy is empty or unreadable", async () => {
     for (const mirror of [memory(null), { ...memory(null), load: async () => { throw new Error("no table"); } }]) {
       const result = await loadStock(() => db.sql, async () => null, none, noContent, mirror);
-      expect(result.ok && result.page).toMatchObject({ rows: [], imsReachable: false, stale: null });
+      expect(result.ok && result.page).toMatchObject({ rows: [], hasStock: false });
     }
   });
 

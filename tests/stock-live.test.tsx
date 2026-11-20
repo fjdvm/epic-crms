@@ -17,8 +17,8 @@ class Socket {
   constructor(readonly url: string) { Socket.all.push(this); }
 }
 const row = (sizeId: number, product: string, available: number): StockRow =>
-  ({ sizeId, product, size: "", image: null, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
-const pageOf = (rows: StockRow[]): StockPage => ({ rows, imsReachable: true, stale: null, summary: summarize(rows) });
+  ({ sizeId, product, size: "", image: null, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
+const pageOf = (rows: StockRow[]): StockPage => ({ rows, hasStock: true, summary: summarize(rows) });
 const elapse = async (ms = 0) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
 const send = (data: unknown) => act(async () => { Socket.all[0].onmessage?.({ data: JSON.stringify(data) }); await vi.advanceTimersByTimeAsync(0); });
 
@@ -50,7 +50,7 @@ it("falls back to one full refetch when a Size cannot be refetched, and ignores 
   await send({ type: "other", sizeId: 1 });
   await act(async () => { Socket.all[0].onmessage?.({ data: "pong" }); });
   expect(refetchOne).toHaveBeenCalledTimes(1);
-  expect(refetchAll).toHaveBeenCalledTimes(1); // the failed Size falls back to one full refetch, not a loop
+  expect(refetchAll).toHaveBeenCalledTimes(2); // the refresh on open, then the failed Size falls back to one full refetch, not a loop
   expect(screen.getByText("Alpha")).toBeTruthy();
 });
 
@@ -72,4 +72,15 @@ it("closes its connection when the page is left", async () => {
   const view = render(<LiveStock page={pageOf([])} />); await elapse();
   view.unmount();
   expect(Socket.all[0].close).toHaveBeenCalledTimes(1);
+});
+
+it("refreshes the copy once when the page opens, and keeps the rows and says nothing when that refresh fails", async () => {
+  refetchAll.mockRejectedValueOnce(new Error("IMS down"));
+  const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  render(<LiveStock page={pageOf([row(1, "Alpha", 20)])} />); await elapse();
+  expect(refetchAll).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Alpha")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByText(/could not be reached/)).toBeNull();
+  spy.mockRestore();
 });

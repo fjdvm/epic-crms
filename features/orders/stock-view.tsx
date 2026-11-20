@@ -16,7 +16,7 @@ import { LOW_STOCK_BELOW, rowLabel, shopLabel, type HoldingOrder, type StockPage
 type Tab = "all" | "low" | "sold-out";
 
 const GRID = "flex items-center gap-2 px-4";
-const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", shows: "w-[170px] shrink-0", edit: "w-8 shrink-0" };
+const COLUMN = { price: "w-[110px] shrink-0 text-right", stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", shows: "w-[170px] shrink-0", edit: "w-8 shrink-0" };
 
 const isLow = (row: StockRow) => row.marker === null && typeof row.shows === "object";
 const isSoldOut = (row: StockRow) => row.marker === null && row.shows === "Sold out";
@@ -80,8 +80,7 @@ function ProductImage({ row }: { row: StockRow }) {
   );
 }
 
-/** Fixed to Manila time so the server and the browser print the same thing. */
-const asOfLabel = (iso: string) => new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" });
+const peso = (value: number | null) => (value === null ? "–" : `₱${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
 const IMS_URL = process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/";
 
@@ -94,7 +93,7 @@ export function StockHeader() {
           <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Stock</h1>
           <Pill className="bg-[#e1f5ee] text-[#0f6e56]"><Link2 className="mr-1 inline size-3" aria-hidden />From IMS</Pill>
         </div>
-        <p className="text-sm text-[#6e6680]">What the online shop can sell. Quantities come from IMS; Staff add the shop image and description.</p>
+        <p className="text-sm text-[#6e6680]">What the online shop can sell. CREOMS keeps its own copy of the IMS: name, image, stock and price. Reserved is what open Orders hold. Staff add the shop image and description.</p>
       </div>
       <a href={IMS_URL} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
         <Link2 className="size-4" aria-hidden />
@@ -133,18 +132,13 @@ export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-      {!page.imsReachable && (
+      {!page.hasStock && (
         <p role="alert" className="rounded-[10px] bg-[#fdf1d8] p-3 text-sm text-[#8a5a00]">
-          The IMS could not be reached, so quantities are not shown. Reload to try again. The shop still refuses to sell what is not there.
-        </p>
-      )}
-      {page.stale && (
-        <p role="status" aria-label="Stock copy" className="rounded-[10px] bg-[#fdf1d8] p-3 text-sm text-[#8a5a00]">
-          The IMS could not be reached. Showing the last numbers CREOMS read from it, as of {asOfLabel(page.stale.asOf)}. Reload to try again.
+          CREOMS has no stock copy yet, so quantities are not shown. They appear once CREOMS has read the IMS. The shop still refuses to sell what is not there.
         </p>
       )}
       <div className="flex flex-wrap gap-4">
-        {page.imsReachable ? (
+        {page.hasStock ? (
           <>
             <Tile label="Sizes on sale" value={String(summary.sizes - summary.soldOut)} note={`${summary.soldOut} sold out`} />
             <Tile label="Reserved by open orders" value={`${summary.reserved} items`} note="Released if the order is cancelled" />
@@ -153,7 +147,7 @@ export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?
           </>
         ) : (
           <>
-            <Tile label="Sizes on sale" value="–" note="Unknown until the IMS answers" />
+            <Tile label="Sizes on sale" value="–" note="Unknown until CREOMS has read the IMS" />
             <Tile label="Reserved by open orders" value="–" note="Released if the order is cancelled" />
             <Tile label="Low stock" value="–" note={`Below ${LOW_STOCK_BELOW} left`} />
             <Tile label="Sold out" value="–" note="Checkout blocks at 0" />
@@ -172,7 +166,7 @@ export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?
         ))}
       </div>
       <div className="overflow-x-auto rounded-xl border border-[#e6e1ee] bg-white">
-        <div className="min-w-[810px]">
+        <div className="min-w-[920px]">
           <div className="p-3">
             <label className="flex w-[260px] items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3 py-1.5">
               <Search className="size-3.5 text-[#71717a]" aria-hidden />
@@ -184,6 +178,7 @@ export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?
           </div>
           <div className={cn(GRID, "rounded-t-xl bg-[#fafafa] py-2.5 text-xs font-medium text-[#71717a]")}>
             <div className="min-w-0 flex-1">Products</div>
+            <div className={COLUMN.price}>Price</div>
             <div className={COLUMN.stock}>Stocks</div>
             <div className={COLUMN.reserved}>Reserved</div>
             <div className={COLUMN.shows}>Shop shows</div>
@@ -197,6 +192,7 @@ export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?
                 <p className="truncate font-medium">{rowLabel(row)}</p>
                 {row.marker?.kind === "not-on-shop" && <p data-missing className="truncate text-xs font-normal text-[#6e6680]">Missing: {row.marker.missing.join(", ")}</p>}
               </div>
+              <div className={COLUMN.price}>{peso(row.price)}</div>
               <div className={COLUMN.stock}>{quantity(row.inStock)}</div>
               <div className={COLUMN.reserved}><ReservedCell row={row} onOpen={setOpened} /></div>
               <div className={COLUMN.shows}><ShowsPill row={row} /></div>
