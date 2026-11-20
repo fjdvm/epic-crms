@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cancelOrder, cancelOrderItems, loadCancellableOrderItems, cancelPaymentOrder, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
+  cancelOrder, cancelOrderItems, rejectOrder, loadCancellableOrderItems, cancelPaymentOrder, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
   resendStatusEmail, loadPackingSlip, startPreparing, dispatchOrder, updateDispatchRecord, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
@@ -323,6 +323,15 @@ describe("Order actions", () => {
       expect(await cancelOrder(id)).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
       expect(storefront.requests).toBe(requests);
     }
+  });
+  it("rejects a placed Order only with a reason, and sends the reason to the storefront", async () => {
+    const id = await order();
+    expect(await rejectOrder(id, "   ")).toEqual({ ok: false, reason: "Say why you are rejecting this Order." });
+    const requests = storefront.requests;
+    expect(storefront.requests).toBe(requests);
+    expect(await rejectOrder(id, " Cannot deliver there ")).toEqual({ ok: true, order: { id, status: "cancelled", deliveryFeeInCentavos: null } });
+    const confirmed = await order("delivery", "confirmed", "cash-on-delivery");
+    expect(await rejectOrder(confirmed, "Too late")).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
   });
   it("quotes a Delivery fee in centavos and reports confirmation only after the storefront accepts", async () => {
     const id = await order();
