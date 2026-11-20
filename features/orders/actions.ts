@@ -211,6 +211,19 @@ export async function cancelOrderItems(id: number, lineIds: number[]): Promise<O
   });
 }
 
+/** Staff turn a placed Order down. It is a cancellation with a required reason the Customer is shown; only a placed Order can be rejected. */
+export async function rejectOrder(id: number, reason: string): Promise<OrderChangeResult> {
+  const text = typeof reason === "string" ? reason.trim() : "";
+  if (!text) return { ok: false, reason: "Say why you are rejecting this Order." };
+  if (text.length > 500) return { ok: false, reason: "Keep the reason under 500 characters." };
+  return act(id, async (order) => {
+    if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
+    return changeOrderStatus(id, { status: "cancelled", reason: text });
+  }, ORDERS_MODULE, {
+    action: "order.rejected", description: staff => `${staff.name} rejected Order #${id}: ${text}`, metadata: { reason: text },
+  });
+}
+
 export async function cancelOrder(id: number): Promise<OrderChangeResult> {
   return cancel(id, ORDERS_MODULE);
 }

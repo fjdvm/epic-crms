@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Check, X } from "lucide-react";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { formatPesos, parsePesos } from "@/features/customer-profiles/format";
 
 import { OrderActionDialog, type ChangeResult } from "./action-dialog";
-import { cancelOrder, quoteDeliveryFee } from "./actions";
+import { cancelOrder, quoteDeliveryFee, rejectOrder } from "./actions";
 import { recordAskGcashFirst } from "./cod-actions";
 import { CodConfirmPanel, type CodFlagLine } from "./cod-confirm";
 import type { CodChoice } from "./cod-flags";
@@ -43,6 +44,47 @@ function TotalFormula({ order, fee }: { order: OrderDetail; fee: number | null }
   );
 }
 
+/** What Staff check before confirming: who ordered, what, and where it goes. */
+function OrderSummary({ order }: { order: OrderDetail }) {
+  const a = order.address;
+  return (
+    <section aria-label="Order details" className="space-y-2 border border-[#e4e1ea] bg-[#faf9fc] p-3 text-sm text-[#1f1a2e]">
+      <p><span className="text-xs text-[#6e6680]">Customer</span><br />{order.customer.name}</p>
+      <ul className="space-y-0.5">
+        {order.lines.map((line, i) => (
+          <li className="flex justify-between gap-3" key={line.id ?? i}>
+            <span>{line.product} · {line.size} × {line.quantity}</span><span>{formatPesos(line.price * line.quantity)}</span>
+          </li>
+        ))}
+      </ul>
+      {a ? <p><span className="text-xs text-[#6e6680]">Delivery address</span><br />{[a.street, a.barangay, a.city, a.province, a.postalCode].filter(Boolean).join(", ")}</p> : null}
+    </section>
+  );
+}
+
+function RejectOrder({ order }: { order: OrderDetail }) {
+  const [reason, setReason] = useState("");
+  return (
+    <OrderActionDialog
+      trigger={<><X aria-hidden className="size-4" />Reject</>}
+      title={`Reject Order #${order.id}?`}
+      description="The Order is cancelled and its stock is released. The Customer is told your reason."
+      confirm="Reject order"
+      busy="Rejecting…"
+      keepLabel="Keep order"
+      tone="destructive"
+      disabled={!reason.trim()}
+      run={() => rejectOrder(order.id, reason)}
+      successMessage={`Order #${order.id} rejected.`}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="reject-reason" className="text-[13px] font-medium text-foreground">Reason <span className="text-[#dc2626]">*</span></Label>
+        <Input id="reject-reason" autoComplete="off" maxLength={500} placeholder="For example, we cannot deliver to this address" value={reason} onChange={(e) => setReason(e.target.value)} />
+      </div>
+    </OrderActionDialog>
+  );
+}
+
 function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFlagLine[] }) {
   const [text, setText] = useState("");
   // Staff's own notes from the Lalamove and Grab apps. They are never saved or sent: only the fee to charge is.
@@ -54,15 +96,16 @@ function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFla
 
   return (
     <OrderActionDialog
-      trigger={free ? "Confirm free delivery" : "Quote delivery fee"}
-      title={`Quote a Delivery fee for Order #${order.id}?`}
-      description={free ? "This Order qualifies for free delivery. Confirming it charges no Delivery fee." : "Quoting the fee confirms the Order, and the Customer is told what they owe."}
-      confirm={cod.asking ? "Save" : cod.flagged ? "Save & continue" : free ? "Confirm order" : "Quote and confirm"}
+      trigger={<><Check aria-hidden className="size-4" />{free ? "Confirm free delivery" : "Confirm"}</>}
+      title={`Confirm Order #${order.id}?`}
+      description={free ? "This Order qualifies for free delivery. Confirming it charges no Delivery fee." : "Enter the Delivery fee. Confirming sends the Customer an email with the total to pay."}
+      confirm={cod.asking ? "Save" : cod.flagged ? "Save & continue" : "Confirm order"}
       busy={cod.asking ? "Saving…" : "Confirming…"}
       disabled={cod.disabled || (!cod.asking && fee === null)}
       run={cod.run}
       successMessage={cod.successMessage}
     >
+      <OrderSummary order={order} />
       {cod.panel}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
@@ -112,7 +155,7 @@ export function OrdersActions({ order, codFlags = [] }: { order: OrderDetail; co
 
   return (
     <>
-      {CANCELLABLE_STATUSES.includes(order.status) && (
+      {CANCELLABLE_STATUSES.includes(order.status) && !(placed && !waitingForId && order.deliveryFee === null) && (
         <OrderActionDialog
           trigger="Cancel order"
           title={`Cancel Order #${order.id}?`}
@@ -132,6 +175,7 @@ export function OrdersActions({ order, codFlags = [] }: { order: OrderDetail; co
         </p>
       )}
       {!waitingForId && order.deliveryFee === null && CANCELLABLE_STATUSES.includes(order.status) && <QuoteFee order={order} flags={codFlags} />}
+      {placed && !waitingForId && order.deliveryFee === null && <RejectOrder order={order} />}
     </>
   );
 }

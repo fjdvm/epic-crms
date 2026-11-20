@@ -22,7 +22,7 @@ export interface CodCollection { amountInCentavos: number; staffId: string; staf
 export type OrderStatusUpdate =
   | { status: "preparing"; staffId: string; staffName: string; courier?: never }
   | { status: "confirmed"; amounts: ConfirmedAmounts; deliveryFeeInCentavos?: number; courier?: never }
-  | { status: "cancelled"; deliveryFeeInCentavos?: never; courier?: never; amounts?: never }
+  | { status: "cancelled"; /** Why Staff rejected the Order; the Customer is shown it. */ reason?: string; deliveryFeeInCentavos?: never; courier?: never; amounts?: never }
   | { status: "dispatched"; courier?: CourierBooking; deliveryFeeInCentavos?: never }
   | { status: "delivered"; deliveryPhotoFileId: string; codCollection?: CodCollection; deliveryFeeInCentavos?: never; courier?: never }
   | { status: "paid"; staffId: string; staffName: string; approvedAnyway?: { reason: string }; deliveryFeeInCentavos?: never; courier?: never };

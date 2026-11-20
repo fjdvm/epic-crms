@@ -3,7 +3,7 @@ import { proofOutcome } from "@/features/orders/proof-account";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cancelOrder, cancelPaymentOrder, markPaid, quoteDeliveryFee, rejectPaymentProof, resendStatusEmail } from "@/features/orders/actions";
+import { cancelOrder, cancelPaymentOrder, markPaid, quoteDeliveryFee, rejectOrder, rejectPaymentProof, resendStatusEmail } from "@/features/orders/actions";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
@@ -16,6 +16,7 @@ vi.mock("@/features/orders/actions", () => ({
   loadPackingSlip: vi.fn(),
   quoteDeliveryFee: vi.fn(),
   cancelOrder: vi.fn(),
+  rejectOrder: vi.fn(),
   cancelPaymentOrder: vi.fn(),
   markPaid: vi.fn(),
   rejectPaymentProof: vi.fn(),
@@ -216,7 +217,7 @@ describe("an Order's detail", () => {
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Senior Citizen · Waiting for review");
     expect(screen.getByRole("link", { name: "Review the ID" }).getAttribute("href")).toBe("/approvals?type=id-check");
     expect(screen.getByRole("note", { name: "Senior/PWD review first" }).textContent).toContain("before confirming");
-    expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
   });
 
   it("shows a ₱0 fee as free delivery on any subtotal, with no subtotal rule note", () => {
@@ -354,7 +355,7 @@ describe("an Order's detail", () => {
     for (const status of ["placed", "confirmed", "awaiting payment", "preparing"]) {
       for (const modules of [[], ["Fulfilment"]]) {
         const { unmount } = render(<OrderDetailView order={detail({ status, deliveryFee: null })} modules={modules} />);
-        for (const name of ["Cancel order", "Quote delivery fee", "Confirm order"]) {
+        for (const name of ["Cancel order", "Confirm", "Confirm order"]) {
           expect(screen.queryByRole("button", { name })).toBeNull();
         }
         unmount();
@@ -376,12 +377,34 @@ const confirmed = (id: number, deliveryFeeInCentavos: number | null = null) =>
   ({ ok: true as const, order: { id, status: "confirmed", deliveryFeeInCentavos } });
 
 describe("the Orders Module's actions on an Order's detail", () => {
-  it("offers a placed Delivery Order a fee quote and cancel, but no plain confirm", () => {
+  it("offers a placed Delivery Order Confirm and Reject, but no plain cancel", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
 
-    expect(screen.getByRole("button", { name: "Quote delivery fee" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Cancel order" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Confirm order" })).toBeNull();
+  });
+
+  it("Reject needs a reason and sends it", async () => {
+    vi.mocked(rejectOrder).mockResolvedValue({ ok: true, order: { id: 1042, status: "cancelled", deliveryFeeInCentavos: null } });
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Reject Order #1042?" });
+    const submit = within(dialog).getByRole("button", { name: "Reject order" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "We cannot deliver there" } });
+    fireEvent.click(submit);
+    await waitFor(() => expect(rejectOrder).toHaveBeenCalledWith(1042, "We cannot deliver there"));
+  });
+
+  it("shows the Order's details in the Confirm dialog", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    expect(within(dialog).getByLabelText("Order details")).toBeTruthy();
+    expect(within(dialog).getByLabelText(/Delivery fee to charge/)).toBeTruthy();
   });
 
   it("offers cancel up to preparing, and nothing to confirm once past placed", () => {
@@ -470,7 +493,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000, freeDelivery: { qualifies: true, thresholdInCentavos: 50_000 } })} modules={ORDERS} />);
     fireEvent.click(screen.getByRole("button", { name: "Confirm free delivery" }));
 
-    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
     const fee = within(dialog).getByLabelText(/Delivery fee to charge/) as HTMLInputElement;
     expect(fee.value).toBe("0.00");
     expect(fee.disabled).toBe(true);
@@ -483,8 +506,8 @@ describe("the Orders Module's actions on an Order's detail", () => {
 
   it("keeps the fee editable for a Delivery Order that does not qualify", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000, freeDelivery: { qualifies: false, thresholdInCentavos: 200_000 } })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
-    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
     const fee = within(dialog).getByLabelText(/Delivery fee to charge/) as HTMLInputElement;
     expect(fee.disabled).toBe(false);
     fireEvent.change(fee, { target: { value: "150" } });
@@ -500,12 +523,12 @@ describe("the Orders Module's actions on an Order's detail", () => {
   it("offers optional Lalamove and Grab estimates that are never sent; only the fee to charge is", async () => {
     vi.mocked(quoteDeliveryFee).mockResolvedValue(confirmed(1042, 19_000));
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
-    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
     fireEvent.change(within(dialog).getByLabelText("Lalamove estimate"), { target: { value: "₱186 · motorcycle" } });
     fireEvent.change(within(dialog).getByLabelText("Grab estimate"), { target: { value: "₱204 · motorcycle" } });
-    const submit = within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement;
+    const submit = within(dialog).getByRole("button", { name: "Confirm order" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee to charge/), { target: { value: "190" } });
@@ -518,10 +541,10 @@ describe("the Orders Module's actions on an Order's detail", () => {
     const pending = deferred<Awaited<ReturnType<typeof quoteDeliveryFee>>>();
     vi.mocked(quoteDeliveryFee).mockReturnValue(pending.promise);
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
-    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
-    const submit = within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement;
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    const submit = within(dialog).getByRole("button", { name: "Confirm order" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150.50" } });
@@ -540,24 +563,24 @@ describe("the Orders Module's actions on an Order's detail", () => {
 
   it("sends the discounted total when quoting a Delivery fee", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, discount: 5_000, total: 95_000 })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const dialog = screen.getByRole("alertdialog");
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "0" } });
     expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱950.00");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Quote and confirm" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
     expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 95_000);
   });
 
   it("will not send a fee that is not an amount in pesos", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const dialog = screen.getByRole("alertdialog");
 
     // Letters and symbols never get into the field, so what is left is empty or a lone dot.
     for (const value of ["", ".", "abc", "-", "e"]) {
       fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value } });
       expect((within(dialog).getByLabelText(/Delivery fee/) as HTMLInputElement).value).toBe(value === "." ? "." : "");
-      expect((within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement).disabled).toBe(true);
+      expect((within(dialog).getByRole("button", { name: "Confirm order" }) as HTMLButtonElement).disabled).toBe(true);
     }
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "1.234e3" } });
     expect((within(dialog).getByLabelText(/Delivery fee/) as HTMLInputElement).value).toBe("1.23");
@@ -567,10 +590,10 @@ describe("the Orders Module's actions on an Order's detail", () => {
   it("shows a refused quote's reason and keeps the fee pending", async () => {
     vi.mocked(quoteDeliveryFee).mockResolvedValue({ ok: false, reason: "Storefront refused the change." });
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const dialog = screen.getByRole("alertdialog");
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Quote and confirm" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Storefront refused the change."));
     expect(screen.getAllByText("Delivery fee")[0].nextElementSibling?.textContent).toBe("Pending");

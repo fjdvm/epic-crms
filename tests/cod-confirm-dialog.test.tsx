@@ -10,14 +10,14 @@ import type { OrderDetail, OrderList } from "@/features/orders/orders";
 
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
-vi.mock("@/features/orders/actions", () => ({ quoteDeliveryFee: vi.fn(), cancelOrder: vi.fn() }));
+vi.mock("@/features/orders/actions", () => ({ quoteDeliveryFee: vi.fn(), cancelOrder: vi.fn(), rejectOrder: vi.fn() }));
 vi.mock("@/features/orders/cod-actions", () => ({ recordAskGcashFirst: vi.fn() }));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
-const order = { id: 1058, status: "placed", fulfillmentMethod: "delivery", deliveryFee: null, subtotal: 219000, discount: 0 } as unknown as OrderDetail;
+const order = { id: 1058, status: "placed", fulfillmentMethod: "delivery", deliveryFee: null, subtotal: 219000, discount: 0, customer: { id: "c1", name: "Jane Cruz" }, lines: [{ product: "Ube Halaya", size: "250g", quantity: 2, price: 109500 }], address: null } as unknown as OrderDetail;
 const flags = [
   { rule: "first-order", label: "First order", reason: "No earlier Orders on this account" },
   { rule: "first-order-over-amount", label: "First order over the set amount", reason: "A first Order over the amount an Admin set" },
@@ -25,7 +25,7 @@ const flags = [
 
 /** Opens the quote dialog and types the fee Staff would charge. */
 function openQuote() {
-  fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
   fireEvent.change(screen.getByLabelText(/Delivery fee to charge/), { target: { value: "150" } });
 }
 
@@ -73,7 +73,7 @@ describe("COD confirm dialog", () => {
     render(<OrdersActions order={order} />);
     openQuote();
     expect(screen.queryByTestId("cod-confirm")).toBeNull();
-    expect(screen.getByRole("button", { name: "Quote and confirm", hidden: false })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Confirm order", hidden: false })).toBeTruthy();
   });
 });
 

@@ -45,7 +45,7 @@ export function OrderActionDialog({
   onOptimistic,
 }: {
   /** The button's label on the page. */
-  trigger: string;
+  trigger: React.ReactNode;
   /** Extra classes for that button, such as a smaller one on a board card. */
   triggerClassName?: string;
   /** True while the page's button cannot be pressed yet, such as before every field is confirmed. */
