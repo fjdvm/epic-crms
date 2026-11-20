@@ -15,7 +15,7 @@ import { LOW_STOCK_BELOW, shopLabel, type HoldingOrder, type StockPage, type Sto
 type Tab = "all" | "low" | "sold-out";
 
 const GRID = "flex items-center gap-2 px-4";
-const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", available: "w-[140px] shrink-0 text-right", shows: "w-[170px] shrink-0" };
+const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", shows: "w-[170px] shrink-0" };
 
 const isLow = (row: StockRow) => row.marker === null && typeof row.shows === "object";
 const isSoldOut = (row: StockRow) => row.marker === null && row.shows === "Sold out";
@@ -173,10 +173,9 @@ export function StockView({ page }: { page: StockPage }) {
             </label>
           </div>
           <div className={cn(GRID, "rounded-t-xl bg-[#fafafa] py-2.5 text-xs font-medium text-[#71717a]")}>
-            <div className="min-w-0 flex-1">Product · size</div>
-            <div className={COLUMN.stock}>In stock (IMS)</div>
+            <div className="min-w-0 flex-1">Products</div>
+            <div className={COLUMN.stock}>Stocks</div>
             <div className={COLUMN.reserved}>Reserved</div>
-            <div className={COLUMN.available}>Available online</div>
             <div className={COLUMN.shows}>Shop shows</div>
           </div>
           {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">No sizes here.</p>}
@@ -189,7 +188,6 @@ export function StockView({ page }: { page: StockPage }) {
               </div>
               <div className={COLUMN.stock}>{quantity(row.inStock)}</div>
               <div className={COLUMN.reserved}><ReservedCell row={row} onOpen={setOpened} /></div>
-              <div className={cn(COLUMN.available, "font-semibold", isSoldOut(row) && "text-[#b42318]")}>{quantity(row.available)}</div>
               <div className={COLUMN.shows}><ShowsPill row={row} /></div>
             </div>
           ))}

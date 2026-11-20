@@ -161,3 +161,11 @@ it("shows the unreachable alert and an empty list, not stale rows, when the feed
   expect(screen.getByRole("alert").textContent).toContain("could not be reached");
   expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(0);
 });
+
+it("has only the Products, Stocks, Reserved and Shop shows columns", () => {
+  render(<StockView page={page} />);
+  const header = screen.getByText("Products").parentElement as HTMLElement;
+  expect(Array.from(header.children).map((cell) => cell.textContent)).toEqual(["Products", "Stocks", "Reserved", "Shop shows"]);
+  expect(screen.queryByText("Available online")).toBeNull();
+  expect(screen.queryByText("In stock (IMS)")).toBeNull();
+});
