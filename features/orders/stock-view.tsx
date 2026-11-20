@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import Link from "next/link";
 
+import { ZoomableImage } from "@/components/zoomable-image";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PILL, Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,15 @@ function HoldingOrders({ row, onClose }: { row: StockRow | null; onClose: () => 
         </ul>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The product's image tile; a click zooms it. No image gives a plain tile that does nothing. */
+function ProductImage({ row }: { row: StockRow }) {
+  return (
+    <div data-image-tile className="size-10 shrink-0 overflow-hidden rounded-lg border border-[#e6e1ee] bg-[#f5f2f9]">
+      {row.image && <ZoomableImage src={row.image} alt={row.product} className="size-10 object-cover" />}
+    </div>
   );
 }
 
@@ -172,6 +182,7 @@ export function StockView({ page }: { page: StockPage }) {
           {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">No sizes here.</p>}
           {rows.map((row) => (
             <div key={row.sizeId} data-stock-row className={cn(GRID, "border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", isSoldOut(row) && "bg-[#fff7f7]")}>
+              <ProductImage row={row} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{rowLabel(row)}</p>
                 {row.marker?.kind === "not-on-shop" && <p data-missing className="truncate text-xs font-normal text-[#6e6680]">Missing: {row.marker.missing.join(", ")}</p>}
