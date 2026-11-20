@@ -33,7 +33,7 @@ export function PaymentAccountCard({ account: a }: { account: PaymentAccountRow 
           <ZoomableImage src={`/api/payment-accounts/${a.id}/qr`} alt={`QR for ${a.label}`} className="size-16 shrink-0 rounded-sm border border-[#e6e1ee] object-contain" />
         )}
         <div className="min-w-0 flex-1 space-y-1.5">
-          <h3 className="truncate font-serif text-2xl text-[#4a2377]">{a.label}</h3>
+          <h3 className="truncate text-2xl font-semibold text-[#4a2377]">{a.label}</h3>
           <span className={cn("inline-block rounded-full px-3 py-0.5 text-xs font-medium", a.active ? "bg-[#e9dffa] text-[#4a2377]" : "bg-[#f0f0f2] text-[#6e6680]")}>{a.active ? "Active" : "Inactive"}</span>
           <p className="truncate text-xs text-[#6e6680]">{summary}</p>
         </div>
