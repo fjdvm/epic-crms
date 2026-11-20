@@ -1,10 +1,16 @@
 import type postgres from "postgres";
 
+import { crmsDatabase } from "@/lib/crms-db";
 import { customerNameSql } from "@/lib/deleted-customer";
 import { readProductFeed, readProductStock, readStock, type ImsProduct, type ImsSizeStock } from "@/lib/storefront";
 
+import { loadProductContent, type ProductContent } from "./product-content";
+
 /** A Size with fewer than this many available is low stock; the shop then says "Only N left". Matches the storefront. */
 export const LOW_STOCK_BELOW = 10;
+
+/** "Ube Jam Extreme · 250g Container"; the name alone for a product with no Variant. */
+export const rowLabel = (row: Pick<StockRow, "product" | "size">): string => (row.size ? `${row.product} · ${row.size}` : row.product);
 
 export type ShopShows = "In stock" | "Sold out" | { left: number } | "Unknown";
 
@@ -39,8 +45,10 @@ export interface StockRow {
   product: string;
   /** The IMS Variant; empty for a product with no Variant (one unlabelled default Size). */
   size: string;
-  /** The IMS image reference, or null when the product has none. */
+  /** The image Staff published, else the IMS image; null when the product has neither. */
   image: string | null;
+  /** What Staff published for the shop; empty until they add one. */
+  description: string;
   marker: StockMarker | null;
   /** Null when the IMS could not answer for this Size. */
   inStock: number | null;
@@ -60,12 +68,29 @@ export interface StockPage {
 
 export type StockResult = { ok: true; page: StockPage } | { ok: false };
 
-const markerOf = (item: ImsProduct): StockMarker | null => {
+const markerOf = (item: ImsProduct, content?: ProductContent): StockMarker | null => {
   if (!item.active) return { kind: "discontinued" };
-  const missing = ([["name", !item.name], ["image", !item.image], ["price", item.price === null]] as const)
+  const missing = ([["name", !item.name], ["image", !item.image && !content?.imageUrl], ["price", item.price === null]] as const)
     .filter(([, absent]) => absent).map(([what]) => what);
   return missing.length > 0 ? { kind: "not-on-shop", missing } : null;
 };
+
+/** What Staff published, by product id. The table being unreadable only means the IMS image and no description show. */
+async function readContent(ids: number[], read: ContentReader): Promise<Map<number, ProductContent>> {
+  try { return await read(ids); }
+  catch (error) {
+    console.error("Published product content could not be read", error);
+    return new Map();
+  }
+}
+
+type ContentReader = (productIds: number[]) => Promise<Map<number, ProductContent>>;
+const defaultContent: ContentReader = (ids) => loadProductContent(crmsDatabase(), ids);
+
+const sizeSource = (item: ImsProduct, content: ProductContent | undefined): SizeSource => ({
+  id: item.productId, product: item.name, size: item.variant ?? "", image: content?.imageUrl ?? item.image,
+  description: content?.description ?? "", marker: markerOf(item, content),
+});
 
 /**
  * Every Size the IMS holds, with its stock. Read on demand; the IMS stays the source of truth. When the
@@ -76,12 +101,14 @@ export async function loadStock(
   connect: () => postgres.Sql,
   read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
+  readPublished: ContentReader = defaultContent,
 ): Promise<StockResult> {
   try {
     const feed = await readFeed();
     if (!feed) return { ok: true, page: { rows: [], imsReachable: false, summary: summarize([]) } };
+    const published = await readContent(feed.map((item) => item.productId), readPublished);
     const sizes: SizeSource[] = feed
-      .map((item) => ({ id: item.productId, product: item.name, size: item.variant ?? "", image: item.image, marker: markerOf(item) }))
+      .map((item) => sizeSource(item, published.get(item.productId)))
       .sort((a, b) => a.product.localeCompare(b.product) || a.id - b.id);
     const stock = await read(sizes.map((size) => size.id));
     const holding = await loadHoldingOrders(connect);
@@ -93,13 +120,13 @@ export async function loadStock(
   }
 }
 
-interface SizeSource { id: number; product: string; size: string; image: string | null; marker: StockMarker | null }
+interface SizeSource { id: number; product: string; size: string; image: string | null; description: string; marker: StockMarker | null }
 
 function toRow(size: SizeSource, stock: Map<number, ImsSizeStock> | null, holding: Map<number, HoldingOrder[]> | null): StockRow {
   const held = stock?.get(size.id);
   const available = held?.available ?? null;
   return {
-    sizeId: size.id, product: size.product, size: size.size, image: size.image, marker: size.marker,
+    sizeId: size.id, product: size.product, size: size.size, image: size.image, description: size.description, marker: size.marker,
     inStock: held?.quantity ?? null, reserved: held?.reserved ?? null, available, shows: shopShows(available),
     orders: holding?.get(size.id) ?? (holding ? [] : null),
   };
@@ -135,6 +162,7 @@ export async function loadStockSize(
   sizeId: number,
   read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
+  readPublished: ContentReader = defaultContent,
 ): Promise<StockSizeResult> {
   try {
     const feed = await readFeed();
@@ -143,7 +171,8 @@ export async function loadStockSize(
     if (!item) return { ok: true, row: null };
     const stock = await read([sizeId]);
     const holding = await loadHoldingOrders(connect);
-    return { ok: true, row: toRow({ id: item.productId, product: item.name, size: item.variant ?? "", image: item.image, marker: markerOf(item) }, stock, holding) };
+    const published = await readContent([sizeId], readPublished);
+    return { ok: true, row: toRow(sizeSource(item, published.get(sizeId)), stock, holding) };
   } catch (error) {
     console.error("A Size could not be refetched", error);
     return { ok: false };

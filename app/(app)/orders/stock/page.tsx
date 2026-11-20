@@ -5,6 +5,7 @@ import { LiveStock } from "@/features/orders/stock-live";
 import { loadStock } from "@/features/orders/stock";
 import { StockHeader, StockSkeleton } from "@/features/orders/stock-view";
 import { ORDERS_MODULE } from "@/lib/portal/config";
+import { canWork } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
@@ -21,8 +22,8 @@ export default function ProductsStockPage() {
 }
 
 async function StockData() {
-  // Orders gates this page for Staff, Manager, and the read-only Admin and CEO alike; nothing here changes stock.
-  await requireModule(ORDERS_MODULE);
+  // Orders gates this page for Staff, Manager, and the read-only Admin and CEO alike; only Staff and Manager may edit a product.
+  const staff = await requireModule(ORDERS_MODULE);
   const result = await loadStock(ticketsDatabase);
   if (!result.ok) {
     return (
@@ -32,5 +33,5 @@ async function StockData() {
       </Alert>
     );
   }
-  return <LiveStock page={result.page} />;
+  return <LiveStock page={result.page} canEdit={canWork(staff)} />;
 }

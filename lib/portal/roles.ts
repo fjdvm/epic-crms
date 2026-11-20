@@ -11,7 +11,7 @@ export function shopRole(role: string): ShopRole | null {
     default: return null;
   }
 }
-export function canWork(staff: Staff): boolean {
+export function canWork(staff: Pick<Staff, "role">): boolean {
   return ["staff", "manager"].includes(shopRole(staff.role) ?? "");
 }
 /** Management is for a Manager or the CEO; Staff and Admin cannot open it even if a Module reached them. */

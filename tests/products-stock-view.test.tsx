@@ -16,7 +16,7 @@ import { StockSkeleton, StockView } from "@/features/orders/stock-view";
 afterEach(cleanup);
 
 const row = (sizeId: number, product: string, available: number | null, shows: StockPage["rows"][number]["shows"]) =>
-  ({ sizeId, product, size: "250 g", image: null, marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
+  ({ sizeId, product, size: "250 g", image: null, description: "", marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
 const page: StockPage = {
   imsReachable: true,
   summary: { sizes: 3, soldOut: 1, reserved: 6, low: 1 },
@@ -165,7 +165,7 @@ it("shows the unreachable alert and an empty list, not stale rows, when the feed
 it("has only the Products, Stocks, Reserved and Shop shows columns", () => {
   render(<StockView page={page} />);
   const header = screen.getByText("Products").parentElement as HTMLElement;
-  expect(Array.from(header.children).map((cell) => cell.textContent)).toEqual(["Products", "Stocks", "Reserved", "Shop shows"]);
+  expect(Array.from(header.children).map((cell) => cell.textContent).filter(Boolean)).toEqual(["Products", "Stocks", "Reserved", "Shop shows"]);
   expect(screen.queryByText("Available online")).toBeNull();
   expect(screen.queryByText("In stock (IMS)")).toBeNull();
 });

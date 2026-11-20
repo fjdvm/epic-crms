@@ -1,21 +1,22 @@
 "use client";
 
-import { Link2, Search } from "lucide-react";
+import { Link2, Pencil, Search } from "lucide-react";
 import { useState } from "react";
 
 import Link from "next/link";
 
 import { ZoomableImage } from "@/components/zoomable-image";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ProductEditDrawer } from "./product-edit-drawer";
 import { PILL, Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
 
-import { LOW_STOCK_BELOW, shopLabel, type HoldingOrder, type StockPage, type StockRow } from "./stock";
+import { LOW_STOCK_BELOW, rowLabel, shopLabel, type HoldingOrder, type StockPage, type StockRow } from "./stock";
 
 type Tab = "all" | "low" | "sold-out";
 
 const GRID = "flex items-center gap-2 px-4";
-const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", shows: "w-[170px] shrink-0" };
+const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", shows: "w-[170px] shrink-0", edit: "w-8 shrink-0" };
 
 const isLow = (row: StockRow) => row.marker === null && typeof row.shows === "object";
 const isSoldOut = (row: StockRow) => row.marker === null && row.shows === "Sold out";
@@ -27,7 +28,6 @@ function ShowsPill({ row }: { row: StockRow }) {
 }
 
 const quantity = (value: number | null) => (value === null ? "–" : value);
-const rowLabel = (row: StockRow) => (row.size ? `${row.product} · ${row.size}` : row.product);
 const sizes = (count: number) => `${count} ${count === 1 ? "size" : "sizes"}`;
 
 const orderCount = (count: number) => `${count} ${count === 1 ? "Order" : "Orders"}`;
@@ -91,7 +91,7 @@ export function StockHeader() {
           <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Stock</h1>
           <Pill className="bg-[#e1f5ee] text-[#0f6e56]"><Link2 className="mr-1 inline size-3" aria-hidden />From IMS</Pill>
         </div>
-        <p className="text-sm text-[#6e6680]">What the online shop can sell. Read-only; quantities come from IMS.</p>
+        <p className="text-sm text-[#6e6680]">What the online shop can sell. Quantities come from IMS; Staff add the shop image and description.</p>
       </div>
       <a href={IMS_URL} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
         <Link2 className="size-4" aria-hidden />
@@ -111,10 +111,12 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
   );
 }
 
-export function StockView({ page }: { page: StockPage }) {
+/** `canEdit` is false for the read-only Roles (Admin, CEO), who see no edit button. */
+export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?: boolean }) {
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");
   const [opened, setOpened] = useState<StockRow | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const { summary } = page;
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: "all", label: "All sizes", count: page.rows.length },
@@ -162,7 +164,7 @@ export function StockView({ page }: { page: StockPage }) {
         ))}
       </div>
       <div className="overflow-x-auto rounded-xl border border-[#e6e1ee] bg-white">
-        <div className="min-w-[770px]">
+        <div className="min-w-[810px]">
           <div className="p-3">
             <label className="flex w-[260px] items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3 py-1.5">
               <Search className="size-3.5 text-[#71717a]" aria-hidden />
@@ -177,6 +179,7 @@ export function StockView({ page }: { page: StockPage }) {
             <div className={COLUMN.stock}>Stocks</div>
             <div className={COLUMN.reserved}>Reserved</div>
             <div className={COLUMN.shows}>Shop shows</div>
+            <div className={COLUMN.edit} />
           </div>
           {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">No sizes here.</p>}
           {rows.map((row) => (
@@ -189,11 +192,22 @@ export function StockView({ page }: { page: StockPage }) {
               <div className={COLUMN.stock}>{quantity(row.inStock)}</div>
               <div className={COLUMN.reserved}><ReservedCell row={row} onOpen={setOpened} /></div>
               <div className={COLUMN.shows}><ShowsPill row={row} /></div>
+              <div className={COLUMN.edit}>
+                {canEdit && (
+                  <button
+                    type="button" onClick={() => setEditingId(row.sizeId)} aria-label={`Edit ${rowLabel(row)}`}
+                    className="flex size-8 items-center justify-center rounded-lg text-[#6e6680] hover:bg-[#f5f2f9] hover:text-[#5b2a86]"
+                  >
+                    <Pencil className="size-4" aria-hidden />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
       </div>
       <HoldingOrders row={opened} onClose={() => setOpened(null)} />
+      <ProductEditDrawer row={page.rows.find((row) => row.sizeId === editingId) ?? null} onClose={() => setEditingId(null)} />
     </div>
   );
 }
