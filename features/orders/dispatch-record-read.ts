@@ -4,7 +4,7 @@ import { COURIERS, type CourierName, type DispatchRecord } from "./dispatch-reco
 type Row = { courier: string | null; link: string | null; rider_name: string | null; rider_plate: string | null; rider_phone: string | null };
 
 /**
- * The courier booking of a Delivery Order, or null when it has none (a Pickup Order, or one dispatched before bookings were kept).
+ * The courier booking of a Delivery Order, or null when it has none (one dispatched before bookings were kept).
  * Rider details are read only when `withRider` is true, so a viewer who may not see them never receives them.
  * Columns are read through JSON so a storefront that has not added them yet simply has no booking.
  */

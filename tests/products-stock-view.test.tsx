@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/features/orders/actions", () => ({
-  quoteDeliveryFee: vi.fn(), confirmPickup: vi.fn(), cancelOrder: vi.fn(), cancelPaymentOrder: vi.fn(), markPaid: vi.fn(),
+  quoteDeliveryFee: vi.fn(), cancelOrder: vi.fn(), cancelPaymentOrder: vi.fn(), markPaid: vi.fn(),
 }));
 
 import { OrderDetailView } from "@/features/orders/order-detail";
@@ -61,7 +61,7 @@ it("says so when the IMS cannot be read and implies no polling", () => {
 
 it("shows each Order line's reserved quantity", () => {
   const order = {
-    id: 1, createdAt: new Date(), status: "confirmed", fulfillmentMethod: "pickup", paymentMethod: "cash-on-delivery",
+    id: 1, createdAt: new Date(), status: "confirmed", fulfillmentMethod: "delivery", paymentMethod: "cash-on-delivery",
     lines: [{ id: 11, product: "Halaya", size: "500g", quantity: 4, price: 50_000 }], subtotal: 200_000, deliveryFee: null,
     total: 200_000, address: null, feedback: null, paymentProof: null, paymentLabel: "Unpaid",
     customer: { id: "c1", name: "Maria" }, paidBy: null, codCollection: null, packedBy: null, deliveryPhotoFileId: null, deliveryPhotoRemovedAt: null,

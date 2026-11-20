@@ -15,7 +15,7 @@ The storefront owns the verification; CREOMS reads it and asks the storefront to
   `revokeVerification(id, reason)`: Managers only; Staff are told to request a Manager. Admin and CEO are read-only.
 - Audit: `pwd.approved` (an override carries `override: true` and the reason), `pwd.declined`, `pwd.revoked`.
   Metadata holds the verification id, ID type, expiry date and reason. Never the ID number, hash or photo.
-- Confirming (`confirmPickup`, `quoteDeliveryFee`) is refused while the Order's ID is still pending review.
+- Confirming (`quoteDeliveryFee`) is refused while the Order's ID is still pending review.
 - Free delivery is checked on the gross subtotal, so the 5% discount never costs free delivery.
 
 ## Storefront contract (owned by Ecommerce)
@@ -40,8 +40,7 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
   Approve needs the ID's expiry date; Decline needs a reason. Staff see "Request approval" on a declined, revoked or
   approved ID; Managers get Override and Revoke; Admin and CEO see no buttons. No Figma frame exists, so it is built from
   the foundation node. Never optimistic: the Customer is emailed.
-- Order detail's Customer card shows Senior/PWD status ("Not verified" by default) and, for an approved Pickup,
-  a reminder to see the original ID at collection.
+- Order detail's Customer card shows Senior/PWD status ("Not verified" by default).
 - Order detail (#571) shows a "Senior/PWD discount" card only when the Order has an approved discount: the discount,
   "₱X of ₱125.00" weekly allowance used, and the reduction reason when the cap cut it. CREOMS reads two optional
   `public.orders` columns the storefront saves at confirmation: `senior_pwd_allowance_used_in_centavos` (this ID's week

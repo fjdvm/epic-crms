@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { confirmPickup as realConfirm, quoteDeliveryFee as realQuote } from "@/features/orders/actions";
+import { quoteDeliveryFee as realQuote } from "@/features/orders/actions";
 import { approveVerification, declineVerification, loadVerificationDetail, loadVerificationPhoto, loadVerifications, overrideVerification, revokeVerification } from "@/features/senior-pwd/actions";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
@@ -26,7 +26,6 @@ async function shownTotal(id: number, fee: number) {
   return row ? row.s - row.d + fee : 0;
 }
 const quoteDeliveryFee = async (id: number, fee: number, choice?: Parameters<typeof realQuote>[3]) => realQuote(id, fee, await shownTotal(id, fee), choice);
-const confirmPickup = async (id: number, choice?: Parameters<typeof realConfirm>[2]) => realConfirm(id, await shownTotal(id, 0), choice);
 let portal: FakePortal;
 let storefront: FakeStorefront;
 let oldDirectory = false;
@@ -253,16 +252,12 @@ it("keeps Admin and CEO read-only", async () => {
 
 it("does not confirm an Order while its Senior/PWD ID waits for review, and confirms after approval", async () => {
   const { id } = await upload();
-  const [pickup] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, senior_pwd_verification_id)
-    values ('c1','placed','pickup',100000,${id}) returning id`;
   const [delivery] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, senior_pwd_verification_id)
     values ('c1','placed','delivery',100000,${id}) returning id`;
   await signIn("ana");
   const held = { ok: false, reason: "Review the Customer's Senior/PWD ID before confirming this Order." };
-  expect(await confirmPickup(pickup.id)).toEqual(held);
   expect(await quoteDeliveryFee(delivery.id, 15000)).toEqual(held);
   await approveVerification(id, future(30));
-  expect(await confirmPickup(pickup.id)).toMatchObject({ ok: true, order: { status: "confirmed" } });
   expect(await quoteDeliveryFee(delivery.id, 15000)).toMatchObject({ ok: true });
 });
 

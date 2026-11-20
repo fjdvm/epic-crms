@@ -70,7 +70,7 @@ export function NotesTab({ customerId, notes, readFailed = false, author, onNote
     <TabCard title="Customer notes" note="Only staff can see these">
       {author && <form onSubmit={event => { event.preventDefault(); askToSave(); }} className="shrink-0 space-y-2">
         <div className="flex items-start gap-2 rounded-lg border border-border p-2.5">
-          <Textarea aria-label="Customer note" aria-describedby="customer-note-counter" placeholder={'Add a note… e.g. "Prefers pickup on Saturdays"'} value={text} disabled={saving} onChange={event => setText(event.target.value)} className="min-h-16 flex-1 resize-none border-0 shadow-none" />
+          <Textarea aria-label="Customer note" aria-describedby="customer-note-counter" placeholder={'Add a note… e.g. "Prefers evening deliveries"'} value={text} disabled={saving} onChange={event => setText(event.target.value)} className="min-h-16 flex-1 resize-none border-0 shadow-none" />
           <Button type="submit" variant="secondary" size="sm" disabled={saving}>Save note</Button>
         </div>
         <p id="customer-note-counter" className="text-right text-xs text-muted-foreground">{count.toLocaleString("en-US")} / 2,000</p>

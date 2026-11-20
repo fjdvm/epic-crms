@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn() }));
 vi.mock("@/features/orders/actions", () => ({
   updateDispatchRecord: vi.fn(), dispatchOrder: vi.fn(), startPreparing: vi.fn(), loadPackingSlip: vi.fn(), deliverOrder: vi.fn(),
-  markReadyForPickup: vi.fn(), markPickedUp: vi.fn(), quoteDeliveryFee: vi.fn(), confirmPickup: vi.fn(), cancelOrder: vi.fn(),
+  quoteDeliveryFee: vi.fn(), cancelOrder: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
@@ -93,7 +93,7 @@ describe("the Order page", () => {
   const view = (props: Partial<Parameters<typeof OrderDetailView>[0]>) =>
     render(<OrderDetailView role="staff" order={detail({})} modules={["Orders", "Fulfilment"]} returns={[]} reservations={new Map()} dispatch={record()} {...props} />);
 
-  it("lets Staff edit while dispatched, but not once delivered, and never on a Pickup Order", () => {
+  it("lets Staff edit while dispatched, but not once delivered", () => {
     const { unmount } = view({});
     expect(screen.getByRole("button", { name: "Edit dispatch details" })).toBeTruthy();
     unmount();
@@ -101,8 +101,6 @@ describe("the Order page", () => {
     expect(screen.getByTestId("dispatch-record")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Edit dispatch details" })).toBeNull();
     delivered.unmount();
-    view({ order: detail({ fulfillmentMethod: "pickup", status: "ready for pickup" }) });
-    expect(screen.queryByTestId("dispatch-record")).toBeNull();
   });
 
   it.each(["admin", "ceo"] as const)("is read-only for %s", role => {

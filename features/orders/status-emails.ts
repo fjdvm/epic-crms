@@ -6,19 +6,16 @@ import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE } fro
  */
 export const STATUS_EMAILS = {
   confirmation: { label: "confirmation", module: ORDERS_MODULE },
-  // The confirmation emails the storefront records today, by fulfilment and payment kind.
+  // The confirmation emails the storefront records today, by payment kind.
   "delivery-confirmed": { label: "delivery confirmation", module: ORDERS_MODULE },
   "online-delivery-confirmed": { label: "delivery confirmation", module: ORDERS_MODULE },
-  "pickup-confirmed": { label: "pickup confirmation", module: ORDERS_MODULE },
-  "online-pickup-confirmed": { label: "pickup confirmation", module: ORDERS_MODULE },
   "payment-verified": { label: "payment verified", module: PAYMENTS_MODULE },
   "payment-rejected": { label: "payment rejected", module: PAYMENTS_MODULE },
   "payment-expired": { label: "payment expired", module: PAYMENTS_MODULE },
   "manager-review-started": { label: "Manager review started", module: PAYMENTS_MODULE },
   preparing: { label: "Preparing", module: FULFILMENT_MODULE },
   dispatched: { label: "Out for delivery", module: FULFILMENT_MODULE },
-  "ready-for-pickup": { label: "Ready for pickup", module: FULFILMENT_MODULE },
-  completed: { label: "Delivered or Picked up", module: FULFILMENT_MODULE },
+  completed: { label: "Delivered", module: FULFILMENT_MODULE },
   // The Refunded email (#616): one per Return, its occurrence is the Return's id. A failed send never reverses the refund.
   "return-refunded": { label: "refund", module: RETURNS_MODULE },
 } as const;

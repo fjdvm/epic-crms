@@ -34,7 +34,7 @@ Handle the shop's daily work and can do anything that is easy to undo. Dashboard
 - **Customer Profiles:** add and edit customers; write notes and tasks.
 - **Orders:** confirm orders, quote the delivery fee, check the cash-on-delivery flags. Orders are placed by Customers on the storefront; Staff never create them (the one exception is the Replacement Order, made when a Manager approves a replacement).
 - **Payments:** check payment proofs (GCash, Maya or bank transfer, all manual), mark orders paid, ask a customer for a new proof. When a payment reference was already used on another Order, "Mark paid" is stopped for Staff (they see "Request approval"); a Manager can approve it anyway, with a reason.
-- **Fulfilment:** pack, dispatch with the Lalamove or Grab link, handle pickups, mark orders delivered, record failed deliveries.
+- **Fulfilment:** pack, dispatch with the Lalamove or Grab link, mark orders delivered, record failed deliveries.
 - **Returns:** inspect what came back, record whether it goes back to stock or gets written off, request a replacement or refund.
 - **Tickets and Conversations:** claim, reply, put tickets on hold, escalate, resolve, write internal notes, use AI assist.
 - **Feedback:** reply to customers.

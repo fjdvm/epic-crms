@@ -18,7 +18,6 @@ export interface MonthlyBuyers {
 
 export interface PaymentAndReceiving {
   payment: { method: string; orders: number; sales: number }[];
-  receiving: { method: string; orders: number; sales: number }[];
 }
 
 /** Refunded whole line items reduce both money and units. Sizes of the same product are combined. */
@@ -52,15 +51,15 @@ export async function bestSellersIn(sql: postgres.Sql, span: Span, sales: number
 
 /** Both breakdowns count only Orders counted in Sales, using the stored methods and net Order totals. */
 export async function paymentAndReceivingIn(sql: postgres.Sql, span: Span): Promise<PaymentAndReceiving> {
-  const rows = await sql<{ payment_method: string; fulfillment_method: string; orders: number; sales: string }[]>`
-    select o.payment_method, o.fulfillment_method, count(*)::int as orders,
+  const rows = await sql<{ payment_method: string; orders: number; sales: string }[]>`
+    select o.payment_method, count(*)::int as orders,
       sum(o.subtotal_in_centavos + coalesce(o.delivery_fee_in_centavos, 0)
         - coalesce((select sum(r.amount_in_centavos) from public.order_returns r
             where r.order_id = o.id and r.status = 'refunded'), 0))::bigint as sales
     from public.orders o
     where o.status = any(${PAID_OR_FULFILLED}) and ${notReplacement(sql, "o")} and o.created_at >= ${span.start} and o.created_at < ${span.end}
-    group by o.payment_method, o.fulfillment_method`;
-  const group = (field: "payment_method" | "fulfillment_method") => {
+    group by o.payment_method`;
+  const group = (field: "payment_method") => {
     const grouped = new Map<string, { method: string; orders: number; sales: number }>();
     for (const row of rows) {
       const method = row[field];
@@ -72,7 +71,7 @@ export async function paymentAndReceivingIn(sql: postgres.Sql, span: Span): Prom
     return [...grouped.values()].sort((a, b) => a.method.localeCompare(b.method));
   };
 
-  return { payment: group("payment_method"), receiving: group("fulfillment_method") };
+  return { payment: group("payment_method") };
 }
 
 /** Per database, bounded to the active five-minute window; never caches Staff Modules or live queues. */

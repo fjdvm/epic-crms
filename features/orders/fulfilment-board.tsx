@@ -29,8 +29,8 @@ function FulfilmentCard({ order, onMove }: { order: FulfilmentOrder; onMove: (id
         {order.lines.map((l) => `${l.product} ×${l.quantity}`).join(", ")}
       </p>
       <p className="truncate text-xs text-[#6e6680]">
-        {["delivered", "collected", "received"].includes(order.status) && order.deliveredAt
-          ? `${order.status === "collected" || order.fulfillmentMethod === "pickup" ? "Picked up" : "Delivered"} ${formatDate(order.deliveredAt)}`
+        {["delivered", "received"].includes(order.status) && order.deliveredAt
+          ? `Delivered ${formatDate(order.deliveredAt)}`
           : `${orderLabel(order.fulfillmentMethod)} · ${orderLabel(order.paymentMethod)}`}
       </p>
       {order.failedOpen && (
@@ -48,7 +48,7 @@ function FulfilmentCard({ order, onMove }: { order: FulfilmentOrder; onMove: (id
 
 /** The board with one Order moved to a status, as it will be once the server confirms. */
 function moved(board: FulfilmentBoard, { id, status }: { id: number; status: MoveStatus }): FulfilmentBoard {
-  return { orders: board.orders.map((o) => (o.id === id ? { ...o, status, ...(status === "collected" || status === "delivered" ? { deliveredAt: new Date() } : {}) } : o)) };
+  return { orders: board.orders.map((o) => (o.id === id ? { ...o, status, ...(status === "delivered" ? { deliveredAt: new Date() } : {}) } : o)) };
 }
 
 /** Tabs filter the same Orders; none of them is a status. */

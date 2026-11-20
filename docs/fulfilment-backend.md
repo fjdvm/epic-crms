@@ -12,7 +12,7 @@ Module is revoked. Holding Orders or Payments alone is insufficient. The Fulfilm
 cards and the Order detail call the three moves through the shared Order action dialog.
 
 The board has `ready`, `preparing`, `dispatched` and `delivered` arrays. Ready to prepare
-contains paid Orders or confirmed Cash on Delivery Orders (including Pickup). Placed
+contains paid Orders or confirmed Cash on Delivery Orders. Placed
 Orders and unpaid GCash Orders never appear there. The other columns follow the actual
 Order status. Active Orders are oldest first, with the Order number breaking ties.
 
@@ -46,7 +46,7 @@ email delivery and Feedback scheduling remain covered by the storefront's own te
 `deliverOrder(id, form)` requires a `FormData` containing exactly one `photo` File.
 Missing, duplicate, empty, non-JPG/PNG and over-5-MB photos are refused before any
 storefront request. The real bytes determine the content type; the filename and browser
-MIME claim are ignored for validation. Exactly 5 MB is accepted. Pickup uses the same rule.
+MIME claim are ignored for validation. Exactly 5 MB is accepted.
 Every call checks the Fulfilment Module before reading the Order or storing a photo.
 
 The existing Ticket Message file-storage boundary uploads the photo through the gateway:
@@ -93,7 +93,7 @@ dialog waits with a spinner because deduction is an outside effect.
 
 `loadPackingSlip(id)` is an authorized Fulfilment read, including for Admin and
 CEO. It returns the Order number/date, Customer, whole snapshotted items and
-Sizes/quantities, Pickup or Delivery, the checkout address (null for Pickup), and
+Sizes/quantities, the checkout address, and
 packing attribution when present. It exposes no Payment proof. This backend ticket
 does not add a printable screen, packing checklist, photo or batch selector.
 

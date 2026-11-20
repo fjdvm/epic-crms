@@ -48,7 +48,7 @@ const queues: { key: keyof Attention; module: string; managerOnly?: boolean; rea
   },
   {
     key: "overdueOrders", module: ORDERS_MODULE,
-    // Any payment method, Delivery or Pickup: `placed` is the one unconfirmed status. Confirming clears it.
+    // Any payment method: `placed` is the one unconfirmed status. Confirming clears it.
     read: async (sql, now, _history, hours) => {
       if (hours === null) return { count: 0, oldest: null };
 

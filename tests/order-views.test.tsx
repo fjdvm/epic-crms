@@ -3,7 +3,7 @@ import { proofOutcome } from "@/features/orders/proof-account";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee, rejectPaymentProof, resendStatusEmail } from "@/features/orders/actions";
+import { cancelOrder, cancelPaymentOrder, markPaid, quoteDeliveryFee, rejectPaymentProof, resendStatusEmail } from "@/features/orders/actions";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
@@ -15,7 +15,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/orders/actions", () => ({
   loadPackingSlip: vi.fn(),
   quoteDeliveryFee: vi.fn(),
-  confirmPickup: vi.fn(),
   cancelOrder: vi.fn(),
   cancelPaymentOrder: vi.fn(),
   markPaid: vi.fn(),
@@ -58,10 +57,8 @@ function list(rows: OrderRow[]) {
       "awaiting payment": 1,
       paid: 2,
       preparing: 1,
-      "ready for pickup": 0,
       dispatched: 1,
       delivered: 1,
-      collected: 0,
       received: 0,
       cancelled: 1,
       returned: 2,
@@ -186,13 +183,12 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
 });
 
 describe("an Order's detail", () => {
-  it("shows Senior/PWD status, Not verified by default, and the pickup reminder", () => {
+  it("shows Senior/PWD status, and Verified once approved", () => {
     const { unmount } = render(<OrderDetailView role="staff" order={detail({})} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Not verified");
     unmount();
-    render(<OrderDetailView role="staff" order={detail({ fulfillmentMethod: "pickup", deliveryFee: 0, seniorPwd: { id: 1, idType: "pwd", status: "approved" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    render(<OrderDetailView role="staff" order={detail({ deliveryFee: 0, seniorPwd: { id: 1, idType: "pwd", status: "approved" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("PWD · Verified");
-    expect(screen.getByText(/original ID/)).toBeTruthy();
   });
 
   it("shows no discount section on an Order without a discount", () => {
@@ -261,16 +257,6 @@ describe("an Order's detail", () => {
     expect(screen.getByText("1 Rizal St, Poblacion, Makati, Metro Manila 1210, Philippines")).toBeTruthy();
   });
 
-  it("shows no Delivery fee row and no address for a Pickup Order", () => {
-    render(
-      <OrderDetailView order={detail({ fulfillmentMethod: "pickup", deliveryFee: null, total: 100_000, address: null })} />,
-    );
-
-    expect(screen.queryByText("Delivery fee")).toBeNull();
-    expect(screen.getByText("Pickup")).toBeTruthy();
-    expect(screen.queryByText(/Delivery address/)).toBeNull();
-  });
-
   it("shows the fee as pending for a Delivery Order not yet quoted", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} />);
 
@@ -314,7 +300,7 @@ describe("an Order's detail", () => {
   });
 
   it("shows Payment collected with the amount and time once a COD Order's cash was recorded", () => {
-    render(<OrderDetailView order={detail({ status: "collected", paymentMethod: "cash-on-delivery", codCollection: { amountInCentavos: 115_000, at: new Date("2026-10-21T08:00:00Z"), byName: "Ana" } })} />);
+    render(<OrderDetailView order={detail({ status: "delivered", paymentMethod: "cash-on-delivery", codCollection: { amountInCentavos: 115_000, at: new Date("2026-10-21T08:00:00Z"), byName: "Ana" } })} />);
     expect(screen.getByText("Payment collected").nextElementSibling?.textContent).toContain("₱1,150.00");
   });
 
@@ -347,7 +333,7 @@ describe("an Order's detail", () => {
     expect(within(steps).getByText("Preparing").closest("li")?.getAttribute("data-done")).toBe("false");
   });
 
-  it("leaves the payment steps out for Cash on Delivery and Pickup Orders", () => {
+  it("leaves the payment steps out for Cash on Delivery Orders", () => {
     render(<OrderDetailView order={detail({ paymentMethod: "cash-on-delivery", status: "confirmed" })} />);
 
     const names = within(screen.getByRole("list", { name: "Order progress" }))
@@ -396,18 +382,6 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(screen.getByRole("button", { name: "Quote delivery fee" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel order" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Confirm order" })).toBeNull();
-  });
-
-  it("offers a placed Pickup Order confirm with no fee", () => {
-    render(
-      <OrderDetailView
-        order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null })}
-        modules={ORDERS}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Confirm order" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
   });
 
   it("offers cancel up to preparing, and nothing to confirm once past placed", () => {
@@ -564,14 +538,6 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed with a ₱150.50 Delivery fee.");
   });
 
-  it("shows Subtotal − Approved Discount + Delivery Fee = Total before Confirm Order on a Pickup Order", () => {
-    render(<OrderDetailView order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null, discount: 5_000, total: 95_000 })} modules={ORDERS} />);
-    const formula = screen.getByRole("group", { name: "Order total" });
-    expect(within(formula).getByText("− Approved discount").nextElementSibling?.textContent).toBe("₱50.00");
-    expect(within(formula).getByText("+ Delivery fee").nextElementSibling?.textContent).toBe("₱0.00");
-    expect(within(formula).getByText("= Total").nextElementSibling?.textContent).toBe("₱950.00");
-  });
-
   it("sends the discounted total when quoting a Delivery fee", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, discount: 5_000, total: 95_000 })} modules={ORDERS} />);
     fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
@@ -611,24 +577,6 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("asks before confirming a Pickup Order, then confirms once the server does", async () => {
-    vi.mocked(confirmPickup).mockResolvedValue(confirmed(1042));
-    render(
-      <OrderDetailView
-        order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null })}
-        modules={ORDERS}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Confirm order" }));
-
-    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
-    expect(within(dialog).queryByLabelText(/Delivery fee/)).toBeNull();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
-
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed."));
-    expect(confirmPickup).toHaveBeenCalledWith(1042, 100_000);
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-  });
 });
 
 const PAYMENTS = ["Payments"];

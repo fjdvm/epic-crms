@@ -18,6 +18,6 @@ Part of fjdvm/brenraphaels-authentication-microservice#290. Every flag-only rule
 
 ## Orders not confirmed in time (#574)
 
-An Order still `placed` (any payment method, Delivery or Pickup) once the limit has passed since `created_at` is Overdue: it shows on the Dashboard's Needs attention list ("Orders Overdue to confirm", Staff with the Orders Module) and raises one `order-overdue` alert, once per Order, for Managers with the Orders Module. Confirming (or cancelling) the Order clears it. Nothing is cancelled. Limit: `dashboard.unconfirmedOrders.hours` (default 48; the switch off hides the row and stops new alerts). A Manager or the CEO edits it in Commerce Settings.
+An Order still `placed` (any payment method) once the limit has passed since `created_at` is Overdue: it shows on the Dashboard's Needs attention list ("Orders Overdue to confirm", Staff with the Orders Module) and raises one `order-overdue` alert, once per Order, for Managers with the Orders Module. Confirming (or cancelling) the Order clears it. Nothing is cancelled. Limit: `dashboard.unconfirmedOrders.hours` (default 48; the switch off hides the row and stops new alerts). A Manager or the CEO edits it in Commerce Settings.
 
 The alert is created by the existing notification sync (storefront signal or on-request sync, no timer), so an Order that crosses the limit is alerted at the next sync. Apply `docs/db/crms-order-overdue.sql` as `creoms_writer` (`node --env-file=.env scripts/deploy/migrate-order-overdue.mjs`); it only widens the notification kind check.

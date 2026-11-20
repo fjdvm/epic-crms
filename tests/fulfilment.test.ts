@@ -88,19 +88,19 @@ describe("Fulfilment board data", () => {
     expect(result.tab("failed").map(row => row.id)).toEqual([failed]);
     expect(result.tab("out-for-delivery").map(row => row.id)).toEqual([rebooked, clean]);
   });
-  it("lists Completed by the original completion time, including received Orders and legacy Pickup", async () => {
+  it("lists Completed by the original completion time, including received Orders", async () => {
     const received = await order("received");
-    const legacyPickup = await order("delivered", "cash-on-delivery", "pickup");
-    const legacyOut = await order("dispatched", "cash-on-delivery", "pickup");
+    const delivered = await order("delivered", "cash-on-delivery");
+    const out = await order("dispatched", "cash-on-delivery");
     const stale = await order("received");
     await db.sql`update orders set delivered_at = ${new Date("2026-10-21T04:00:00Z")} where id = ${received}`;
-    await db.sql`update orders set delivered_at = ${new Date("2026-10-22T04:00:00Z")} where id = ${legacyPickup}`;
+    await db.sql`update orders set delivered_at = ${new Date("2026-10-22T04:00:00Z")} where id = ${delivered}`;
     await db.sql`update orders set delivered_at = ${new Date("2026-10-01T04:00:00Z")} where id = ${stale}`;
     const result = await board();
-    expect(result.tab("completed").map(row => row.id)).toEqual([legacyPickup, received]);
-    expect(result.tab("out-for-delivery").map(row => row.id)).toEqual([legacyOut]);
-    expect(result.tab("all").map(row => row.id).sort()).toEqual([received, legacyPickup, legacyOut].sort());
-    expect(result.tab("all-active").map(row => row.id)).toEqual([legacyOut]);
+    expect(result.tab("completed").map(row => row.id)).toEqual([delivered, received]);
+    expect(result.tab("out-for-delivery").map(row => row.id)).toEqual([out]);
+    expect(result.tab("all").map(row => row.id).sort()).toEqual([received, delivered, out].sort());
+    expect(result.tab("all-active").map(row => row.id)).toEqual([out]);
   });
   it("shows To pack oldest first and never an unpaid Online Order", async () => {
     const newer = await order("paid", "gcash");
@@ -110,21 +110,14 @@ describe("Fulfilment board data", () => {
     await db.sql`update orders set created_at = '2026-01-01T00:00:00Z' where id = ${older}`;
     expect((await board()).tab("to-pack").map(row => row.id)).toEqual([older, newer]);
   });
-  it("shows a Ready for pickup Order on its own tab", async () => {
-    const id = await order("ready for pickup", "gcash", "pickup");
-    const result = await board();
-    expect(result.tab("ready-for-pickup").map(row => row.id)).toEqual([id]);
-    expect(result.tab("failed")).toEqual([]);
-  });
   it("only includes confirmed Cash on Delivery or paid Orders in ready to prepare", async () => {
     const cod = await order("confirmed");
-    const pickup = await order("confirmed", "cash-on-delivery", "pickup");
     const paid = await order("paid", "gcash");
     await order("placed");
     await order("confirmed", "gcash");
     await order("awaiting payment", "gcash");
     await order("cancelled");
 
-    expect((await board()).tab("to-pack").map(row => row.id).sort()).toEqual([cod, pickup, paid].sort());
+    expect((await board()).tab("to-pack").map(row => row.id).sort()).toEqual([cod, paid].sort());
   });
 });

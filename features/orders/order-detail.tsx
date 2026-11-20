@@ -75,8 +75,6 @@ function LineStock({ reservation }: { reservation: LineReservation | undefined }
 }
 
 function DeliveryFee({ order }: { order: OrderDetail }) {
-  if (order.fulfillmentMethod === "pickup") return null;
-
   const text = hasFreeDelivery(order)
     ? "Free · ₱0"
     : order.deliveryFee !== null
@@ -300,9 +298,7 @@ export function OrderDetailView({
           )}
 
           <section className={CARD}>
-            <h2 className={CARD_TITLE}>
-              {address ? "Delivery address" : "Pickup"}
-            </h2>
+            <h2 className={CARD_TITLE}>Delivery address</h2>
             {address?.region ? (
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-[#1f1a2e]" aria-label="Structured delivery address">
                 {(
@@ -325,7 +321,7 @@ export function OrderDetailView({
               <p className="text-sm text-[#1f1a2e]">
                 {address
                   ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
-                  : "The Customer collects this Order; there is nothing to deliver."}
+                  : "No delivery address is saved on this Order."}
               </p>
             )}
           </section>
@@ -410,9 +406,6 @@ export function OrderDetailView({
             <p data-testid="senior-pwd-status" className="text-sm text-[#1f1a2e]">{seniorPwdLabel(order)}</p>
             {order.seniorPwd?.status === "pending" && (
               <Link href="/approvals?type=id-check" className="text-xs font-medium text-[#5b2a86]">Review this ID</Link>
-            )}
-            {order.fulfillmentMethod === "pickup" && order.seniorPwd?.status === "approved" && (
-              <p className="mt-1 text-xs text-[#6e6680]">Ask to see the original ID when the Customer collects.</p>
             )}
           </section>
         </div>

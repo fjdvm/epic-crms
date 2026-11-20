@@ -24,8 +24,6 @@ export type OrderStatusUpdate =
   | { status: "confirmed"; amounts: ConfirmedAmounts; deliveryFeeInCentavos?: number; courier?: never }
   | { status: "cancelled"; deliveryFeeInCentavos?: never; courier?: never; amounts?: never }
   | { status: "dispatched"; courier?: CourierBooking; deliveryFeeInCentavos?: never }
-  | { status: "ready for pickup"; staffId: string; staffName: string; courier?: never; deliveryFeeInCentavos?: never; codCollection?: never }
-  | { status: "collected"; staffId: string; staffName: string; codCollection?: CodCollection; courier?: never; deliveryFeeInCentavos?: never }
   | { status: "delivered"; deliveryPhotoFileId: string; codCollection?: CodCollection; deliveryFeeInCentavos?: never; courier?: never }
   | { status: "paid"; staffId: string; staffName: string; approvedAnyway?: { reason: string }; deliveryFeeInCentavos?: never; courier?: never };
 export type OrderChangeResult =

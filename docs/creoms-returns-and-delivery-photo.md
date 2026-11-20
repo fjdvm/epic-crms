@@ -61,7 +61,7 @@ Rollout dependency: file-storage must admit `video/mp4` and `video/quicktime` in
 The boundary rechecks eligibility inside the transactional write, serializing against other requests and the Customer received action:
 
 - The Order belongs to the Customer and is `delivered`; `received` is ineligible.
-- Payment is confirmed: GCash reached `paid` before fulfilment; Cash on Delivery and Pickup qualify once delivered.
+- Payment is confirmed: GCash reached `paid` before fulfilment; Cash on Delivery qualifies once delivered.
 - `delivered_at` is present and `delivered_at <= now < delivered_at + 24 hours`. Missing/future times and the exact cutoff are refused. Use elapsed storefront time, never a client clock.
 - Items in Requested, Approved or Goods received Returns are reserved. Refunded or Replaced items cannot be returned again. Declined and Customer-cancelled Returns release their items while the original window remains open.
 

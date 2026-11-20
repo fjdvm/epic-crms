@@ -5,9 +5,9 @@ four Customer emails and Notifications, see the
 [storefront Returns and Delivery photo contract](creoms-returns-and-delivery-photo.md).
 
 `features/orders/actions.ts` exposes `quoteDeliveryFee(id, deliveryFeeInCentavos)`,
-`confirmPickup(id)` and `cancelOrder(id)` for the Orders Module. Every server action checks
+and `cancelOrder(id)` for the Orders Module. Every server action checks
 that Module itself. Delivery fees are nonnegative integer centavos; zero is valid. Only
-placed Delivery Orders may be quoted and placed Pickup Orders confirmed. Cancellation
+placed Delivery Orders may be quoted. Cancellation
 is allowed from placed through preparing, including awaiting payment and paid.
 
 CREOMS reads the current Order through its existing read-only database connection and
