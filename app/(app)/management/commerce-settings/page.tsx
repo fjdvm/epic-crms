@@ -32,24 +32,25 @@ export default async function CommerceSettingsPage() {
 
   return (
     <CommerceSettingsFrame>
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className="min-w-0 space-y-8">
+      {/* One column on a phone. With two columns, the Payment window and the Approval limit share a row so they sit level. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2">
+        <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:pr-8">
           <PaymentAccountList accounts={accounts ?? []} failed={accounts === null} disabledMethods={disabled} />
-          <div className="border-t border-[#e6e1ee] pt-8">
-            <PaymentWindowForm currentHours={paymentWindow} />
-          </div>
         </div>
-        <div className="min-w-0 border-t border-[#e6e1ee] pt-8 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
+        <div className="mt-8 min-w-0 border-t border-[#e6e1ee] pt-8 lg:col-start-1 lg:row-start-2 lg:pr-8">
+          <PaymentWindowForm currentHours={paymentWindow} />
+        </div>
+        <div className="mt-8 min-w-0 border-t border-[#e6e1ee] pt-8 lg:col-start-2 lg:row-start-1 lg:mt-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
           <FreeDeliveryForm currentInCentavos={threshold} />
           <div className="mt-8 border-t border-[#e6e1ee] pt-8">
             <SeniorPwdDiscountForm current={discount} />
           </div>
-          <div className="mt-8 border-t border-[#e6e1ee] pt-8">
-            <ApprovalLimitForm currentInCentavos={limit} />
-          </div>
-          <div className="mt-8 border-t border-[#e6e1ee] pt-8">
-            <ServiceLevelsForm current={targets} />
-          </div>
+        </div>
+        <div className="mt-8 min-w-0 border-t border-[#e6e1ee] pt-8 lg:col-start-2 lg:row-start-2 lg:border-l lg:pl-8">
+          <ApprovalLimitForm currentInCentavos={limit} />
+        </div>
+        <div className="mt-8 min-w-0 border-t border-[#e6e1ee] pt-8 lg:col-start-2 lg:row-start-3 lg:border-l lg:pl-8">
+          <ServiceLevelsForm current={targets} />
         </div>
       </div>
       <div className="mt-8 border-t border-[#e6e1ee] pt-8">
