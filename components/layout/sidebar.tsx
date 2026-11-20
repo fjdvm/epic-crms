@@ -102,7 +102,9 @@ export function Sidebar() {
                           );
                         }
 
-                        const isActive = pathname === href || pathname.startsWith(href + "/");
+                        const matches = (to: string) => pathname === to || pathname.startsWith(to + "/");
+                        // The most specific entry wins, so /orders/stock does not also light up Orders.
+                        const isActive = matches(href) && !sidebarItems.some((other) => other.href !== null && other.href.length > href.length && matches(other.href));
 
                         return (
                           <SidebarMenuItem key={item.name}>

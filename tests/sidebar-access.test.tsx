@@ -5,7 +5,8 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { StaffProvider } from "@/components/layout/staff-context";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+const path = vi.hoisted(() => ({ current: "/" }));
+vi.mock("next/navigation", () => ({ usePathname: () => path.current }));
 
 beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({
@@ -103,8 +104,8 @@ describe("the sidebar", () => {
     expect(screen.queryByText("CUSTOMERS")).toBeNull();
   });
 
-  it("lists the groups in order, with Products & Stocks dimmed beside Orders and Approvals under Management", async () => {
-    renderSidebar(["/dashboard", "/customer-profiles", "/orders", "/payments", "/tickets", "/approvals"]);
+  it("lists the groups in order, with Products & Stocks beside Orders and Approvals under Management", async () => {
+    renderSidebar(["/dashboard", "/customer-profiles", "/orders", "/orders/stock", "/payments", "/tickets", "/approvals"]);
 
     await screen.findByText("OVERVIEW");
     const text = document.body.textContent ?? "";
@@ -113,7 +114,17 @@ describe("the sidebar", () => {
 
     expect(at.every((n) => n >= 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
-    expect(screen.queryByRole("link", { name: "Products & Stocks" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Products & Stocks" }).getAttribute("href")).toBe("/orders/stock");
+  });
+
+  it("highlights only Products & Stocks on its own page, not Orders", async () => {
+    path.current = "/orders/stock";
+    renderSidebar(["/orders", "/orders/stock"]);
+
+    const stock = await screen.findByRole("link", { name: "Products & Stocks" });
+    expect(stock.closest("[data-active=true]")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Orders" }).closest("[data-active=true]")).toBeNull();
+    path.current = "/";
   });
 
   it("hides Products & Stocks when no Commerce page is permitted", async () => {

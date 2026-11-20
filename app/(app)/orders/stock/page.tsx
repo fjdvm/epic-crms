@@ -1,3 +1,4 @@
+import { Link2 } from "lucide-react";
 import { Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -14,7 +15,8 @@ export default function ProductsStockPage() {
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 overflow-hidden px-8 py-7">
       <StockHeader>
-        <a href={IMS_URL} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
+        <a href={IMS_URL} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
+          <Link2 className="size-4" aria-hidden />
           Open IMS
         </a>
       </StockHeader>

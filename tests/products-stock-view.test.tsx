@@ -32,6 +32,26 @@ it("lists quantities and filters to low stock and sold out without leaving the p
   expect(within(document.querySelector("[data-stock-row]") as HTMLElement).getByText("None · 250 g")).toBeTruthy();
 });
 
+it("shows four tiles, counts only sizes still on sale, and has no Low at column", () => {
+  render(<StockView page={page} />);
+  const tile = (label: string) => screen.getAllByText(label)[0].parentElement as HTMLElement;
+  expect(tile("Sizes on sale").textContent).toContain("2");
+  expect(tile("Sizes on sale").textContent).toContain("1 sold out");
+  expect(tile("Sold out").textContent).toContain("1 sizes");
+  expect(tile("Sold out").textContent).toContain("Checkout blocks at 0");
+  expect(tile("Reserved by open orders").textContent).toContain("Released if the order is cancelled");
+  expect(screen.queryByText("Low at")).toBeNull();
+});
+
+it("searches by product and combines with the tab", () => {
+  render(<StockView page={page} />);
+  fireEvent.change(screen.getByLabelText("Search product"), { target: { value: "fe" } });
+  expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("tab", { name: /Sold out/ }));
+  expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(0);
+  expect(screen.getByText("No sizes here.")).toBeTruthy();
+});
+
 it("says so when the IMS cannot be read and implies no polling", () => {
   render(<StockView page={{ ...page, imsReachable: false }} />);
   expect(screen.getByRole("alert").textContent).toContain("could not be reached");

@@ -23,6 +23,7 @@ export const pages = [
   { href: "/customer-profiles", module: CUSTOMER_PROFILES_MODULE },
   { href: SENIOR_PWD_PAGE, module: SENIOR_PWD_MODULE },
   { href: "/orders", module: ORDERS_MODULE },
+  { href: "/orders/stock", module: ORDERS_MODULE },
   { href: "/payments", module: PAYMENTS_MODULE },
   { href: "/fulfilment", module: FULFILMENT_MODULE },
   { href: "/returns", module: RETURNS_MODULE },

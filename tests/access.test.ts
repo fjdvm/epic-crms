@@ -191,7 +191,7 @@ describe("access to the Orders, Payments and Fulfilment pages", () => {
   const FULFILMENT = "Fulfilment";
 
   it("gives each Module its own page", async () => {
-    expect(await accessFor(await signInAda([ORDERS])).overview()).toMatchObject({ pages: ["/orders"] });
+    expect(await accessFor(await signInAda([ORDERS])).overview()).toMatchObject({ pages: ["/orders", "/orders/stock"] });
     expect(await accessFor(await signInAda([PAYMENTS])).overview()).toMatchObject({ pages: ["/payments"] });
     expect(await accessFor(await signInAda([FULFILMENT])).overview()).toMatchObject({ pages: ["/fulfilment"] });
   });

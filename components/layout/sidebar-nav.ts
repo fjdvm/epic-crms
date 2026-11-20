@@ -60,11 +60,11 @@ export const ordersItem: NavItem = {
   icon: ShoppingCart,
 };
 
-/** No page yet: shown dimmed and not clickable until Products & Stocks is built. */
+/** Read-only stock screen; the quantities come from the IMS. */
 export const productsStocksItem: NavItem = {
   group: "COMMERCE",
   name: "Products & Stocks",
-  href: null,
+  href: "/orders/stock",
   icon: Package,
 };
 
