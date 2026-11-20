@@ -43,6 +43,7 @@ export async function syncNotifications({ writer = crmsDatabase, reader = databa
       await syncOrderAudit({
         orders: () => reader()`select id, created_at from public.orders`,
         outcomes: () => reader()`select e.order_id, e.kind, e.occurrence, e.status, e.reason, e.updated_at from public.order_email_outcomes e`,
+        expiries: () => reader()`select order_id, created_at from public.customer_notifications where order_id is not null and idempotency_key = 'order.expired:' || order_id::text`,
         delivered: async (ids) => new Set((await writer()<{ operation_id: string }[]>`
           select operation_id from crms.seen_order_audit_events where operation_id = any(${ids}::text[])`).map((r) => r.operation_id)),
         markDelivered: async (id) => { await writer()`insert into crms.seen_order_audit_events (operation_id) values (${id}) on conflict do nothing`; },
