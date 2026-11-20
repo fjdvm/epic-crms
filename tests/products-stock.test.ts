@@ -103,6 +103,14 @@ describe("Orders holding a Size's Reservation", () => {
     expect(await holders(1)).toEqual([]);
   });
 
+  it("attributes nothing to an IMS product when the Order line's Size is not linked to one", async () => {
+    await db.sql`update sizes set ims_product_id = null where id = 1`;
+    await hold("r1", 7, [{ orderLineId: 1, sizeId: 1, quantity: 2 }]);
+    const result = await loadStock(() => db.sql, ims([[102, 12, 5, 7]]), async () => [{ productId: 102, name: "Ube Halaya Smooth", variant: "Jar 250 g", image: "img", price: 100, active: true }]);
+    if (!result.ok) throw new Error("expected stock");
+    expect(result.page.rows[0].orders).toEqual([]);
+  });
+
   it("still shows stock when the Orders cannot be read", async () => {
     await hold("r1", 7, [{ orderLineId: 1, sizeId: 1, quantity: 2 }]);
     await db.sql`alter table stock_reservations rename to stock_reservations_x`;

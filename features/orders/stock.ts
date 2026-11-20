@@ -73,7 +73,7 @@ const markerOf = (item: ImsProduct): StockMarker | null => {
  * different catalogue and would pass for the IMS list.
  */
 export async function loadStock(
-  _connect: () => postgres.Sql,
+  connect: () => postgres.Sql,
   read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
 ): Promise<StockResult> {
@@ -84,7 +84,7 @@ export async function loadStock(
       .map((item) => ({ id: item.productId, product: item.name, size: item.variant ?? "", image: item.image, marker: markerOf(item) }))
       .sort((a, b) => a.product.localeCompare(b.product) || a.id - b.id);
     const stock = await read(sizes.map((size) => size.id));
-    const holding = await loadHoldingOrders(_connect);
+    const holding = await loadHoldingOrders(connect);
     const rows = sizes.map((size) => toRow(size, stock, holding));
     return { ok: true, page: { rows, imsReachable: stock !== null, summary: summarize(rows) } };
   } catch (error) {

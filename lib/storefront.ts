@@ -190,23 +190,28 @@ export interface ImsSizeStock { sizeId: number; quantity: number | null; reserve
  * Called when Staff open a page, never on a timer. Null means the storefront could not be reached.
  * Ids are storefront Size ids (Order lines); the Stock page uses readProductStock with IMS product ids.
  */
-export const readStock = (sizeIds: number[]): Promise<Map<number, ImsSizeStock> | null> => readStockBy("sizeIds", sizeIds);
+export const readStock = (sizeIds: number[]): Promise<Map<number, ImsSizeStock> | null> =>
+  readStockBy({ param: "sizeIds", list: "sizes", id: "sizeId" }, sizeIds);
 
 /** The same read by IMS product id, which needs no Size mapping. The result's `sizeId` is the IMS product id. */
-export const readProductStock = (productIds: number[]): Promise<Map<number, ImsSizeStock> | null> => readStockBy("productIds", productIds);
+export const readProductStock = (productIds: number[]): Promise<Map<number, ImsSizeStock> | null> =>
+  readStockBy({ param: "productIds", list: "products", id: "productId" }, productIds);
 
-async function readStockBy(by: "sizeIds" | "productIds", ids: number[]): Promise<Map<number, ImsSizeStock> | null> {
+const quantityOrNull = (value: unknown): number | null => (Number.isSafeInteger(value) ? (value as number) : null);
+
+async function readStockBy(
+  mode: { param: string; list: string; id: string },
+  ids: number[],
+): Promise<Map<number, ImsSizeStock> | null> {
   const origin = process.env.CREOMS_STOREFRONT_URL;
   const secret = process.env.CREOMS_SERVICE_SECRET;
   if (!origin || !secret || secret.length < 32 || ids.length === 0) return null;
-  const listKey = by === "sizeIds" ? "sizes" : "products";
-  const idKey = by === "sizeIds" ? "sizeId" : "productId";
   try {
     const found = new Map<number, ImsSizeStock>();
     // The storefront answers at most 200 ids per request.
     for (let start = 0; start < ids.length; start += 200) {
       const url = new URL("/api/internal/stock", origin);
-      url.searchParams.set(by, ids.slice(start, start + 200).join(","));
+      url.searchParams.set(mode.param, ids.slice(start, start + 200).join(","));
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${credential(secret, "stock")}` },
         cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
@@ -216,12 +221,16 @@ async function readStockBy(by: "sizeIds" | "productIds", ids: number[]): Promise
         return null;
       }
       const body = await response.json();
-      if (!Array.isArray(body[listKey])) {
-        console.error(`The storefront stock read answered without a ${listKey} list`);
+      if (!Array.isArray(body[mode.list])) {
+        console.error(`The storefront stock read answered without a ${mode.list} list`);
         return null;
       }
-      for (const item of body[listKey] as ({ quantity: number | null; reserved: number | null; available: number | null } & Record<string, number>)[]) {
-        found.set(item[idKey], { sizeId: item[idKey], quantity: item.quantity, reserved: item.reserved, available: item.available });
+      for (const item of body[mode.list] as Record<string, unknown>[]) {
+        const id = item[mode.id];
+        if (!Number.isSafeInteger(id)) continue;
+        found.set(id as number, {
+          sizeId: id as number, quantity: quantityOrNull(item.quantity), reserved: quantityOrNull(item.reserved), available: quantityOrNull(item.available),
+        });
       }
     }
     return found;
