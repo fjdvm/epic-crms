@@ -7,17 +7,11 @@ import { ORDERS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
-const IMS_URL = process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/";
-
 /** The header and skeleton reach the browser at once; nothing here waits on the Portal or the IMS. */
 export default function ProductsStockPage() {
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 overflow-hidden px-8 py-7">
-      <StockHeader>
-        <a href={IMS_URL} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
-          Open IMS
-        </a>
-      </StockHeader>
+      <StockHeader />
       <Suspense fallback={<StockSkeleton />}>
         <StockData />
       </Suspense>

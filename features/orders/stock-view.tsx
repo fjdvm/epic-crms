@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link2, Search } from "lucide-react";
 import { useState } from "react";
 
 import { PILL, Pill } from "@/features/tickets/pill";
@@ -11,7 +11,7 @@ import { LOW_STOCK_BELOW, shopLabel, type StockPage, type StockRow } from "./sto
 type Tab = "all" | "low" | "sold-out";
 
 const GRID = "flex items-center gap-2 px-4";
-const COLUMN = { stock: "w-[120px] shrink-0", reserved: "w-[100px] shrink-0", available: "w-[140px] shrink-0", shows: "w-[170px] shrink-0", low: "w-[80px] shrink-0" };
+const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[100px] shrink-0 text-right", available: "w-[140px] shrink-0 text-right", shows: "w-[170px] shrink-0" };
 
 const isLow = (row: StockRow) => typeof row.shows === "object";
 const isSoldOut = (row: StockRow) => row.shows === "Sold out";
@@ -22,26 +22,26 @@ function ShowsPill({ row }: { row: StockRow }) {
 }
 
 const quantity = (value: number | null) => (value === null ? "–" : value);
+const rowLabel = (row: StockRow) => `${row.product} · ${row.size}`;
+const sizes = (count: number) => `${count} ${count === 1 ? "size" : "sizes"}`;
 
-export function StockHeader({ children }: { children?: React.ReactNode }) {
+const IMS_URL = process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/";
+
+/** Shared by the page and its loading state, so the Open IMS button never pops in after load. */
+export function StockHeader() {
   return (
-    <div className="shrink-0 space-y-3">
-      <nav aria-label="Breadcrumb" className="flex gap-1.5 text-[13px] font-medium text-[#6e6680]">
-        <Link href="/orders">Orders</Link>
-        <span className="text-[#1f1a2e]">/ Products &amp; stock</span>
-      </nav>
-      <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Products &amp; stock</h1>
-            <Pill className="bg-[#e1f5ee] text-[#0f6e56]">From IMS</Pill>
-          </div>
-          <p className="text-sm text-[#6e6680]">
-            What the online shop can sell. Quantities come from IMS and are read when you open this page. Stock is reserved when an order is placed and released if it&apos;s cancelled.
-          </p>
+    <div className="flex shrink-0 items-start gap-2">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Stock</h1>
+          <Pill className="bg-[#e1f5ee] text-[#0f6e56]"><Link2 className="mr-1 inline size-3" aria-hidden />From IMS</Pill>
         </div>
-        {children}
+        <p className="text-sm text-[#6e6680]">What the online shop can sell. Read-only; quantities come from IMS.</p>
       </div>
+      <a href={IMS_URL} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
+        <Link2 className="size-4" aria-hidden />
+        Open IMS
+      </a>
     </div>
   );
 }
@@ -58,13 +58,17 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
 
 export function StockView({ page }: { page: StockPage }) {
   const [tab, setTab] = useState<Tab>("all");
+  const [query, setQuery] = useState("");
   const { summary } = page;
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: "all", label: "All sizes", count: page.rows.length },
     { id: "low", label: "Low stock", count: summary.low },
     { id: "sold-out", label: "Sold out", count: summary.soldOut },
   ];
-  const rows = page.rows.filter((row) => (tab === "low" ? isLow(row) : tab === "sold-out" ? isSoldOut(row) : true));
+  const needle = query.trim().toLowerCase();
+  const rows = page.rows
+    .filter((row) => (tab === "low" ? isLow(row) : tab === "sold-out" ? isSoldOut(row) : true))
+    .filter((row) => !needle || rowLabel(row).toLowerCase().includes(needle));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
@@ -74,9 +78,21 @@ export function StockView({ page }: { page: StockPage }) {
         </p>
       )}
       <div className="flex flex-wrap gap-4">
-        <Tile label="Sizes on sale" value={String(summary.sizes)} note={`${summary.soldOut} sold out`} />
-        <Tile label="Reserved by open orders" value={`${summary.reserved} items`} note="Not yet packed" />
-        <Tile label="Low stock" value={`${summary.low} sizes`} note={`Below ${LOW_STOCK_BELOW} left`} tone={summary.low > 0 ? "text-[#b45309]" : undefined} />
+        {page.imsReachable ? (
+          <>
+            <Tile label="Sizes on sale" value={String(summary.sizes - summary.soldOut)} note={`${summary.soldOut} sold out`} />
+            <Tile label="Reserved by open orders" value={`${summary.reserved} items`} note="Released if the order is cancelled" />
+            <Tile label="Low stock" value={sizes(summary.low)} note={`Below ${LOW_STOCK_BELOW} left`} tone={summary.low > 0 ? "text-[#b45309]" : undefined} />
+            <Tile label="Sold out" value={sizes(summary.soldOut)} note="Checkout blocks at 0" tone={summary.soldOut > 0 ? "text-[#b42318]" : undefined} />
+          </>
+        ) : (
+          <>
+            <Tile label="Sizes on sale" value="–" note="Unknown until the IMS answers" />
+            <Tile label="Reserved by open orders" value="–" note="Released if the order is cancelled" />
+            <Tile label="Low stock" value="–" note={`Below ${LOW_STOCK_BELOW} left`} />
+            <Tile label="Sold out" value="–" note="Checkout blocks at 0" />
+          </>
+        )}
       </div>
       <div role="tablist" aria-label="Stock filter" className="flex gap-1">
         {tabs.map(({ id, label, count }) => (
@@ -90,31 +106,35 @@ export function StockView({ page }: { page: StockPage }) {
         ))}
       </div>
       <div className="overflow-x-auto rounded-xl border border-[#e6e1ee] bg-white">
-        <div className="min-w-[780px]">
+        <div className="min-w-[680px]">
+          <div className="p-3">
+            <label className="flex w-[260px] items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3 py-1.5">
+              <Search className="size-3.5 text-[#71717a]" aria-hidden />
+              <input
+                type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product" aria-label="Search product"
+                className="w-full bg-transparent text-[13px] text-[#18181b] outline-none placeholder:text-[#a1a1aa]"
+              />
+            </label>
+          </div>
           <div className={cn(GRID, "rounded-t-xl bg-[#fafafa] py-2.5 text-xs font-medium text-[#71717a]")}>
             <div className="min-w-0 flex-1">Product · size</div>
             <div className={COLUMN.stock}>In stock (IMS)</div>
             <div className={COLUMN.reserved}>Reserved</div>
             <div className={COLUMN.available}>Available online</div>
             <div className={COLUMN.shows}>Shop shows</div>
-            <div className={COLUMN.low}>Low at</div>
           </div>
           {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">No sizes here.</p>}
           {rows.map((row) => (
             <div key={row.sizeId} data-stock-row className={cn(GRID, "border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", isSoldOut(row) && "bg-[#fff7f7]")}>
-              <div className="min-w-0 flex-1 truncate font-semibold">{row.product} · {row.size}</div>
+              <div className="min-w-0 flex-1 truncate font-medium">{rowLabel(row)}</div>
               <div className={COLUMN.stock}>{quantity(row.inStock)}</div>
               <div className={COLUMN.reserved}>{quantity(row.reserved)}</div>
               <div className={cn(COLUMN.available, "font-semibold", isSoldOut(row) && "text-[#b42318]")}>{quantity(row.available)}</div>
               <div className={COLUMN.shows}><ShowsPill row={row} /></div>
-              <div className={COLUMN.low}>{LOW_STOCK_BELOW}</div>
             </div>
           ))}
         </div>
       </div>
-      <p className="rounded-[10px] bg-[#f1f1f3] p-3 text-xs text-[#52525b]">
-        One fulfilment location: the Warehouse. All online orders are reserved from, packed at and dispatched from there.
-      </p>
     </div>
   );
 }
@@ -122,10 +142,13 @@ export function StockView({ page }: { page: StockPage }) {
 /** Same chrome as the loaded page, so it reaches the browser before the data does. */
 export function StockSkeleton() {
   return (
-    <div role="status" aria-label="Loading Products and stock" className="flex flex-col gap-4">
-      <div className="flex gap-4">{[0, 1, 2].map((i) => <div key={i} className="h-[92px] flex-1 animate-pulse rounded-xl bg-[#efebf4]" />)}</div>
+    <div role="status" aria-label="Loading Stock" className="flex flex-col gap-4">
+      <div className="flex gap-4">{[0, 1, 2, 3].map((i) => <div key={i} data-skeleton-tile className="h-[92px] flex-1 animate-pulse rounded-xl bg-[#efebf4]" />)}</div>
       <div className="h-8 w-72 animate-pulse rounded-lg bg-[#efebf4]" />
-      <div className="h-72 animate-pulse rounded-xl bg-[#efebf4]" />
+      <div className="rounded-xl border border-[#e6e1ee] bg-white">
+        <div className="p-3"><div className="h-8 w-[260px] animate-pulse rounded-lg bg-[#efebf4]" /></div>
+        {[0, 1, 2, 3, 4, 5, 6].map((i) => <div key={i} data-skeleton-row className="border-t border-[#f0edf4] px-4 py-3"><div className="h-4 animate-pulse rounded bg-[#efebf4]" /></div>)}
+      </div>
     </div>
   );
 }
