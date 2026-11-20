@@ -1,7 +1,7 @@
 import type postgres from "postgres";
 
 import { customerNameSql } from "@/lib/deleted-customer";
-import { readProductFeed, readStock, type ImsProduct, type ImsSizeStock } from "@/lib/storefront";
+import { readProductFeed, readProductStock, readStock, type ImsProduct, type ImsSizeStock } from "@/lib/storefront";
 
 /** A Size with fewer than this many available is low stock; the shop then says "Only N left". Matches the storefront. */
 export const LOW_STOCK_BELOW = 10;
@@ -69,22 +69,20 @@ const markerOf = (item: ImsProduct): StockMarker | null => {
 
 /**
  * Every Size the IMS holds, with its stock. Read on demand; the IMS stays the source of truth. When the
- * IMS product feed cannot be read, it lists the Sizes the storefront already sells, with dashes.
+ * IMS product feed cannot be read, the page lists nothing and says so: the storefront's own Sizes are a
+ * different catalogue and would pass for the IMS list.
  */
 export async function loadStock(
   connect: () => postgres.Sql,
-  read: (sizeIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readStock,
+  read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
 ): Promise<StockResult> {
   try {
     const feed = await readFeed();
-    const sizes: { id: number; product: string; size: string; image: string | null; marker: StockMarker | null }[] = feed
-      ? feed.map((item) => ({ id: item.productId, product: item.name, size: item.variant ?? "", image: item.image, marker: markerOf(item) }))
-          .sort((a, b) => a.product.localeCompare(b.product) || a.id - b.id)
-      : (await connect()<{ id: number; product: string; size: string }[]>`
-          select s.id, p.name as product, s.label as size
-          from public.sizes s join public.products p on p.slug = s.product_slug
-          order by p.name, s.price_in_centavos, s.id`).map((size) => ({ ...size, image: null, marker: null }));
+    if (!feed) return { ok: true, page: { rows: [], imsReachable: false, summary: summarize([]) } };
+    const sizes: SizeSource[] = feed
+      .map((item) => ({ id: item.productId, product: item.name, size: item.variant ?? "", image: item.image, marker: markerOf(item) }))
+      .sort((a, b) => a.product.localeCompare(b.product) || a.id - b.id);
     const stock = await read(sizes.map((size) => size.id));
     const holding = await loadHoldingOrders(connect);
     const rows = sizes.map((size) => toRow(size, stock, holding));
@@ -135,7 +133,7 @@ export type StockSizeResult = { ok: true; row: StockRow | null } | { ok: false }
 export async function loadStockSize(
   connect: () => postgres.Sql,
   sizeId: number,
-  read: (sizeIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readStock,
+  read: (productIds: number[]) => Promise<Map<number, ImsSizeStock> | null> = readProductStock,
   readFeed: () => Promise<ImsProduct[] | null> = readProductFeed,
 ): Promise<StockSizeResult> {
   try {
@@ -153,21 +151,22 @@ export async function loadStockSize(
 }
 
 /**
- * Per Size, the Orders whose open Reservation still holds it. Same rule as the Order detail: a
+ * Per IMS product, the Orders whose open Reservation still holds it. Same rule as the Order detail: a
  * released line, a released Reservation, or an Order that is packed away or cancelled holds nothing.
  */
 async function loadHoldingOrders(connect: () => postgres.Sql): Promise<Map<number, HoldingOrder[]> | null> {
   try {
     const found = await connect()<{ order_id: number; customer: string; status: string; size_id: string; quantity: string }[]>`
       select o.id as order_id, ${connect().unsafe(customerNameSql("c"))} as customer, o.status,
-        (line->>'sizeId') as size_id, sum((line->>'quantity')::int) as quantity
+        s.ims_product_id as size_id, sum((line->>'quantity')::int) as quantity
       from public.stock_reservations r
       join public.orders o on o.id = r.order_id
       join public.customers c on c.id = o.customer_id
       cross join lateral jsonb_array_elements(r.lines) as line
+      join public.sizes s on s.id = (line->>'sizeId')::int and s.ims_product_id is not null
       where r.state = 'placed' and o.status in ('placed', 'confirmed', 'awaiting payment', 'paid', 'preparing')
         and coalesce((line->>'release')::boolean, false) = false and coalesce((line->>'released')::boolean, false) = false
-      group by o.id, c.id, o.status, line->>'sizeId'
+      group by o.id, c.id, o.status, s.ims_product_id
       order by o.id`;
     const bySize = new Map<number, HoldingOrder[]>();
     for (const row of found) {

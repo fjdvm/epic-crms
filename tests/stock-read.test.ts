@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-import { readStock } from "@/lib/storefront";
+import { readProductFeed, readProductStock, readStock } from "@/lib/storefront";
 
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
@@ -32,4 +32,46 @@ it("returns null when the storefront refuses or cannot be reached, or is not con
   expect(await readStock([1])).toBeNull();
   vi.unstubAllEnvs();
   expect(await readStock([1])).toBeNull();
+});
+
+it("reads the IMS product feed from the storefront, keeping valid items and normalising blanks", async () => {
+  let path = "";
+  configure((url) => {
+    path = url.pathname;
+    return Response.json({ products: [
+      { productId: 4, name: " Toffee Jam ", variant: " ", image: "", price: 150, active: true },
+      { productId: "x", name: "Bad" },
+      { productId: 7, name: "Old", variant: "250g", image: "i.png", price: 0, active: false },
+    ] });
+  });
+  expect(await readProductFeed()).toEqual([
+    { productId: 4, name: "Toffee Jam", variant: null, image: null, price: 150, active: true },
+    { productId: 7, name: "Old", variant: "250g", image: "i.png", price: null, active: false },
+  ]);
+  expect(path).toBe("/api/internal/products");
+});
+
+it("returns null for the feed when the storefront has no such route, sends a bad body, times out or is not configured", async () => {
+  const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+  configure(() => new Response("missing", { status: 404 }));
+  expect(await readProductFeed()).toBeNull();
+  configure(() => Response.json({ products: "nope" }));
+  expect(await readProductFeed()).toBeNull();
+  configure(() => { throw new Error("timeout"); });
+  expect(await readProductFeed()).toBeNull();
+  expect(quiet).toHaveBeenCalledTimes(3);
+  quiet.mockRestore();
+  vi.unstubAllEnvs();
+  expect(await readProductFeed()).toBeNull();
+});
+
+it("reads stock by IMS product id for the Stock page, keyed by that id", async () => {
+  configure((url) => {
+    expect(url.searchParams.get("productIds")).toBe("55,56");
+    expect(url.searchParams.has("sizeIds")).toBe(false);
+    return Response.json({ products: [{ productId: 55, quantity: 67, reserved: 0, available: 67 }, { productId: 56, quantity: null, reserved: null, available: null }] });
+  });
+  const stock = await readProductStock([55, 56]);
+  expect(stock?.get(55)).toEqual({ sizeId: 55, quantity: 67, reserved: 0, available: 67 });
+  expect(stock?.get(56)?.available).toBeNull();
 });
