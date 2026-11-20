@@ -55,6 +55,60 @@ describe("Products & stock", () => {
   });
 });
 
+describe("Orders holding a Size's Reservation", () => {
+  const hold = async (id: string, orderId: number, lines: object[], state = "placed") =>
+    db.sql`insert into stock_reservations values (${id}, ${orderId}, ${state}, ${db.sql.json(lines as never)})`;
+  const addOrder = async (id: number, status: string) => {
+    await db.sql`insert into customers (id, full_name, first_name, email) values (${`c${id}`}, ${`Customer ${id}`}, 'C', ${`c${id}@example.com`})`;
+    await db.sql`insert into orders (id, customer_id, status) overriding system value values (${id}, ${`c${id}`}, ${status})`;
+  };
+  const holders = async (sizeId: number) => {
+    const result = await loadStock(() => db.sql, ims([[1, 26, 8, 18], [2, 12, 5, 7], [3, 0, 0, 0]]));
+    if (!result.ok) throw new Error("expected stock");
+    return result.page.rows.find((r) => r.sizeId === sizeId)!.orders;
+  };
+
+  it("lists each Order holding the Size with Customer, status label and quantity", async () => {
+    await addOrder(8, "awaiting payment"); await addOrder(9, "paid"); await addOrder(10, "preparing");
+    await hold("r1", 7, [{ orderLineId: 1, sizeId: 1, quantity: 4 }]);
+    await hold("r2", 8, [{ orderLineId: 2, sizeId: 1, quantity: 2 }, { orderLineId: 3, sizeId: 2, quantity: 1 }]);
+    await hold("r3", 9, [{ orderLineId: 4, sizeId: 1, quantity: 1 }]);
+    await hold("r4", 10, [{ orderLineId: 5, sizeId: 1, quantity: 1 }]);
+    await db.sql`update orders set status = 'placed' where id = 7`;
+    expect(await holders(1)).toEqual([
+      { orderId: 7, customer: "Maria", status: "Placed", quantity: 4 },
+      { orderId: 8, customer: "Customer 8", status: "Awaiting payment", quantity: 2 },
+      { orderId: 9, customer: "Customer 9", status: "Paid and waiting to dispatch", quantity: 1 },
+      { orderId: 10, customer: "Customer 10", status: "Paid and waiting to dispatch", quantity: 1 },
+    ]);
+    expect((await holders(2))!.map((o) => o.orderId)).toEqual([8]);
+  });
+
+  it("counts an Order once even when two lines hold the same Size", async () => {
+    await hold("r1", 7, [{ orderLineId: 1, sizeId: 1, quantity: 2 }, { orderLineId: 2, sizeId: 1, quantity: 3 }]);
+    expect(await holders(1)).toEqual([{ orderId: 7, customer: "Maria", status: "Awaiting payment", quantity: 5 }]);
+  });
+
+  it("drops an Order the moment its Reservation is released, cancelled or taken out by dispatch", async () => {
+    await addOrder(8, "cancelled"); await addOrder(9, "dispatched"); await addOrder(11, "paid");
+    await hold("r1", 7, [{ orderLineId: 1, sizeId: 1, quantity: 2, released: true }]);
+    await hold("r2", 8, [{ orderLineId: 2, sizeId: 1, quantity: 2 }]);
+    await hold("r3", 9, [{ orderLineId: 3, sizeId: 1, quantity: 2 }]);
+    await hold("r4", 11, [{ orderLineId: 4, sizeId: 1, quantity: 2 }], "released");
+    expect(await holders(1)).toEqual([]);
+  });
+
+  it("still shows stock when the Orders cannot be read", async () => {
+    await hold("r1", 7, [{ orderLineId: 1, sizeId: 1, quantity: 2 }]);
+    await db.sql`alter table stock_reservations rename to stock_reservations_x`;
+    try {
+      expect(await holders(1)).toBeNull();
+    } finally {
+      await db.sql`alter table stock_reservations_x rename to stock_reservations`;
+    }
+  });
+});
+
 describe("Order detail reservations", () => {
   const reserve = (state: string, lines: object[]) =>
     db.sql`insert into stock_reservations values ('r1', 7, ${state}, ${db.sql.json(lines as never)})`;

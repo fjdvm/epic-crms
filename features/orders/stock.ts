@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 
+import { customerNameSql } from "@/lib/deleted-customer";
 import { readStock, type ImsSizeStock } from "@/lib/storefront";
 
 /** A Size with fewer than this many available is low stock; the shop then says "Only N left". Matches the storefront. */
@@ -17,6 +18,19 @@ export function shopShows(available: number | null): ShopShows {
 export const shopLabel = (shows: ShopShows): string =>
   typeof shows === "object" ? `Only ${shows.left} left` : shows;
 
+/** How an Order holding a Reservation is labelled on Products & Stocks. */
+export type HoldingStatus = "Placed" | "Awaiting payment" | "Paid and waiting to dispatch";
+
+export interface HoldingOrder { orderId: number; customer: string; status: HoldingStatus; quantity: number }
+
+const HOLDING_STATUS: Record<string, HoldingStatus> = {
+  placed: "Placed",
+  confirmed: "Awaiting payment",
+  "awaiting payment": "Awaiting payment",
+  paid: "Paid and waiting to dispatch",
+  preparing: "Paid and waiting to dispatch",
+};
+
 export interface StockRow {
   sizeId: number;
   product: string;
@@ -26,6 +40,8 @@ export interface StockRow {
   reserved: number | null;
   available: number | null;
   shows: ShopShows;
+  /** Orders whose Reservation holds this Size; null when they could not be read. */
+  orders: HoldingOrder[] | null;
 }
 
 export interface StockPage {
@@ -48,12 +64,14 @@ export async function loadStock(
       from public.sizes s join public.products p on p.slug = s.product_slug
       order by p.name, s.price_in_centavos, s.id`;
     const stock = await read(sizes.map((size) => size.id));
+    const holding = await loadHoldingOrders(connect);
     const rows: StockRow[] = sizes.map((size) => {
       const held = stock?.get(size.id);
       const available = held?.available ?? null;
       return {
         sizeId: size.id, product: size.product, size: size.size,
         inStock: held?.quantity ?? null, reserved: held?.reserved ?? null, available, shows: shopShows(available),
+        orders: holding?.get(size.id) ?? (holding ? [] : null),
       };
     });
     return {
@@ -71,6 +89,38 @@ export async function loadStock(
   } catch (error) {
     console.error("Products & stock could not read the ecommerce database", error);
     return { ok: false };
+  }
+}
+
+/**
+ * Per Size, the Orders whose open Reservation still holds it. Same rule as the Order detail: a
+ * released line, a released Reservation, or an Order that is packed away or cancelled holds nothing.
+ */
+async function loadHoldingOrders(connect: () => postgres.Sql): Promise<Map<number, HoldingOrder[]> | null> {
+  try {
+    const found = await connect()<{ order_id: number; customer: string; status: string; size_id: string; quantity: string }[]>`
+      select o.id as order_id, ${connect().unsafe(customerNameSql("c"))} as customer, o.status,
+        (line->>'sizeId') as size_id, sum((line->>'quantity')::int) as quantity
+      from public.stock_reservations r
+      join public.orders o on o.id = r.order_id
+      join public.customers c on c.id = o.customer_id
+      cross join lateral jsonb_array_elements(r.lines) as line
+      where r.state = 'placed' and o.status in ('placed', 'confirmed', 'awaiting payment', 'paid', 'preparing')
+        and coalesce((line->>'release')::boolean, false) = false and coalesce((line->>'released')::boolean, false) = false
+      group by o.id, c.id, o.status, line->>'sizeId'
+      order by o.id`;
+    const bySize = new Map<number, HoldingOrder[]>();
+    for (const row of found) {
+      const status = HOLDING_STATUS[row.status];
+      if (!status) continue;
+      const list = bySize.get(Number(row.size_id)) ?? [];
+      list.push({ orderId: row.order_id, customer: row.customer, status, quantity: Number(row.quantity) });
+      bySize.set(Number(row.size_id), list);
+    }
+    return bySize;
+  } catch (error) {
+    console.error("The Orders holding stock could not be read", error);
+    return null;
   }
 }
 

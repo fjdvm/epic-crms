@@ -3,15 +3,18 @@
 import { Link2, Search } from "lucide-react";
 import { useState } from "react";
 
+import Link from "next/link";
+
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PILL, Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
 
-import { LOW_STOCK_BELOW, shopLabel, type StockPage, type StockRow } from "./stock";
+import { LOW_STOCK_BELOW, shopLabel, type HoldingOrder, type StockPage, type StockRow } from "./stock";
 
 type Tab = "all" | "low" | "sold-out";
 
 const GRID = "flex items-center gap-2 px-4";
-const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[100px] shrink-0 text-right", available: "w-[140px] shrink-0 text-right", shows: "w-[170px] shrink-0" };
+const COLUMN = { stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", available: "w-[140px] shrink-0 text-right", shows: "w-[170px] shrink-0" };
 
 const isLow = (row: StockRow) => typeof row.shows === "object";
 const isSoldOut = (row: StockRow) => row.shows === "Sold out";
@@ -24,6 +27,47 @@ function ShowsPill({ row }: { row: StockRow }) {
 const quantity = (value: number | null) => (value === null ? "–" : value);
 const rowLabel = (row: StockRow) => `${row.product} · ${row.size}`;
 const sizes = (count: number) => `${count} ${count === 1 ? "size" : "sizes"}`;
+
+const orderCount = (count: number) => `${count} ${count === 1 ? "Order" : "Orders"}`;
+
+/** "12 reserved · 5 Orders"; the Order count opens the list of Orders holding those units. */
+function ReservedCell({ row, onOpen }: { row: StockRow; onOpen: (row: StockRow) => void }) {
+  if (row.reserved === null) return <>–</>;
+  const count = row.orders?.length ?? 0;
+  if (row.orders === null || count === 0) return <>{row.reserved} reserved</>;
+  return (
+    <>
+      {row.reserved} reserved ·{" "}
+      <button type="button" onClick={() => onOpen(row)} aria-label={`${orderCount(count)} holding ${rowLabel(row)}`} className="font-medium text-[#5b2a86] underline-offset-2 hover:underline">
+        {orderCount(count)}
+      </button>
+    </>
+  );
+}
+
+function HoldingOrders({ row, onClose }: { row: StockRow | null; onClose: () => void }) {
+  const orders: HoldingOrder[] = row?.orders ?? [];
+  return (
+    <Dialog open={row !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Orders holding {row ? rowLabel(row) : ""}</DialogTitle>
+          <DialogDescription>{row?.reserved ?? 0} reserved across {orderCount(orders.length)}.</DialogDescription>
+        </DialogHeader>
+        <ul className="flex max-h-[60vh] flex-col overflow-y-auto">
+          {orders.map((order) => (
+            <li key={order.orderId} data-holding-order className="flex items-center gap-3 border-t border-[#f0edf4] py-2.5 text-[13px] first:border-t-0">
+              <Link href={`/orders/${order.orderId}`} className="w-16 shrink-0 font-medium text-[#5b2a86] hover:underline">#{order.orderId}</Link>
+              <span className="min-w-0 flex-1 truncate text-[#18181b]">{order.customer}</span>
+              <span className="shrink-0 text-[#6e6680]">× {order.quantity}</span>
+              <Pill className={order.status === "Placed" ? PILL.grey : order.status === "Awaiting payment" ? PILL.amber : PILL.green}>{order.status}</Pill>
+            </li>
+          ))}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const IMS_URL = process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/";
 
@@ -59,6 +103,7 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
 export function StockView({ page }: { page: StockPage }) {
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");
+  const [opened, setOpened] = useState<StockRow | null>(null);
   const { summary } = page;
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: "all", label: "All sizes", count: page.rows.length },
@@ -106,7 +151,7 @@ export function StockView({ page }: { page: StockPage }) {
         ))}
       </div>
       <div className="overflow-x-auto rounded-xl border border-[#e6e1ee] bg-white">
-        <div className="min-w-[680px]">
+        <div className="min-w-[770px]">
           <div className="p-3">
             <label className="flex w-[260px] items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3 py-1.5">
               <Search className="size-3.5 text-[#71717a]" aria-hidden />
@@ -128,13 +173,14 @@ export function StockView({ page }: { page: StockPage }) {
             <div key={row.sizeId} data-stock-row className={cn(GRID, "border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", isSoldOut(row) && "bg-[#fff7f7]")}>
               <div className="min-w-0 flex-1 truncate font-medium">{rowLabel(row)}</div>
               <div className={COLUMN.stock}>{quantity(row.inStock)}</div>
-              <div className={COLUMN.reserved}>{quantity(row.reserved)}</div>
+              <div className={COLUMN.reserved}><ReservedCell row={row} onOpen={setOpened} /></div>
               <div className={cn(COLUMN.available, "font-semibold", isSoldOut(row) && "text-[#b42318]")}>{quantity(row.available)}</div>
               <div className={COLUMN.shows}><ShowsPill row={row} /></div>
             </div>
           ))}
         </div>
       </div>
+      <HoldingOrders row={opened} onClose={() => setOpened(null)} />
     </div>
   );
 }
