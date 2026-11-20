@@ -1,12 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { emailEvent, placedEvent, safeReason, syncOrderAudit } from "@/features/orders/placement-audit";
+import { emailEvent, expiredEvent, placedEvent, safeReason, syncOrderAudit } from "@/features/orders/placement-audit";
 import type { AuditEvent } from "@/lib/audit-trail";
 
 const at = new Date("2026-11-18T01:00:00Z");
 type Outcome = { order_id: number; kind: string; status: string; reason: string | null; updated_at: Date };
 const run = async (orders: { id: number; created_at: Date }[], outcomes: Outcome[]) =>
   [...orders.map(placedEvent), ...outcomes.map(emailEvent).filter((e): e is AuditEvent => e !== null)];
+
+const ports = (orders: { id: number; created_at: Date }[], outcomes: Outcome[], ledger = new Set<string>(), deliver: (e: AuditEvent) => Promise<void> = vi.fn(async () => {}), expiries: { order_id: number; created_at: Date }[] = []) => ({
+  orders: async () => orders, outcomes: async () => outcomes, expiries: async () => expiries, deliver,
+  delivered: async (ids: string[]) => new Set(ids.filter((id) => ledger.has(id))),
+  markDelivered: async (id: string) => { ledger.add(id); },
+});
 
 describe("order placement audit", () => {
   it("records order.placed with a stable operation id per Order", async () => {
@@ -42,11 +48,6 @@ describe("order placement audit", () => {
     expect(JSON.stringify(events)).not.toContain("jane@example.com");
   });
 
-  const ports = (orders: { id: number; created_at: Date }[], outcomes: Outcome[], ledger = new Set<string>(), deliver: (e: AuditEvent) => Promise<void> = vi.fn(async () => {})) => ({
-    orders: async () => orders, outcomes: async () => outcomes, deliver,
-    delivered: async (ids: string[]) => new Set(ids.filter((id) => ledger.has(id))),
-    markDelivered: async (id: string) => { ledger.add(id); },
-  });
 
   it("delivers each event once, however often the storefront signals", async () => {
     const deliver = vi.fn(async () => {});
@@ -85,5 +86,29 @@ describe("emailEvent occurrences", () => {
     expect(first.operationId).not.toBe(second.operationId);
     expect(second.metadata).toMatchObject({ kind: "rejected", occurrence: "2" });
     expect(emailEvent(row)!.operationId).toBe("order:7:email:rejected:failed");
+  });
+});
+
+describe("automatic Reservation expiry", () => {
+  it("records order.expired once per Order, by the expiry process, linked to the Order", () => {
+    const a = expiredEvent({ order_id: 7, created_at: at }), b = expiredEvent({ order_id: 7, created_at: new Date() });
+    expect(a).toMatchObject({ action: "order.expired", outcome: "success", target: { type: "order", id: "7" }, actor: { type: "process" }, occurred_at: at.toISOString() });
+    expect(a.description).toContain("Order #7");
+    expect(a.operationId).toBe(b.operationId);
+  });
+
+  it("a retried sync never records the expiry twice", async () => {
+    const deliver = vi.fn(async () => {});
+    const p = ports([], [], new Set(), deliver, [{ order_id: 7, created_at: at }]);
+    expect(await syncOrderAudit(p)).toEqual({ delivered: 1, failed: 0 });
+    expect(await syncOrderAudit(p)).toEqual({ delivered: 0, failed: 0 });
+    expect(deliver).toHaveBeenCalledTimes(1);
+  });
+
+  it("a person's cancellation is not recorded as an expiry", async () => {
+    const deliver = vi.fn(async (_event: AuditEvent) => {});
+    // The Order is cancelled by Staff, so the storefront saved no expiry notification for it.
+    await syncOrderAudit(ports([{ id: 8, created_at: at }], [], new Set(), deliver, []));
+    expect(deliver.mock.calls.map(([e]) => e.action)).toEqual(["order.placed"]);
   });
 });

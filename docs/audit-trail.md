@@ -199,3 +199,14 @@ Module) with the person's name, the kind, the occurrence, whether it was reconci
 email never reverses the saved update. The #572 sync records the failed-to-sent change as a system
 `order.email_sent` (operation id includes the occurrence), so one resend can show two entries: who asked, and what
 the storefront then recorded.
+
+## Automatic Reservation expiry (#675)
+
+When the storefront cancels an unpaid Online-payment Order because its payment window passed, it saves a
+`customer_notifications` row keyed `order.expired:<id>` in the same transaction as the cancellation, and for
+no other cancellation. `syncOrderAudit` reads those rows and delivers one `order.expired` event per Order,
+linked to the Order, under the `process` Actor "Unpaid Order expiry". The operation id is
+`order:<id>:order.expired`, so a retry or repeated signal adds nothing. A Staff or Manager cancellation saves
+no such row and is audited only as `order.cancelled`. Apply `docs/db/creoms-expiry-audit-readonly.sql` as the
+storefront table owner (grants `creoms_readonly` SELECT on `customer_notifications`); deploy the storefront's
+expiry first.

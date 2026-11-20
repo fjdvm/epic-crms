@@ -2,6 +2,8 @@ import type { AuditEvent, AuditTrail } from "@/lib/audit-trail";
 import { ORDERS_MODULE } from "@/lib/portal/config";
 
 export interface PlacedOrderRow { id: number; created_at: Date }
+/** The storefront saves this row in the same transaction as an automatic expiry, and for nothing else (key `order.expired:<id>`). */
+export interface ExpiryRow { order_id: number; created_at: Date }
 export interface EmailOutcomeRow { order_id: number; kind: string; occurrence?: string | null; status: "sent" | "failed" | (string & {}); reason: string | null; updated_at: Date }
 
 const ACTOR: AuditEvent["actor"] = { type: "process", id: "creoms", display_name: "CREOMS" };
@@ -24,6 +26,17 @@ export function placedEvent(order: PlacedOrderRow): AuditEvent {
   };
 }
 
+const EXPIRY_ACTOR: AuditEvent["actor"] = { type: "process", id: "unpaid-order-expiry", display_name: "Unpaid Order expiry" };
+
+/** An Online-payment Order cancelled because its payment window passed. A Staff or Manager cancellation never produces one. */
+export function expiredEvent(row: ExpiryRow): AuditEvent {
+  return {
+    module: ORDERS_MODULE, action: "order.expired", outcome: "success", actor: EXPIRY_ACTOR, target: target(row.order_id),
+    description: `Order #${row.order_id} was cancelled automatically because its payment window expired, and its Reservation was released.`,
+    occurred_at: row.created_at.toISOString(), operationId: `order:${row.order_id}:order.expired`,
+  };
+}
+
 /** One event per outcome change; only a sent or failed email is an outcome, so waiting and retrying write nothing. */
 export function emailEvent(row: EmailOutcomeRow): AuditEvent | null {
   if (row.status !== "sent" && row.status !== "failed") return null;
@@ -42,6 +55,7 @@ export function emailEvent(row: EmailOutcomeRow): AuditEvent | null {
 export interface OrderAuditPorts {
   orders(): Promise<PlacedOrderRow[]>;
   outcomes(): Promise<EmailOutcomeRow[]>;
+  expiries(): Promise<ExpiryRow[]>;
   /** Which of these operation ids were already delivered. */
   delivered(operationIds: string[]): Promise<Set<string>>;
   markDelivered(operationId: string): Promise<void>;
@@ -56,6 +70,7 @@ export interface OrderAuditPorts {
 export async function syncOrderAudit(ports: OrderAuditPorts): Promise<{ delivered: number; failed: number }> {
   const events = [
     ...(await ports.orders()).map(placedEvent),
+    ...(await ports.expiries()).map(expiredEvent),
     ...(await ports.outcomes()).map(emailEvent).filter((event): event is AuditEvent => event !== null),
   ];
   const done = await ports.delivered(events.map((event) => event.operationId));
