@@ -55,7 +55,7 @@ export function ProofReadFindings({ read, role, proofId, subject = "order", chan
         {heading}
         {subject === "refund"
           ? <p className="text-[13px] text-[#71717a]">The reader is checking this proof in the background. Check the image yourself; findings appear here once it has run.</p>
-          : <p data-unread className="rounded-md bg-[#fdf1d8] px-2.5 py-2 text-[13px] text-[#8a5a00]"><b>Not read yet.</b> The reader has not checked this image, and the values above are only what the Customer typed. Compare the amount, date and reference on the image with the Order yourself before marking it paid.</p>}
+          : <p data-unread className="rounded-md bg-[#fdf1d8] px-2.5 py-2 text-[13px] text-[#8a5a00]"><b>Reading this proof.</b> Findings usually appear within a minute. Until then the values above are only what the Customer typed; compare the amount, date and reference on the image with the Order yourself before marking it paid.</p>}
       </section>
     );
   }

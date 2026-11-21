@@ -45,9 +45,9 @@ it("shows Needs Review when the read failed", () => {
   expect(screen.getAllByText("Needs Review", { selector: "li span span" })).toHaveLength(5);
 });
 
-it("says the proof is not read yet when there is no result, and shows nothing without a role", () => {
+it("says the proof is still being read when there is no result, and shows nothing without a role", () => {
   const { rerender, container } = render(<ProofReadFindings read={undefined} role="staff" />);
-  expect(screen.getByText(/Not read yet/)).toBeTruthy();
+  expect(screen.getByText(/Reading this proof/)).toBeTruthy();
   expect(screen.getByText(/only what the Customer typed/)).toBeTruthy();
   rerender(<ProofReadFindings read={read} role={null} />);
   expect(container.textContent).toBe("");

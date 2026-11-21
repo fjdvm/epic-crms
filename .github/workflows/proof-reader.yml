@@ -1,7 +1,8 @@
 name: Proof reader
 
-# Reads payment proofs that were saved and have no result yet. GitHub's shortest schedule is every 5 minutes.
-# The Customer's submit never waits for this; the storefront may also call the route with ?proof=<id> right after saving.
+# Backstop only: reads payment proofs that have no result yet. GitHub throttles this schedule (real runs can be hours apart).
+# The main trigger is CREOMS's /api/notifications/signal route, which starts a read right after the storefront saves a proof.
+# The Customer's submit never waits for this.
 on:
   schedule:
     - cron: "*/5 * * * *"
