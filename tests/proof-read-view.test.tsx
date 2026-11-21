@@ -48,6 +48,7 @@ it("shows Needs Review when the read failed", () => {
 it("says the proof is not read yet when there is no result, and shows nothing without a role", () => {
   const { rerender, container } = render(<ProofReadFindings read={undefined} role="staff" />);
   expect(screen.getByText(/Not read yet/)).toBeTruthy();
+  expect(screen.getByText(/only what the Customer typed/)).toBeTruthy();
   rerender(<ProofReadFindings read={read} role={null} />);
   expect(container.textContent).toBe("");
 });
