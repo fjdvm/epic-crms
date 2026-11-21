@@ -51,9 +51,9 @@ describe("reading a refund proof", () => {
     expect(db.rows.get("rf5")?.status).toBe("read");
     expect(d.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "refund_proof.read", outcome: "success", actor: expect.objectContaining({ type: "process" }) }));
   });
-  it("flags a wrong amount, and treats masked or hidden details as Needs Review or Missing, never Match", async () => {
+  it("flags a wrong amount, matches a masked account number on its last four digits, and reports a hidden detail as Missing", async () => {
     const r = await readRefundProof(deps(fakeDb(), model({ ...clean, amount: f("1,000.00"), accountNumber: f("0917 *** 4567"), recipient: f(null) })), facts);
-    expect([r!.findings.amount.finding, r!.findings.accountNumber.finding, r!.findings.recipient.finding]).toEqual(["Mismatch", "Needs Review", "Missing"]);
+    expect([r!.findings.amount.finding, r!.findings.accountNumber.finding, r!.findings.recipient.finding]).toEqual(["Mismatch", "Match", "Missing"]);
   });
   it("sends only the image to the model, none of the refund or destination details", async () => {
     const m = model(clean);

@@ -41,6 +41,9 @@ it("re-judges a typed correction against what the Order expects", () => {
   expect(rejudge("date", "2026-11-01", "after 2026-11-18")).toBe("Mismatch");
   expect(rejudge("reference", "ab-12", "AB12")).toBe("Match");
   expect(rejudge("accountNumber", "0917 123 4567", "09171234567")).toBe("Match");
+  expect(rejudge("accountNumber", "09** *** 4567", "09171234567")).toBe("Match");
+  expect(rejudge("accountNumber", "09** *** 9999", "09171234567")).toBe("Mismatch");
+  expect(rejudge("accountNumber", "09** ***", "09171234567")).toBe("Needs Review");
   expect(rejudge("recipient", "Juan", "Juan Dela Cruz")).toBe("Mismatch");
   expect(rejudge("reference", "x", null)).toBe("Needs Review");
 });

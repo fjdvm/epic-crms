@@ -41,7 +41,11 @@ export function rejudge(field: Field, value: string, expected: string | null): F
     if (Number.isNaN(d.getTime()) || !after) return "Needs Review";
     return d.getTime() >= new Date(after).getTime() - 86_400_000 ? "Match" : "Mismatch";
   }
-  if (field === "accountNumber") return norm(v).replace(/\D/g, "") === norm(expected).replace(/\D/g, "") ? "Match" : "Mismatch";
+  if (field === "accountNumber") {
+    // Only the last four digits are compared: receipts mask the rest.
+    const a = v.replace(/\D/g, ""), b = expected.replace(/\D/g, "");
+    return a.length < 4 || b.length < 4 ? "Needs Review" : a.slice(-4) === b.slice(-4) ? "Match" : "Mismatch";
+  }
   return norm(v) === norm(expected) ? "Match" : "Mismatch";
 }
 

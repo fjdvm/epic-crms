@@ -28,7 +28,7 @@ export type ModelReading = z.infer<typeof readSchema>;
 
 const SYSTEM = "You read a screenshot of a GCash, Maya or bank transfer receipt. Copy only what is printed. "
   + "Set value to null when a detail is not shown, and unclear to true when it is blurred, cut off, or partly masked (for example with asterisks). "
-  + "Never guess or complete a hidden digit. Write the date as YYYY-MM-DD and the amount with its digits only.";
+  + "Never guess or complete a hidden digit. For the recipient account number, copy it as printed (masked digits stay as asterisks) and set unclear to true only when its last four digits are not clearly legible. Write the date as YYYY-MM-DD and the amount with its digits only.";
 const PROMPT = "Extract the transfer amount, payment date, reference number, recipient name and recipient account number.";
 
 export interface ProofFacts {
@@ -50,10 +50,13 @@ function amountCentavos(value: string): number | null {
 /** A masked, unclear or unparseable detail is Needs Review and a hidden one Missing: never an assumed Match. */
 export function compareReading(reading: ModelReading, facts: ProofFacts): Findings {
   const peso = (c: number) => `₱${(c / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+  const last4 = (v: string) => { const d = v.replace(/\D/g, ""); return d.length >= 4 ? d.slice(-4) : null; };
   const field = (key: Field, expected: string | null, judge: (read: string) => Finding | null) => {
     const { value, unclear } = reading[key];
     const read = value?.trim() || null;
     if (!read) return missing(expected);
+    // Receipts mask the account number, so only its last four digits are compared; masking elsewhere is fine.
+    if (key === "accountNumber") return { finding: (unclear ? null : judge(read)) ?? ("Needs Review" as const), read, expected };
     if (unclear || MASK.test(read)) return { finding: "Needs Review" as const, read, expected };
     return { finding: judge(read) ?? ("Needs Review" as const), read, expected };
   };
@@ -66,7 +69,7 @@ export function compareReading(reading: ModelReading, facts: ProofFacts): Findin
     }),
     reference: field("reference", facts.reference, r => facts.reference?.trim() ? (norm(r) === norm(facts.reference) ? "Match" : "Mismatch") : null),
     recipient: field("recipient", facts.accountName, r => facts.accountName?.trim() ? (norm(r) === norm(facts.accountName) ? "Match" : "Mismatch") : null),
-    accountNumber: field("accountNumber", facts.accountNumber, r => facts.accountNumber?.trim() ? (norm(r).replace(/\D/g, "") === norm(facts.accountNumber).replace(/\D/g, "") ? "Match" : "Mismatch") : null),
+    accountNumber: field("accountNumber", facts.accountNumber, r => { const a = last4(r), b = facts.accountNumber ? last4(facts.accountNumber) : null; return a && b ? (a === b ? "Match" : "Mismatch") : null; }),
   };
 }
 
@@ -84,18 +87,20 @@ export interface ReaderDeps {
   readonly ocr?: (image: Uint8Array) => Promise<string>;
 }
 
-/** What OCR alone could read, in the model's shape. Recipient and account number are not parsed by OCR, so they are left for Staff. */
+/** What OCR alone could read, in the model's shape. The recipient name is not parsed by OCR, so it is left for Staff. */
 export function ocrReading(text: string): ModelReading {
   const r = readReceiptText(text);
   const f = (value: string | undefined) => ({ value: value ?? null, unclear: false });
-  return { amount: f(r.amountInCentavos === undefined ? undefined : (r.amountInCentavos / 100).toFixed(2)), date: f(r.paidAt), reference: f(r.reference), recipient: f(undefined), accountNumber: f(undefined) };
+  // A masked number such as "09** *** 7289" or "****7289": keep the masked shape so only the last four digits count.
+  const account = /(?:\+?\d[\d ]{0,5})?[*•●xX·]{2,}[\s*•●xX·-]*(\d{4})\b/.exec(text)?.[0].trim();
+  return { amount: f(r.amountInCentavos === undefined ? undefined : (r.amountInCentavos / 100).toFixed(2)), date: f(r.paidAt), reference: f(r.reference), recipient: f(undefined), accountNumber: f(account) };
 }
 
 /** The model's reading with OCR filling any detail the model could not find. */
 export function mergeReadings(model: ModelReading, ocr: ModelReading | null): ModelReading {
   if (!ocr) return model;
   const pick = (k: Field) => (model[k].value?.trim() ? model[k] : ocr[k]);
-  return { amount: pick("amount"), date: pick("date"), reference: pick("reference"), recipient: model.recipient, accountNumber: model.accountNumber };
+  return { amount: pick("amount"), date: pick("date"), reference: pick("reference"), recipient: model.recipient, accountNumber: pick("accountNumber") };
 }
 
 /**
@@ -124,7 +129,7 @@ export async function readProof(deps: ReaderDeps, facts: ProofFacts): Promise<Pr
       failure = out.reason;
       const findings = compareReading(ocr, facts);
       // OCR not finding a detail is not the same as the receipt not showing it, so nothing is called Missing here.
-      for (const k of FIELDS) if (findings[k].finding === "Missing" || k === "recipient" || k === "accountNumber") findings[k] = { finding: "Needs Review", read: null, expected: findings[k].expected };
+      for (const k of FIELDS) if (findings[k].finding === "Missing" || k === "recipient") findings[k] = { finding: "Needs Review", read: null, expected: findings[k].expected };
       result = { proofId: facts.proofId, status: "read", findings, flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: "tesseract.js" };
     } else {
       failure = out.reason;
