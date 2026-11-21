@@ -19,6 +19,7 @@ import { cancelStorefrontItems, changeOrderCourier, changeOrderStatus, resendOrd
 import { checkBooking, type CourierInput, type DispatchRecord } from "./dispatch-record";
 import { loadDispatchRecord } from "./dispatch-record-read";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
+import { accountFitsMethod } from "./payment-account-options";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
 import { CANCELLABLE_STATUSES, failedEmails, loadOrder } from "./orders";
@@ -128,7 +129,7 @@ const amountsMetadata = (a: { subtotalInCentavos: number; discountInCentavos: nu
 });
 
 /** Quote in integer centavos; the storefront confirms the Delivery Order in the same write, after checking the final amounts. */
-export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, expectedTotalInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
+export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, expectedTotalInCentavos: number, codChoice?: CodChoice, paymentAccountId?: string): Promise<OrderChangeResult> {
   let confirmed: ConfirmedAmounts | undefined;
   let freeDelivery: FreeDeliveryRule | undefined;
   return act(id, async (order, staff) => {
@@ -140,6 +141,9 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     }
     if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
     if (!CANCELLABLE_STATUSES.includes(order.status) || order.delivery_fee_in_centavos !== null) return { ok: false, reason: ALREADY_CHANGED };
+    if (paymentAccountId !== undefined && !(await accountFitsMethod(paymentAccountId, order.payment_method))) {
+      return { ok: false, reason: "That Payment account does not match how the Customer chose to pay. Pick another." };
+    }
     const rule = await freeDeliveryRule(database(), { freeDelivery: order.free_delivery, thresholdInCentavos: order.free_delivery_threshold_in_centavos },
       order.subtotal_in_centavos - (order.discount_in_centavos ?? 0));
     const refusal = feeRefusal(rule, deliveryFeeInCentavos);
@@ -148,15 +152,16 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     const final = finalAmounts(order, staff, deliveryFeeInCentavos, expectedTotalInCentavos);
     if (!final.ok) return final;
     confirmed = final.amounts;
-    return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos, amounts: final.amounts }, order.status === "placed" ? "confirmed" : order.status);
+    return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos, amounts: final.amounts, ...(paymentAccountId ? { paymentAccountId } : {}) }, order.status === "placed" ? "confirmed" : order.status);
   }, ORDERS_MODULE, {
     action: "order.confirmed",
     description: staff => `${staff.name} ${deliveryFeeInCentavos === 0 ? "quoted free delivery (₱0.00)" : `quoted a Delivery fee of ${pesos(deliveryFeeInCentavos)}`} and confirmed Order #${id}${choiceNote(codChoice)}.`,
     get metadata() {
       if (!confirmed) return undefined;
+      const account = paymentAccountId ? { payment_account_id: paymentAccountId } : {};
       return freeDelivery
-        ? { ...amountsMetadata(confirmed), free_delivery_applied: true, free_delivery_threshold_in_centavos: freeDelivery.thresholdInCentavos }
-        : amountsMetadata(confirmed);
+        ? { ...amountsMetadata(confirmed), ...account, free_delivery_applied: true, free_delivery_threshold_in_centavos: freeDelivery.thresholdInCentavos }
+        : { ...amountsMetadata(confirmed), ...account };
     },
   });
 }

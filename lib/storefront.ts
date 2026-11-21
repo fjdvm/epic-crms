@@ -21,7 +21,7 @@ export interface CodCollection { amountInCentavos: number; staffId: string; staf
 
 export type OrderStatusUpdate =
   | { status: "preparing"; staffId: string; staffName: string; courier?: never }
-  | { status: "confirmed"; amounts: ConfirmedAmounts; deliveryFeeInCentavos?: number; courier?: never }
+  | { status: "confirmed"; amounts: ConfirmedAmounts; deliveryFeeInCentavos?: number; /** The Payment account Staff chose; the Pay your Order email shows only it. */ paymentAccountId?: string; courier?: never }
   | { status: "cancelled"; /** Why Staff rejected the Order; the Customer is shown it. */ reason?: string; deliveryFeeInCentavos?: never; courier?: never; amounts?: never }
   | { status: "dispatched"; courier?: CourierBooking; deliveryFeeInCentavos?: never }
   | { status: "delivered"; deliveryPhotoFileId: string; codCollection?: CodCollection; deliveryFeeInCentavos?: never; courier?: never }
@@ -79,6 +79,21 @@ export async function resendOrderEmail(id: number, email: { kind: string; occurr
   }
 }
 
+/** The storefront reads a confirmation's amounts as flat fields (and its own name for the discount), not as a nested `amounts` object. */
+function wireBody(update: object): object {
+  if (!("status" in update) || update.status !== "confirmed" || !("amounts" in update) || !update.amounts) return update;
+  const { amounts, ...rest } = update as { amounts: ConfirmedAmounts };
+  return {
+    ...rest,
+    subtotalInCentavos: amounts.subtotalInCentavos,
+    approvedDiscountInCentavos: amounts.discountInCentavos,
+    deliveryFeeInCentavos: amounts.deliveryFeeInCentavos,
+    totalInCentavos: amounts.totalInCentavos,
+    staffId: amounts.staffId,
+    staffName: amounts.staffName,
+  };
+}
+
 async function orderRequest(id: number, update: OrderStatusUpdate | ProofRejection | { lineIds: number[]; staffId: string; staffName: string; expectedStatus: string }, path = "status", responseStatus?: string): Promise<OrderChangeResult & { rejections?: number }> {
   const origin = process.env.CREOMS_STOREFRONT_URL;
   const secret = process.env.CREOMS_SERVICE_SECRET;
@@ -87,7 +102,7 @@ async function orderRequest(id: number, update: OrderStatusUpdate | ProofRejecti
     const response = await fetch(new URL(`/api/internal/orders/${id}/${path}`, origin), {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret)}` },
-      body: JSON.stringify(update), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify(wireBody(update)), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
     });
     const body = await response.json();
     if (!response.ok) return { ok: false, reason: typeof body.error === "string" ? body.error : "Storefront refused the change." };

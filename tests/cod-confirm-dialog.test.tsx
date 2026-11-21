@@ -46,7 +46,7 @@ describe("COD confirm dialog", () => {
     openQuote();
     fireEvent.click(screen.getByLabelText("Call to confirm, then confirm the order"));
     fireEvent.click(screen.getByRole("button", { name: "Save & continue" }));
-    await waitFor(() => expect(quoteDeliveryFee).toHaveBeenCalledWith(1058, 15000, 234000, "call-first"));
+    await waitFor(() => expect(quoteDeliveryFee).toHaveBeenCalledWith(1058, 15000, 234000, "call-first", undefined));
     expect(toast.success).toHaveBeenCalledWith("Order #1058 confirmed with a ₱150.00 Delivery fee.");
   });
 

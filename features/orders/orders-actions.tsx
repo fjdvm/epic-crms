@@ -5,6 +5,8 @@ import { Check, X } from "lucide-react";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { orderLabel } from "@/features/customer-profiles/rules";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { formatPesos, parsePesos } from "@/features/customer-profiles/format";
@@ -87,12 +89,13 @@ function RejectOrder({ order }: { order: OrderDetail }) {
 
 function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFlagLine[] }) {
   const [text, setText] = useState("");
-  // Staff's own notes from the Lalamove and Grab apps. They are never saved or sent: only the fee to charge is.
-  const [lalamove, setLalamove] = useState("");
-  const [grab, setGrab] = useState("");
+  const accounts = order.paymentAccounts ?? [];
+  const [picked, setAccountId] = useState<string>("");
+  // One account needs no choice; with several, Staff pick.
+  const accountId = picked || (accounts.length === 1 ? accounts[0].id : "");
   const free = order.freeDelivery?.qualifies === true;
   const fee = free ? 0 : parsePesos(text);
-  const cod = useCodChoice(order, flags, (choice) => (choice ? quoteDeliveryFee(order.id, fee as number, order.subtotal - order.discount + (fee as number), choice) : quoteDeliveryFee(order.id, fee as number, order.subtotal - order.discount + (fee as number))), `Order #${order.id} confirmed with a ${formatPesos(fee ?? 0)} Delivery fee.`);
+  const cod = useCodChoice(order, flags, (choice) => quoteDeliveryFee(order.id, fee as number, order.subtotal - order.discount + (fee as number), choice, accountId || undefined), `Order #${order.id} confirmed with a ${formatPesos(fee ?? 0)} Delivery fee.`);
 
   return (
     <OrderActionDialog
@@ -101,23 +104,24 @@ function QuoteFee({ order, flags }: { order: OrderDetail; flags: readonly CodFla
       description={free ? "This Order qualifies for free delivery. Confirming it charges no Delivery fee." : "Enter the Delivery fee. Confirming sends the Customer an email with the total to pay."}
       confirm={cod.asking ? "Save" : cod.flagged ? "Save & continue" : "Confirm order"}
       busy={cod.asking ? "Saving…" : "Confirming…"}
-      disabled={cod.disabled || (!cod.asking && fee === null)}
+      disabled={cod.disabled || (!cod.asking && (fee === null || (accounts.length > 0 && !accountId)))}
       run={cod.run}
       successMessage={cod.successMessage}
     >
       <OrderSummary order={order} />
       {cod.panel}
-      <div className="grid grid-cols-2 gap-3">
+      {accounts.length > 0 && (
         <div className="space-y-1.5">
-          <Label htmlFor="lalamove-estimate" className="text-[13px] font-medium text-foreground">Lalamove estimate</Label>
-          <Input id="lalamove-estimate" autoComplete="off" placeholder="₱186 · motorcycle" value={lalamove} onChange={(e) => setLalamove(e.target.value)} />
+          <Label htmlFor="payment-account" className="text-[13px] font-medium text-foreground">Payment account <span className="text-[#dc2626]">*</span></Label>
+          <Select value={accountId} onValueChange={setAccountId}>
+            <SelectTrigger id="payment-account" aria-label="Payment account"><SelectValue placeholder="Choose an account" /></SelectTrigger>
+            <SelectContent>
+              {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.label} · {a.accountName} · {a.maskedNumber}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-[#71717a]">Only {orderLabel(order.paymentMethod)} accounts are listed, because that is how the Customer chose to pay.</p>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="grab-estimate" className="text-[13px] font-medium text-foreground">Grab estimate</Label>
-          <Input id="grab-estimate" autoComplete="off" placeholder="₱204 · motorcycle" value={grab} onChange={(e) => setGrab(e.target.value)} />
-        </div>
-        <p className="col-span-2 text-xs text-[#71717a]">Optional. Check the apps yourself; these notes are not saved.</p>
-      </div>
+      )}
       <div className="space-y-1.5">
         <Label htmlFor="delivery-fee" className="text-[13px] font-medium text-foreground">
           Delivery fee to charge (₱) <span className="text-[#dc2626]">*</span>
