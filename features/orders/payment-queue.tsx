@@ -10,6 +10,7 @@ import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-p
 
 import { ProofAccountView, ProofBadge, proofOutcome } from "./proof-account";
 import { PaymentProofChecksView } from "./payment-proof-checks-view";
+import { hasPaymentAnomaly } from "./payment-anomaly";
 import { ProofReadFindings } from "./proof-read-view";
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
 import type { ShopRole } from "@/lib/portal/roles";
@@ -198,9 +199,10 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
       <Link key="v" href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">View</Link>
     ),
   ];
+  const anomaly = tab === "verify" && hasPaymentAnomaly(order);
 
   return (
-    <div data-payment-row className="flex items-center border-b border-[#efebf4] py-2.5">
+    <div data-payment-row data-anomaly={anomaly || undefined} className={`flex items-center border-b border-[#efebf4] py-2.5 ${anomaly ? "bg-[#fdecec]" : ""}`}>
       {cells.map((cell, i) => (
         <div key={COLUMNS[i].header || "action"} className={`${CELL} ${COLUMNS[i].className}`}>
           {cell}

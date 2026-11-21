@@ -700,6 +700,15 @@ describe("the Payments page", () => {
     expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
   });
 
+  it("tints a queued row pastel red when the proof reader found a mismatch, and leaves clean rows plain", () => {
+    const read = { status: "read" as const, flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, corrections: [],
+      findings: { amount: { finding: "Mismatch" as const, read: "90.00", expected: "₱900.00" } } as never };
+    const { container } = renderPayments([queued({ id: 1, proofRead: read }), queued({ id: 2 })]);
+    const [bad, ok] = Array.from(container.querySelectorAll("[data-payment-row]"));
+    expect(bad.getAttribute("data-anomaly")).toBe("true");
+    expect(ok.getAttribute("data-anomaly")).toBeNull();
+  });
+
   it("opens the verify dialog with the proof beside the amount due, offering Mark paid and Cancel order", () => {
     renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
