@@ -10,7 +10,6 @@ import { currentStatus, type IdType, type VerificationStatus } from "@/features/
 import { safeReason } from "./placement-audit";
 import { isOccurrence, isStatusEmailKind, type FailedEmail, type StatusEmailKind } from "./status-emails";
 import { freeDeliveryRule, type FreeDeliveryRule } from "./free-delivery";
-import { matchingPaymentAccounts } from "./payment-account-options";
 import { paymentScreenshotSource } from "./payment-screenshot";
 
 export const ORDERS_PAGE_SIZE = 25;
@@ -203,7 +202,7 @@ export interface OrderDetail extends CustomerOrder {
   discountDetail?: { allowanceUsed: number | null; reductionReason: string | null };
   /** Whether this Order qualifies for free delivery under the rule saved when it was placed (#579); absent when not loaded. */
   freeDelivery?: FreeDeliveryRule;
-  /** Active Payment accounts that match how the Customer chose to pay (GCash only shows GCash accounts); empty for Cash on Delivery. */
+  /** Added by the Order page (a server file), never by `loadOrder`: this module also reaches the browser. Active Payment accounts that match how the Customer chose to pay (GCash only shows GCash accounts); empty for Cash on Delivery. */
   paymentAccounts?: PaymentAccountOption[];
 }
 
@@ -279,7 +278,6 @@ export async function loadOrder(connect: () => postgres.Sql, orderId: number, se
         deliveryPhotoFileId: customer.delivery_photo_file_id,
         deliveryPhotoRemovedAt: customer.delivery_photo_removed_at ? new Date(customer.delivery_photo_removed_at) : null,
         freeDelivery: await freeDeliveryRule(sql, { freeDelivery: customer.free_delivery, thresholdInCentavos: customer.free_delivery_threshold }, order.subtotal - order.discount),
-        paymentAccounts: await matchingPaymentAccounts(order.paymentMethod),
         seniorPwd: await orderVerification(sql, orderId),
         emailFailures: await failedEmails(sql, orderId),
         discountDetail: {

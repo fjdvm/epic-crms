@@ -7,6 +7,7 @@ import { OrderDetailView } from "@/features/orders/order-detail";
 import { loadCodFlags } from "@/features/orders/cod-actions";
 import { loadDispatchRecord } from "@/features/orders/dispatch-record-read";
 import { loadOrder } from "@/features/orders/orders";
+import { matchingPaymentAccounts } from "@/features/orders/payment-account-options";
 import { loadCancellationState } from "@/features/orders/cancellation-state";
 import { proofReadsOrEmpty } from "@/features/orders/proof-read";
 import { loadPaymentReview } from "@/features/orders/payment-review";
@@ -50,7 +51,10 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
 
   if (!result.order) notFound();
 
-  const { order } = result;
+  // Only an Order with no Delivery fee yet is about to be confirmed, so only it needs the Payment accounts for the dropdown.
+  const order = result.order.deliveryFee === null
+    ? { ...result.order, paymentAccounts: await matchingPaymentAccounts(result.order.paymentMethod) }
+    : result.order;
   let deliveryPhotoUrl: string | null | undefined;
   if (order.deliveryPhotoFileId) {
     try {
