@@ -9,6 +9,8 @@ export const STATUS_EMAILS = {
   // The confirmation emails the storefront records today, by payment kind.
   "delivery-confirmed": { label: "delivery confirmation", module: ORDERS_MODULE },
   "online-delivery-confirmed": { label: "delivery confirmation", module: ORDERS_MODULE },
+  // Staff rejected a placed Order or cancelled one before dispatch: the reason, and whether money is owed back.
+  "cancelled-by-shop": { label: "cancellation", module: ORDERS_MODULE },
   "payment-verified": { label: "payment verified", module: PAYMENTS_MODULE },
   "payment-rejected": { label: "payment rejected", module: PAYMENTS_MODULE },
   "payment-expired": { label: "payment expired", module: PAYMENTS_MODULE },
