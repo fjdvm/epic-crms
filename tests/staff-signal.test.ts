@@ -10,6 +10,8 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/tickets-db", () => ({ ticketsDatabase: () => db.sql }));
+const startRead = vi.fn();
+vi.mock("@/features/orders/payment-proof-start", () => ({ startPaymentProofRead: () => startRead() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/portal/staff", () => ({ getShell: vi.fn(async () => ({ staff: { username: "ana", name: "Ana" }, permittedPages: ["/orders"] })) }));
 let db: TestDatabase;
@@ -51,6 +53,13 @@ it("syncs an Order into the feed before sending a content-free shared Staff nudg
   expect((await signal()).status).toBe(202);
   expect((await listNotifications(db.sql, "crms", 20, viewer)).notifications).toMatchObject([{ kind: "order-placed", orderId: 1 }]);
   expect(nudges).toEqual([{ type: "creoms.staff.changed", title: "Staff feed changed", body: "Refresh the Staff feed.", sendingApp: "crms", targetApp: "crms", userIds: ["creoms-staff"] }]);
+});
+
+it("starts the payment Proof reader for an authorised signal only", async () => {
+  expect((await signal("wrong")).status).toBe(401);
+  expect(startRead).not.toHaveBeenCalled();
+  expect((await signal()).status).toBe(202);
+  expect(startRead).toHaveBeenCalledTimes(1);
 });
 
 it("refuses direct calls without the dedicated gateway credential before any sync", async () => {
