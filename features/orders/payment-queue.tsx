@@ -13,7 +13,7 @@ import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import { ProofReadFindings } from "./proof-read-view";
 import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
 import type { ShopRole } from "@/lib/portal/roles";
-import { ApproveAnywayDialog, AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
+import { ApproveAnywayDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { OrderActionDialog } from "./action-dialog";
@@ -42,7 +42,7 @@ function Receipt({ order, size }: { order: PaymentRow; size: "thumb" | "full" })
     <ZoomableImage
       src={screenshot}
       alt={`Receipt for Order #${order.id}`}
-      className={size === "thumb" ? "h-10 w-8 rounded-sm border border-[#e4ddee] object-cover" : "max-h-72 w-full rounded-lg border border-[#e4ddee] object-contain"}
+      className={size === "thumb" ? "h-10 w-8 rounded-sm border border-[#e4ddee] object-cover" : "block h-auto w-full rounded-lg border border-[#e4ddee] object-cover"}
     />
   ) : (
     <div className={`flex flex-col items-center justify-center gap-2 border border-[#e4ddee] bg-[#f1edf6] text-xs text-[#5a5368] ${frame}`}>
@@ -92,7 +92,7 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
         <div className="grid min-h-0 gap-6 overflow-y-auto px-6 py-5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="space-y-4 text-sm text-[#1f1a2e]">
             <ProofAccountView account={order.proof?.account ?? null} method={order.method} />
-            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} reference={reference} />}
+            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} reference={reference} read={order.proofRead} />}
             <ProofReadFindings read={order.proofRead} role={role} />
             {reusedOn.length > 0 && (
               <p role="alert" className="rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
@@ -130,7 +130,6 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
           <div className="flex items-center justify-end gap-2 border-t border-[#f0f0f2] bg-[#fafafa] px-6 py-3.5">
             <CancelPaymentDialog id={order.id} />
             {order.rejections < MANAGER_AFTER_REJECTIONS && <RejectProofDialog id={order.id} />}
-            {order.rejections < MANAGER_AFTER_REJECTIONS && <AskNewProofDialog id={order.id} />}
             {needsManager ? (
               <GatedButton label={role === "manager" || approval?.approvalId ? "Approve anyway" : approval?.waiting ? "Waiting for approval" : "Request approval…"} open={found}>
                 <ApproveAnywayDialog id={order.id} role={role} approvalId={approval?.approvalId} waiting={approval?.waiting} reusedOn={reusedOn} />
