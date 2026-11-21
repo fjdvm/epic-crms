@@ -50,7 +50,14 @@ export function ProofReadFindings({ read, role, proofId, subject = "order", chan
   const shell = "space-y-2 rounded-lg border border-[#e4e4e7] px-4 py-3 text-sm";
 
   if (!read || read.status === "pending") {
-    return <section aria-label="Proof reader findings" className={shell}>{heading}<p className="text-[13px] text-[#71717a]">{subject === "refund" ? "The reader is checking this proof in the background. Check the image yourself; findings appear here once it has run." : "Not read yet. Check the image yourself; findings appear here once the reader has run."}</p></section>;
+    return (
+      <section aria-label="Proof reader findings" className={shell}>
+        {heading}
+        {subject === "refund"
+          ? <p className="text-[13px] text-[#71717a]">The reader is checking this proof in the background. Check the image yourself; findings appear here once it has run.</p>
+          : <p data-unread className="rounded-md bg-[#fdf1d8] px-2.5 py-2 text-[13px] text-[#8a5a00]"><b>Not read yet.</b> The reader has not checked this image, and the values above are only what the Customer typed. Compare the amount, date and reference on the image with the Order yourself before marking it paid.</p>}
+      </section>
+    );
   }
   const failed = read.status === "needs-review";
   return (

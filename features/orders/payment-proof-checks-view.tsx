@@ -54,7 +54,7 @@ export function PaymentProofChecksView({ confirmed, expected, checks, reference,
   const compareIds = [...new Set([...checks.reference.otherOrderIds, ...(read?.flags.reusedReferenceOrderIds ?? [])])];
   return (
     <section aria-label="Payment proof checks" className="space-y-3 text-sm">
-      <h3 className="font-semibold">Customer-confirmed values · plain-rule checks</h3>
+      <h3 className="font-semibold">Customer-typed values · plain-rule checks (not read from the image)</h3>
       <table className="w-full text-left text-[13px]">
         <thead className="text-xs text-muted-foreground">
           <tr><th className="py-1 pr-2 font-medium">Field</th><th className="py-1 pr-2 font-medium">Customer confirmed</th><th className="py-1 pr-2 font-medium">Should be</th><th className="py-1 font-medium">Check</th></tr>
