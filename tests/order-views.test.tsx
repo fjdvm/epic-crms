@@ -700,6 +700,15 @@ describe("the Payments page", () => {
     expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
   });
 
+  it("tints a queued row pastel red when the proof reader found a mismatch, and leaves clean rows plain", () => {
+    const read = { status: "read" as const, flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, corrections: [],
+      findings: { amount: { finding: "Mismatch" as const, read: "90.00", expected: "₱900.00" } } as never };
+    const { container } = renderPayments([queued({ id: 1, proofRead: read }), queued({ id: 2 })]);
+    const [bad, ok] = Array.from(container.querySelectorAll("[data-payment-row]"));
+    expect(bad.getAttribute("data-anomaly")).toBe("true");
+    expect(ok.getAttribute("data-anomaly")).toBeNull();
+  });
+
   it("opens the verify dialog with the proof beside the amount due, offering Mark paid and Cancel order", () => {
     renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
@@ -707,7 +716,8 @@ describe("the Payments page", () => {
     const dialog = screen.getByRole("dialog", { name: "Verify payment · Order #1046" });
     expect(within(dialog).getByText(/order total ₱1,197.00/)).toBeTruthy();
     expect(within(dialog).getByRole("img", { name: "Receipt for Order #1046" })).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "View image" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Zoom Receipt for Order #1046" }));
+    expect(within(dialog).queryByRole("button", { name: "View image" })).toBeNull();
     expect(screen.getByRole("button", { name: "Zoom in" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(within(dialog).getByText(/Reading the screenshot never marks an Order paid/)).toBeTruthy();
