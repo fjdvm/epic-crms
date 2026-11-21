@@ -16,7 +16,7 @@ import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
 import { isOccurrence, isStatusEmailKind, RETURN_REFUNDED_EMAIL, STATUS_EMAILS } from "./status-emails";
 import { cancelStorefrontItems, decideCancelRequest, changeOrderCourier, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
-import { checkBooking, type CourierInput, type DispatchRecord } from "./dispatch-record";
+import { checkBooking, linkProblem, type CourierInput, type DispatchRecord } from "./dispatch-record";
 import { loadDispatchRecord } from "./dispatch-record-read";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
 import { accountFitsMethod } from "./payment-account-options";
@@ -467,6 +467,12 @@ function codCollection(order: CurrentOrder, staff: Staff, collectedInCentavos: n
 const collectionAudit = (collection: CodCollection | undefined, from: string, to: string) =>
   collection ? { cod_collected_in_centavos: collection.amountInCentavos, cod_collected_by: collection.staffName, cod_collected_at: new Date().toISOString(), from_status: from, to_status: to } : undefined;
 
+/** The courier image link the Delivery photo was downloaded from, for the audit only; anything else is ignored. */
+function photoLinkOf(form: FormData): string | null {
+  const value = form.get("photoLink");
+  return typeof value === "string" && value.trim() && !linkProblem(value) ? value.trim() : null;
+}
+
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
 export async function deliverOrder(id: number, form?: FormData, collectedInCentavos?: number): Promise<OrderChangeResult> {
   return act(id, async (order, staff) => {
@@ -492,7 +498,9 @@ export async function deliverOrder(id: number, form?: FormData, collectedInCenta
     if (result.ok) {
       await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered",
         `${staff.name} marked Order #${id} delivered${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`, collectionAudit(collection, "dispatched", "delivered"));
-      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivery_photo_attached", `${staff.name} attached a Delivery photo to Order #${id}.`);
+      const link = photoLinkOf(form);
+      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivery_photo_attached",
+        `${staff.name} attached a Delivery photo to Order #${id}${link ? " from a courier image link" : ""}.`, link ? { source: "courier link", photo_link: link } : undefined);
       try {
         await gatewayFileStorage.promote(deliveryPhotoFileId);
       } catch {

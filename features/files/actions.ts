@@ -6,6 +6,7 @@ import { checkFileInfo, filePolicy, isUploadModule, type FileFailure, type FileI
 import { openUpload, sealUpload } from "./reference";
 import { directFileStorage, storageUrl } from "./storage";
 import { validateStoredFile } from "./validation";
+import { downloadLinkImage, LINK_INVALID_REASON } from "./link-download";
 
 const unavailable = (): FileFailure => ({ ok: false, reason: "File storage is temporarily unavailable. Please try again." });
 const MANAGE_REASON = "Only a Manager or the CEO can manage Payment accounts.";
@@ -55,6 +56,28 @@ export async function confirmFileUpload(module: UploadModule, reference: string)
     }
     return unavailable();
   }
+}
+
+/**
+ * A Delivery photo from the image link Staff copied from Lalamove or Grab. The server downloads it (public https hosts
+ * only, JPG/PNG up to 5 MB) and stores it through the same request → upload → confirm steps as a browser upload, so the
+ * result is an ordinary ready Fulfilment reference for `deliverOrder`.
+ */
+export async function importDeliveryPhotoLink(link: string): Promise<ReadyFile | FileFailure> {
+  const staff = await requireModule("Fulfilment");
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (typeof link !== "string") return { ok: false, reason: LINK_INVALID_REASON };
+  const image = await downloadLinkImage(link);
+  if (!image.ok) return image;
+  const pending = await requestFileUpload("Fulfilment", { filename: image.filename, contentType: image.contentType, size: image.bytes.length });
+  if (!pending.ok) return pending;
+  try {
+    const response = await fetch(pending.uploadUrl, {
+      method: "PUT", headers: { "Content-Type": image.contentType }, body: image.bytes as BodyInit, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) return unavailable();
+  } catch { return unavailable(); }
+  return confirmFileUpload("Fulfilment", pending.reference);
 }
 
 export async function getFileView(module: UploadModule, reference: string): Promise<({ ok: true; url: string } & FileInfo) | FileFailure> {

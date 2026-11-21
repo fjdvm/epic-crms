@@ -77,6 +77,25 @@ storefront implementation, excluded by parent spec #168.
 The photo picker (#176) lives in the Mark as delivered dialog. The Order detail page shows
 the photo through the file-storage view URL, or "No photo" when `deliveryPhotoFileId` is null.
 
+### Proof by courier image link
+
+Proof of delivery is required, and Staff choose **Upload photo** or **Paste image link**
+(the proof image copied from the Lalamove or Grab booking). For a link, the
+`importDeliveryPhotoLink(link)` Server Action (Fulfilment Module, Staff or Manager only)
+downloads the image on the server (`features/files/link-download.ts`) and stores it through
+the same request → PUT → confirm steps as a browser upload. The result is an ordinary ready
+Fulfilment reference, so `deliverOrder`, the storefront contract, promotion and retention
+are unchanged; the customer sees the stored copy, which keeps working after the courier's
+link expires. `deliverOrder` also takes an optional `photoLink` field, used only for the
+`order.delivery_photo_attached` audit (`source: "courier link"`).
+
+Download rules, because the link is typed by Staff: https only, no credentials in the URL;
+every resolved address must be public (private, loopback, link-local, CGNAT and metadata
+ranges are refused) and the socket is pinned to the checked address, so DNS rebinding
+cannot reach an internal host; at most 3 redirects, each re-checked; 10 s per request;
+the body is capped at 5 MB; the real bytes must be JPG or PNG. A link that returns a page
+instead of an image is refused with "Save the image and upload it instead."
+
 ## Packing (#338)
 
 `startPreparing(id)` is the existing Pack order move. It checks Fulfilment and a

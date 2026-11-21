@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { uploadFile } from "@/features/files/client";
+import { importDeliveryPhotoLink } from "@/features/files/actions";
 
+import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 
@@ -10,6 +12,7 @@ import { OrderActionDialog } from "./action-dialog";
 import { deliverOrder, dispatchOrder, startPreparing } from "./actions";
 import { CourierFields, useCourierForm } from "./courier-fields";
 import { DeliveryPhotoPicker } from "./delivery-photo-picker";
+import { LINK_MAX, linkProblem } from "./dispatch-record";
 import { formatPesos } from "@/features/customer-profiles/format";
 import { readyToPrepare } from "./fulfilment";
 
@@ -39,10 +42,57 @@ function CollectedAmount({ move, total, value, onChange }: { move: string; total
 
 const totalText = (total: number) => (total / 100).toFixed(2);
 
-/** Marking delivered needs the Delivery photo, so this keeps the chosen file for the dialog. */
+type ProofSource = "upload" | "link";
+const PROOF_SOURCES: { value: ProofSource; label: string }[] = [{ value: "upload", label: "Upload photo" }, { value: "link", label: "Paste image link" }];
+
+/** Proof of delivery is required: an uploaded photo, or the image link copied from the Lalamove or Grab booking. */
+function ProofOfDelivery({ source, onSource, photo, onPhoto, link, onLink, linkError }: {
+  source: ProofSource; onSource: (source: ProofSource) => void; photo: File | null; onPhoto: (photo: File | null) => void;
+  link: string; onLink: (link: string) => void; linkError: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <p id="proof-of-delivery" className="text-[13px] font-medium text-foreground">Proof of delivery (required)</p>
+        <p className="text-xs text-[#71717a]">Upload the photo, or paste the image link from Lalamove or Grab.</p>
+        <div role="radiogroup" aria-labelledby="proof-of-delivery" className="flex gap-2">
+          {PROOF_SOURCES.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={source === option.value}
+              onClick={() => onSource(option.value)}
+              className={`h-9 flex-1 rounded-lg border text-[13px] ${source === option.value ? "border-[#5b2a86] bg-[#f4effa] font-medium text-[#5b2a86]" : "border-[#e6e1ee]"}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {source === "upload" ? <DeliveryPhotoPicker photo={photo} onChange={onPhoto} /> : (
+        <div className="space-y-1.5">
+          <Label htmlFor="delivery-photo-link" className="text-[13px] font-medium text-foreground">Delivery photo link</Label>
+          <Input id="delivery-photo-link" type="url" autoComplete="off" placeholder="https://…" maxLength={LINK_MAX + 1} value={link}
+            onChange={e => onLink(e.target.value)} aria-invalid={linkError ? true : undefined} />
+          {linkError ? <p role="alert" className="text-xs text-[#dc2626]">{linkError}</p>
+            : <p className="text-xs text-[#71717a]">We download the image and keep it as the Delivery photo. JPG or PNG, up to 5 MB.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PHOTO_LINK_REASON = "Paste the image link as a web address starting with https://.";
+
+/** Marking delivered needs the proof of delivery, so this keeps the chosen file or pasted link for the dialog. */
 function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: number; cod: boolean; total: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
+  const [source, setSource] = useState<ProofSource>("upload");
   const [photo, setPhoto] = useState<File | null>(null);
+  const [link, setLink] = useState("");
   const [collected, setCollected] = useState(totalText(total));
+  const linkError = link.trim() && linkProblem(link) ? PHOTO_LINK_REASON : null;
+  const proofReady = source === "upload" ? photo !== null : link.trim() !== "" && !linkError;
 
   return (
     <OrderActionDialog
@@ -52,19 +102,20 @@ function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: numbe
       description="The store records the delivery time now and emails the Customer."
       confirm="Mark as delivered"
       busy="Marking delivered…"
-      disabled={photo === null || (cod && Number.isNaN(centavosOf(collected)))}
+      disabled={!proofReady || (cod && Number.isNaN(centavosOf(collected)))}
       run={async () => {
-        const uploaded = await uploadFile("Fulfilment", photo as File);
+        const uploaded = source === "upload" ? await uploadFile("Fulfilment", photo as File) : await importDeliveryPhotoLink(link.trim());
         if (!uploaded.ok) return uploaded;
         const form = new FormData();
         form.set("photo", uploaded.reference);
+        if (source === "link") form.set("photoLink", link.trim());
 
         return deliverOrder(id, form, cod ? centavosOf(collected) : undefined);
       }}
       onOptimistic={onMove && (() => onMove("delivered"))}
       successMessage={`Order #${id} delivered.`}
     >
-      <DeliveryPhotoPicker photo={photo} onChange={setPhoto} />
+      <ProofOfDelivery source={source} onSource={setSource} photo={photo} onPhoto={setPhoto} link={link} onLink={setLink} linkError={linkError} />
       {cod && <CollectedAmount move="Out for delivery → Delivered" total={total} value={collected} onChange={setCollected} />}
       {/* The Figma dialog's Feedback request row; the storefront always schedules it, so there is no toggle. */}
       <div className="space-y-1">
