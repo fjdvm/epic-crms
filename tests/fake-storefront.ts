@@ -533,10 +533,11 @@ export class FakeStorefront {
       return Response.json({ error: "A Delivery fee is required." }, { status: 400 });
     }
     if (mayConfirm) {
-      const a = update.amounts;
+      // The real storefront takes these as flat fields; `amounts` is not accepted.
       const fee = update.deliveryFeeInCentavos ?? 0;
-      if (!a || a.subtotalInCentavos !== order.subtotal_in_centavos || a.deliveryFeeInCentavos !== fee ||
-        a.totalInCentavos !== a.subtotalInCentavos - a.discountInCentavos + fee || !a.staffId || !a.staffName) {
+      if (update.amounts !== undefined || update.subtotalInCentavos !== order.subtotal_in_centavos ||
+        !Number.isSafeInteger(update.approvedDiscountInCentavos) || !Number.isSafeInteger(update.totalInCentavos) ||
+        update.totalInCentavos !== update.subtotalInCentavos - update.approvedDiscountInCentavos + fee || !update.staffId || !update.staffName) {
         return Response.json({ error: "The amounts do not match the Order. Refresh it before confirming." }, { status: 409 });
       }
     }

@@ -202,7 +202,12 @@ export interface OrderDetail extends CustomerOrder {
   discountDetail?: { allowanceUsed: number | null; reductionReason: string | null };
   /** Whether this Order qualifies for free delivery under the rule saved when it was placed (#579); absent when not loaded. */
   freeDelivery?: FreeDeliveryRule;
+  /** Added by the Order page (a server file), never by `loadOrder`: this module also reaches the browser. Active Payment accounts that match how the Customer chose to pay (GCash only shows GCash accounts); empty for Cash on Delivery. */
+  paymentAccounts?: PaymentAccountOption[];
 }
+
+export interface PaymentAccountOption { id: string; label: string; accountName: string; maskedNumber: string }
+
 
 /** One ID's Senior/PWD discount allowance per week (Monday to Sunday, Philippine Time), in centavos. */
 export const SENIOR_PWD_WEEKLY_CAP = 12_500;

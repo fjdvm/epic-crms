@@ -501,7 +501,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     const total = within(dialog).getByRole("group", { name: "Order total" });
     expect(total.textContent).toContain("= Total₱1,000.00");
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 100_000);
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 100_000, undefined, undefined);
   });
 
   it("keeps the fee editable for a Delivery Order that does not qualify", () => {
@@ -520,21 +520,26 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(screen.getByRole("status", { name: "Loading Order" })).toBeTruthy();
   });
 
-  it("offers optional Lalamove and Grab estimates that are never sent; only the fee to charge is", async () => {
-    vi.mocked(quoteDeliveryFee).mockResolvedValue(confirmed(1042, 19_000));
+  it("shows no courier estimate fields; only the fee to charge", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} modules={ORDERS} />);
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-
     const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
-    fireEvent.change(within(dialog).getByLabelText("Lalamove estimate"), { target: { value: "₱186 · motorcycle" } });
-    fireEvent.change(within(dialog).getByLabelText("Grab estimate"), { target: { value: "₱204 · motorcycle" } });
-    const submit = within(dialog).getByRole("button", { name: "Confirm order" }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true);
-
+    expect(within(dialog).queryByLabelText("Lalamove estimate")).toBeNull();
+    expect(within(dialog).queryByLabelText("Grab estimate")).toBeNull();
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee to charge/), { target: { value: "190" } });
-    fireEvent.click(submit);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000, 119_000, undefined, undefined);
+  });
 
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000, 119_000);
+  it("lists only the Payment accounts for the Customer's method and sends the one chosen", () => {
+    const order = { ...detail({ status: "placed", deliveryFee: null, total: 100_000 }), paymentAccounts: [{ id: "acc-1", label: "Shop GCash", accountName: "Bren R.", maskedNumber: "•••••••4321" }] };
+    render(<OrderDetailView order={order} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    expect(within(dialog).getByRole("combobox", { name: "Payment account" })).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee to charge/), { target: { value: "190" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000, 119_000, undefined, "acc-1");
   });
 
   it("quotes a Delivery fee in pesos, sends centavos, and confirms once the server does", async () => {
@@ -551,7 +556,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱1,150.50");
     fireEvent.click(submit);
 
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050, 115_050);
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050, 115_050, undefined, undefined);
     expect(within(dialog).getByRole("button", { name: "Confirming…" }).getAttribute("aria-busy")).toBe("true");
     expect(toast.success).not.toHaveBeenCalled();
 
@@ -568,7 +573,7 @@ describe("the Orders Module's actions on an Order's detail", () => {
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "0" } });
     expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱950.00");
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 95_000);
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 95_000, undefined, undefined);
   });
 
   it("will not send a fee that is not an amount in pesos", () => {
