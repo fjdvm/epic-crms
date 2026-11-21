@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { deliverOrder, dispatchOrder, loadPackingSlip, startPreparing } from "@/features/orders/actions";
+import { deliverOrder, dispatchOrder, startPreparing } from "@/features/orders/actions";
 import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
 import type { FulfilmentBoard, FulfilmentOrder } from "@/features/orders/fulfilment";
 import { OrderDetailView } from "@/features/orders/order-detail";
@@ -373,22 +373,26 @@ describe("Order detail packing", () => {
     expect(screen.getByRole("button", { name: "Print packing slip" })).toBeTruthy();
   });
 
-  it("loads the slip and prints it, and says why when it cannot", async () => {
-    const print = vi.fn();
-    window.print = print;
-    vi.mocked(loadPackingSlip).mockResolvedValueOnce({ ok: false, reason: "Order was not found." });
+  it("opens the slip PDF in a new tab, and says why when it cannot", async () => {
+    const tab = { location: { href: "" }, close: vi.fn() };
+    const open = vi.spyOn(window, "open").mockReturnValue(tab as never);
+    URL.createObjectURL = vi.fn(() => "blob:slip");
+    URL.revokeObjectURL = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(Response.json({ reason: "Order was not found." }, { status: 404 }));
     render(<OrderDetailView order={detail({ status: "paid" })} modules={FULFILMENT} />);
     fireEvent.click(screen.getByRole("button", { name: "Print packing slip" }));
+    expect(screen.getByRole("button", { name: "Preparing slip…" })).toBeTruthy();
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Order was not found."));
-    expect(print).not.toHaveBeenCalled();
+    expect(tab.close).toHaveBeenCalled();
+    expect(tab.location.href).toBe("");
 
-    vi.mocked(loadPackingSlip).mockResolvedValueOnce({ ok: true, slip: {
-      id: 1042, createdAt: new Date("2026-10-20T00:00:00Z"), customer: { id: "c1", name: "Maria Santos" },
-      fulfillmentMethod: "delivery", lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }], address: null, packedBy: null,
-    } } as never);
+    fetchMock.mockResolvedValueOnce(new Response(new Blob(["%PDF-"], { type: "application/pdf" })));
     fireEvent.click(screen.getByRole("button", { name: "Print packing slip" }));
-    await waitFor(() => expect(print).toHaveBeenCalled());
-    expect(screen.getByLabelText("Packing slip").textContent).toContain("Halaya");
+    await waitFor(() => expect(tab.location.href).toBe("blob:slip"));
+    expect(fetchMock).toHaveBeenLastCalledWith(expect.stringMatching(/\/api\/orders\/\d+\/packing-slip$/));
+    open.mockRestore();
+    fetchMock.mockRestore();
   });
 });
 const MOVES = ["Pack order", "Mark as dispatched", "Mark as delivered"];
