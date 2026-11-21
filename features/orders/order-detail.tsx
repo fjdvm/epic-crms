@@ -24,6 +24,8 @@ import { PaymentPill } from "./status-pill";
 import { EmailNotSent } from "./email-not-sent";
 import { CancelDispatched, CancellationNote } from "./cancel-dispatched";
 import type { CancellationState } from "./cancellation-state";
+import { CancelRequestAction, CancelRequestNote } from "./cancel-request";
+import type { CancelRequestState } from "./cancel-request-state";
 import { DispatchRecordCard } from "./dispatch-record-card";
 import type { DispatchRecord } from "./dispatch-record";
 import { ZoomableImage } from "@/components/zoomable-image";
@@ -159,6 +161,7 @@ export function OrderDetailView({
   approvalId,
   waitingApproval,
   cancellation = null,
+  cancelRequest = null,
   codFlags = [],
   paymentReview = null,
   proofReads = {},
@@ -172,6 +175,8 @@ export function OrderDetailView({
   waitingApproval?: boolean;
   /** The cancel-after-dispatch request on this Order, if any. */
   cancellation?: CancellationState | null;
+  /** A Customer's cancellation request on this Order; while it waits, every other action is paused. */
+  cancelRequest?: CancelRequestState | null;
   /** Which Cash on Delivery rules fired, for Staff to double-check; empty for everyone else. Never shown to the Customer. */
   codFlags?: readonly { rule: string; label: string; reason: string }[];
   order: OrderDetail;
@@ -223,10 +228,15 @@ export function OrderDetailView({
             {order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) && (
               <CancelDispatched id={order.id} total={order.total} paymentMethod={order.paymentMethod} role={role} state={cancellation} />
             )}
-            <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} codFlags={codFlags} />
+            {cancelRequest?.status === "waiting" ? (
+              <CancelRequestAction id={order.id} state={cancelRequest} role={role} canDecide={modules.includes(ORDERS_MODULE)} />
+            ) : (
+              <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} codFlags={codFlags} />
+            )}
           </div>
         </div>
         <CancellationNote state={cancellation} />
+        <CancelRequestNote state={cancelRequest} />
         {order.emailFailures && order.emailFailures.length > 0 && <EmailNotSent orderId={order.id} failures={order.emailFailures} modules={modules} role={role} />}
       </div>
 

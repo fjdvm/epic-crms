@@ -387,6 +387,22 @@ export class FakeStorefront {
     if (destination && request.method === "POST") return this.changeDestination(request, Number(destination[1]));
     const extension = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/refund-window\/extend$/);
     if (extension && request.method === "POST") return this.extendWindow(request, Number(extension[1]));
+    const cancelRequest = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/cancel-request$/);
+    if (cancelRequest && request.method === "POST") {
+      const id = Number(cancelRequest[1]), input = await request.json();
+      if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+      return this.sql.begin(async tx => {
+        const [r] = await tx`select * from order_cancel_requests where id = ${input.requestId} and order_id = ${id} for update`;
+        if (!r || r.status !== "waiting") return Response.json({ error: "This cancellation request was already decided or withdrawn. Refresh the Order." }, { status: 409 });
+        if (input.decision === "declined") {
+          await tx`update order_cancel_requests set status = 'declined', decline_reason = ${input.reason}, decided_by_id = ${input.staffId}, decided_by_name = ${input.staffName} where id = ${r.id}`;
+        } else {
+          await tx`update orders set status = 'cancelled' where id = ${id}`;
+          await tx`update order_cancel_requests set status = 'approved', decided_by_id = ${input.staffId}, decided_by_name = ${input.staffName} where id = ${r.id}`;
+        }
+        return Response.json({ id, requestId: r.id, status: input.decision });
+      });
+    }
     const cancellation = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/cancellation$/);
     if (cancellation && request.method === "POST") {
       const id = Number(cancellation[1]), input = await request.json();

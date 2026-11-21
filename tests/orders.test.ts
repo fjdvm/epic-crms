@@ -70,6 +70,7 @@ describe("the Orders list", () => {
       "received",
       "cancelled",
       "returned",
+      "cancel-requests",
     ]);
   });
 
@@ -101,6 +102,7 @@ describe("the Orders list", () => {
 
     expect(counts).toEqual({
       all: 5,
+      "cancel-requests": 0,
       placed: 2,
       confirmed: 0,
       "awaiting payment": 0,

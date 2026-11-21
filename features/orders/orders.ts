@@ -36,9 +36,10 @@ export const CANCELLABLE_STATUSES: readonly string[] = ["placed", "confirmed", "
  * "returned" is a filter, not an Order status: it shows the Orders that have a Return, whatever
  * their status. The status tabs are the storefront's own.
  */
-export type OrderTab = "all" | OrderStatus | "returned";
+export type OrderTab = "all" | OrderStatus | "returned" | "cancel-requests";
 
-export const ORDER_TABS: OrderTab[] = ["all", ...ORDER_STATUSES, "returned"];
+/** "cancel-requests" is a filter too: the Orders whose Customer asked to cancel and is waiting for a person to decide. */
+export const ORDER_TABS: OrderTab[] = ["all", ...ORDER_STATUSES, "returned", "cancel-requests"];
 
 export type PaymentLabel = ReturnType<typeof paymentStatusOf>;
 
@@ -59,6 +60,8 @@ export interface OrderRow {
   status: string;
   /** Worked out from the status: there is no stored payment status. */
   paymentLabel: PaymentLabel;
+  /** The Customer asked to cancel and a person has yet to decide. */
+  cancelRequested?: boolean;
 }
 
 export interface OrderList {
@@ -90,6 +93,14 @@ export async function listOrders(sql: postgres.Sql, query: OrderQuery = {}): Pro
     select count(distinct order_id)::int as returned from public.order_returns`;
   counts.returned = returned;
 
+  // Read on its own: if CREOMS cannot read the requests yet, the Orders list still opens, without the filter.
+  const waiting = await sql<{ order_id: number }[]>`select order_id from public.order_cancel_requests where status = 'waiting'`.catch((error) => {
+    console.error("Orders could not read cancellation requests", error);
+    return [] as { order_id: number }[];
+  });
+  const waitingIds = new Set(waiting.map((w) => w.order_id));
+  counts["cancel-requests"] = waitingIds.size;
+
   const totalPages = Math.max(1, Math.ceil(counts[tab] / pageSize));
   const page = Math.min(Math.max(1, query.page ?? 1), totalPages);
 
@@ -103,7 +114,9 @@ export async function listOrders(sql: postgres.Sql, query: OrderQuery = {}): Pro
         ? sql``
         : tab === "returned"
           ? sql`where exists (select 1 from public.order_returns r where r.order_id = o.id)`
-          : sql`where o.status = ${tab}`
+          : tab === "cancel-requests"
+            ? sql`where o.id = any(${[...waitingIds]}::int[])`
+            : sql`where o.status = ${tab}`
     }
     order by o.created_at desc, o.id desc
     limit ${pageSize} offset ${(page - 1) * pageSize}`;
@@ -128,6 +141,7 @@ export async function listOrders(sql: postgres.Sql, query: OrderQuery = {}): Pro
       total: o.total as number,
       status: o.status as string,
       paymentLabel: paymentStatusOf(o.status as string),
+      cancelRequested: waitingIds.has(o.id as number),
     })),
     counts,
     page,

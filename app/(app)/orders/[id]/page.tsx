@@ -9,6 +9,7 @@ import { loadDispatchRecord } from "@/features/orders/dispatch-record-read";
 import { loadOrder } from "@/features/orders/orders";
 import { matchingPaymentAccounts } from "@/features/orders/payment-account-options";
 import { loadCancellationState } from "@/features/orders/cancellation-state";
+import { loadCancelRequest } from "@/features/orders/cancel-request-state";
 import { proofReadsOrEmpty } from "@/features/orders/proof-read";
 import { loadPaymentReview } from "@/features/orders/payment-review";
 import { crmsDatabase } from "@/lib/crms-db";
@@ -72,6 +73,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   ]);
 
   const cancellation = order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) ? await loadCancellationState(order.id) : null;
+  const cancelRequest = ["placed", "confirmed", "awaiting payment"].includes(order.status) ? await loadCancelRequest(order.id) : null;
   const role = shopRole(staff.role);
   // Flags are for Staff and Managers who hold Orders; Admin and CEO see none, and a Customer never reaches this page.
   const codResult = modules.includes(ORDERS_MODULE) && (role === "staff" || role === "manager") ? await loadCodFlags(order.id) : null;
@@ -103,6 +105,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         approvalId={approvalId}
         waitingApproval={waitingApproval}
         cancellation={cancellation}
+        cancelRequest={cancelRequest}
         order={order}
         dispatch={dispatch}
         codFlags={codFlags}

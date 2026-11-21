@@ -138,7 +138,7 @@ describe("Needs attention", () => {
   it("withholds each queue from Staff without its Module", async () => {
     expect(await attention([])).toEqual({});
     expect(Object.keys((await attention(["Payments"]))!)).toEqual(["paymentProofs"]);
-    expect(Object.keys((await attention(["Orders"]))!)).toEqual(["deliveryFees", "overdueOrders"]);
+    expect(Object.keys((await attention(["Orders"]))!)).toEqual(["deliveryFees", "cancelRequests", "overdueOrders"]);
     expect(Object.keys((await attention(["Fulfilment"]))!).sort()).toEqual(["codToCollect", "ordersToPack"]);
     expect(Object.keys((await attention(["Tickets"]))!)).toEqual(["openTickets"]);
     expect(Object.keys((await attention(["Returns"]))!)).toEqual(["returns"]);
