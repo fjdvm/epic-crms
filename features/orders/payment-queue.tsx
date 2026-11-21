@@ -153,6 +153,7 @@ function Stat({ label, value, note, noteClassName }: { label: string; value: str
 
 function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRow; tab: PaymentTab; now: Date; role: ShopRole | null; approval?: ProofApproval; onMarkPaid: () => void }) {
   const [open, setOpen] = useState(false);
+  const anomaly = (tab === "verify" || tab === "anomalies") && hasPaymentAnomaly(order);
   const cells = [
     order.proof ? (
       <button
@@ -167,8 +168,9 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
       </button>
     ) : <span aria-hidden />,
     <Link key="o" href={`/orders/${order.id}`} className="font-medium text-[#5b2a86]">#{order.id}</Link>,
-    <span key="c" className="flex min-w-0 flex-col pr-3">
-      <span className="truncate">{order.customer.name}</span>
+    <span key="c" className="flex min-w-0 flex-col items-start pr-3">
+      <span className="max-w-full truncate">{order.customer.name}</span>
+      {anomaly && <span className="mt-0.5 rounded-full bg-[#fee2e2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">Anomaly</span>}
       {tab === "review" && order.review && (
         <span className="truncate text-xs text-[#71717a]">{order.review.owner ? `Owner: ${order.review.owner.name}` : "Not claimed"}</span>
       )}
@@ -210,10 +212,9 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
       <Link key="v" href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">View</Link>
     ),
   ];
-  const anomaly = (tab === "verify" || tab === "anomalies") && hasPaymentAnomaly(order);
 
   return (
-    <div data-payment-row data-anomaly={anomaly || undefined} className={`mb-2 rounded-xl border px-2 ${anomaly ? "border-[#f3cccc] bg-[#fdecec]" : "border-[#e6e1ee] bg-white"}`}>
+    <div data-payment-row data-anomaly={anomaly || undefined} className="mb-2 rounded-xl border border-[#e6e1ee] bg-white px-2">
       <div className="flex items-center py-2.5">
         {cells.map((cell, i) => (
           <div key={i} className={`${CELL} ${COLUMNS[i].className}`}>

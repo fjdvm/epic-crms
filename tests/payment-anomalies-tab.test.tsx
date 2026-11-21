@@ -27,12 +27,14 @@ it("lists only flagged proofs on the Anomalies tab and keeps them in For verific
   expect(tabs.anomalies.map(r => r.id)).toEqual([2]);
 });
 
-it("shows the Anomalies tab with its count and a pastel red row that opens the same review", () => {
+it("shows the Anomalies tab with its count and an Anomaly badge on the row that opens the same review", () => {
   render(<PaymentsView rows={[row(1, "Match"), row(2, "Mismatch")]} now={NOW} role="staff" />);
   fireEvent.click(screen.getByRole("tab", { name: /Anomalies 1/ }));
   const rows = document.querySelectorAll("[data-payment-row]");
   expect(rows).toHaveLength(1);
   expect(rows[0].getAttribute("data-anomaly")).toBe("true");
+  expect(rows[0].className).not.toMatch(/fdecec/);
+  expect(screen.getByText("Anomaly")).toBeTruthy();
   expect(screen.getByRole("button", { name: /Review/ })).toBeTruthy();
 });
 
