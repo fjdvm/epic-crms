@@ -3,6 +3,8 @@ import type postgres from "postgres";
 
 import { recordAudit, type AuditTrail } from "@/lib/audit-trail";
 import { structuredOutput, type StructuredModel } from "@/lib/ai/structured";
+import { readImageText } from "@/lib/ocr/read-image-text";
+import { readReceiptText } from "@/lib/ocr/receipt-text";
 import { fingerprintImage, fingerprintsSimilar } from "@/features/returns/image-fingerprint";
 
 /**
@@ -78,6 +80,22 @@ export interface ReaderDeps {
   readonly fetchImage: (fileId: string) => Promise<Uint8Array>;
   readonly audit: AuditTrail;
   readonly timeoutMs?: number;
+  /** Reads the text printed on the image (OCR). Defaults to the server's Tesseract; a failure only means the model reads alone. */
+  readonly ocr?: (image: Uint8Array) => Promise<string>;
+}
+
+/** What OCR alone could read, in the model's shape. Recipient and account number are not parsed by OCR, so they are left for Staff. */
+export function ocrReading(text: string): ModelReading {
+  const r = readReceiptText(text);
+  const f = (value: string | undefined) => ({ value: value ?? null, unclear: false });
+  return { amount: f(r.amountInCentavos === undefined ? undefined : (r.amountInCentavos / 100).toFixed(2)), date: f(r.paidAt), reference: f(r.reference), recipient: f(undefined), accountNumber: f(undefined) };
+}
+
+/** The model's reading with OCR filling any detail the model could not find. */
+export function mergeReadings(model: ModelReading, ocr: ModelReading | null): ModelReading {
+  if (!ocr) return model;
+  const pick = (k: Field) => (model[k].value?.trim() ? model[k] : ocr[k]);
+  return { amount: pick("amount"), date: pick("date"), reference: pick("reference"), recipient: model.recipient, accountNumber: model.accountNumber };
 }
 
 /**
@@ -93,10 +111,25 @@ export async function readProof(deps: ReaderDeps, facts: ProofFacts): Promise<Pr
   try {
     const bytes = await deps.fetchImage(facts.fileId).catch((error: unknown) => { failure = "image-unavailable"; throw error; });
     fingerprint = await fingerprintImage(bytes).catch(() => null);
-    const out = await structuredOutput({ schema: readSchema, system: SYSTEM, prompt: PROMPT, models: deps.models, image: bytes, maxOutputTokens: 400, timeoutMs: deps.timeoutMs ?? 25_000 });
-    result = out.ok
-      ? { proofId: facts.proofId, status: "read", findings: compareReading(out.output, facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: out.model }
-      : (failure = out.reason, { proofId: facts.proofId, status: "needs-review", findings: allNeedReview(facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: null });
+    const [out, text] = await Promise.all([
+      structuredOutput({ schema: readSchema, system: SYSTEM, prompt: PROMPT, models: deps.models, image: bytes, maxOutputTokens: 400, timeoutMs: deps.timeoutMs ?? 25_000 }),
+      (deps.ocr ?? readImageText)(bytes).catch(() => null),
+    ]);
+    const ocr = text === null ? null : ocrReading(text);
+    const ocrFound = ocr !== null && [ocr.amount, ocr.date, ocr.reference].some(x => x.value);
+    if (out.ok) {
+      result = { proofId: facts.proofId, status: "read", findings: compareReading(mergeReadings(out.output, ocr), facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: out.model };
+    } else if (ocr && ocrFound) {
+      // The model was unavailable: the OCR's reading stands alone, and what it cannot read stays Needs Review.
+      failure = out.reason;
+      const findings = compareReading(ocr, facts);
+      // OCR not finding a detail is not the same as the receipt not showing it, so nothing is called Missing here.
+      for (const k of FIELDS) if (findings[k].finding === "Missing" || k === "recipient" || k === "accountNumber") findings[k] = { finding: "Needs Review", read: null, expected: findings[k].expected };
+      result = { proofId: facts.proofId, status: "read", findings, flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: "tesseract.js" };
+    } else {
+      failure = out.reason;
+      result = { proofId: facts.proofId, status: "needs-review", findings: allNeedReview(facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: null };
+    }
   } catch {
     failure ??= "error";
     result = { proofId: facts.proofId, status: "needs-review", findings: allNeedReview(facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: null };
