@@ -89,15 +89,16 @@ export async function readProof(deps: ReaderDeps, facts: ProofFacts): Promise<Pr
     on conflict (proof_id) do nothing returning proof_id`;
   if (claimed.length === 0) return null;
 
-  let result: ProofRead; let fingerprint: string | null = null;
+  let result: ProofRead; let fingerprint: string | null = null; let failure: string | null = null;
   try {
-    const bytes = await deps.fetchImage(facts.fileId);
+    const bytes = await deps.fetchImage(facts.fileId).catch((error: unknown) => { failure = "image-unavailable"; throw error; });
     fingerprint = await fingerprintImage(bytes).catch(() => null);
     const out = await structuredOutput({ schema: readSchema, system: SYSTEM, prompt: PROMPT, models: deps.models, image: bytes, maxOutputTokens: 400, timeoutMs: deps.timeoutMs ?? 25_000 });
     result = out.ok
       ? { proofId: facts.proofId, status: "read", findings: compareReading(out.output, facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: out.model }
-      : { proofId: facts.proofId, status: "needs-review", findings: allNeedReview(facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: null };
+      : (failure = out.reason, { proofId: facts.proofId, status: "needs-review", findings: allNeedReview(facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: null });
   } catch {
+    failure ??= "error";
     result = { proofId: facts.proofId, status: "needs-review", findings: allNeedReview(facts), flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, model: null };
   }
   result.flags = await reuseFlags(deps, facts, fingerprint).catch(() => result.flags);
@@ -110,7 +111,7 @@ export async function readProof(deps: ReaderDeps, facts: ProofFacts): Promise<Pr
     target: { type: "order", id: String(facts.orderId), display_name: `Order #${facts.orderId}` },
     description: result.status === "read" ? `Proof reader read payment proof ${facts.proofId} of Order #${facts.orderId}` : `Proof reader could not read payment proof ${facts.proofId} of Order #${facts.orderId}; it needs review`,
     occurred_at: new Date().toISOString(), operationId: `proof-read:${facts.proofId}`,
-    metadata: { proofId: facts.proofId, status: result.status, findings: Object.fromEntries(FIELDS.map(f => [f, result.findings[f].finding])), flags: result.flags },
+    metadata: { proofId: facts.proofId, status: result.status, ...(failure ? { failure } : {}), findings: Object.fromEntries(FIELDS.map(f => [f, result.findings[f].finding])), flags: result.flags },
   });
   return result;
 }
