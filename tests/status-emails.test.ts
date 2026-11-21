@@ -11,4 +11,9 @@ describe("fulfilment Status emails", () => {
     expect(isStatusEmailKind("ready-for-pickup")).toBe(false);
     expect(isStatusEmailKind("pickup-confirmed")).toBe(false);
   });
+
+  test("the shop cancellation email is an Orders email the storefront can report as not sent", () => {
+    expect(isStatusEmailKind("cancelled-by-shop")).toBe(true);
+    expect(STATUS_EMAILS["cancelled-by-shop"].module).toBe(STATUS_EMAILS.confirmation.module);
+  });
 });
