@@ -52,12 +52,25 @@ describe("comparing what the Proof reader saw", () => {
     expect([r.amount.finding, r.recipient.finding, r.date.finding]).toEqual(["Mismatch", "Mismatch", "Mismatch"]);
   });
   it("never assumes a Match for a masked, unclear or unparseable field, and reports a hidden one as Missing", () => {
-    const r = compareReading({ ...clean, accountNumber: f("0917 *** 4567"), reference: f("REF 123", true), amount: f("about fifteen hundred"), recipient: f(null) }, facts);
-    expect(r.accountNumber.finding).toBe("Needs Review");
+    const r = compareReading({ ...clean, reference: f("REF 123", true), amount: f("about fifteen hundred"), recipient: f(null) }, facts);
     expect(r.reference.finding).toBe("Needs Review");
     expect(r.amount.finding).toBe("Needs Review");
     expect(r.recipient.finding).toBe("Missing");
   });
+});
+
+it("compares only the last four digits of the account number", () => {
+  const judge = (v: string | null, unclear = false) => compareReading({ ...clean, accountNumber: { value: v, unclear } }, facts).accountNumber.finding;
+  expect(judge("0917 *** 4567")).toBe("Match");
+  expect(judge("********4567")).toBe("Match");
+  expect(judge("0917 *** 9999")).toBe("Mismatch");
+  expect(judge("09** *** **")).toBe("Needs Review");
+  expect(judge("****4567", true)).toBe("Needs Review");
+  expect(judge(null)).toBe("Missing");
+});
+it("reads the last four digits of a masked account number from OCR", () => {
+  expect(ocrReading("Sent to 09** *** 4567 Ref No. 1234").accountNumber.value).toMatch(/4567$/);
+  expect(ocrReading("nothing here").accountNumber.value).toBeNull();
 });
 
 describe("reading one proof", () => {
