@@ -1,6 +1,7 @@
 import { DEFAULT_AUTOMATIC_CHECKS, type AutomaticChecks } from "@/features/settings/automatic-checks";
 import { customerNameSql } from "@/lib/deleted-customer";
 import { paymentProofChecksForOrders, type PaymentProofChecks } from "./payment-proof-checks";
+import { hasPaymentAnomaly } from "./payment-anomaly";
 import { proofReadsOrEmpty, type ProofReadView } from "./proof-read";
 import type postgres from "postgres";
 
@@ -135,7 +136,7 @@ export async function paymentRows(sql: postgres.Sql, now: Date = new Date(), set
   }));
 }
 
-export type PaymentTab = "verify" | "review" | "cod" | "paid" | "rejected";
+export type PaymentTab = "verify" | "anomalies" | "review" | "cod" | "paid" | "rejected";
 
 const PREPAID_PAID = ["paid", "preparing", "dispatched", "delivered", "received"];
 const COD_OPEN = ["confirmed", "preparing", "dispatched"];
@@ -164,6 +165,8 @@ export function summarize(rows: PaymentRow[], now: Date) {
   const verify = rows.filter(awaitingCheck).sort((a, b) => a.proof!.submittedAt.getTime() - b.proof!.submittedAt.getTime() || a.id - b.id);
   const tabs: Record<PaymentTab, PaymentRow[]> = {
     verify,
+    // The same proofs as For verification, narrowed to the ones that look wrong, so they can be worked first.
+    anomalies: verify.filter(hasPaymentAnomaly),
     review: rows.filter(inManagerReview).sort(byReviewUrgency),
     cod: rows.filter(codToCollect),
     paid: rows.filter(settled).sort((a, b) => b.id - a.id),

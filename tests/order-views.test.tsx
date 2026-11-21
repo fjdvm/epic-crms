@@ -645,9 +645,17 @@ describe("the Payments page", () => {
     expect(within(row).getByText("5012334812")).toBeTruthy();
     expect(within(row).getByText("₱1,197.00")).toBeTruthy();
     expect(within(row).getByText("10 min ago")).toBeTruthy();
+    // The receipt is not in the row: it appears only after the dropdown is opened.
+    expect(screen.queryByRole("img", { name: "Receipt for Order #1046" })).toBeNull();
+    const toggle = within(row).getByRole("button", { name: "Show details for Order #1046" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(within(row).getByRole("img", { name: "Receipt for Order #1046" }).getAttribute("src")).toBe(
       "https://files.test/receipt.png",
     );
+    fireEvent.click(within(row).getByRole("button", { name: "Hide details for Order #1046" }));
+    expect(screen.queryByRole("img", { name: "Receipt for Order #1046" })).toBeNull();
   });
 
   it("lists proofs oldest first", () => {
@@ -661,6 +669,8 @@ describe("the Payments page", () => {
     renderPayments([queued({ proof: { reference: null, screenshot: null, submittedAt: new Date("2026-10-19T12:52:00Z") } })]);
 
     expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.queryByText("No receipt")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Show details for Order/ }));
     expect(screen.getByText("No receipt")).toBeTruthy();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
