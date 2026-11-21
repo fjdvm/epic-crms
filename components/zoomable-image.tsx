@@ -10,7 +10,7 @@ export function ZoomableImage({ src, alt, className, caption }: { src: string; a
 
   return (
     <>
-      <button type="button" aria-label={`Zoom ${alt}`} onClick={() => setOpen(true)} className="block max-w-full cursor-zoom-in rounded-md focus-visible:outline-2 focus-visible:outline-offset-2">
+      <button type="button" aria-label={`Zoom ${alt}`} onClick={() => setOpen(true)} className="block w-full max-w-full cursor-zoom-in rounded-md focus-visible:outline-2 focus-visible:outline-offset-2">
         {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed address or local preview */}
         <img src={src} alt={alt} className={className} />
       </button>
