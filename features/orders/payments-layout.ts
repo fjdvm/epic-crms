@@ -2,6 +2,7 @@ import type { PaymentTab } from "./payments";
 
 export const TABS: { key: PaymentTab; label: string; empty: string }[] = [
   { key: "verify", label: "For verification", empty: "No GCash Orders are waiting for a payment check." },
+  { key: "anomalies", label: "Anomalies", empty: "No payment proofs look wrong. Anything the reader flags appears here." },
   { key: "review", label: "Manager review", empty: "No payments are waiting for a Manager review." },
   { key: "cod", label: "COD to collect", empty: "No Cash on Delivery Orders are waiting to be delivered." },
   { key: "paid", label: "Paid", empty: "No payments in the last 30 days." },
@@ -10,7 +11,7 @@ export const TABS: { key: PaymentTab; label: string; empty: string }[] = [
 
 /** The Figma queue's columns; they share the table width in proportion, so the rows fill the card. */
 export const COLUMNS: { header: string; className: string }[] = [
-  { header: "Receipt", className: "flex-[0_0_56px]" },
+  { header: "", className: "flex-[0_0_36px]" },
   { header: "Order", className: "flex-[1_1_80px]" },
   { header: "Customer", className: "min-w-0 flex-[2_1_130px]" },
   { header: "Method", className: "min-w-0 flex-[1_1_110px]" },

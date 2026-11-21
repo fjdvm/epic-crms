@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, Image as ImageIcon } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useOptimistic, useState } from "react";
 
@@ -34,20 +34,19 @@ function ago(date: Date, now: Date): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-function Receipt({ order, size }: { order: PaymentRow; size: "thumb" | "full" }) {
+function Receipt({ order }: { order: PaymentRow }) {
   const screenshot = order.proof?.screenshot ?? null;
-  const frame = size === "thumb" ? "h-10 w-8 rounded-sm" : "w-full rounded-lg p-6";
 
   return isViewableScreenshot(screenshot) ? (
     <ZoomableImage
       src={screenshot}
       alt={`Receipt for Order #${order.id}`}
-      className={size === "thumb" ? "h-10 w-8 rounded-sm border border-[#e4ddee] object-cover" : "block h-auto w-full rounded-lg border border-[#e4ddee] object-cover"}
+      className="block h-auto w-full rounded-lg border border-[#e4ddee] object-cover"
     />
   ) : (
-    <div className={`flex flex-col items-center justify-center gap-2 border border-[#e4ddee] bg-[#f1edf6] text-xs text-[#5a5368] ${frame}`}>
-      <ImageIcon aria-hidden className={size === "thumb" ? "size-4" : "size-7"} />
-      <span className={size === "thumb" ? "sr-only" : undefined}>{screenshot ? `Screenshot: ${screenshot}` : "No receipt"}</span>
+    <div className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-[#e4ddee] bg-[#f1edf6] p-6 text-xs text-[#5a5368]">
+      <ImageIcon aria-hidden className="size-7" />
+      <span>{screenshot ? `Screenshot: ${screenshot}` : "No receipt"}</span>
     </div>
   );
 }
@@ -115,7 +114,7 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
             <div className="flex items-center justify-between text-sm font-semibold">
               <h3>Screenshot</h3>
             </div>
-            <Receipt order={order} size="full" />
+            <Receipt order={order} />
             <p className="flex items-start gap-2 rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
               <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
               <span><b>Duplicate reference rule.</b> If the same reference number was used on another Order, Mark paid is stopped for Staff and both Orders are shown. A Manager can approve it anyway with a reason.</span>
@@ -153,8 +152,20 @@ function Stat({ label, value, note, noteClassName }: { label: string; value: str
 }
 
 function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRow; tab: PaymentTab; now: Date; role: ShopRole | null; approval?: ProofApproval; onMarkPaid: () => void }) {
+  const [open, setOpen] = useState(false);
   const cells = [
-    order.proof ? <Receipt order={order} size="thumb" /> : <span className="text-[#a1a1aa]">—</span>,
+    order.proof ? (
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`payment-details-${order.id}`}
+        aria-label={`${open ? "Hide" : "Show"} details for Order #${order.id}`}
+        onClick={() => setOpen((v) => !v)}
+        className="flex size-7 items-center justify-center rounded-md text-[#5b2a86] hover:bg-[#efe6f8]"
+      >
+        <ChevronDown aria-hidden className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+    ) : <span aria-hidden />,
     <Link key="o" href={`/orders/${order.id}`} className="font-medium text-[#5b2a86]">#{order.id}</Link>,
     <span key="c" className="flex min-w-0 flex-col pr-3">
       <span className="truncate">{order.customer.name}</span>
@@ -177,7 +188,7 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
     ) : (
       <span key="u" className="text-[13px] text-[#71717a]">{order.proof ? ago(order.proof.submittedAt, now) : "—"}</span>
     ),
-    tab === "verify" ? (
+    tab === "verify" || tab === "anomalies" ? (
       <VerifyDialog order={order} role={role} approval={approval} onMarkPaid={onMarkPaid} />
     ) : tab === "review" ? (
       <span key="v" className="flex flex-col items-end gap-1">
@@ -199,15 +210,28 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
       <Link key="v" href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">View</Link>
     ),
   ];
-  const anomaly = tab === "verify" && hasPaymentAnomaly(order);
+  const anomaly = (tab === "verify" || tab === "anomalies") && hasPaymentAnomaly(order);
 
   return (
-    <div data-payment-row data-anomaly={anomaly || undefined} className={`flex items-center border-b border-[#efebf4] py-2.5 ${anomaly ? "bg-[#fdecec]" : ""}`}>
-      {cells.map((cell, i) => (
-        <div key={COLUMNS[i].header || "action"} className={`${CELL} ${COLUMNS[i].className}`}>
-          {cell}
+    <div data-payment-row data-anomaly={anomaly || undefined} className={`mb-2 rounded-xl border px-2 ${anomaly ? "border-[#f3cccc] bg-[#fdecec]" : "border-[#e6e1ee] bg-white"}`}>
+      <div className="flex items-center py-2.5">
+        {cells.map((cell, i) => (
+          <div key={i} className={`${CELL} ${COLUMNS[i].className}`}>
+            {cell}
+          </div>
+        ))}
+      </div>
+      {open && order.proof && (
+        <div id={`payment-details-${order.id}`} className="grid gap-5 border-t border-[#efebf4] px-2 py-4 md:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+          <Receipt order={order} />
+          <div className="space-y-3 text-sm text-[#1f1a2e]">
+            <p className="text-[13px] text-[#71717a]">Uploaded {formatDate(order.proof.submittedAt)} · order total {formatPesos(order.total)}</p>
+            <ProofAccountView account={order.proof.account ?? null} method={order.method} />
+            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} reference={order.proof.reference} read={order.proofRead} />}
+            <ProofReadFindings read={order.proofRead} role={role} />
+          </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -276,9 +300,9 @@ export function PaymentsView({ rows: served, now, role = "staff", approvals = {}
             <p className="p-3 text-center text-sm text-[#6e6680]">{empty}</p>
           ) : (
             <div className="min-w-[860px]">
-              <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white pt-1 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]">
-                {COLUMNS.map((col) => (
-                  <div key={col.header || "action"} className={`${HEAD} ${col.className}`}>
+              <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white px-2 pt-1 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]">
+                {COLUMNS.map((col, i) => (
+                  <div key={i} className={`${HEAD} ${col.className}`}>
                     {col.header}
                   </div>
                 ))}
