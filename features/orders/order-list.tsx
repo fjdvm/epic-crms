@@ -99,10 +99,10 @@ export function OrderListView({ list, params, codFlags = {} }: { list: OrderList
                 <div
                   key={row.id}
                   data-order-row
-                  className="flex items-center border-b border-[#efebf4] py-[11px]"
+                  className="relative flex items-center border-b border-[#efebf4] py-[11px] hover:bg-[#faf8fc]"
                 >
                   <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
-                    <Link href={`/orders/${row.id}`}>#{row.id}</Link>
+                    <Link href={`/orders/${row.id}`} className="after:absolute after:inset-0">#{row.id}</Link>
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className)}>{formatDate(row.createdAt)}</div>
                   <div className={cn(CELL, COLUMNS[2].className)}>
