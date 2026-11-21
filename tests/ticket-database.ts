@@ -241,6 +241,11 @@ export async function startTestDatabase(): Promise<TestDatabase> {
     status text not null default 'waiting-manager', approval_status text not null default 'waiting-manager', decline_reason text, stock_outcome text, refund_method text, refund_proof_file_id text,
     created_at timestamptz not null default now()
   )`);
+  await db.exec(`create table order_cancel_requests (
+    id uuid primary key, order_id integer not null references orders(id) on delete cascade, reason text not null,
+    status text not null default 'waiting', requested_by_id text not null default 'c1', requested_by_name text not null default 'Maria Santos',
+    decided_by_id text, decided_by_name text, decline_reason text, decided_at timestamptz, created_at timestamptz not null default now()
+  )`);
   await db.exec(`create table failed_deliveries (
     id text primary key, order_id integer not null references orders(id), reason text not null, next_step text not null,
     customer_message text not null, staff_id text not null, staff_name text not null, created_at timestamptz not null default now(),

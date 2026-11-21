@@ -14,6 +14,8 @@ export interface Attention {
   deliveryFees?: Queue;
   /** Orders still unconfirmed past the Admin's limit. Nothing is cancelled for them. */
   overdueOrders?: Queue;
+  /** Customers waiting for a person to approve or decline their request to cancel an Order. */
+  cancelRequests?: Queue;
   /** Manager payment reviews (3 rejected proofs) still unsettled; Overdue ones stay here until a Manager acts. Managers only. */
   paymentReviews?: Queue<{ overdue: number }>;
   ordersToPack?: Queue;
@@ -45,6 +47,11 @@ const queues: { key: keyof Attention; module: string; managerOnly?: boolean; rea
     read: async (sql) => one(sql<Row[]>`
       select count(*)::int as count, min(created_at) as oldest from public.orders
       where status = 'placed' and fulfillment_method = 'delivery'`),
+  },
+  {
+    key: "cancelRequests", module: ORDERS_MODULE,
+    read: async (sql) => one(sql<Row[]>`
+      select count(*)::int as count, min(created_at) as oldest from public.order_cancel_requests where status = 'waiting'`),
   },
   {
     key: "overdueOrders", module: ORDERS_MODULE,

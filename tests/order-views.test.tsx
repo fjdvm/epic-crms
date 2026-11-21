@@ -53,6 +53,7 @@ function list(rows: OrderRow[]) {
     rows,
     counts: {
       all: 12,
+      "cancel-requests": 0,
       placed: 3,
       confirmed: 2,
       "awaiting payment": 1,

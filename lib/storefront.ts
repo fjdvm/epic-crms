@@ -374,6 +374,26 @@ export async function changeDispatchedCancellation(id: number, input: { action: 
   } catch { return { ok: false, reason: uncertain }; }
 }
 
+/** What Staff or a Manager decided on a Customer's cancellation request (before payment or preparing). Approving cancels the Order; declining needs a reason. */
+export type CancelRequestDecision = { requestId: string; decision: "approved" } | { requestId: string; decision: "declined"; reason: string };
+
+/** The storefront cancels the Order, releases its stock and emails the Customer on approval; never retried automatically. */
+export async function decideCancelRequest(id: number, input: CancelRequestDecision, staff: { id: string; name: string }): Promise<OrderChangeResult> {
+  const origin = process.env.CREOMS_STOREFRONT_URL, secret = process.env.CREOMS_SERVICE_SECRET;
+  if (!origin || !secret || secret.length < 32) return { ok: false, reason: "Storefront is not configured." };
+  const uncertain = "Storefront could not confirm the decision. Refresh the Order before trying again.";
+  try {
+    const response = await fetch(new URL(`/api/internal/orders/${id}/cancel-request`, origin), {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential(secret)}` },
+      body: JSON.stringify({ ...input, staffId: staff.id, staffName: staff.name }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    const body = await response.json();
+    if (!response.ok) return { ok: false, reason: typeof body.error === "string" ? body.error : uncertain };
+    if (body.id !== id || body.requestId !== input.requestId || body.status !== input.decision) return { ok: false, reason: uncertain };
+    return { ok: true, order: { id, status: input.decision === "approved" ? "cancelled" : "unchanged", deliveryFeeInCentavos: null } };
+  } catch { return { ok: false, reason: uncertain }; }
+}
+
 export type ReturnInspectionUpdate =
   | { action: "inspect"; inspectionId: string; items: { orderLineId: number; condition: "sellable" | "damaged" }[] }
   | { action: "write-off"; inspectionId: string };

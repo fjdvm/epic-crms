@@ -15,7 +15,7 @@ import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
 import { isOccurrence, isStatusEmailKind, RETURN_REFUNDED_EMAIL, STATUS_EMAILS } from "./status-emails";
-import { cancelStorefrontItems, changeOrderCourier, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { cancelStorefrontItems, decideCancelRequest, changeOrderCourier, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
 import { checkBooking, type CourierInput, type DispatchRecord } from "./dispatch-record";
 import { loadDispatchRecord } from "./dispatch-record-read";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
@@ -226,6 +226,40 @@ export async function rejectOrder(id: number, reason: string): Promise<OrderChan
     return changeOrderStatus(id, { status: "cancelled", reason: text });
   }, ORDERS_MODULE, {
     action: "order.rejected", description: staff => `${staff.name} rejected Order #${id}: ${text}`, metadata: { reason: text },
+  });
+}
+
+/** What the storefront holds for one waiting request on this Order, read fresh so a stale page cannot decide twice. */
+async function waitingRequest(id: number, requestId: string): Promise<boolean> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) return false;
+  const [row] = await database()`select 1 from public.order_cancel_requests where id = ${requestId} and order_id = ${id} and status = 'waiting'`;
+  return Boolean(row);
+}
+
+/**
+ * Staff or a Manager approves a Customer's request to cancel before payment or preparing. The storefront cancels the Order, releases
+ * its stock and emails the Customer, so this waits for the server and is never optimistic. Admin and CEO only view.
+ */
+export async function approveCancelRequest(id: number, requestId: string): Promise<OrderChangeResult> {
+  return act(id, async (order, staff) => {
+    if (!CANCELLABLE_STATUSES.includes(order.status) || ["paid", "preparing"].includes(order.status)) return { ok: false, reason: ALREADY_CHANGED };
+    if (!(await waitingRequest(id, requestId))) return { ok: false, reason: "This request was already decided or withdrawn. Refresh the Order." };
+    return decideCancelRequest(id, { requestId, decision: "approved" }, { id: staff.username, name: staff.name });
+  }, ORDERS_MODULE, {
+    action: "order.cancel_request_approved", description: staff => `${staff.name} approved the Customer's request to cancel Order #${id}.`, metadata: { request_id: requestId },
+  });
+}
+
+/** Declining keeps the Order as it is and tells the Customer why, so the reason is required. */
+export async function declineCancelRequest(id: number, requestId: string, reason: string): Promise<OrderChangeResult> {
+  const text = typeof reason === "string" ? reason.trim() : "";
+  if (!text) return { ok: false, reason: "Say why you are declining this request." };
+  if (text.length > 500 || /[<>\p{Cc}]/u.test(text)) return { ok: false, reason: "Keep the reason under 500 characters, in plain text." };
+  return act(id, async (_order, staff) => {
+    if (!(await waitingRequest(id, requestId))) return { ok: false, reason: "This request was already decided or withdrawn. Refresh the Order." };
+    return decideCancelRequest(id, { requestId, decision: "declined", reason: text }, { id: staff.username, name: staff.name });
+  }, ORDERS_MODULE, {
+    action: "order.cancel_request_declined", description: staff => `${staff.name} declined the Customer's request to cancel Order #${id}: ${text}`, metadata: { request_id: requestId, reason: text },
   });
 }
 

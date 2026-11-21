@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cancelOrder, cancelOrderItems, rejectOrder, loadCancellableOrderItems, cancelPaymentOrder, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
+  cancelOrder, cancelOrderItems, rejectOrder, approveCancelRequest, declineCancelRequest, loadCancellableOrderItems, cancelPaymentOrder, loadPaymentQueue, markPaid, quoteDeliveryFee as realQuote,
   resendStatusEmail, loadPackingSlip, startPreparing, dispatchOrder, updateDispatchRecord, deliverOrder, getFulfilmentBoard, reconcileDeliveryPhoto,
 } from "@/features/orders/actions";
-import { loadOrder } from "@/features/orders/orders";
+import { loadOrder, loadOrders } from "@/features/orders/orders";
 import { loadDispatchRecord } from "@/features/orders/dispatch-record-read";
 import { database } from "@/lib/db";
 import { revalidatePath } from "next/cache";
@@ -1113,3 +1113,62 @@ describe("COD collection", () => {
   });
 });
 
+describe("a Customer's cancellation request", () => {
+  const rid = "22222222-2222-4222-8222-222222222222";
+  async function requested(status = "confirmed") {
+    const id = await order("delivery", status);
+    await db.sql`insert into order_cancel_requests (id, order_id, reason) values (${rid}, ${id}, 'Wrong address')`;
+    return id;
+  }
+  const requestStatus = async () => (await db.sql`select status, decline_reason, decided_by_name from order_cancel_requests where id = ${rid}`)[0];
+
+  it("Staff approve it: the storefront cancels the Order, and the decision is audited with their name", async () => {
+    const id = await requested();
+    expect(await approveCancelRequest(id, rid)).toMatchObject({ ok: true });
+    expect(await requestStatus()).toMatchObject({ status: "approved", decided_by_name: "Ana" });
+    expect((await db.sql`select status from orders where id = ${id}`)[0].status).toBe("cancelled");
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.cancel_request_approved", description: expect.stringContaining("Ana") }));
+  });
+
+  it("declining needs a reason, keeps the Order, and a second decision is refused", async () => {
+    const id = await requested();
+    expect(await declineCancelRequest(id, rid, "  ")).toEqual({ ok: false, reason: "Say why you are declining this request." });
+    expect(await declineCancelRequest(id, rid, "Already packed")).toMatchObject({ ok: true });
+    expect(await requestStatus()).toMatchObject({ status: "declined", decline_reason: "Already packed" });
+    expect((await db.sql`select status from orders where id = ${id}`)[0].status).toBe("confirmed");
+    expect(await approveCancelRequest(id, rid)).toEqual({ ok: false, reason: "This request was already decided or withdrawn. Refresh the Order." });
+  });
+
+  it("only works on a waiting request for that Order, before payment", async () => {
+    const id = await requested();
+    const other = await order("delivery", "confirmed");
+    expect(await approveCancelRequest(other, rid)).toMatchObject({ ok: false });
+    expect(await approveCancelRequest(id, "not-a-uuid")).toMatchObject({ ok: false });
+    await db.sql`update orders set status = 'paid' where id = ${id}`;
+    expect(await approveCancelRequest(id, rid)).toEqual({ ok: false, reason: "Order already changed; refresh it before trying again." });
+  });
+
+  it("Admin and CEO only view: neither can decide", async () => {
+    const id = await requested();
+    for (const role of ["Admin", "CEO"]) {
+      vi.mocked(requireModule).mockResolvedValue({ id: "x", username: "x", name: "X", email: "x@example.com", role });
+      expect(await approveCancelRequest(id, rid)).toMatchObject({ ok: false });
+      expect(await declineCancelRequest(id, rid, "No")).toMatchObject({ ok: false });
+    }
+    expect((await requestStatus()).status).toBe("waiting");
+  });
+
+  it("a Manager can decide too", async () => {
+    const id = await requested("awaiting payment");
+    vi.mocked(requireModule).mockResolvedValue({ id: "mo", username: "mo", name: "Mo", email: "mo@example.com", role: "CREOMS Manager" });
+    expect(await approveCancelRequest(id, rid)).toMatchObject({ ok: true });
+    expect(await requestStatus()).toMatchObject({ decided_by_name: "Mo" });
+  });
+
+  it("shows up under the Cancel requests tab with a badge, and nowhere else's count", async () => {
+    const id = await requested();
+    await order("delivery", "confirmed");
+    const result = await loadOrders(() => db.sql, { tab: "cancel-requests" });
+    expect(result).toMatchObject({ ok: true, list: { counts: { "cancel-requests": 1 }, rows: [{ id, cancelRequested: true }] } });
+  });
+});
