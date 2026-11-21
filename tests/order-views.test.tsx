@@ -850,7 +850,7 @@ describe("the Payments Module's actions on an Order's detail", () => {
   it("offers Mark paid and Cancel order for a GCash Order awaiting payment, and nothing from the Orders Module", () => {
     render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
 
-    expect(actionButtons().map((b) => b.textContent)).toEqual(["Cancel order", "Reject receipt", "Ask for a new proof", "Mark paid"]);
+    expect(actionButtons().map((b) => b.textContent)).toEqual(["Cancel order", "Reject receipt", "Mark paid"]);
   });
 
   it("marks paid through the dialog, and cancels through the Payments action", async () => {
@@ -928,7 +928,7 @@ describe("received Orders", () => {
   });
 });
 
-describe("payment proof history, reject, ask for a new proof and approve anyway", () => {
+describe("payment proof history, reject and approve anyway", () => {
   const proof = (id: number, rejection: OrderDetail["paymentProofs"][number]["rejection"] = null) =>
     ({ id, reference: `REF${id}`, screenshot: null, submittedAt: new Date("2026-10-20T01:00:00Z"), rejection });
   const awaiting = (overrides: Partial<OrderDetail> = {}) =>
@@ -999,16 +999,9 @@ describe("payment proof history, reject, ask for a new proof and approve anyway"
     expect(toast.error).toHaveBeenCalledWith("Order already changed; refresh it before trying again.");
   });
 
-  it("asks for a new proof with the chosen reason and the note", async () => {
-    vi.mocked(rejectPaymentProof).mockResolvedValue({ ok: true, order: { id: 1042, status: "awaiting payment", deliveryFeeInCentavos: null } });
+  it("has no separate Ask for a new proof button; Reject receipt already asks", () => {
     render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ask for a new proof" }));
-    const dialog = screen.getByRole("alertdialog");
-    fireEvent.click(within(dialog).getByLabelText("The amount does not match the Order"));
-    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Should be 1,197" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Ask for a new proof" }));
-
-    await waitFor(() => expect(rejectPaymentProof).toHaveBeenCalledWith(1042, "The amount does not match the Order. Should be 1,197"));
+    expect(screen.queryByRole("button", { name: "Ask for a new proof" })).toBeNull();
   });
 
   it("after 3 rejections a Manager approves anyway with a reason, and nothing else offers Mark paid", async () => {

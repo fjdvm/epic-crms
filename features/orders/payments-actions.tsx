@@ -11,7 +11,7 @@ import { cancelPaymentOrder, markPaid, rejectPaymentProof } from "./actions";
 import type { OrderDetail } from "./orders";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
-/** Marks an Order paid once its proof is checked. A rejected proof is handled by Reject or Ask for a new proof. */
+/** Marks an Order paid once its proof is checked. A rejected proof is handled by Reject receipt, which also asks the Customer for a new proof. */
 export function MarkPaidDialog({ id, onMarkPaid }: { id: number; onMarkPaid?: () => void }) {
   return (
     <OrderActionDialog
@@ -44,8 +44,6 @@ export function CancelPaymentDialog({ id }: { id: number }) {
   );
 }
 
-const REASONS = ["The receipt is blurry or cut off", "The amount does not match the Order", "The reference number does not match", "The payment is not in the shop's account"];
-
 function ReasonField({ id, value, onChange, label }: { id: string; value: string; onChange: (text: string) => void; label: string }) {
   return (
     <div className="space-y-1.5">
@@ -62,7 +60,7 @@ export function RejectProofDialog({ id }: { id: number }) {
     <OrderActionDialog
       trigger="Reject receipt"
       title={`Reject the receipt for Order #${id}?`}
-      description="The Customer is emailed your reason and a link to upload again. The Order stays awaiting payment."
+      description="The Customer is notified in the app and by email with your reason, and the storefront asks them to send a new proof. The Order stays awaiting payment."
       confirm="Reject receipt"
       busy="Rejecting…"
       tone="destructive"
@@ -71,36 +69,6 @@ export function RejectProofDialog({ id }: { id: number }) {
       successMessage={`Receipt for Order #${id} rejected. The Customer can upload again.`}
     >
       <ReasonField id={`reject-reason-${id}`} label="Reason (the Customer sees this)" value={reason} onChange={setReason} />
-    </OrderActionDialog>
-  );
-}
-
-/** Figma "Dialog · Ask for a new payment proof": a ready reason to pick, plus a note. */
-export function AskNewProofDialog({ id }: { id: number }) {
-  const [choice, setChoice] = useState(REASONS[0]);
-  const [note, setNote] = useState("");
-  const reason = note.trim() ? `${choice}. ${note.trim()}` : choice;
-  return (
-    <OrderActionDialog
-      trigger="Ask for a new proof"
-      triggerClassName="bg-background text-foreground border border-input hover:bg-accent"
-      title={`Ask for a new payment proof on Order #${id}?`}
-      description="The Customer is emailed a link to send a new reference number and screenshot."
-      confirm="Ask for a new proof"
-      busy="Sending…"
-      run={() => rejectPaymentProof(id, reason)}
-      successMessage={`Asked the Customer for a new proof on Order #${id}.`}
-    >
-      <fieldset className="space-y-2">
-        <legend className="text-[13px] font-medium text-foreground">What is wrong with it?</legend>
-        {REASONS.map((value) => (
-          <label key={value} className="flex items-start gap-2 text-[#1f1a2e]">
-            <input type="radio" name={`ask-reason-${id}`} checked={choice === value} onChange={() => setChoice(value)} className="mt-1" />
-            <span>{value}</span>
-          </label>
-        ))}
-      </fieldset>
-      <ReasonField id={`ask-note-${id}`} label="Note for the Customer (optional)" value={note} onChange={setNote} />
     </OrderActionDialog>
   );
 }
@@ -174,7 +142,6 @@ export function PaymentsActions({ order, withCancel, role = "staff", approvalId,
       {canCheckPayment(order) && !rejected && !capped && (
         <>
           <RejectProofDialog id={order.id} />
-          <AskNewProofDialog id={order.id} />
         </>
       )}
       {canCheckPayment(order) && !rejected && !needsManager && <MarkPaidDialog id={order.id} />}
