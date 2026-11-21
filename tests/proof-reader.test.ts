@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MockLanguageModelV4 } from "ai/test";
 import sharp from "sharp";
 
-import { compareReading, readProof, readPendingProofs, type ProofFacts, type ModelReading, type ReaderDeps } from "@/features/orders/proof-reader";
+import { compareReading, mergeReadings, ocrReading, readProof, readPendingProofs, type ProofFacts, type ModelReading, type ReaderDeps } from "@/features/orders/proof-reader";
 
 const facts: ProofFacts = {
   proofId: 7, orderId: 40, fileId: "f7", reference: "REF 123", totalInCentavos: 150_000,
@@ -39,7 +39,7 @@ const modelReturning = (json: unknown) => new MockLanguageModelV4({ doGenerate: 
 }) });
 const png = () => sharp({ create: { width: 40, height: 40, channels: 3, background: "#456" } }).png().toBuffer();
 const deps = (db: ReturnType<typeof fakeDb>, model: MockLanguageModelV4, extra: Partial<ReaderDeps> = {}): ReaderDeps => ({
-  crms: db.crms, storefront: db.storefront, models: [{ name: "fake", model }], fetchImage: async () => png(), audit: vi.fn(async () => {}), ...extra,
+  crms: db.crms, storefront: db.storefront, models: [{ name: "fake", model }], fetchImage: async () => png(), ocr: async () => "", audit: vi.fn(async () => {}), ...extra,
 });
 
 describe("comparing what the Proof reader saw", () => {
@@ -87,6 +87,19 @@ describe("reading one proof", () => {
     expect(result?.status).toBe("needs-review");
     expect(Object.values(result!.findings).every(x => x.finding === "Needs Review")).toBe(true);
     expect(d.audit).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure" }));
+  });
+  it("falls back to the OCR text when the model is down, and flags a ₱90 receipt on a ₱900 Order", async () => {
+    const down = new MockLanguageModelV4({ doGenerate: async () => { throw new Error("down"); } });
+    const text = "Total Amount Sent P90.00\nRef No. 0046 996 384770\nNov 07, 2026 6:04 PM";
+    const result = await readProof(deps(fakeDb(), down, { ocr: async () => text }), { ...facts, totalInCentavos: 90_000 });
+    expect(result?.status).toBe("read");
+    expect(result?.model).toBe("tesseract.js");
+    expect(result?.findings.amount).toMatchObject({ finding: "Mismatch", read: "90.00" });
+    expect(result?.findings.recipient.finding).toBe("Needs Review");
+  });
+  it("lets OCR fill a detail the model could not find", () => {
+    const merged = mergeReadings({ ...clean, amount: { value: null, unclear: false } }, ocrReading("Amount Sent P900.00"));
+    expect(merged.amount.value).toBe("900.00");
   });
   it("stores Needs Review when the image cannot be fetched", async () => {
     const result = await readProof(deps(fakeDb(), modelReturning(clean), { fetchImage: async () => { throw new Error("gone"); } }), facts);
