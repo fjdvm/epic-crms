@@ -19,7 +19,6 @@ import { isViewableScreenshot } from "./payment-screenshot";
 import { OrderActionDialog } from "./action-dialog";
 import { claimPaymentReview } from "./payment-review-actions";
 import { PAYMENTS_WINDOW_DAYS, summarize, type PaymentRow, type PaymentTab } from "./payments";
-import { ImageViewer } from "@/components/image-viewer";
 import { ZoomableImage } from "@/components/zoomable-image";
 
 const METHOD: Record<PaymentRow["method"], string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on delivery" };
@@ -65,11 +64,9 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
   const { reference, submittedAt } = order.proof!;
   const reusedOn = order.proofChecks?.checks.reference.otherOrderIds ?? [];
   const [found, setFound] = useState(false);
-  const [viewing, setViewing] = useState(false);
   // Admin and the CEO only look; nobody's reading of the screenshot ever marks an Order paid.
   const canWork = role === "staff" || role === "manager";
   const needsManager = order.rejections >= MANAGER_AFTER_REJECTIONS || reusedOn.length > 0;
-  const shotLink = isViewableScreenshot(order.proof?.screenshot) ? order.proof!.screenshot : null;
   const last4 = reference ? reference.replace(/\s/g, "").slice(-4) : "";
 
   return (
@@ -116,8 +113,6 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm font-semibold">
               <h3>Screenshot</h3>
-              {shotLink && <button type="button" onClick={() => setViewing(true)} className="text-[13px] font-medium text-[#5b2a86] underline">View image</button>}
-              {viewing && shotLink && <ImageViewer images={[{ id: 0, url: shotLink, name: null, caption: `Receipt for Order #${order.id}` }]} start={0} onClose={() => setViewing(false)} />}
             </div>
             <Receipt order={order} size="full" />
             <p className="flex items-start gap-2 rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
