@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { deliverOrder, dispatchOrder, startPreparing } from "@/features/orders/actions";
+import { importDeliveryPhotoLink } from "@/features/files/actions";
 import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
 import type { FulfilmentBoard, FulfilmentOrder } from "@/features/orders/fulfilment";
 import { OrderDetailView } from "@/features/orders/order-detail";
@@ -10,6 +11,7 @@ import type { OrderDetail } from "@/features/orders/orders";
 
 const refresh = vi.fn();
 vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn(async () => ({ ok: true, reference: "confirmed-image" })) }));
+vi.mock("@/features/files/actions", () => ({ importDeliveryPhotoLink: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/orders/actions", () => ({
   quoteDeliveryFee: vi.fn(),
@@ -322,6 +324,57 @@ describe("moving an Order on the board", () => {
     tab("Out for delivery");
     await waitFor(() => expect(screen.getByRole("link", { name: "#1042" })).toBeTruthy());
     expect(refresh).toHaveBeenCalled();
+  });
+
+  const openDelivery = () => {
+    board({ dispatched: [card({ status: "dispatched" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Paste image link" }));
+    return dialog;
+  };
+  const confirmButton = (dialog: HTMLElement) => within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement;
+
+  it("accepts the Lalamove or Grab image link as the proof instead of an upload, and enables confirm only for an https link", () => {
+    const dialog = openDelivery();
+    expect(within(dialog).getByText("Proof of delivery (required)")).toBeTruthy();
+    expect(within(dialog).queryByLabelText("Delivery photo")).toBeNull();
+    expect(confirmButton(dialog).disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("Delivery photo link"), { target: { value: "http://share.lalamove.com/pod.jpg" } });
+    expect(within(dialog).getByRole("alert").textContent).toBe("Paste the image link as a web address starting with https://.");
+    expect(confirmButton(dialog).disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("Delivery photo link"), { target: { value: "https://share.lalamove.com/pod.jpg" } });
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(confirmButton(dialog).disabled).toBe(false);
+  });
+
+  it("downloads the linked image, then delivers with it and records the link", async () => {
+    vi.mocked(importDeliveryPhotoLink).mockResolvedValue({ ok: true, reference: "linked-image", filename: "delivery-proof.jpg", contentType: "image/jpeg", size: 10 });
+    vi.mocked(deliverOrder).mockResolvedValue(moved(1042, "delivered"));
+    const dialog = openDelivery();
+    fireEvent.change(within(dialog).getByLabelText("Delivery photo link"), { target: { value: " https://share.lalamove.com/pod.jpg " } });
+    fireEvent.click(confirmButton(dialog));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 delivered."));
+    expect(importDeliveryPhotoLink).toHaveBeenCalledWith("https://share.lalamove.com/pod.jpg");
+    const [, form] = vi.mocked(deliverOrder).mock.calls[0];
+    expect(form?.getAll("photo")).toEqual(["linked-image"]);
+    expect(form?.get("photoLink")).toBe("https://share.lalamove.com/pod.jpg");
+  });
+
+  it("rolls the card back with the reason when the link gives no image, without delivering", async () => {
+    const reason = "That link didn't give us a JPG or PNG image. Save the image and upload it instead.";
+    vi.mocked(importDeliveryPhotoLink).mockResolvedValue({ ok: false, reason });
+    const dialog = openDelivery();
+    fireEvent.change(within(dialog).getByLabelText("Delivery photo link"), { target: { value: "https://share.lalamove.com/page" } });
+    fireEvent.click(confirmButton(dialog));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(reason));
+    expect(deliverOrder).not.toHaveBeenCalled();
+    tab("Out for delivery");
+    await waitFor(() => expect(screen.getByRole("link", { name: "#1042" })).toBeTruthy());
   });
 });
 
