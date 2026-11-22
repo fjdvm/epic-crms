@@ -275,6 +275,10 @@ _Avoid_: Permission, level
 What Staff see in place of a button for an action that needs a Manager: money, removing stock, overriding an AI warning, or moving someone else's work.
 _Avoid_: Escalate (a Ticket word)
 
+**Decide return request**:
+How Staff hand a Requested Return to a Manager: "Request approval · decide return". Staff check that it was requested inside the Refund window (worked out by CREOMS, never typed) and say whether the photo supports the reason, with a note. Staff do not suggest a decision. The Manager decides on the Return itself: Reject (with a reason the Customer sees), Refund (back to the Refund destination) or Replacement (offered only while the IMS has every item; stock CREOMS cannot read is left to the storefront to check). Deciding closes the request under the Manager's name and tells the Staff member. A replacement whose goods need not come back is sent at once as a Replacement Order; a refund over the Approval limit goes to the CEO before any money is sent or proof uploaded.
+_Avoid_: Suggest, escalate
+
 **Approval limit**:
 ₱5,000, set by the Admin. A refund or write-off of more than the limit, measured by the selling price of the Return's items, also needs the CEO's final approval; exactly ₱5,000 or less stops at the Manager.
 _Avoid_: Threshold, cap

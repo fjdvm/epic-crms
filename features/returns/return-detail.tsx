@@ -20,6 +20,7 @@ import { RefundWindow } from "./refund-window";
 import { ReturnActions } from "./return-actions";
 import { ReturnFlagNotes } from "./return-flag-notes";
 import type { ReturnFlag } from "./return-flags";
+import type { ReplacementStock } from "./replacement-stock";
 import type { ReturnDetail } from "./returns";
 import { ZoomableImage } from "@/components/zoomable-image";
 
@@ -71,8 +72,14 @@ export function ReturnDetailView({
   destinationRequest,
   flags,
   flagExplanations,
+  stock,
+  needsCeo = false,
 }: {
   detail: ReturnDetail;
+  /** Whether a replacement can be sent from stock; read only while a replacement may still be chosen or sent. */
+  stock?: ReplacementStock;
+  /** This Return's refund is over the Approval limit, so the CEO approves before any money is sent. */
+  needsCeo?: boolean;
   imageUrls: ImageUrls;
   /** Null when the Delivery photo exists but could not be reached; undefined when the Order has none. */
   deliveryPhotoUrl?: string | null;
@@ -124,6 +131,10 @@ export function ReturnDetailView({
             finalResolution={detail.finalResolution}
             role={role}
             requests={requests}
+            inWindow={detail.refundWindowEndsAt !== null && detail.requestedAt < detail.refundWindowEndsAt}
+            stock={stock}
+            needsCeo={needsCeo}
+            reasonLabel={orderLabel(detail.reason)}
             refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, destinationMethod: detail.refundDestination?.method ?? null, saved: savedProof, deliveryFee: detail.deliveryFeeRefundable ? detail.orderDeliveryFee : 0, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
           />
         </div>

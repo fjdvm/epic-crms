@@ -20,6 +20,8 @@ export type ApprovalView = {
   managerName: string | null;
   ceoName: string | null;
   declineReason: string | null;
+  /** What Staff checked when they asked a Manager to decide a Return; only on `return.decide`. */
+  check?: { inWindow: boolean; photoSupportsReason: boolean };
 };
 
 export type ApprovalTab = "waiting" | "approved" | "declined" | "all";
@@ -79,6 +81,7 @@ export const ACTION_LABELS: Record<ApprovalAction, string> = {
   "return.replace": "Replacement",
   "return.extend-window": "Extend return window",
   "return.change-destination": "Change refund destination",
+  "return.decide": "Decide return",
   "write-off": "Write-off",
 };
 
@@ -132,7 +135,13 @@ export function toView(row: Record<string, unknown>): ApprovalView {
     status: String(row.status), requestedAt: new Date(row.requested_at as string | Date).toISOString(),
     managerName: (row.manager_name as string | null) ?? null, ceoName: (row.ceo_name as string | null) ?? null,
     declineReason: (row.decline_reason as string | null) ?? null,
+    ...(row.action === "return.decide" ? { check: checkOf(row.payload) } : {}),
   };
+}
+
+function checkOf(payload: unknown): ApprovalView["check"] {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  return { inWindow: p.inWindow === true, photoSupportsReason: p.photoSupportsReason === true };
 }
 
 /** An ID check as a row of the list: waiting until reviewed, then approved or declined (revoked and expired count as declined). */

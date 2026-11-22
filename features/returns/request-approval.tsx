@@ -6,7 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
-import { approveReturn, declineReturn, markReturnRefunded, markReturnReplaced } from "./actions";
+import { Check, X } from "lucide-react";
+
+import { approveReturn, declineReturn, markReturnRefunded, markReturnReplaced, requestReturnDecision } from "./actions";
 import type { ReturnResolution } from "./returns";
 
 type Step = "approve" | "decline" | "refund" | "replace";
@@ -66,6 +68,50 @@ export function RequestApproval({ id, number, steps, preferred }: { id: number; 
       <div className="space-y-1.5">
         <Label htmlFor={`request-note-${id}`} className="text-[13px] font-medium text-foreground">Note for the Manager <span className="text-[#dc2626]">*</span></Label>
         <Textarea id={`request-note-${id}`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why you suggest this" />
+      </div>
+    </OrderActionDialog>
+  );
+}
+
+/**
+ * Staff check a Requested Return and ask a Manager to pick its outcome. The window line comes from the server; Staff say
+ * whether the photo supports the reason and leave a note. Never optimistic: a Manager decides.
+ */
+export function RequestDecision({ id, number, inWindow, reason }: { id: number; number: string; inWindow: boolean; reason: string }) {
+  const [supports, setSupports] = useState<boolean | null>(null);
+  const [note, setNote] = useState("");
+
+  return (
+    <OrderActionDialog
+      trigger="Request approval · decide return"
+      title={`Ask a Manager to decide ${number}`}
+      description="Check the request first. A Manager picks the outcome: reject, refund or replacement."
+      confirm="Send request" busy="Sending…"
+      disabled={supports === null || !note.trim()}
+      run={async () => {
+        const result = await requestReturnDecision(id, { photoSupportsReason: supports as boolean, note });
+        return result.ok ? { ok: true as const } : result;
+      }}
+      successMessage="Sent to a Manager. The Return shows Waiting for approval until they decide."
+    >
+      <div className="space-y-2">
+        <p className="text-[13px] font-medium text-foreground">Check the request</p>
+        <p className={`flex items-center gap-2 text-sm ${inWindow ? "text-[#166534]" : "text-[#b91c1c]"}`}>
+          {inWindow ? <Check aria-hidden className="size-4" /> : <X aria-hidden className="size-4" />}
+          {inWindow ? "Requested within the Refund window" : "Requested after the Refund window closed"}
+        </p>
+      </div>
+      <fieldset className="space-y-2">
+        <legend className="text-[13px] font-medium text-foreground">Does the photo support the reason ({reason})? <span className="text-[#dc2626]">*</span></legend>
+        {([[true, "Yes, the photo shows it"], [false, "No, or it is unclear"]] as const).map(([value, label]) => (
+          <label key={label} className="flex items-center gap-2 text-[#1f1a2e]">
+            <input type="radio" name={`photo-supports-${id}`} checked={supports === value} onChange={() => setSupports(value)} />{label}
+          </label>
+        ))}
+      </fieldset>
+      <div className="space-y-1.5">
+        <Label htmlFor={`decide-note-${id}`} className="text-[13px] font-medium text-foreground">Note for the Manager <span className="text-[#dc2626]">*</span></Label>
+        <Textarea id={`decide-note-${id}`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you checked and what you suggest" />
       </div>
     </OrderActionDialog>
   );

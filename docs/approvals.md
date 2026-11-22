@@ -9,6 +9,10 @@ Apply `docs/db/crms-approvals.sql` as `creoms_writer` before deploying CREOMS. T
 Portal companion migration seeds Role templates only; it never changes a person's
 Module grants. Fresh Portal seeds install the same defaults.
 
+A `return.decide` request (Staff asking a Manager to decide a Return, see
+[Decide return](return-decisions.md#decide-return-staff-check-manager-decides)) is never approved on its own: the Manager
+picks the decision on the Return, and `closeRequests` marks the request completed and tells the requester.
+
 `approveReturn`, `declineReturn`, `markReturnRefunded` and `markReturnReplaced`
 accept an optional final `{reason, approvalId}` argument. A Staff call with a reason
 returns `{ok:false, reason:"Waiting for approval", status, approvalId}` without
