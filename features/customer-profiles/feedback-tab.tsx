@@ -1,5 +1,6 @@
 import { Star } from "lucide-react";
 
+import { CLICKABLE_ROW } from "@/components/shared/row-link";
 import { SentimentBadge } from "@/features/feedback/sentiment-badge";
 
 import { formatDate } from "./format";
@@ -27,7 +28,7 @@ export function FeedbackTab({
     <TabCard title="Feedback">
       <ul className="divide-y divide-border-subtle">
         {entries.map(({ order: o, feedback }) => (
-          <li key={o.id} className="space-y-1 py-3 first:pt-0 last:pb-0">
+          <li key={o.id} className={`${CLICKABLE_ROW} space-y-1 py-3 first:pt-0 last:pb-0`}>
             <div className="flex items-center justify-between gap-2">
               <a
                 href={`#${orderAnchor(o.id)}`}
@@ -35,7 +36,7 @@ export function FeedbackTab({
                   e.preventDefault();
                   onOpenOrder(o.id);
                 }}
-                className="text-sm font-medium text-primary hover:underline"
+                className="text-sm font-medium text-primary hover:underline after:absolute after:inset-0 after:content-['']"
               >
                 Order #{o.id}
               </a>

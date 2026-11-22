@@ -23,6 +23,23 @@ const page: StockPage = {
   rows: [row(1, "Plenty", 40, "In stock"), row(2, "Few", 7, { left: 7 }), row(3, "None", 0, "Sold out")],
 };
 
+it("opens the edit drawer from the row for those who may edit, and starts searched from the address", () => {
+  const { unmount } = render(<StockView page={page} canEdit initialQuery="few" />);
+  expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(1);
+  const r = document.querySelector("[data-stock-row]") as HTMLElement;
+  expect(r.getAttribute("role")).toBe("button");
+  expect(r.getAttribute("aria-label")).toBe("Open Few · 250 g");
+  unmount();
+  // Read-only: the row opens the Orders holding it, and with none held it opens nothing.
+  const readOnly = render(<StockView page={{ ...page, rows: [row(1, "Plenty", 40, "In stock")] }} />);
+  fireEvent.click(screen.getByText("Plenty · 250 g"));
+  expect(screen.getByRole("dialog", { name: /Orders holding Plenty/ })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "#41" }).getAttribute("href")).toBe("/orders/41");
+  readOnly.unmount();
+  render(<StockView page={{ ...page, rows: [{ ...row(1, "Plenty", 40, "In stock"), orders: [] }] }} />);
+  expect(document.querySelector("[data-stock-row]")?.getAttribute("role")).toBeNull();
+});
+
 it("lists quantities and filters to low stock and sold out without leaving the page", () => {
   render(<StockView page={page} />);
   expect(screen.getAllByText(/·/).length).toBeGreaterThan(0);

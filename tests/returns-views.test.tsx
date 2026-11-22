@@ -128,6 +128,16 @@ describe("the Returns page", () => {
     expect(within(r).getByText("20 Oct 2026")).toBeTruthy();
   });
 
+  it("opens the Return from anywhere on its row, while the Order link keeps its own target", () => {
+    view([row({})]);
+    const r = document.querySelector("[data-return-row]") as HTMLElement;
+    expect(r.className).toContain("relative");
+    const open = within(r).getByRole("link", { name: "RMA-15" });
+    expect(open.getAttribute("href")).toBe("/returns/15");
+    expect(open.className).toContain("after:inset-0");
+    expect(within(r).getByRole("link", { name: "#1042" }).className).toContain("z-10");
+  });
+
   it("shows the Customer's preferred Resolution until Staff choose a final one", () => {
     view([
       row({ id: 1, number: "RMA-1", preferredResolution: "replacement" }),

@@ -198,6 +198,9 @@ describe("Approvals by type", () => {
     expect(screen.getByRole("link", { name: "BR-1046" }).getAttribute("href")).toBe("/orders/1046");
     expect(screen.getByRole("link", { name: "ID check #7" }).getAttribute("href")).toBe("/customer-profiles/senior-pwd/7");
     expect(screen.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/customer-profiles/senior-pwd/7");
+    // The whole card opens its target; its own buttons and links sit above that.
+    expect(screen.getByRole("link", { name: "ID check #7" }).className).toContain("after:inset-0");
+    expect(screen.getByRole("link", { name: "Review" }).className).toContain("z-10");
   });
 
   it("decides a payment under its own Module, not Returns", async () => {

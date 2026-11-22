@@ -39,6 +39,13 @@ describe("Ticket reports page", () => {
     expect(screen.getByRole("link", { name: "TKT-12" }).getAttribute("href")).toBe("/tickets/12");
   });
 
+  it("opens the Tickets behind each row: a Category, a Staff member, a low rating", () => {
+    render(<TicketReportView report={report} />);
+    expect(screen.getByRole("link", { name: "Delivery" }).getAttribute("href")).toBe("/tickets?tab=all&category=Delivery");
+    expect(screen.getByRole("link", { name: "Ana" }).getAttribute("href")).toBe("/tickets?tab=all&claimed=u1");
+    expect(screen.getByRole("link", { name: "Ana" }).closest("tr")?.className).toContain("relative");
+  });
+
   it("drops the channel, export, satisfaction chart and AI figures", () => {
     render(<TicketReportView report={report} />);
     expect(screen.queryByText(/where tickets came from|channel|export|\bai\b/i)).toBeNull();

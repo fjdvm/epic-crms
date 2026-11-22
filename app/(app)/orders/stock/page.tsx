@@ -11,18 +11,21 @@ import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 /** The header and skeleton reach the browser at once; nothing here waits on the Portal or the IMS. */
-export default function ProductsStockPage() {
+export default function ProductsStockPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 overflow-hidden px-8 py-7">
       <StockHeader />
       <Suspense fallback={<StockSkeleton />}>
-        <StockData />
+        <StockData searchParams={searchParams} />
       </Suspense>
     </div>
   );
 }
 
-async function StockData() {
+async function StockData({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // `?q=` opens the list searched, as an Order line's link does.
+  const q = (await searchParams).q;
+  const initialQuery = (Array.isArray(q) ? q[0] : q)?.trim().slice(0, 100) ?? "";
   // Orders gates this page for Staff, Manager, and the read-only Admin alike; only Staff and Manager may edit a product.
   const staff = await requireModule(ORDERS_MODULE);
   const result = await loadStockCopy(ticketsDatabase, readPublishedContent, stockMirror);
@@ -34,5 +37,5 @@ async function StockData() {
       </Alert>
     );
   }
-  return <LiveStock page={result.page} canEdit={canWork(staff)} />;
+  return <LiveStock page={result.page} canEdit={canWork(staff)} initialQuery={initialQuery} />;
 }

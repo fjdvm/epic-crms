@@ -32,6 +32,8 @@ it("names the Return without a link for Staff who cannot open Returns, and says 
   const { unmount } = render(<PaymentsView rows={[]} now={NOW} refunds={[refund]} />);
   fireEvent.click(screen.getByRole("tab", { name: "Refunds 1" }));
   expect(screen.getByText("RMA-15").closest("a")).toBeNull();
+  // Without the Returns page, the row opens the Order instead.
+  expect(screen.getByRole("link", { name: "#7" }).className).toContain("after:inset-0");
   unmount();
   const empty = render(<PaymentsView rows={[]} now={NOW} refunds={[]} />);
   fireEvent.click(screen.getByRole("tab", { name: "Refunds 0" }));

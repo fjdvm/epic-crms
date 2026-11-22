@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+import { ABOVE_ROW_LINK, CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
@@ -144,18 +145,18 @@ export function ReturnListView({
                 ))}
               </div>
               {list.rows.map((row) => (
-                <div key={row.id} id={returnAnchor(row.id)} data-return-row className="flex scroll-mt-10 items-center border-b border-[#efebf4] py-[11px]">
+                <div key={row.id} id={returnAnchor(row.id)} data-return-row className={cn(CLICKABLE_ROW, "flex scroll-mt-10 items-center border-b border-[#efebf4] py-[11px]")}>
                   <div className={cn(CELL, COLUMNS[0].className, "flex-col font-medium text-[#5b2a86]")}>
-                    <Link href={`/returns/${row.id}`} className="hover:underline">
+                    <RowLink href={`/returns/${row.id}`} className="hover:underline">
                       {row.number}
-                    </Link>
-                    <ReturnFlagNotes flags={flags?.get(row.id)} compact />
+                    </RowLink>
+                    <div className={ABOVE_ROW_LINK}><ReturnFlagNotes flags={flags?.get(row.id)} compact /></div>
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className)}>
                     <span className="truncate pr-3">{row.customer.name}</span>
                   </div>
                   <div className={cn(CELL, COLUMNS[2].className)}>
-                    <Link href={`/orders/${row.orderId}`} className="text-[#5b2a86]">
+                    <Link href={`/orders/${row.orderId}`} className={cn(ABOVE_ROW_LINK, "text-[#5b2a86]")}>
                       #{row.orderId}
                     </Link>
                   </div>

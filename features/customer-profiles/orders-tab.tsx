@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Star } from "lucide-react";
 
+import { CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 import { Field } from "./field";
@@ -151,18 +152,19 @@ export function OrdersTab({
 
             return (
               <tbody key={o.id} id={orderAnchor(o.id)} className="border-b border-border-subtle last:border-0">
-                <tr>
+                {/* The whole row opens the Order, or for someone without its page, shows its details here. */}
+                <tr className={CLICKABLE_ROW}>
                   <td className={`${CELL} font-medium text-primary`}>
                     {canOpenOrder ? (
-                      <Link href={`/orders/${o.id}`} className="inline-flex items-center gap-1">
+                      <RowLink href={`/orders/${o.id}`} className="inline-flex items-center gap-1">
                         #{o.id}
-                      </Link>
+                      </RowLink>
                     ) : (
                       <button
                         type="button"
                         aria-expanded={open}
                         onClick={() => onToggle(o.id)}
-                        className="inline-flex items-center gap-1"
+                        className="inline-flex items-center gap-1 after:absolute after:inset-0 after:content-['']"
                       >
                         {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}#{o.id}
                       </button>

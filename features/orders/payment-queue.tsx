@@ -4,6 +4,7 @@ import { AlertTriangle, Check, ChevronDown, Image as ImageIcon } from "lucide-re
 import Link from "next/link";
 import { useOptimistic, useState } from "react";
 
+import { ABOVE_ROW_LINK, CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-profiles/format";
@@ -164,12 +165,12 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
         aria-controls={`payment-details-${order.id}`}
         aria-label={`${open ? "Hide" : "Show"} details for Order #${order.id}`}
         onClick={() => setOpen((v) => !v)}
-        className="flex size-7 items-center justify-center rounded-md text-[#5b2a86] hover:bg-[#efe6f8]"
+        className={`${ABOVE_ROW_LINK} flex size-7 items-center justify-center rounded-md text-[#5b2a86] hover:bg-[#efe6f8]`}
       >
         <ChevronDown aria-hidden className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
     ) : <span aria-hidden />,
-    <Link key="o" href={`/orders/${order.id}`} className="font-medium text-[#5b2a86]">#{order.id}</Link>,
+    <RowLink key="o" href={`/orders/${order.id}`} className="font-medium text-[#5b2a86]">#{order.id}</RowLink>,
     <span key="c" className="flex min-w-0 flex-col items-start pr-3">
       <span className="max-w-full truncate">{order.customer.name}</span>
       {anomaly && <span className="mt-0.5 rounded-full bg-[#fee2e2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">Anomaly</span>}
@@ -217,10 +218,11 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
 
   return (
     <div data-payment-row data-anomaly={anomaly || undefined} className="mb-2 rounded-xl border border-[#e6e1ee] bg-white px-2">
-      <div className={`${GRID} items-center py-2.5`}>
+      <div className={`${GRID} ${CLICKABLE_ROW} items-center rounded-lg py-2.5`}>
         {cells.map((cell, i) => (
           <div key={i} className={`${CELL} ${COLUMNS[i].className}`}>
-            {cell}
+            {/* The last column holds this row's own actions, so they keep their click above the row's link. */}
+            {i === cells.length - 1 ? <span className={ABOVE_ROW_LINK}>{cell}</span> : cell}
           </div>
         ))}
       </div>

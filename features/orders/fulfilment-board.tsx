@@ -3,6 +3,7 @@
 import { useOptimistic, useState } from "react";
 import Link from "next/link";
 
+import { ABOVE_ROW_LINK, CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { formatDate } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
 
@@ -14,12 +15,12 @@ function FulfilmentCard({ order, onMove }: { order: FulfilmentOrder; onMove: (id
   return (
     <li
       data-fulfilment-card
-      className="flex flex-col gap-1.5 rounded-xl border border-[#e6e1ee] bg-white p-3.5 leading-[normal]"
+      className={`${CLICKABLE_ROW} flex flex-col gap-1.5 rounded-xl border border-[#e6e1ee] bg-white p-3.5 leading-[normal]`}
     >
       <div className="flex items-center gap-2">
-        <Link href={`/orders/${order.id}`} className="min-w-0 flex-1 text-sm font-semibold text-[#5b2a86]">
+        <RowLink href={`/orders/${order.id}`} className="min-w-0 flex-1 text-sm font-semibold text-[#5b2a86]">
           #{order.id}
-        </Link>
+        </RowLink>
         <span className="rounded-full bg-[#efe6f8] px-2.5 py-[3px] text-xs font-medium text-[#5b2a86]">
           {boardStatusLabel(order.status)}
         </span>
@@ -34,12 +35,12 @@ function FulfilmentCard({ order, onMove }: { order: FulfilmentOrder; onMove: (id
           : `${orderLabel(order.fulfillmentMethod)} · ${orderLabel(order.paymentMethod)}`}
       </p>
       {order.failedOpen && (
-        <Link href={`/orders/${order.id}/failed-delivery`} className="text-xs font-medium text-[#b42318]">
+        <Link href={`/orders/${order.id}/failed-delivery`} className={`${ABOVE_ROW_LINK} text-xs font-medium text-[#b42318]`}>
           Failed delivery · resolve
         </Link>
       )}
       {order.packedBy && <p className="truncate text-xs text-[#6e6680]">Packed by {order.packedBy.name}</p>}
-      <div className="mt-1 empty:hidden">
+      <div className={`${ABOVE_ROW_LINK} mt-1 empty:hidden`}>
         <FulfilmentMove order={order} triggerClassName="w-full px-3 py-1.5 text-[13px]" onMove={(status) => onMove(order.id, status)} />
       </div>
     </li>

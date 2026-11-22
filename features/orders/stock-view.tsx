@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import Link from "next/link";
 
+import { CLICKABLE_ROW, RowLink, rowButton } from "@/components/shared/row-link";
 import { ZoomableImage } from "@/components/zoomable-image";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProductEditDrawer } from "./product-edit-drawer";
@@ -58,8 +59,8 @@ function HoldingOrders({ row, onClose }: { row: StockRow | null; onClose: () => 
         </DialogHeader>
         <ul className="flex max-h-[60vh] flex-col overflow-y-auto">
           {orders.map((order) => (
-            <li key={order.orderId} data-holding-order className="flex items-center gap-3 border-t border-[#f0edf4] py-2.5 text-[13px] first:border-t-0">
-              <Link href={`/orders/${order.orderId}`} className="w-16 shrink-0 font-medium text-[#5b2a86] hover:underline">#{order.orderId}</Link>
+            <li key={order.orderId} data-holding-order className={cn(CLICKABLE_ROW, "flex items-center gap-3 border-t border-[#f0edf4] py-2.5 text-[13px] first:border-t-0")}>
+              <RowLink href={`/orders/${order.orderId}`} className="w-16 shrink-0 font-medium text-[#5b2a86] hover:underline">#{order.orderId}</RowLink>
               <span className="min-w-0 flex-1 truncate text-[#18181b]">{order.customer}</span>
               <span className="shrink-0 text-[#6e6680]">× {order.quantity}</span>
               <Pill className={order.status === "Placed" ? PILL.grey : order.status === "Awaiting payment" ? PILL.amber : PILL.green}>{order.status}</Pill>
@@ -114,9 +115,9 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
 }
 
 /** `canEdit` is false for the read-only Roles (Admin), who see no edit button. */
-export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?: boolean }) {
+export function StockView({ page, canEdit = false, initialQuery = "" }: { page: StockPage; canEdit?: boolean; /** The search the page opened with, e.g. from an Order line. */ initialQuery?: string }) {
   const [tab, setTab] = useState<Tab>("all");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [opened, setOpened] = useState<StockRow | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const { summary } = page;
@@ -185,8 +186,12 @@ export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?
             <div className={COLUMN.edit} />
           </div>
           {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">No sizes here.</p>}
-          {rows.map((row) => (
-            <div key={row.sizeId} data-stock-row className={cn(GRID, "border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", isSoldOut(row) && "bg-[#fff7f7]")}>
+          {rows.map((row) => {
+            // The row opens the edit drawer for those who may edit, otherwise the Orders holding it, if any.
+            const open = canEdit ? () => setEditingId(row.sizeId) : (row.orders?.length ?? 0) > 0 ? () => setOpened(row) : null;
+            return (
+            <div key={row.sizeId} data-stock-row {...(open ? rowButton(open, `Open ${rowLabel(row)}`) : {})}
+              className={cn(GRID, "border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", open && CLICKABLE_ROW, isSoldOut(row) && "bg-[#fff7f7]")}>
               <ProductImage row={row} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{rowLabel(row)}</p>
@@ -207,7 +212,8 @@ export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       <HoldingOrders row={opened} onClose={() => setOpened(null)} />

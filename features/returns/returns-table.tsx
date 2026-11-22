@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ABOVE_ROW_LINK, CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { PILL, Pill } from "@/features/tickets/pill";
 
@@ -22,6 +23,7 @@ const CELL = "py-[11px] pr-3 text-sm leading-[normal] text-[#1f1a2e]";
 /**
  * A read-only table of Returns: number, status, amount and request date, plus the Order each belongs
  * to when `showOrder` is set. Null means the Returns could not be read, which is not the same as none.
+ * It is shown only to someone holding the Returns Module, so each row opens its Return.
  */
 export function ReturnsTable({
   returns,
@@ -54,12 +56,14 @@ export function ReturnsTable({
         </thead>
         <tbody>
           {returns.map((r) => (
-            <tr key={r.id} className="border-b border-[#efebf4] last:border-0">
-              <td className={`${CELL} font-medium text-[#5b2a86]`}>{r.number}</td>
+            <tr key={r.id} className={`${CLICKABLE_ROW} border-b border-[#efebf4] last:border-0`}>
+              <td className={`${CELL} font-medium text-[#5b2a86]`}>
+                <RowLink href={`/returns/${r.id}`}>{r.number}</RowLink>
+              </td>
               {showOrder && (
                 <td className={CELL}>
                   {canOpenOrder ? (
-                    <Link href={`/orders/${r.orderId}`} className="text-[#5b2a86]">
+                    <Link href={`/orders/${r.orderId}`} className={`${ABOVE_ROW_LINK} text-[#5b2a86]`}>
                       #{r.orderId}
                     </Link>
                   ) : (

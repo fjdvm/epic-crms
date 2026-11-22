@@ -98,6 +98,12 @@ describe("the Feedback list", () => {
     expect(screen.getByRole("link", { name: "#1040" }).getAttribute("href")).toBe("/customer-profiles/c1#order-1040");
   });
 
+  it("opens the Order from anywhere on the row; the Customer and product links keep their own targets", () => {
+    render(<FeedbackListView list={list([row()])} filters={NO_FILTERS} />);
+    expect(screen.getByRole("link", { name: "#1040" }).className).toContain("after:inset-0");
+    for (const name of ["Ana Reyes", "Smooth tub"]) expect(screen.getByRole("link", { name }).className).toContain("z-10");
+  });
+
   it("links each product name to that product's view, keeping the other filters", () => {
     render(<FeedbackListView list={list([row()])} filters={{ stars: 2, from: "2026-10-01", page: 3 }} />);
 
