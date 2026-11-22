@@ -38,6 +38,25 @@ describe("payment-proof screenshot route", () => {
     expect(mocks.viewUrl).toHaveBeenCalledWith("f1");
   });
 
+  it("opens one specific proof of the Order when ?proof= is given", async () => {
+    mocks.sql.mockResolvedValueOnce([{ screenshot_file_id: "f-proof-1" }]);
+    const response = await GET(new Request("http://localhost/api/orders/4/payment-proof?proof=7"), context("4"));
+
+    expect(response.status).toBe(302);
+    expect(mocks.viewUrl).toHaveBeenCalledWith("f-proof-1");
+  });
+
+  it("answers 404 for a proof of another Order, one without a File, or a bad proof id", async () => {
+    mocks.sql.mockResolvedValueOnce([]);
+    expect((await GET(new Request("http://localhost/api/orders/4/payment-proof?proof=7"), context("4"))).status).toBe(404);
+
+    mocks.sql.mockResolvedValueOnce([{ screenshot_file_id: null }]);
+    expect((await GET(new Request("http://localhost/api/orders/4/payment-proof?proof=7"), context("4"))).status).toBe(404);
+
+    expect((await GET(new Request("http://localhost/api/orders/4/payment-proof?proof=abc"), context("4"))).status).toBe(404);
+    expect(mocks.viewUrl).not.toHaveBeenCalled();
+  });
+
   it("answers 404 for a bad id, an Order without a File, and a storage failure", async () => {
     expect((await GET(request, context("abc"))).status).toBe(404);
 
