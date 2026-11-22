@@ -187,7 +187,7 @@ export async function paymentProofHistory(sql: postgres.Sql, orderId: number, se
   const checks = await paymentProofChecksForOrders(sql, [orderId], settings);
   return rows.map(p => ({
     ...checks.get(p.id),
-    id: p.id, reference: p.reference, screenshot: paymentScreenshotSource(orderId, p.screenshot_file_id, p.screenshot_pathname), submittedAt: p.submitted_at, account: proofAccount(p),
+    id: p.id, reference: p.reference, screenshot: paymentScreenshotSource(orderId, p.screenshot_file_id, p.screenshot_pathname, p.id), submittedAt: p.submitted_at, account: proofAccount(p),
     rejection: p.rejected_at ? { at: p.rejected_at, by: { id: p.rejected_by_id ?? "", name: p.rejected_by_name ?? "" }, reason: p.rejection_reason ?? "" } : null,
   }));
 }
