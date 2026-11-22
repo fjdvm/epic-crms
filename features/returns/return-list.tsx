@@ -8,6 +8,7 @@ import { Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
 
 import { returnLabel } from "./refund-record";
+import { returnDisplayLabel } from "./outcome";
 import { returnAnchor } from "./anchor";
 import { ReturnFlagNotes } from "./return-flag-notes";
 import type { ReturnFlag } from "./return-flags";
@@ -165,7 +166,7 @@ export function ReturnListView({
                   </div>
                   <div className={cn(CELL, COLUMNS[4].className)}>{orderLabel(row.finalResolution ?? row.preferredResolution)}</div>
                   <div className={cn(CELL, COLUMNS[5].className)}>
-                    <Pill className={STATUS_PILLS[row.status]}>{returnLabel(row.status, row.goodsRequired)}</Pill>
+                    <Pill className={STATUS_PILLS[row.status]}>{returnDisplayLabel(row.status, row.goodsRequired, row.replacement)}</Pill>
                   </div>
                   <div className={cn(CELL, COLUMNS[6].className)}>{formatDate(row.requestedAt)}</div>
                 </div>

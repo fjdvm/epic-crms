@@ -16,6 +16,7 @@ import { crmsDatabase } from "@/lib/crms-db";
 import { currentPaymentReviewHours } from "@/features/settings/automatic-checks-server";
 import { loadLineReservations } from "@/features/orders/stock";
 import { loadEmbeddedReturns } from "@/features/returns/returns";
+import { loadOrderReturnSummary } from "@/features/returns/outcome";
 import { gatewayFileStorage } from "@/lib/gateway";
 import { FULFILMENT_MODULE, ORDERS_MODULE, ORDER_DETAIL_MODULES, PAYMENTS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 import { approvals } from "@/features/approvals/server";
@@ -66,10 +67,12 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     }
   }
 
-  // Returns reads belong to the Returns Module, so nobody else's page even loads them.
-  const [returns, reservations] = await Promise.all([
+  // The Returns themselves belong to the Returns Module, so nobody else's page loads them.
+  // How its Returns ended (and what a Replacement Order replaces) is part of the Order, so every viewer gets that summary.
+  const [returns, reservations, returnSummary] = await Promise.all([
     modules.includes(RETURNS_MODULE) ? loadEmbeddedReturns(ticketsDatabase, { orderId: order.id }) : [],
     loadLineReservations(ticketsDatabase, order.id),
+    loadOrderReturnSummary(ticketsDatabase, order.id),
   ]);
 
   const cancellation = order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) ? await loadCancellationState(order.id) : null;
@@ -112,6 +115,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         modules={modules}
         deliveryPhotoUrl={deliveryPhotoUrl}
         returns={returns}
+        returnSummary={returnSummary}
         reservations={reservations}
       />
     </>

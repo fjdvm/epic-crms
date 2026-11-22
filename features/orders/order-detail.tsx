@@ -11,6 +11,7 @@ import type { ShopRole } from "@/lib/portal/roles";
 import { orderLabel } from "@/features/customer-profiles/rules";
 import type { ReturnRow } from "@/features/returns/returns";
 import { ReturnsTable } from "@/features/returns/returns-table";
+import type { OrderReturnSummary } from "@/features/returns/outcome";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
 import { SENIOR_PWD_WEEKLY_CAP, type OrderDetail } from "./orders";
@@ -166,7 +167,10 @@ export function OrderDetailView({
   paymentReview = null,
   proofReads = {},
   dispatch = null,
+  returnSummary = null,
 }: {
+  /** How this Order's Returns ended and what it replaces, for anyone who can open the Order; null when unread. */
+  returnSummary?: OrderReturnSummary | null;
   /** The viewer's role; omitted means Staff, so the buttons that need a Manager read "Request approval". */
   role?: ShopRole | null;
   /** An approved "approve anyway" request Staff can now carry out. */
@@ -213,6 +217,17 @@ export function OrderDetailView({
                 <span className="rounded-full bg-[#e3f4e8] px-2.5 py-0.5 text-xs font-medium text-[#1e6b3a]">Free delivery</span>
               )}
             </div>
+            {returnSummary?.replacementFor && (
+              <p className="text-sm font-medium text-[#5b2a86]" data-testid="replacement-for">
+                Replacement for{" "}
+                <Link href={`/orders/${returnSummary.replacementFor.orderId}`} className="underline">Order #{returnSummary.replacementFor.orderId}</Link>
+                {" "}·{" "}
+                {modules.includes(RETURNS_MODULE)
+                  ? <Link href={`/returns/${returnSummary.replacementFor.returnId}`} className="underline">RMA-{returnSummary.replacementFor.returnId}</Link>
+                  : `RMA-${returnSummary.replacementFor.returnId}`}
+                {" "}· ₱0
+              </p>
+            )}
             <p className="text-sm leading-[normal] text-[#6e6680]">
               Placed {formatDate(order.createdAt)} ·{" "}
               {orderLabel(order.fulfillmentMethod)} ·{" "}
@@ -300,6 +315,19 @@ export function OrderDetailView({
 
           {order.discount > 0 && <SeniorPwdDiscount order={order} />}
 
+          {/* Staff without the Returns Module still see how this Order's Returns ended, but not the Returns themselves. */}
+          {!modules.includes(RETURNS_MODULE) && returnSummary && returnSummary.returns.length > 0 && (
+            <section className={CARD} aria-label="Return outcome">
+              <h2 className={CARD_TITLE}>Return outcome</h2>
+              <ul className="space-y-1.5 text-sm text-[#1f1a2e]">
+                {returnSummary.returns.map((r) => (
+                  <li key={r.id}>
+                    <span className="font-medium">{r.number}</span> · {r.label}{r.detail ? ` · ${r.detail}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {modules.includes(RETURNS_MODULE) && (
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Returns</h2>

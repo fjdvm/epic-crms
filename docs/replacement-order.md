@@ -14,3 +14,15 @@ CREOMS never owns these rules; it asks the storefront (`returns` credential) and
 
 Storefront columns CREOMS reads on `orders`: `replacement_for_order_id`, `replacement_for_return_id`, `refund_window_extended_at`.
 CREOMS has no database migration of its own for this; the storefront owns them.
+
+## Completed and the outcome on the Order
+
+`features/returns/outcome.ts` derives the label, with no storefront status change: `refunded` is **Completed · Refunded**; `replaced` is
+**Replacement in progress** until the Replacement Order (`replacement_for_return_id`) is `delivered` or `received`, then
+**Completed · Replaced**; a cancelled Replacement Order shows **Replacement cancelled**. A Replaced Return with no Replacement
+Order (from before they existed) counts as Completed. The Returns list, Order and Customer Profile tables and the Return detail
+pill all use it; the tabs keep the storefront statuses.
+
+`loadOrderReturnSummary` gives the Order detail a **Return outcome** card for viewers without the Returns Module (Returns
+Staff see the Returns table), and on a Replacement Order a "Replacement for Order #N · RMA-n" line, linking the Return only
+for Returns Staff. Tests: `tests/return-outcome.test.ts`, `tests/returns-on-orders.test.tsx`.

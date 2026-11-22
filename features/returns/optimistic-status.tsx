@@ -4,7 +4,7 @@ import { createContext, useContext, useOptimistic, type ReactNode } from "react"
 
 import { Pill } from "@/features/tickets/pill";
 
-import { returnLabel } from "./refund-record";
+import { returnDisplayLabel, type ReplacementRef } from "./outcome";
 import type { ReturnStatus } from "./returns";
 import { STATUS_PILLS } from "./returns-table";
 
@@ -30,8 +30,8 @@ export function useShownStatus(stored: ReturnStatus) {
   return { status: context?.status ?? stored, show: context?.show ?? (() => {}) };
 }
 
-export function ReturnStatusPill({ status, goodsRequired }: { status: ReturnStatus; goodsRequired?: boolean | null }) {
+export function ReturnStatusPill({ status, goodsRequired, replacement }: { status: ReturnStatus; goodsRequired?: boolean | null; replacement?: ReplacementRef | null }) {
   const shown = useShownStatus(status).status;
 
-  return <Pill className={STATUS_PILLS[shown]}>{returnLabel(shown, shown === status ? goodsRequired : null)}</Pill>;
+  return <Pill className={STATUS_PILLS[shown]}>{returnDisplayLabel(shown, shown === status ? goodsRequired : null, replacement)}</Pill>;
 }
