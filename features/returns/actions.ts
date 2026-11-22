@@ -307,7 +307,7 @@ export async function inspectReturn(id: number, inspectionId: string, items: { o
   try {
     const [current] = await database()`select status, order_id from public.order_returns where id = ${id}`;
     if (!current) return { ok: false, reason: "Return was not found." };
-    const lines = await database()`select order_line_id, inspection_id, to_jsonb(order_return_items)->>'condition' as condition from public.order_return_items where return_id = ${id}`;
+    const lines = await database()`select order_line_id, to_jsonb(order_return_items)->>'inspection_id' as inspection_id, to_jsonb(order_return_items)->>'condition' as condition from public.order_return_items where return_id = ${id}`;
     const resumed = lines.length > 0 && lines.every(line => line.inspection_id === inspectionId);
     if (!resumed && (current.status !== "goods received" || lines.some(line => line.condition))) return { ok: false, reason: "Return is not ready to inspect or was already inspected." };
     const ids = new Set(items.map(item => item.orderLineId));
@@ -339,7 +339,7 @@ export async function writeOffReturn(id: number, options: ApprovalOptions = {}):
   try {
     const [current] = await database()`select order_id from public.order_returns where id = ${id}`;
     if (!current) return { ok: false, reason: "Return was not found." };
-    const items = await database()`select inspection_id, to_jsonb(order_return_items)->>'condition' as condition,
+    const items = await database()`select to_jsonb(order_return_items)->>'inspection_id' as inspection_id, to_jsonb(order_return_items)->>'condition' as condition,
       to_jsonb(order_return_items)->>'written_off_at' as written_off_at from public.order_return_items where return_id = ${id}`;
     const damaged = items.filter(item => item.condition === "damaged");
     if (!damaged.length || items.some(item => !item.inspection_id)) return { ok: false, reason: "This Return has no inspected damaged items to write off." };
