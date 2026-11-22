@@ -2,8 +2,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { loadPayments } from "@/features/orders/actions";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { PaymentsView } from "@/features/orders/payment-queue";
-import { PAYMENTS_MODULE } from "@/lib/portal/config";
-import { requireModule } from "@/lib/portal/staff";
+import { PAYMENTS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
+import { database } from "@/lib/db";
+import { loadRefunds } from "@/features/orders/refunds";
+import { heldModules, requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import { toView, WAITING } from "@/features/approvals/view";
 import { shopRole } from "@/lib/portal/roles";
@@ -11,7 +13,15 @@ import { shopRole } from "@/lib/portal/roles";
 export default async function PaymentsPage() {
   const staff = await requireModule(PAYMENTS_MODULE);
 
-  const result = await loadPayments();
+  const [result, refunds, held] = await Promise.all([
+    loadPayments(),
+    // A refund is settled on its Return; Payments only records it. A read failure leaves the other tabs working.
+    loadRefunds(database()).catch((error) => {
+      console.error("Refunds could not be read", error);
+      return null;
+    }),
+    heldModules([RETURNS_MODULE]),
+  ]);
 
   if (!result.ok) {
     return (
@@ -48,7 +58,8 @@ export default async function PaymentsPage() {
           Customers send a GCash reference number and, optionally, a screenshot. Check it, then mark the Order paid or cancel it. Paid, collected and rejected cover the last 30 days.
         </p>
       </div>
-      <PaymentsView rows={result.rows} now={result.now} role={shopRole(staff.role)} approvals={approvalsByOrder} />
+      <PaymentsView rows={result.rows} now={result.now} role={shopRole(staff.role)} approvals={approvalsByOrder}
+        refunds={refunds} canOpenReturns={held.includes(RETURNS_MODULE)} />
     </div>
   );
 }

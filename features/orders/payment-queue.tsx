@@ -21,6 +21,8 @@ import { OrderActionDialog } from "./action-dialog";
 import { claimPaymentReview } from "./payment-review-actions";
 import { PAYMENTS_WINDOW_DAYS, summarize, type PaymentRow, type PaymentTab } from "./payments";
 import { ZoomableImage } from "@/components/zoomable-image";
+import type { RefundRow } from "./refunds";
+import { RefundsTable } from "./refunds-table";
 
 const METHOD: Record<PaymentRow["method"], string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on delivery" };
 
@@ -242,14 +244,19 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
  * list of Orders. Mark paid moves its Order to Paid and adjusts the counts at once, and rolls back
  * with the reason if the storefront refuses (the Customer is only emailed once it accepts).
  */
-export function PaymentsView({ rows: served, now, role = "staff", approvals = {} }: { rows: PaymentRow[]; now: Date; role?: ShopRole | null; approvals?: Record<number, ProofApproval> }) {
+export function PaymentsView({ rows: served, now, role = "staff", approvals = {}, refunds = [], canOpenReturns = false }: {
+  rows: PaymentRow[]; now: Date; role?: ShopRole | null; approvals?: Record<number, ProofApproval>;
+  /** Refunds settled on Returns in the last 30 days; null when they could not be read. */
+  refunds?: RefundRow[] | null;
+  canOpenReturns?: boolean;
+}) {
   const [rows, markPaid] = useOptimistic(served, (current, id: number) =>
     current.map((r) => (r.id === id ? { ...r, status: "paid" } : r)),
   );
-  const [tab, setTab] = useState<PaymentTab>("verify");
+  const [tab, setTab] = useState<PaymentTab | "refunds">("verify");
   const summary = summarize(rows, now);
-  const shown = summary.tabs[tab];
-  const empty = TABS.find((t) => t.key === tab)!.empty;
+  const shown = tab === "refunds" ? [] : summary.tabs[tab];
+  const empty = TABS.find((t) => t.key === tab)?.empty ?? "";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
@@ -293,11 +300,22 @@ export function PaymentsView({ rows: served, now, role = "staff", approvals = {}
             {label} {summary.tabs[key].length}
           </button>
         ))}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "refunds"}
+          onClick={() => setTab("refunds")}
+          className={`rounded-lg px-3.5 py-2 text-sm font-medium leading-[normal] ${tab === "refunds" ? "bg-[#efe6f8] text-[#5b2a86]" : "text-[#71717a] hover:bg-[#f6f2fa]"}`}
+        >
+          Refunds {refunds?.length ?? "–"}
+        </button>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">
         <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[#e6e1ee] bg-white p-5">
-          {shown.length === 0 ? (
+          {tab === "refunds" ? (
+            <RefundsTable refunds={refunds} canOpenReturns={canOpenReturns} />
+          ) : shown.length === 0 ? (
             <p className="p-3 text-center text-sm text-[#6e6680]">{empty}</p>
           ) : (
             <div className="min-w-[860px]">
@@ -309,7 +327,7 @@ export function PaymentsView({ rows: served, now, role = "staff", approvals = {}
                 ))}
               </div>
               {shown.map((order) => (
-                <Row key={order.id} order={order} tab={tab} now={now} role={role} approval={approvals[order.id]} onMarkPaid={() => markPaid(order.id)} />
+                <Row key={order.id} order={order} tab={tab as PaymentTab} now={now} role={role} approval={approvals[order.id]} onMarkPaid={() => markPaid(order.id)} />
               ))}
             </div>
           )}
