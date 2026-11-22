@@ -31,6 +31,7 @@ export type ChangeResult = { ok: true } | { ok: false; reason: string };
 export function OrderActionDialog({
   trigger,
   triggerClassName,
+  triggerVariant,
   triggerDisabled = false,
   title,
   description,
@@ -48,6 +49,8 @@ export function OrderActionDialog({
   trigger: React.ReactNode;
   /** Extra classes for that button, such as a smaller one on a board card. */
   triggerClassName?: string;
+  /** The button's look; "outline" for a quiet secondary button (the default variant forces white text). */
+  triggerVariant?: "default" | "outline";
   /** True while the page's button cannot be pressed yet, such as before every field is confirmed. */
   triggerDisabled?: boolean;
   title: string;
@@ -112,7 +115,7 @@ export function OrderActionDialog({
       <AlertDialogTrigger asChild>
         <Button
           type="button"
-          variant={destructive ? "outline" : "default"}
+          variant={triggerVariant ?? (destructive ? "outline" : "default")}
           disabled={triggerDisabled}
           className={cn(
             "h-auto rounded-lg px-4 py-[9px] leading-[normal] shadow-none",

@@ -16,7 +16,7 @@ export interface ProofChanges {
   proceed: (field: string, reason: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
-const SMALL = "h-auto rounded-md bg-white px-2.5 py-1 text-xs text-[#5b2a86] border border-[#d9cce8] hover:bg-[#f6f2fa]";
+const SMALL = "h-auto rounded-md px-2.5 py-1 text-xs font-medium text-primary border-border hover:bg-accent hover:text-primary";
 
 /**
  * Correct one detail, or proceed despite its flag. Each asks for a reason behind a confirm dialog and only adds a record;
@@ -32,6 +32,7 @@ export function ProofReadControls({ proofId, field, label, flagged, changes }: {
     <span className="flex flex-wrap gap-1.5 pt-1">
       <OrderActionDialog
         trigger="Correct"
+        triggerVariant="outline"
         triggerClassName={SMALL}
         title={`Correct the ${label.toLowerCase()}?`}
         description="The original reading is kept. Your correction and reason are recorded with your name."
@@ -53,6 +54,7 @@ export function ProofReadControls({ proofId, field, label, flagged, changes }: {
       {flagged && (
         <OrderActionDialog
           trigger="Proceed anyway"
+          triggerVariant="outline"
           triggerClassName={SMALL}
           title={`Proceed despite the ${label.toLowerCase()} flag?`}
           description="This records that you looked at it and went ahead. It does not mark anything paid or refunded, and a reused reference or a third rejected proof still needs a Manager."
