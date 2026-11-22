@@ -44,6 +44,6 @@ it("shows the outcome of an inspected Return and offers a Staff write-off reques
 });
 
 it("is view only for Admin and CEO", () => {
-  render(<InspectReturn id={7} number="RMA-7" status="goods received" items={items} role="ceo" />);
+  render(<InspectReturn id={7} number="RMA-7" status="goods received" items={items} role="admin" />);
   expect(screen.queryByRole("button")).toBeNull();
 });

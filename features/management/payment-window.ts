@@ -15,9 +15,9 @@ export async function loadPaymentWindow(sql: postgres.Sql): Promise<number | nul
 
 type Staff = { id: string; name: string; role: string };
 
-/** Manager or CEO only, checked here and not only on the page. Affects Orders confirmed afterwards; audited with the old and new value. */
+/** Manager only, checked here and not only on the page. Affects Orders confirmed afterwards; audited with the old and new value. */
 export async function changePaymentWindow(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<WindowResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can change the payment window." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the payment window." };
   const valid = parseWindowHours(input);
   if (!valid.ok) return valid;
   const next = valid.hours;

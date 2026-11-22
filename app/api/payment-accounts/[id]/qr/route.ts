@@ -8,7 +8,7 @@ import { requireModule } from "@/lib/portal/staff";
 const notFound = () => new Response("Not found", { status: 404 });
 
 /**
- * Sends a Manager or the CEO to a short-lived signed address for an account's QR. The address is made on each
+ * Sends a Manager to a short-lived signed address for an account's QR. The address is made on each
  * request and goes straight to the redirect: it is never stored, logged or audited.
  */
 export async function GET(_request: Request, context: RouteContext<"/api/payment-accounts/[id]/qr">) {

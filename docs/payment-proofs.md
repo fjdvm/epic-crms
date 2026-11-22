@@ -13,7 +13,7 @@ a reference number and an optional screenshot. Cash on Delivery has no proof and
   not be rejected (audit `payment.marked_paid`). At 3 or more rejections it is "approve anyway":
   a reason is always required; a Manager approves directly; Staff get "Waiting for approval" and a request
   (`payment.approve-anyway` in `crms.approval_requests`, no CEO step), then retry with the `approvalId`.
-  Audit `payment.approved_anyway` carries the reason. Admin and CEO cannot do either.
+  Audit `payment.approved_anyway` carries the reason. Admin cannot do either.
 - Reads: the Payments queue only lists proofs waiting for a check (not rejected). `loadOrder` returns
   `paymentProofs` (every proof, oldest first, each with its rejection reason and who rejected it) and
   `proofRejections`. A new proof raises a Staff alert; each resubmission has its own alert key.
@@ -47,8 +47,8 @@ not built in this repository.
 
 ## Refunds tab
 
-The Payments page records refunds; it never settles one. A refund is settled on its Return (a Manager, and the CEO above
-the Approval limit). `loadRefunds` (`features/orders/refunds.ts`) reads Returns marked `refunded` in the last 30 days, newest
+The Payments page records refunds; it never settles one. A refund is settled on its Return (a Manager-level
+approval). `loadRefunds` (`features/orders/refunds.ts`) reads Returns marked `refunded` in the last 30 days, newest
 first: the recorded amount (or, for an older refund without details, the items plus any Delivery fee refunded), how it was
 sent, the transfer reference, who marked it Refunded (from the Return history) and when. The page loads it with the other
 tabs, so the tab opens at once; a read failure says so on that tab only. The Return number links to the Return only for

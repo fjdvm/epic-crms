@@ -3,7 +3,7 @@ import type { Staff } from "./client";
 // URL.hostname keeps the brackets on IPv6 literals.
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-export const DEV_ROLES = ["staff", "manager", "admin", "ceo"] as const;
+export const DEV_ROLES = ["staff", "manager", "admin", "ceo", "vp"] as const;
 export type DevRole = (typeof DEV_ROLES)[number];
 
 /** Which dev user is signed in; set by `/api/dev/role?role=ceo`, only ever read with the bypass on. */
@@ -14,14 +14,15 @@ const DEV_ROLE_NAMES: Record<DevRole, string> = {
   manager: "CREOMS Manager",
   admin: "Admin",
   ceo: "CEO",
+  vp: "VP",
 };
 
 export const isDevRole = (value: string | undefined): value is DevRole =>
   DEV_ROLES.some((r) => r === value);
 
-/** The local test user for a Role: Dev Staff, Dev Manager, Dev Admin or Dev CEO. */
+/** The local test user for a Role: Dev Staff, Dev Manager, Dev Admin, Dev CEO or Dev VP (CEO and VP act as a Manager). */
 export function devUser(role: DevRole = "staff"): Staff {
-  const label = role === "ceo" ? "CEO" : role[0].toUpperCase() + role.slice(1);
+  const label = role === "ceo" || role === "vp" ? role.toUpperCase() : role[0].toUpperCase() + role.slice(1);
 
   return {
     id: `dev-${role}`,

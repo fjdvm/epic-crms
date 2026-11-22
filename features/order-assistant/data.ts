@@ -4,7 +4,7 @@ import { shopRole } from "@/lib/portal/roles";
 import { questionKindOf } from "./question-kind";
 
 export function mayReadResults(role: string) {
-  return ["manager", "admin", "ceo"].includes(shopRole(role) ?? "");
+  return ["manager", "admin"].includes(shopRole(role) ?? "");
 }
 export function weekStart(now: Date) {
   const local = new Date(now.getTime() + 8 * 3600000);

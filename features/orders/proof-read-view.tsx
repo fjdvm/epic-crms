@@ -41,7 +41,7 @@ export function explain(field: Field, f: { finding: Finding; read: string | null
 
 /**
  * The Proof reader's findings beside the original image and the Order's payment details. Display only:
- * there is no control here, so no role (Admin and the CEO included) can start a read by looking.
+ * there is no control here, so no role (Admin included) can start a read by looking.
  * Findings are evidence, never proof of payment: Staff still verify the real transfer.
  */
 export function ProofReadFindings({ read, role, proofId, subject = "order", changes }: { read: ProofReadView | null | undefined; role: ShopRole | null; proofId?: number; subject?: "order" | "refund"; changes?: ProofChanges }) {

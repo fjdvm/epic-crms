@@ -291,27 +291,15 @@ describe("deciding a Return", () => {
 });
 
 describe("a refund over the Approval limit", () => {
-  it("asks the CEO first, with no proof, and only then offers the refund steps", async () => {
-    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: false, reason: "Waiting for approval", status: "waiting-ceo", approvalId: "a1" });
-    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo />);
-    expect(buttons()).toEqual(["Ask the CEO for final approval"]);
-    fireEvent.click(screen.getByRole("button", { name: "Ask the CEO for final approval" }));
-    const dialog = screen.getByRole("alertdialog");
-    fireEvent.change(within(dialog).getByLabelText(/Note for the CEO/), { target: { value: "Whole order spoiled" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Send to the CEO" }));
-
-    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledWith(15, undefined, { reason: "Whole order spoiled" }));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Sent to the CEO. Refund once they approve."));
+  it("has no CEO step: a Manager goes straight to the refund steps, and an approved request is carried out", () => {
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} />);
+    expect(buttons()).toEqual(["Save refund proof"]);
+    expect(screen.queryByText(/CEO/)).toBeNull();
     cleanup();
 
     const approved = { id: "a1", action: "return.refund" as const, targetId: "15", amountInCentavos: 600000, limitInCentavos: 500000, reason: "Whole order spoiled",
       requesterId: "mario", requesterName: "Mario", status: "approved", requestedAt: new Date().toISOString(), managerName: "Mario", ceoName: "Owner", declineReason: null };
-    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo requests={[{ ...approved, status: "waiting-ceo" }]} />);
-    expect(screen.getByText("Waiting for the CEO's final approval")).toBeTruthy();
-    expect(buttons()).toEqual([]);
-    cleanup();
-
-    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo requests={[approved]} />);
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} requests={[approved]} />);
     expect(buttons()).toEqual(["Save refund proof"]);
   });
 });
@@ -463,7 +451,7 @@ describe("Issue refund dialog", () => {
 });
 
 describe("Refund window", () => {
-  const view = (role: "staff" | "manager" | "admin" | "ceo", overrides: Partial<ReturnDetail> = {}, windowRequest?: import("@/features/approvals/view").ApprovalView) =>
+  const view = (role: "staff" | "manager" | "admin", overrides: Partial<ReturnDetail> = {}, windowRequest?: import("@/features/approvals/view").ApprovalView) =>
     render(<ReturnDetailView detail={detail({ orderStatus: "delivered", refundWindowEndsAt: new Date("2026-11-16T10:00:00Z"), ...overrides })} imageUrls={[]} role={role} windowRequest={windowRequest} />);
 
   it("lets a Manager extend with a reason, waiting for the server", async () => {
@@ -493,7 +481,7 @@ describe("Refund window", () => {
 
   it("offers nothing to Admin or CEO, or once it was extended", () => {
     view("admin"); expect(screen.queryByRole("button", { name: /Extend by|Request approval/ })).toBeNull(); cleanup();
-    view("ceo"); expect(screen.queryByRole("button", { name: /Extend by|Request approval/ })).toBeNull(); cleanup();
+    view("admin"); expect(screen.queryByRole("button", { name: /Extend by|Request approval/ })).toBeNull(); cleanup();
     view("manager", { refundWindowExtendedAt: new Date() });
     expect(screen.queryByRole("button", { name: /Extend by/ })).toBeNull();
     expect(screen.getByText(/cannot be extended again/)).toBeTruthy();
@@ -516,7 +504,7 @@ describe("Return detail for a Deleted Customer", () => {
 
 describe("Refund destination", () => {
   const masked = { method: "gcash" as const, accountName: "Maria Santos", maskedNumber: "•••••••4567", bankName: null };
-  const view = (role: "staff" | "manager" | "admin" | "ceo", overrides: Partial<ReturnDetail> = {}, request?: import("@/features/approvals/view").ApprovalView) =>
+  const view = (role: "staff" | "manager" | "admin", overrides: Partial<ReturnDetail> = {}, request?: import("@/features/approvals/view").ApprovalView) =>
     render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund", refundDestination: masked, refundDestinationLocked: true, ...overrides })}
       imageUrls={[]} role={role} destinationRequest={request} />);
   const card = () => within(screen.getByRole("heading", { name: "Refund destination" }).closest("section")!);
@@ -602,7 +590,7 @@ describe("Refund destination", () => {
 
   it("offers nothing to change to Admin or CEO, nor after the money was sent", () => {
     view("admin"); expect(card().queryByRole("button", { name: /Change|Request approval|full number/ })).toBeNull(); cleanup();
-    view("ceo"); expect(card().queryByRole("button", { name: /Change|Request approval|full number/ })).toBeNull(); cleanup();
+    view("admin"); expect(card().queryByRole("button", { name: /Change|Request approval|full number/ })).toBeNull(); cleanup();
     view("manager", { status: "refunded" });
     expect(card().queryByRole("button", { name: /Change destination/ })).toBeNull();
   });
@@ -618,7 +606,7 @@ describe("Refund destination", () => {
 
 describe("Refund email not sent", () => {
   const failed = { emailFailures: [{ kind: "return-refunded" as const, occurrence: "15", reason: "mailbox full" }] };
-  const open = (role: "staff" | "ceo") => render(<ReturnDetailView detail={detail({ status: "refunded", ...failed })} imageUrls={[]} role={role} />);
+  const open = (role: "staff" | "admin") => render(<ReturnDetailView detail={detail({ status: "refunded", ...failed })} imageUrls={[]} role={role} />);
 
   it("shows the notice and, after confirming, resends once, then says so", async () => {
     vi.mocked(resendStatusEmail).mockResolvedValue({ ok: true });
@@ -641,7 +629,7 @@ describe("Refund email not sent", () => {
   });
 
   it("is read-only for the CEO", () => {
-    open("ceo");
+    open("admin");
     expect(screen.getByText("Email not sent")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Resend refund email" })).toBeNull();
   });

@@ -42,12 +42,12 @@ describe("PaymentWindowForm", () => {
   });
 
   it("says why when the server refuses and keeps the shown value", async () => {
-    vi.mocked(changePaymentWindowHours).mockResolvedValue({ ok: false, reason: "Only a Manager or the CEO can change the payment window." });
+    vi.mocked(changePaymentWindowHours).mockResolvedValue({ ok: false, reason: "Only a Manager can change the payment window." });
     render(<PaymentWindowForm currentHours={24} />);
     type("48");
     open();
     confirm();
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Only a Manager or the CEO can change the payment window."));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Only a Manager can change the payment window."));
     expect(screen.getByText("Current: 24 hours")).toBeTruthy();
   });
 });

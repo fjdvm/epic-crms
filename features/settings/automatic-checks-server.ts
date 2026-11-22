@@ -40,9 +40,9 @@ function changedRules(before: AutomaticChecks, after: AutomaticChecks): string[]
     .filter(([r]) => JSON.stringify(a[g][r]) !== JSON.stringify(b[g][r])).map(([, rule]) => rule.label));
 }
 
-/** Manager or CEO only. The whole set is saved at once; the change is audited under their name. */
+/** Manager only. The whole set is saved at once; the change is audited under their name. */
 export async function saveAutomaticChecks(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<ChecksResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can change the Automatic checks." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the Automatic checks." };
   const valid = validateAutomaticChecks(input);
   if (!valid.ok) return valid;
   const next = valid.checks;

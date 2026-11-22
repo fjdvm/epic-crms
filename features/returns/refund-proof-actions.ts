@@ -100,7 +100,7 @@ export async function saveRefundProof(id: number, form: FormData): Promise<Refun
 
 /**
  * Staff or a Manager correct what the Proof reader read, or proceed despite a flagged detail, with a reason (#615). Both only ADD a record:
- * the original reading stays as it was, and nothing here marks the Return Refunded. Admin and the CEO view and cannot change.
+ * the original reading stays as it was, and nothing here marks the Return Refunded. Admin view and cannot change.
  */
 async function record(id: number, field: string, kind: "correction" | "override", value: string, reason: string): Promise<RefundProofResult> {
   const staff = await requireModule(RETURNS_MODULE);

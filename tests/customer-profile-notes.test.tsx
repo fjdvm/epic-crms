@@ -40,7 +40,7 @@ it("opens cached notes immediately and keeps a pending save across tab switches,
   expect(screen.queryByText(/Rhea added a Customer note/)).toBeNull();
 });
 
-it.each(["Admin", "CEO"])("%s reads cached notes without a composer", async role => {
+it.each(["Admin"])("%s reads cached notes without a composer", async role => {
   access.role = role;
   access.load.mockResolvedValue({ ok: true, profile: { ...profile, notes: [{ id: "1", customerId: "c", authorId: "r", authorName: "Rhea", text: "Prefers pickup", createdAt: "2026-03-01T00:00:00.000Z" }] } });
   render(await CustomerProfilePage({ params: Promise.resolve({ id: "c" }) }));

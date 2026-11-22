@@ -14,7 +14,7 @@ Prefetches, live Message updates, focus and visibility do not generate summaries
 work remain available while the card shows its loading skeleton.
 
 Staff and Managers make a summary on first open. Later opens reuse it until a public Message has a
-newer ID. Internal notes do not invalidate it. Admin and CEO read the stored result and never configure
+newer ID. Internal notes do not invalidate it. Admin read the stored result and never configure
 or call a model. A transaction-scoped advisory lock prevents concurrent calls for the same Ticket
 across app replicas; another opener sees unavailable and can continue working.
 

@@ -39,9 +39,9 @@ export function ConversationsView({
   scope?: ChatScope;
   /** The tabs this Role may open, in order; the server has already clamped `scope` to one of them. */
   scopes?: ChatScope[];
-  /** Staff and Managers only; Admin and CEO see no draft button. */
+  /** Staff and Managers only; Admin see no draft button. */
   canDraft?: boolean;
-  /** Admin and CEO: read the chats, no reply box, notes, AI or claim buttons. */
+  /** Admin: read the chats, no reply box, notes, AI or claim buttons. */
   readOnly?: boolean;
   /** Tickets a Manager has already been asked about, so the menu does not offer Escalate again. */
   escalatedIds?: number[];

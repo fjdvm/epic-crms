@@ -20,7 +20,7 @@ describe("saveProductContent", () => {
     await db.sql`delete from crms.product_content`;
   });
 
-  it.each(["Super Admin", "CEO"])("refuses %s on the server and writes nothing", async (role) => {
+  it.each(["Super Admin"])("refuses %s on the server and writes nothing", async (role) => {
     const result = await saveProductContent(db.sql, audit, { ...staff, role }, { productId: 7, description: "Hi", image: null });
     expect(result).toEqual({ ok: false, reason: "Your Role can only view shop work." });
     expect((await loadProductContent(db.sql)).size).toBe(0);

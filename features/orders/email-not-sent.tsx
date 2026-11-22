@@ -8,7 +8,7 @@ import { emailTitle, STATUS_EMAILS, type FailedEmail } from "./status-emails";
 
 /**
  * Shown for each Status email that failed after retries, to anyone holding that email's owning Module. Staff and
- * Managers can resend it; Admin and the CEO only read it. A Resend reaches a Customer, so it waits for the server
+ * Managers can resend it; Admin only read it. A Resend reaches a Customer, so it waits for the server
  * (spinner within 100 ms) and is never optimistic.
  */
 export function EmailNotSent({ orderId, failures, modules, role }: { orderId: number; failures: readonly FailedEmail[]; modules?: readonly string[]; role?: ShopRole | null }) {

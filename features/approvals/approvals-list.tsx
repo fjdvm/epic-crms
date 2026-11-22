@@ -15,13 +15,12 @@ import {
 
 const TABS: [ApprovalTab, string][] = [["waiting", "Waiting"], ["approved", "Approved"], ["declined", "Declined"], ["all", "All"]];
 
-function Decide({ request, role, onOptimistic }: { request: ApprovalView; role: "manager" | "ceo"; onOptimistic: (status: string) => void }) {
+function Decide({ request, onOptimistic }: { request: ApprovalView; onOptimistic: (status: string) => void }) {
   const [reason, setReason] = useState("");
   const label = `${actionLabel(request.action)} · ${targetOf(request).label}`;
   const owner = request.module ?? "Returns";
   const money = isMoneyDecision(request.action);
   // Money decisions are never optimistic: they wait for the server behind a spinner.
-  const approvedStatus = role === "manager" && request.status === "waiting-manager" && request.amountInCentavos > request.limitInCentavos && money ? "waiting-ceo" : "approved";
 
   return (
     <div className="flex shrink-0 gap-2">
@@ -42,15 +41,15 @@ function Decide({ request, role, onOptimistic }: { request: ApprovalView; role: 
         title={`Approve ${label}?`}
         description={money ? `${pesos(request.amountInCentavos)} is paid or written off once this is approved. Your name and the time are recorded.` : "Your name and the time are recorded."}
         confirm="Approve request" busy="Approving…"
-        run={() => decideApproval(owner, request.id, "approve")} successMessage={approvedStatus === "waiting-ceo" ? "Approved. Sent to the CEO for final approval." : "Request approved."}
-        onOptimistic={money ? undefined : () => onOptimistic(approvedStatus)}
+        run={() => decideApproval(owner, request.id, "approve")} successMessage="Request approved."
+        onOptimistic={money ? undefined : () => onOptimistic("approved")}
       />
     </div>
   );
 }
 
-/** The Manager's (and CEO's) list of requests; Admin sees it read-only. */
-export function ApprovalsList({ requests, role, now, initialKind = "all" }: { requests: ApprovalView[]; role: "manager" | "ceo" | "admin" | "staff" | null; now: number; initialKind?: KindFilter }) {
+/** The Manager's list of requests (CEO and VP are Manager-level); Admin sees it read-only. */
+export function ApprovalsList({ requests, role, now, initialKind = "all" }: { requests: ApprovalView[]; role: "manager" | "admin" | "staff" | null; now: number; initialKind?: KindFilter }) {
   const [tab, setTab] = useState<ApprovalTab>("waiting");
   const [kind, setKind] = useState<KindFilter>(initialKind);
   const [shown, setStatus] = useOptimistic(requests, (current, change: { id: string; status: string }) =>
@@ -95,7 +94,7 @@ export function ApprovalsList({ requests, role, now, initialKind = "all" }: { re
           </button>
         ))}
       </div>
-      {role === "admin" && <p className="text-sm text-[#71717a]">Admin view only: approving is for Managers and the CEO.</p>}
+      {role === "admin" && <p className="text-sm text-[#71717a]">Admin view only: approving is for Managers.</p>}
       {groups.length === 0 && <p className="text-sm text-[#71717a]">No requests here.</p>}
       {groups.map(([group, rows]) => (
         <section key={group} aria-label={KIND_LABELS[group]} className="space-y-2.5">
@@ -118,7 +117,7 @@ export function ApprovalsList({ requests, role, now, initialKind = "all" }: { re
                   </div>
                   <div className="flex items-center gap-2">
                     <p className="min-w-0 flex-1 text-xs text-[#71717a]">{idCheck ? request.reason : `“${request.reason}”`}</p>
-                    {step && request.requesterId && request.action !== "return.decide" && <Decide request={request} role={step} onOptimistic={status => setStatus({ id: request.id, status })} />}
+                    {step && request.requesterId && request.action !== "return.decide" && <Decide request={request} onOptimistic={status => setStatus({ id: request.id, status })} />}
                     {/* The Manager picks a Return's outcome on the Return itself, where the evidence is. */}
                     {step && request.action === "return.decide" && <Link href={target.href} prefetch className="shrink-0 rounded-lg bg-[#5b2a86] px-3.5 py-[7px] text-sm font-medium text-white">Open Return to decide</Link>}
                     {idCheck && <Link href={target.href} prefetch className="shrink-0 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[7px] text-sm font-medium text-[#18181b]">{request.status === "waiting-id" && mayReview ? "Review" : "View"}</Link>}

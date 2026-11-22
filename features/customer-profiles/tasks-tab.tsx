@@ -30,7 +30,7 @@ export function TasksTab({ customerId, tasks, viewer, now, onTaskChange }: {
   customerId: string;
   /** Undefined while loading; null means the read failed. */
   tasks: VisibleCustomerTask[] | null | undefined;
-  /** Only Staff and Managers receive a viewer; Admin and CEO see Tasks without controls. */
+  /** Only Staff and Managers receive a viewer; Admin see Tasks without controls. */
   viewer?: TaskViewer;
   now?: Date;
   onTaskChange: (id: string, task: VisibleCustomerTask | null) => void;

@@ -22,11 +22,11 @@ Fetch them with the Figma MCP tools (`get_design_context`, `get_screenshot`; fil
 
 ## Roles and permissions (rule)
 
-Every feature, screen and ticket must follow these four roles. Where a ticket or the code disagrees with this section, this section wins; raise the conflict instead of silently picking one. The roles are also in the Figma CRM prototype (page `0:1`, section "Roles & access", node `577:10412`). Admin's and CEO's powers and the ₱5,000 limit were first the owner's assumptions; if the owner changes them, update this section and the Figma together. The ₱5,000 limit is an Admin setting, not a hard-coded number.
+Every feature, screen and ticket must follow these roles. Where a ticket or the code disagrees with this section, this section wins; raise the conflict instead of silently picking one. The roles are also in the Figma CRM prototype (page `0:1`, section "Roles & access", node `577:10412`). On 2026-11-23 the owner decided that CEO, VP, CREOMS Manager and General Manager have the same access and permissions, and removed the CEO's separate final approval over the Approval limit. The Figma "Roles & access" section and the per-screen notes still show the CEO as read-only and need the same change; until then this section wins.
 
 ### Read the Figma notes on every screen
 
-Every screen in the CRM prototype has a dark note card beside it stating who can open it and what each role may do (for example "Access: Staff · CREOMS Manager · Admin (view) · CEO (view)", where "(view)" means read-only, and "Staff see 'Request approval' on Manager-only actions"). Frames also carry rule text, such as the approval rules on the Payments, Fulfilment and Returns screens. Before building or changing any screen, read the notes on that screen and on the "Roles & access" section, and follow them. If a note disagrees with this section, raise it instead of silently picking one. The notes are text layers on the canvas, not Figma comments (the comments API returns nothing for them); a `get_metadata` dump of the page can be searched for them.
+Every screen in the CRM prototype has a dark note card beside it stating who can open it and what each role may do (for example "Access: Staff · CREOMS Manager · Admin (view) · CEO (view)", where "(view)" means read-only; a "CEO (view)" note is out of date, since the CEO now acts as a Manager, and "Staff see 'Request approval' on Manager-only actions"). Frames also carry rule text, such as the approval rules on the Payments, Fulfilment and Returns screens. Before building or changing any screen, read the notes on that screen and on the "Roles & access" section, and follow them. If a note disagrees with this section, raise it instead of silently picking one. The notes are text layers on the canvas, not Figma comments (the comments API returns nothing for them); a `get_metadata` dump of the page can be searched for them.
 
 ### Staff / Employee
 
@@ -41,28 +41,22 @@ Handle the shop's daily work and can do anything that is easy to undo. Dashboard
 - **No access** to Reports or the Portal.
 - When they try something that needs a Manager, they see "Request approval" instead of the button.
 
-### CREOMS Manager
+### CREOMS Manager (also General Manager, CEO and VP)
 
-**General Manager** is treated as a CREOMS Manager (same powers). Tickets can be assigned only to Staff / Employee, CREOMS Manager and General Manager; never to Admin, CEO or VP. Staff only claim for themselves; a Manager assigns anyone.
+**General Manager, CEO and VP** have exactly the same access and permissions as a CREOMS Manager (in code they all map to the `manager` shop Role). Tickets can be assigned only to Staff / Employee, CREOMS Manager and General Manager; never to Admin, CEO or VP, even though CEO and VP act as Managers. Staff only claim for themselves; a Manager assigns anyone.
 
 Everything Staff can do, plus approvals and reports. Dashboard shows the whole team and the approvals waiting for them.
-- **Approves** anything involving money, removing stock, overriding an AI warning, or moving someone else's work: refunds and "approve anyway" on payments, cancelling an order after dispatch, approving replacements, refunds and store credit on returns, holding a bad batch, extending the 24-hour return window.
+- **Approves** anything involving money, removing stock, overriding an AI warning, or moving someone else's work: refunds and "approve anyway" on payments, cancelling an order after dispatch, approving replacements, refunds and store credit on returns, holding a bad batch, extending the 24-hour return window. One Manager-level approval is final at any amount; there is no second CEO step. A request left waiting from the old CEO step is finished by any Manager-level person.
 - **Tickets:** reassign tickets, move all of an absent teammate's tickets at once, take escalations.
 - **Customers and feedback:** merge duplicate customers, send win-back offers, publish or hide reviews, open the complaint themes.
 - **Reports:** view the fulfilment and ticket reports.
-- **Management:** Commerce Settings: Payment accounts, free-delivery threshold, Payment window, Approval limit, Automatic checks and Service levels. The Portal is not for Managers.
+- **Management:** Commerce Settings: Payment accounts, free-delivery threshold, Payment window, Automatic checks and Service levels. Only Manager-level Roles (CEO and VP included) open Management; Staff and Admin cannot. The Portal is not for Managers (the CEO's Portal access is decided in the Portal repo).
 
 ### Admin
 
 Runs the system, not the shop.
-- **Portal:** full control of User management and user account requests (every account and role is created by an Admin); full control of Activity logs, System logs and System health. The Portal has no Settings screen: the Approval limit, Automatic checks and Service levels live in Commerce Settings under Management, with the Payment accounts.
+- **Portal:** full control of User management and user account requests (every account and role is created by an Admin); full control of Activity logs, System logs and System health. The Portal has no Settings screen: the Automatic checks and Service levels live in Commerce Settings under Management, with the Payment accounts.
 - **CREOMS:** can view every module, including reports. Does not approve business decisions such as refunds or write-offs.
-
-### CEO
-
-The owner. Read-only everywhere: their own owner dashboard, every CREOMS module, all reports, and the Portal's users, settings, logs and system health.
-- The only thing the CEO acts on is the final approval of refunds and write-offs **over ₱5,000**. Amounts of ₱5,000 or less stop at the Manager.
-- **Owner exception:** the CEO, like a Manager, may also manage the shop's Payment accounts, the free-delivery threshold, the Payment window, the Approval limit, the Automatic checks and the Service levels, on the one Commerce Settings screen under Management (the Management Module). Only Manager and CEO can open Management; Staff and Admin cannot. The Figma "Roles & access" section (node `577:10412`) still needs the same change.
 
 ### For everyone
 
@@ -70,9 +64,9 @@ AI never acts on its own. Anything sent to a customer, or that changes an order,
 
 **One exception, the Order assistant.** It may answer a signed-in Customer about their own Orders and the shop, read-only, and may show a Handoff summary that the Customer approves before it goes to the team. This is the one place AI words reach a Customer without a person reviewing them. Its limits: read-only (it never changes, cancels or refunds anything), own data only (never another Customer's Order), and no promises about refunds, discounts or replacements; those go to a person as a Ticket.
 
-**Second exception, the Proof reader.** The owner authorized OCR that reads a payment proof (Customer upload) or a refund proof (Staff upload) by itself, because Staff need the findings ready when they open it. Its limits: it runs in the background after the proof is saved, and the Customer's submit never waits for it; it only extracts details, compares them with the Order's facts and writes findings; it never approves or rejects a payment or refund, changes an Order or payment status, or sends anything to a Customer; if it fails or times out the proof is kept and shows Needs Review; findings are visible only to Staff and Managers (Admin and CEO view, never cause a call); the model gets only the proof image and the minimum comparison facts, no other personal details; one result is stored per saved proof, so retries never run it twice, and a replacement proof gets its own check; Staff must verify the real transfer with the payment provider before marking Paid or Refunded; outcomes and the deciding Staff member's name go to the Audit Logs. Matching details are supporting evidence only, not proof of payment or of the image's authenticity.
+**Second exception, the Proof reader.** The owner authorized OCR that reads a payment proof (Customer upload) or a refund proof (Staff upload) by itself, because Staff need the findings ready when they open it. Its limits: it runs in the background after the proof is saved, and the Customer's submit never waits for it; it only extracts details, compares them with the Order's facts and writes findings; it never approves or rejects a payment or refund, changes an Order or payment status, or sends anything to a Customer; if it fails or times out the proof is kept and shows Needs Review; findings are visible only to Staff and Managers (Admin views, never causes a call); the model gets only the proof image and the minimum comparison facts, no other personal details; one result is stored per saved proof, so retries never run it twice, and a replacement proof gets its own check; Staff must verify the real transfer with the payment provider before marking Paid or Refunded; outcomes and the deciding Staff member's name go to the Audit Logs. Matching details are supporting evidence only, not proof of payment or of the image's authenticity.
 
-**AI features have fixed defaults.** Their numbers, caps and lists are fixed in code. There are no Admin AI settings and no kill switch, and Admin and CEO view AI results but never cause a model call.
+**AI features have fixed defaults.** Their numbers, caps and lists are fixed in code. There are no Admin AI settings and no kill switch, and Admin views AI results but never causes a model call.
 
 ## Checks and PR completion
 

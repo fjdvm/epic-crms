@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if (!handle) return Response.json({ error: "Sign in first." }, { status: 401, headers });
   const access = await validateSession(handle, "Portal Settings");
   if (access.decision !== "allowed") return Response.json({ error: "Portal Settings access could not be confirmed." }, { status: access.decision === "unavailable" ? 503 : 403, headers });
-  if (!["admin", "ceo", "manager"].includes(shopRole(access.staff.role) ?? "")) return Response.json({ error: "Your Role cannot open these Settings." }, { status: 403, headers });
+  if (!["admin", "manager"].includes(shopRole(access.staff.role) ?? "")) return Response.json({ error: "Your Role cannot open these Settings." }, { status: 403, headers });
   try {
     const input = await request.json();
     if (Object.hasOwn(input, "amountInCentavos")) {

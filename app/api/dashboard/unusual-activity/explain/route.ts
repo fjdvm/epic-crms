@@ -7,7 +7,7 @@ import { heldModules, requireModule } from "@/lib/portal/staff";
 
 const headers = { "Cache-Control": "private, no-store" };
 
-/** Asked for by a Dashboard open, one alert at a time. Never a timer; Admin and CEO never cause a model call. */
+/** Asked for by a Dashboard open, one alert at a time. Never a timer; Admin never cause a model call. */
 export async function POST(request: Request) {
   if (request.headers.get("x-creoms-alert-explain") !== "1" || request.headers.get("sec-fetch-site") === "cross-site")
     return Response.json({ explanation: null }, { status: 403, headers });

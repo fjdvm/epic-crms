@@ -98,7 +98,7 @@ describe("Staff Request approval", () => {
 });
 
 describe("Manager approvals list", () => {
-  const list = (requests: ApprovalView[], role: "manager" | "ceo" | "admin" = "manager") => render(<ApprovalsList requests={requests} role={role} now={NOW} />);
+  const list = (requests: ApprovalView[], role: "manager" | "admin" = "manager") => render(<ApprovalsList requests={requests} role={role} now={NOW} />);
 
   it("shows waiting requests with a stats strip", () => {
     list([request(), request({ id: "r2", action: "return.replace", amountInCentavos: 10_000 })]);
@@ -132,11 +132,8 @@ describe("Manager approvals list", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
   });
 
-  it("gives the CEO only the final step, and Admin no buttons", () => {
-    const { unmount } = list([request({ status: "waiting-manager" })], "ceo");
-    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
-    unmount();
-    list([request({ status: "waiting-ceo", amountInCentavos: 500_001 })], "ceo");
+  it("lets a Manager-level Role finish a request left waiting for the old CEO step, and gives Admin no buttons", () => {
+    list([request({ status: "waiting-ceo", amountInCentavos: 500_001 })]);
     expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
     cleanup();
     list([request()], "admin");
@@ -158,16 +155,13 @@ describe("Role strips on the Dashboard", () => {
     render(<RoleStrip role="staff" requests={[request()]} now={NOW} />);
     expect(screen.getByText("My work today")).toBeTruthy();
     cleanup();
-    render(<RoleStrip role="ceo" requests={[request({ status: "waiting-ceo" })]} now={NOW} />);
-    expect(screen.getByText(/over the Approval limit waiting for you/)).toBeTruthy();
-    cleanup();
     render(<RoleStrip role="admin" requests={[]} now={NOW} />);
     expect(screen.getByText(/every module is read-only/)).toBeTruthy();
   });
 });
 
 describe("Approvals by type", () => {
-  const list = (requests: ApprovalView[], role: "staff" | "manager" | "ceo" | "admin" = "manager", initialKind?: "id-check") =>
+  const list = (requests: ApprovalView[], role: "staff" | "manager" | "admin" = "manager", initialKind?: "id-check") =>
     render(<ApprovalsList requests={requests} role={role} now={NOW} initialKind={initialKind} />);
   const idCheck = idCheckToView({ id: 7, customerName: "Maria Santos", idType: "senior", status: "pending", submittedAt: new Date(NOW - 3_600_000), decidedByName: null, declineReason: null });
   const payment = request({ id: "p1", action: "payment.approve-anyway", module: "Payments", targetId: "1046", amountInCentavos: 0 });

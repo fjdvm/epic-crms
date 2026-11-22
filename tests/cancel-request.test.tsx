@@ -24,7 +24,7 @@ describe("the cancel request on an Order", () => {
       expect(screen.getByRole("button", { name: /Review cancel request/ })).toBeTruthy();
       cleanup();
     }
-    for (const [role, canDecide] of [["admin", true], ["ceo", true], ["staff", false]] as const) {
+    for (const [role, canDecide] of [["admin", true], ["staff", false]] as const) {
       render(<CancelRequestAction id={7} state={request} role={role} canDecide={canDecide} />);
       expect(screen.queryByRole("button", { name: /Review cancel request/ })).toBeNull();
       expect(screen.getByText("Customer asked to cancel")).toBeTruthy();

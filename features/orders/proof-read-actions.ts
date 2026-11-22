@@ -21,7 +21,7 @@ const MAX_REASON = 500;
  * Staff or a Manager correct what the Proof reader read, or proceed despite a flagged detail, with a reason.
  * Both only ADD a record: the original reading is never changed, and nothing here marks an Order paid or touches
  * its status. A reused reference or a third rejected proof is still stopped by Mark paid itself, which reads the
- * real proof each time, so a correction can never bypass a Manager. Admin and the CEO view and cannot change.
+ * real proof each time, so a correction can never bypass a Manager. Admin view and cannot change.
  */
 async function record(proofId: number, field: string, kind: "correction" | "override", value: string, reason: string): Promise<ProofChangeResult> {
   const staff = await requireModule(PAYMENTS_MODULE);

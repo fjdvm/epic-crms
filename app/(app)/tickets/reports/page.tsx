@@ -14,7 +14,7 @@ import { ticketsDatabase } from "@/lib/tickets-db";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-/** Access: CREOMS Manager, Admin (view), CEO (view). Staff are sent to the no-access page. */
+/** Access: CREOMS Manager (CEO and VP included), Admin (view). Staff are sent to the no-access page. */
 export default async function TicketReportsPage({ searchParams }: { searchParams: SearchParams }) {
   const staff = await requireModule(REPORTS_MODULE);
   if (!mayReadTicketReport(staff.role)) redirect(NO_ACCESS_PATH);

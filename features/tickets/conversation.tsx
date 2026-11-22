@@ -161,11 +161,11 @@ export function Conversation({
   canReply: boolean;
   /** Any Staff member may add an Internal note, claimer or not; the page must hold a NotesProvider. */
   canNote?: boolean;
-  /** Staff and Managers get the draft panel; undefined (Admin, CEO) shows none. Null means on, a string is why it is off. */
+  /** Staff and Managers get the draft panel; undefined (Admin) shows none. Null means on, a string is why it is off. */
   draftDisabledReason?: string | null;
   /** Fill the parent's height: the Messages scroll inside it and the reply box stays in view. */
   scrollable?: boolean;
-  /** Admin and CEO read the chat and never reply, write notes or run AI: the box gives way to a one-line reason. */
+  /** Admin read the chat and never reply, write notes or run AI: the box gives way to a one-line reason. */
   readOnly?: boolean;
   connect?: ConnectLive;
 }) {
@@ -336,7 +336,7 @@ export function Conversation({
       {readOnly ? (
         <p className="flex shrink-0 items-center gap-1.5 border-t border-[#e6e1ee] bg-white px-3 py-2 text-[13px] leading-[normal] text-[#6e6680]">
           <Lock aria-hidden className="size-3" />
-          Read-only · Admin and CEO & VP can read chats but never reply or run AI.
+          Read-only · Admin can read chats but never reply or run AI.
         </p>
       ) : (
       <div className="flex flex-col gap-3 border-t border-[#e6e1ee] bg-white px-3 pt-2 pb-3">

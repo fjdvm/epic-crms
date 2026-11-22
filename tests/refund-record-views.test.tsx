@@ -204,7 +204,7 @@ describe("the saved proof's findings before Mark refunded (#615)", () => {
   });
 
   it("shows Admin and the CEO the findings with no controls and no way to cause a read", () => {
-    for (const role of ["admin", "ceo"] as const) {
+    for (const role of ["admin"] as const) {
       const { unmount } = render(<ReturnDetailView detail={detail()} imageUrls={[]} role={role} refundProofUrl="https://files.test/p.png" refundRead={read} savedProof={saved} />);
       expect(card().getByText("Mismatch")).toBeTruthy();
       expect(card().queryAllByRole("button").filter((b) => !b.getAttribute("aria-label")?.startsWith("Zoom "))).toEqual([]);

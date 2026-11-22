@@ -10,7 +10,7 @@ const CELL = "py-[11px] pr-3 text-sm leading-[normal] text-[#1f1a2e]";
 
 /**
  * The Payments page's record of refunds: what went back to whom, how, and who settled it. Read-only; a refund is settled
- * on its Return by a Manager (and the CEO above the Approval limit). Null means the refunds could not be read.
+ * on its Return by a Manager. Null means the refunds could not be read.
  */
 export function RefundsTable({ refunds, canOpenReturns }: { refunds: RefundRow[] | null; canOpenReturns: boolean }) {
   if (refunds === null) return <p className="p-3 text-center text-sm text-[#6e6680]">Refunds could not be loaded. Reload to try again.</p>;

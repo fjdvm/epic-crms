@@ -15,11 +15,11 @@ export async function loadFreeDeliveryThreshold(sql: postgres.Sql): Promise<numb
 
 type Staff = { id: string; name: string; role: string };
 
-/** Manager or CEO only, checked here and not only on the page. Saved at once and audited with the old and new value. */
+/** Manager only, checked here and not only on the page. Saved at once and audited with the old and new value. */
 export async function changeFreeDeliveryThreshold(
   sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown, notify: () => Promise<void> = async () => {},
 ): Promise<ThresholdResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can change the Free delivery threshold." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the Free delivery threshold." };
   const valid = parseThreshold(input);
   if (!valid.ok) return valid;
   const next = valid.thresholdInCentavos;

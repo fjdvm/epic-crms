@@ -16,7 +16,7 @@ const { absentTickets, reassignAll, reassignOne, reassignOptions } = await impor
 describe("Reassign actions by URL or direct call", () => {
   beforeEach(() => requireModule.mockReset());
 
-  for (const role of ["Staff", "Super Admin", "CEO"]) {
+  for (const role of ["Staff", "Super Admin"]) {
     it(`refuse a ${role} before touching any data`, async () => {
       requireModule.mockResolvedValue({ id: "u", name: "X", username: "x", role });
 

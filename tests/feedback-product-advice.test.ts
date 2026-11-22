@@ -94,7 +94,7 @@ describe("Feedback product advice", () => {
     expect(made.result!.products[0].advice).toBeNull();
 
     const ai = fake([]);
-    const read = await openProductAdvice(deps(), { role: "CEO" }, { generate: true, models: ai.models, now: NOW });
+    const read = await openProductAdvice(deps(), { role: "Admin" }, { generate: true, models: ai.models, now: NOW });
     expect(read.result!.products[0].product).toBe("Halaya");
     expect(ai.model.doGenerateCalls).toHaveLength(0);
   });

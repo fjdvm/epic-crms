@@ -47,7 +47,7 @@ describe("addPaymentAccount", () => {
 
   it.each(["Staff/Employee", "Super Admin"])("refuses %s on the server and writes nothing", async (role) => {
     const r = await addPaymentAccount(db.sql, audit, { ...manager, role }, gcash);
-    expect(r).toEqual({ ok: false, reason: "Only a Manager or the CEO can add a Payment account." });
+    expect(r).toEqual({ ok: false, reason: "Only a Manager can add a Payment account." });
     expect(await listPaymentAccounts(db.sql)).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });

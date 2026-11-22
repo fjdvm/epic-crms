@@ -1,6 +1,6 @@
 # Drafted reply backend (#479)
 
-Part of #471. The caller is the Claimer of an Open Ticket, with the Tickets Module and Staff or Manager Role. Admin and CEO never configure a model. `requestDraftedReply(ticketId, { language, shorterThanId? })` is an explicit server action; nothing generates on a timer, focus, visibility or Ticket open.
+Part of #471. The caller is the Claimer of an Open Ticket, with the Tickets Module and Staff or Manager Role. Admin never configure a model. `requestDraftedReply(ticketId, { language, shorterThanId? })` is an explicit server action; nothing generates on a timer, focus, visibility or Ticket open.
 
 The backend reads the latest six public Messages in chronological order. It masks known Customer and Staff names, delivery address components, email addresses and phone-like numbers (including slash and Unicode dash separators) before truncating. Messages with address markers are suppressed entirely, including alternate addresses on unlinked Tickets. Internal notes, subject, rider details, payment references, amounts and other Customer data are excluded. Order inputs are limited to the status, payment kind, courier and record dates. The tracking URL stays local: the model sees only whether one is available. Booking time is the latest rebooking timestamp or the initial dispatch timestamp when present. Legacy Orders without a dispatch timestamp omit it; the backend never invents a booking or promised arrival date.
 

@@ -9,7 +9,7 @@ const day = (value: unknown) => value === undefined || value === null || (typeof
 
 /**
  * Called when a Manager opens the Feedback page for a period, and by Refresh (`refresh: true`). Never on a timer, focus or
- * visibility. The Role comes from the session; Staff get nothing and Admin and CEO only read the kept result.
+ * visibility. The Role comes from the session; Staff get nothing and Admin only read the kept result.
  */
 export async function POST(request: Request) {
   if (request.headers.get("x-creoms-complaint-themes") !== "1" || request.headers.get("sec-fetch-site") === "cross-site")

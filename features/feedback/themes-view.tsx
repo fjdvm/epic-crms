@@ -36,7 +36,7 @@ function ThemeCard({ theme }: { theme: ComplaintTheme }) {
 
 /**
  * Opens once for the period (the server makes the themes only when the period has none) and again only when a Manager
- * presses Refresh. Admin and CEO get the kept result and no Refresh button.
+ * presses Refresh. Admin get the kept result and no Refresh button.
  */
 export function ComplaintThemesView({ from, to, canRefresh }: { from?: string; to?: string; canRefresh: boolean }) {
   const [state, setState] = useState<{ key: string; value: ThemesResult } | null>(null);

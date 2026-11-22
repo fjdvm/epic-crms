@@ -20,7 +20,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const state = (status: CancellationState["status"], extra: Partial<CancellationState> = {}): CancellationState => ({
   requestId: "r1", status, reason: "Wrong address", declineReason: null, stockOutcome: null, refundMethod: null, requestedBy: "Ana", ...extra,
 });
-const view = (role: "staff" | "manager" | "admin" | "ceo", s: CancellationState | null, paymentMethod = "gcash") =>
+const view = (role: "staff" | "manager" | "admin", s: CancellationState | null, paymentMethod = "gcash") =>
   render(<CancelDispatched id={7} total={115_000} paymentMethod={paymentMethod} role={role} state={s} />);
 const never = () => new Promise<never>(() => {});
 
@@ -55,7 +55,7 @@ it("shows Waiting for approval to Staff, the decision dialog to a Manager, and n
   view("admin", null);
   expect(screen.queryByRole("button")).toBeNull();
   cleanup();
-  view("ceo", null);
+  view("admin", null);
   expect(screen.queryByRole("button")).toBeNull();
 });
 

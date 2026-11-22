@@ -13,7 +13,7 @@ The storefront owns the upload; hashing at upload there would be a later optimis
 
 Part of #471. `POST /api/returns/:id/flag-explanation` (header `x-creoms-flag-explain: 1`, body `{ rule }`), asked by a click, never a timer.
 
-- **Only a Manager** can ask. Staff, Admin and CEO are refused before anything is read or sent (no model call).
+- **Only a Manager** can ask. Staff and Admin are refused before anything is read or sent (no model call).
 - **Sent:** record data only: the flag rule, this Return's RMA number, date and reason, and each linked earlier Return's RMA number, date, reason and status, plus the counts. No photo, no name or address, no free-text note. The exact text and system prompt are stored with the explanation (`crms.return_flag_explanations`, migration `docs/db/crms-return-flag-explanations.sql`, plus who asked).
 - **Fact check:** text quoting a number (including an RMA number) the record does not hold, or a link, is dropped and nothing is kept.
 - **Kept** per Return and rule; asked again, the kept text is returned without a model call.

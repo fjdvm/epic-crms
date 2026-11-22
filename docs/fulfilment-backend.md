@@ -110,8 +110,7 @@ Its durable outbox retries gateway delivery with one stable key even if CREOMS
 never receives the response; CREOMS does not send a second event. The packing
 dialog waits with a spinner because deduction is an outside effect.
 
-`loadPackingSlip(id)` is an authorized Fulfilment read, including for Admin and
-CEO. It returns the Order number/date, Customer, whole snapshotted items and
+`loadPackingSlip(id)` is an authorized Fulfilment read, including for Admin. It returns the Order number/date, Customer, whole snapshotted items and
 Sizes/quantities, the checkout address, and
 packing attribution when present. It exposes no Payment proof. This backend ticket
 does not add a printable screen, packing checklist, photo or batch selector.

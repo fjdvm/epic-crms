@@ -11,11 +11,11 @@ const RANGES: { kind: QuickRange | null; label: string }[] = [
   { kind: "7d", label: "Last 7 days" }, { kind: "30d", label: "Last 30 days" }, { kind: "year", label: "This year" }, { kind: null, label: "All time" },
 ];
 
-// Staff see nothing here; Managers make and refresh; Admin and CEO read the kept result.
+// Staff see nothing here; Managers make and refresh; Admin read the kept result.
 export default async function ComplaintThemesPage({ searchParams }: { searchParams: SearchParams }) {
   const staff = await requireModule(FEEDBACK_MODULE);
   const role = shopRole(staff.role);
-  if (role !== "manager" && role !== "admin" && role !== "ceo") notFound();
+  if (role !== "manager" && role !== "admin") notFound();
   const { from, to } = parseFilters(await searchParams);
   const today = manilaToday();
   const href = (kind: QuickRange | null) => {

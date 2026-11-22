@@ -78,11 +78,11 @@ export interface TicketReport {
 
 export type TicketReportResult = { ok: true; report: TicketReport } | { ok: false; reason: "forbidden" | "unavailable" };
 
-/** Managers work the reports; Admin and CEO only view; Staff and unknown Roles never open them. */
+/** Managers work the reports; Admin only view; Staff and unknown Roles never open them. */
 export function mayReadTicketReport(role: string): boolean {
   const shop = shopRole(role);
 
-  return shop === "manager" || shop === "admin" || shop === "ceo";
+  return shop === "manager" || shop === "admin";
 }
 
 export const LOWEST_RATINGS_SHOWN = 10;

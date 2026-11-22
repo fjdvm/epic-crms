@@ -16,7 +16,7 @@ Align CREOMS with the new lifecycle, which the storefront now owns. Staff see fi
 1. As Staff, I want an Unclaimed tab of active Tickets with no Claimer, oldest first, so that I can pick up unanswered work.
 2. As Staff, I want a My Tickets tab of active Tickets I Claimed, so that I see my own work.
 3. As a Manager, I want an All open tab of every active Ticket with the Claimed by filter, so that I see the whole team's work.
-4. As Admin or CEO, I want All open read-only, so that I can look but not act.
+4. As Admin, I want All open read-only, so that I can look but not act.
 5. As Staff, I want a Resolved & Closed tab, Legacy completions included, so that I can look back at finished work.
 6. As Staff, I want a count on each tab that follows the same visibility as its list, so that counts never reveal what I cannot open.
 7. As Staff, I want Awaiting Staff Reply, Awaiting Customer Reply, On hold and Escalated as filters or pills rather than tabs, so that the tabs stay simple.
@@ -43,7 +43,7 @@ Align CREOMS with the new lifecycle, which the storefront now owns. Staff see fi
 24. As Staff, I want a Ticket Assigned to me to move into My Tickets and out of Unclaimed with an alert, so that I notice it.
 25. As Staff, I want to Release a Ticket I Claimed, so that someone else can take it, but not while it is Escalated.
 26. As a Manager, I want to take an Escalated Ticket through Reassign and send it back with a note, as today.
-27. As Admin or CEO, I want Assign and Reassign history readable without buttons, so that I stay read-only.
+27. As Admin, I want Assign and Reassign history readable without buttons, so that I stay read-only.
 28. As Staff, I want a Ticket I open on a Customer's behalf to start Open and Claimed by me, so that I own it.
 29. As Staff, I want what I record on a phone-intake Ticket not to count as a response, so that the Customer is not put on a clock for nothing.
 
@@ -58,7 +58,7 @@ Align CREOMS with the new lifecycle, which the storefront now owns. Staff see fi
 37. As Staff, I want a Conversations page with Mine, Unclaimed and All tabs, so that I can work chats from one place.
 38. As Staff, I want to Claim from an Unclaimed chat's header, so that I can start answering.
 39. As a Manager, I want to Assign from an Unclaimed chat's header, so that I can route it.
-40. As Admin or CEO, I want the All tab read-only, so that I can monitor.
+40. As Admin, I want the All tab read-only, so that I can monitor.
 41. As Staff, I want a Resolved or Closed chat read-only with a note that the Customer can reopen on the storefront, so that I know why I cannot reply.
 42. As Staff, I want internal notes and AI drafts to stay Staff-only and never count as replies or as read, so that the Customer sees only real answers.
 
@@ -96,13 +96,13 @@ Align CREOMS with the new lifecycle, which the storefront now owns. Staff see fi
 67. As a Manager, I want Resolved credited to the Claimer at resolution time, and inactivity closures shown as assigned at closure.
 68. As a Manager, I want average rating from submitted ratings only.
 69. As a Manager, I want past reports' dates, ratings and attribution unchanged.
-70. As Admin or CEO, I want Assign, Reassign, claim, release, hold, escalate and Staff replies in the Ticket Audit Events with my identity from the session, never a Message body, email, phone, image or signed link.
+70. As Admin, I want Assign, Reassign, claim, release, hold, escalate and Staff replies in the Ticket Audit Events with my identity from the session, never a Message body, email, phone, image or signed link.
 
 ## Implementation Decisions
 
 - **Dependency.** Ships after the ecommerce migration; reads the new status, deadline, hold, Claimer-unavailable, Closure reason, rating and read-marker fields through the existing restricted database role, with only the explicitly required grants (Claimer read marker, assign and reassign, hold and escalate, Staff Message and attachment writes). CREOMS never closes a Ticket, never writes a Customer event and never moves the Customer's read marker.
 - **Statuses and pills.** Five stored statuses read as stored; Awaiting Staff Reply, Awaiting Customer Reply, On hold, Escalated and Claimer unavailable are pills and filters. The old "Waiting on customer" tab, Completed, the Resolve button and Staff-marked resolution are removed.
-- **Tabs and visibility.** Tickets: Unclaimed (everyone with the Module), My Tickets (Staff, Manager), All open (Manager, Admin, CEO; Admin and CEO read-only), Resolved & Closed (everyone with the Module). Counts and lists share one server-side visibility rule. Conversations: Mine, Unclaimed, All (Manager, Admin, CEO). Every tab and action is enforced on the server, not just hidden.
+- **Tabs and visibility.** Tickets: Unclaimed (everyone with the Module), My Tickets (Staff, Manager), All open (Manager, Admin, CEO; Admin read-only), Resolved & Closed (everyone with the Module). Counts and lists share one server-side visibility rule. Conversations: Mine, Unclaimed, All (Manager, Admin, CEO). Every tab and action is enforced on the server, not just hidden.
 - **Reply rule.** Only the current Claimer, only on an active Ticket; a Manager takes ownership through Assign or Reassign first. Resolved and Closed Conversations are read-only.
 - **Assign.** New Manager action on Unclaimed Tickets: named eligible Staff member (Tickets Module, active), optional note, alert to the assignee, audited. Reassign is unchanged (required reason, stale-Claimer check, previous and new Claimer alerted) apart from covering the new Closed state.
 - **Unread.** The Claimer's marker advances only for Messages displayed in the Conversation view, never from the Ticket page or a background update, and only for the Claimer's own session. A reassignment resets the new Claimer's baseline. Live events arrive over the existing relay with reconnect refetch; no polling, timers that fetch, or fetching effects.
@@ -119,7 +119,7 @@ Align CREOMS with the new lifecycle, which the storefront now owns. Staff see fi
 - Behaviour a person can see, not how it is built; time through the injected clock; no polling or fetching effect in any test.
 - **Seam 2, CREOMS Tickets data layer** against PGlite, with the shared Ticket test database and fake Portal, relay, notifications, gateway audit and file storage. Prior art: the existing ticket database helper, ticket actions, conversations, escalate and report tests. Covers tab membership and counts per role, Overdue with the new statuses, Claim, Assign and Reassign (including stale Claimer), reply rules, Claimer unavailable and its alert, unread counts and baseline reset, alerts by event and recipient, atomic Messages and refusal wording, Ticket Audit Event contents, and each report figure including historical Follow-ups and Legacy records.
 - **Concurrency.** Two simultaneous Claims and Assigns on one Ticket are verified against a real Postgres in a separate named test, since PGlite cannot prove row locking.
-- **Seam 3, CREOMS pages through the fake Portal.** Module gating for each tab and action per role, no Resolve button, Staff seeing read-only Tickets, Admin and CEO read-only, and the immediate loading state of each page. Prior art: the existing list, detail and conversations view tests and the access tests.
+- **Seam 3, CREOMS pages through the fake Portal.** Module gating for each tab and action per role, no Resolve button, Staff seeing read-only Tickets, Admin read-only, and the immediate loading state of each page. Prior art: the existing list, detail and conversations view tests and the access tests.
 - **Live behaviour.** Live events, reconnects and read-marker updates through the relay fake; the existing no-polling and live-update tests are extended.
 - **Server enforcement.** Tests call the actions directly as the wrong role or wrong owner to prove the server, not the UI, refuses.
 - **Compatibility.** Tests run CREOMS reads against the ecommerce-first migrated schema, and migration reruns do not change what CREOMS shows.

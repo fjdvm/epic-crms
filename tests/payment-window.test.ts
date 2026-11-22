@@ -43,7 +43,7 @@ describe("changePaymentWindow", () => {
 
   it.each(["Staff/Employee", "Super Admin"])("refuses %s on the server and writes nothing", async (role) => {
     const r = await changePaymentWindow(db.sql, audit, { id: "x", name: "X", role }, "48");
-    expect(r).toEqual({ ok: false, reason: "Only a Manager or the CEO can change the payment window." });
+    expect(r).toEqual({ ok: false, reason: "Only a Manager can change the payment window." });
     expect(await loadPaymentWindow(db.sql)).toBe(24);
     expect(audit).not.toHaveBeenCalled();
   });

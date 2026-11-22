@@ -70,9 +70,9 @@ export function TicketDetailView({
   viewerName?: string;
   /** Staff who hold the Orders, Payments or Fulfilment Module open the Order detail page from the Linked order. */
   canOpenOrder?: boolean;
-  /** Only a CREOMS Manager can move the Ticket; Admin and CEO read the history below. */
+  /** Only a CREOMS Manager can move the Ticket; Admin read the history below. */
   canReassign?: boolean;
-  /** Staff and Managers may add Internal notes on any Ticket; Admin and CEO only read them. */
+  /** Staff and Managers may add Internal notes on any Ticket; Admin only read them. */
   canNote?: boolean;
   /** Every move of this Ticket, newest first. */
   reassignments?: ReassignmentRecord[];

@@ -50,7 +50,7 @@ export async function requireModule(module: string): Promise<Staff> {
   return result.staff;
 }
 
-/** The Management pages: the Module and a Manager or CEO Role, refused here and not only hidden. */
+/** The Management pages: the Module and a Manager-level Role, refused here and not only hidden. */
 export async function requireManagement(): Promise<Staff> {
   const staff = await requireModule(MANAGEMENT_MODULE);
 
@@ -100,7 +100,7 @@ export async function getShell(): Promise<{ staff: Staff; permittedPages: string
   }
 
   // Approvals is not a Module: every Role sees it when it holds a Module whose requests it lists (Returns, Payments,
-  // Fulfilment or Senior/PWD). Staff see the ID checks and their own requests; the Manager, CEO and Admin see them all.
+  // Fulfilment or Senior/PWD). Staff see the ID checks and their own requests; the Manager and Admin see them all.
   const lists = ["/returns", "/payments", "/fulfilment", SENIOR_PWD_PAGE].some(page => result.pages.includes(page));
   const pages = lists && shopRole(result.staff.role) ? [...result.pages, "/approvals"] : result.pages;
 

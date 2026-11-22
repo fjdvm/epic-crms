@@ -31,7 +31,7 @@ export function UnusualActivitySkeleton() {
 const label = (k: string) => k.replace(/([A-Z])/g, " $1").toLowerCase();
 
 /**
- * Opens from the card with what the card already holds, so it appears at once. Read-only for Admin and CEO (no Dismiss).
+ * Opens from the card with what the card already holds, so it appears at once. Read-only for Admin (no Dismiss).
  * Without an AI explanation the rule, numbers and links still show.
  */
 function AlertDrawer({ card, pending, canDismiss, onClose, onDismiss }: {

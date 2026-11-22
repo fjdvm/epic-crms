@@ -172,7 +172,7 @@ export interface ReassignmentRecord {
   at: Date;
 }
 
-/** Every move of one Ticket, newest first: the Ticket's activity, and what Admin and CEO read. */
+/** Every move of one Ticket, newest first: the Ticket's activity, and what Admin read. */
 export async function listReassignments(crms: postgres.Sql, ticketId: number): Promise<ReassignmentRecord[]> {
   const rows = await crms<{ id: string; from_name: string; to_name: string; reason: string; moved_by_name: string; created_at: Date }[]>`
     select id::text, from_name, to_name, reason, moved_by_name, created_at

@@ -50,7 +50,7 @@ describe("Ticket summary on open", () => {
     const id = await ticket();
     const model = fake();
     const models = () => [{ name: "fake", model }];
-    for (const role of ["Admin", "CEO", "unknown"]) {
+    for (const role of ["Admin", "unknown"]) {
       expect(await openTicketSummary(deps(), { role }, id, () => { throw new Error("must not configure"); })).toEqual({ summary: null, unavailable: true });
     }
     const kept = await openTicketSummary(deps(), { role: "CREOMS Manager" }, id, models);
@@ -58,7 +58,7 @@ describe("Ticket summary on open", () => {
     expect(await openTicketSummary(deps(), staff, id, models)).toEqual(kept);
     expect(model.doGenerateCalls).toHaveLength(1);
     await db.sql`insert into ticket_messages (ticket_id, sender, body) values (${id}, 'staff', 'We asked for a photo.')`;
-    for (const role of ["Admin", "CEO"]) {
+    for (const role of ["Admin"]) {
       expect(await openTicketSummary(deps(), { role }, id, () => { throw new Error("must not configure"); })).toEqual(kept);
     }
     const refreshed = await openTicketSummary(deps(), staff, id, models);

@@ -122,7 +122,7 @@ describe("Manager payment review", () => {
     expect(await loadPaymentReview(db.sql, db.sql, id, 48)).toMatchObject({ overdue: false, owner: null });
     await signIn("ana");
     expect(await claimPaymentReview(id)).toEqual({ ok: false, reason: "Only a CREOMS Manager can take or hand over a payment review." });
-    for (const actor of ["ada", "owner"]) {
+    for (const actor of ["ada"]) {
       await signIn(actor);
       expect(await claimPaymentReview(id)).toMatchObject({ ok: false });
     }
@@ -255,7 +255,7 @@ describe("Correcting what the Proof reader read (#597)", () => {
 
   it("is view-only for Admin and the CEO, and refuses a proof the reader has not read", async () => {
     const { proof } = await readOrder();
-    for (const who of ["ada", "owner"]) {
+    for (const who of ["ada"]) {
       await signIn(who);
       expect(await correctProofReading(proof, "amount", "1250", "Because")).toEqual({ ok: false, reason: "Your Role can only view shop work." });
       expect(await proceedDespiteFlag(proof, "amount", "Because")).toMatchObject({ ok: false });

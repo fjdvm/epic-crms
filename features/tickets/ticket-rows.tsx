@@ -20,8 +20,8 @@ import type { TicketRow } from "./tickets";
 export interface RowsViewer {
   id: string;
   name: string;
-  /** Staff only claim themselves; a Manager assigns anyone. Admin and CEO view. */
-  role: "staff" | "manager" | "admin" | "ceo" | null;
+  /** Staff only claim themselves; a Manager assigns anyone. Admin view. */
+  role: "staff" | "manager" | "admin" | null;
 }
 
 function ServiceCell({ clock }: { clock: Clock }) {
@@ -148,7 +148,7 @@ function TicketDrawerContent({ row, viewer, staffs, now, savedNotes }: { row: Ti
       {open && (
         <div className="flex flex-col gap-2">
           <div className="flex gap-2">
-            {claim.claimer === null && viewer.role !== null && viewer.role !== "admin" && viewer.role !== "ceo" && (
+            {claim.claimer === null && viewer.role !== null && viewer.role !== "admin" && (
               <button type="button" disabled={claim.pending} onClick={claim.claim} className="rounded-lg bg-[#5b2a86] px-[14px] py-[9px] text-sm font-medium text-white disabled:opacity-50">Claim</button>
             )}
             {claim.isClaimer && !claim.escalation && !row.escalated && <EscalateDialog ticketId={row.id} />}

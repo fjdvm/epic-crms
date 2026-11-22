@@ -12,7 +12,7 @@ The storefront owns the verification; CREOMS reads it and asks the storefront to
   optimistic (the Customer is emailed). After the storefront confirms, CREOMS deletes the photo; if that
   fails the decision stands and file-storage's seven-day expiry removes it.
 - `overrideVerification(id, expiresOn, reason)` (approve a declined or revoked one) and
-  `revokeVerification(id, reason)`: Managers only; Staff are told to request a Manager. Admin and CEO are read-only.
+  `revokeVerification(id, reason)`: Managers only; Staff are told to request a Manager. Admin are read-only.
 - Audit: `pwd.approved` (an override carries `override: true` and the reason), `pwd.declined`, `pwd.revoked`.
   Metadata holds the verification id, ID type, expiry date and reason. Never the ID number, hash or photo.
 - Confirming (`quoteDeliveryFee`) is refused while the Order's ID is still pending review.
@@ -38,7 +38,7 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
 - `/orders/senior-pwd` (now moved, see Approvals below): waiting reviews and latest decisions. Review shows the account name, ID type
   and the private photo (fetched only when the dialog opens); Staff read the number off the photo, which is never stored.
   Approve needs the ID's expiry date; Decline needs a reason. Staff see "Request approval" on a declined, revoked or
-  approved ID; Managers get Override and Revoke; Admin and CEO see no buttons. No Figma frame exists, so it is built from
+  approved ID; Managers get Override and Revoke; Admin see no buttons. No Figma frame exists, so it is built from
   the foundation node. Never optimistic: the Customer is emailed.
 - Order detail's Customer card shows Senior/PWD status ("Not verified" by default).
 - Order detail (#571) shows a "Senior/PWD discount" card only when the Order has an approved discount: the discount,
@@ -57,12 +57,12 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
 - The "Senior/PWD checks" sidebar tab is gone. ID checks are the "ID checks" type on Approvals (`/approvals?type=id-check`, `APPROVALS_ID_CHECKS` in
   `lib/portal/pages.ts`). `/customer-profiles/senior-pwd` and `/orders/senior-pwd` redirect there. The review pages are still held by the Senior/PWD Portal Module.
 - Each ID check is a row: Customer, "Waiting for review" until decided, then Approved or Declined (revoked and expired count as declined), with Review (Staff and
-  Manager) or View (Admin and CEO) opening the detail page. The old per-row "ID already used by another account" flag now shows only on the detail page.
+  Manager) or View (Admin) opening the detail page. The old per-row "ID already used by another account" flag now shows only on the detail page.
 - Detail (`/customer-profiles/senior-pwd/<id>`): the private photo (zoom, rotate, back of the ID when sent) beside "Check each field". The browser reads the
   photo and pre-fills Full name and Valid until; Staff confirm each. ID type shows as the Customer chose it. The ID number is never read into a field: the
   Figma shows it as "Shown only on the photo · not stored". Approve stays disabled until name (which must match the account) and expiry are confirmed; Decline
   needs a reason. Both are confirm-first and never optimistic (the Customer is emailed). A decided ID shows its decision, never a photo, and a Manager gets
-  Override or Revoke; Staff see "Request approval". Admin and CEO see a "Read-only" badge and no buttons.
+  Override or Revoke; Staff see "Request approval". Admin see a "Read-only" badge and no buttons.
 - File storage: the photo address is short-lived and fetched only while the ID waits; the photo is deleted right after a decision (unchanged).
 - Audit: decisions as before, plus `pwd.photo_viewed` when Staff open the photo (module Senior/PWD, who and which ID, never the number), at most one per Staff
   member per ten minutes.
@@ -75,7 +75,7 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
 
 ## Senior/PWD discount setting (Commerce Settings)
 
-- A Manager or the CEO sets the rule on Commerce Settings: the discount as a percentage or pesos, and a limit in pesos per day, week or month
+- A Manager sets the rule on Commerce Settings: the discount as a percentage or pesos, and a limit in pesos per day, week or month
   (for example "₱1,500 per week"). A pesos discount cannot be over the limit. Never optimistic, confirm-first, audited as `senior_pwd_discount.changed`
   with the old and new rule. Admin and Staff are refused on the server.
 - Stored in one row of `crms.senior_pwd_discount_settings` (`docs/db/crms-senior-pwd-discount.sql`, applied with

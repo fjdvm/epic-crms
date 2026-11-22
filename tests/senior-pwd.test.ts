@@ -242,7 +242,7 @@ it("lets only a Manager override a decline or revoke an approval, with a reason;
 
 it("keeps Admin and CEO read-only", async () => {
   const { id } = await upload();
-  for (const who of ["ada", "owner"]) {
+  for (const who of ["ada"]) {
     await signIn(who);
     expect(await approveVerification(id, future(30))).toEqual({ ok: false, reason: "Your Role can only view shop work." });
     expect(await declineVerification(id, "No")).toMatchObject({ ok: false });

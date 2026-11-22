@@ -33,7 +33,7 @@ export interface UnusualActivity { cards: UnusualActivityCard[]; unavailable: st
 
 function visibleModules(staff: Staff, modules: readonly string[]) {
   const role = shopRole(staff.role);
-  if (role === "admin" || role === "ceo") return UNUSUAL_ACTIVITY_MODULES;
+  if (role === "admin") return UNUSUAL_ACTIVITY_MODULES;
   return role === "manager" ? UNUSUAL_ACTIVITY_MODULES.filter(m => modules.includes(m)) : [];
 }
 const orderLink = (id: number) => ({ label: `Order #${id}`, href: `/orders/${id}` });

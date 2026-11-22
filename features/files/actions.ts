@@ -9,7 +9,7 @@ import { validateStoredFile } from "./validation";
 import { downloadLinkImage, LINK_INVALID_REASON } from "./link-download";
 
 const unavailable = (): FileFailure => ({ ok: false, reason: "File storage is temporarily unavailable. Please try again." });
-const MANAGE_REASON = "Only a Manager or the CEO can manage Payment accounts.";
+const MANAGE_REASON = "Only a Manager can manage Payment accounts.";
 const invalid = (): FileFailure => ({ ok: false, reason: "That upload reference is invalid or expired. Attach the file again." });
 
 export async function requestFileUpload(module: UploadModule, file: FileInfo, context: UploadContext = { ticketId: null }): Promise<({ ok: true; reference: string; uploadUrl: string }) | FileFailure> {

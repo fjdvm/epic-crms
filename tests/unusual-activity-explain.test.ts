@@ -68,7 +68,7 @@ it("drops text quoting a number or link the alert does not hold", async () => {
 
 it("never causes a call for Admin or CEO, and a failure leaves the alert without an explanation", async () => {
   reply("Six proofs.", "Check them.");
-  for (const role of ["Admin", "CEO"]) expect(await explain(person(role))).toBeNull();
+  for (const role of ["Admin"]) expect(await explain(person(role))).toBeNull();
   expect(spy).not.toHaveBeenCalled();
   spy.mockResolvedValue({ ok: false, reason: "model-failed" });
   expect(await explain()).toBeNull();

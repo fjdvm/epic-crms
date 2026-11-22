@@ -171,7 +171,7 @@ export async function buildProductAdvice(
 }
 
 /**
- * Staff and Managers make a new result (the Analyze button); Admin and CEO, and anyone reopening, read the kept one and
+ * Staff and Managers make a new result (the Analyze button); Admin, and anyone reopening, read the kept one and
  * never cause a model call. A failed model still saves and shows the ranking.
  */
 export async function openProductAdvice(

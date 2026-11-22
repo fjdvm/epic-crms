@@ -12,10 +12,10 @@ opening the Ticket shows the approved Handoff summary, full stored chat and exac
 stored model input. Staff and Managers may mark an assistant answer wrong with a
 1–500 character reason after confirmation. The immutable local flag keeps the
 answer, reason, time, Staff id and name, and sends an Audit Event to the gateway.
-Admin and CEO cannot write flags.
+Admin cannot write flags.
 
 Results at `/tickets/assistant/results` requires the Tickets Module and a Manager,
-Admin or CEO role. It is read-only for all three. Staff are denied before data is
+Admin role. It is read-only for all three. Staff are denied before data is
 read. These are weekly counts, starting Monday at midnight in Manila:
 
 - Questions: stored Customer messages, compared with the preceding full week.

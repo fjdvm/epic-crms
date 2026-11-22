@@ -91,7 +91,7 @@ async function FeedbackData({ raw }: { raw: Awaited<SearchParams> }) {
             {lastAnalyzed}
           </p>
         )}
-        {(role === "manager" || role === "admin" || role === "ceo") && (
+        {(role === "manager" || role === "admin") && (
           <Link href="/feedback/complaint-themes" className="shrink-0 rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium leading-[normal] text-[#1f1a2e]">
             Complaint themes
           </Link>

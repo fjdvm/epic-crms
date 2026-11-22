@@ -40,7 +40,7 @@ export function formatRemaining(expiresAt: Date, now: Date): string {
   return rest === 0 ? `${days} day${days === 1 ? "" : "s"}` : `${days} day${days === 1 ? "" : "s"} ${rest} h`;
 }
 
-/** Admin and CEO see everything and change nothing. */
+/** Admin see everything and change nothing. */
 export function ReadOnlyBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f5] px-2.5 py-0.5 text-xs font-medium text-[#52525b]">
@@ -154,7 +154,7 @@ export function OverrideDialog({ v }: { v: Verification }) {
   );
 }
 
-/** What each Role may do with an ID that is already decided. Staff ask a Manager; Admin and CEO only look. */
+/** What each Role may do with an ID that is already decided. Staff ask a Manager; Admin only look. */
 export function DecidedActions({ v, role }: { v: Verification; role: ShopRole | null }) {
   const managerAction = v.status === "declined" || v.status === "revoked" ? "override" : v.status === "approved" ? "revoke" : null;
   if (!managerAction || (role !== "staff" && role !== "manager")) return null;

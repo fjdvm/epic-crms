@@ -66,7 +66,7 @@ describe("saving", () => {
   it("is for a Manager or the CEO: Staff and Admin are refused and nothing is saved or audited", async () => {
     for (const role of ["Staff/Employee", "Super Admin"]) {
       const result = await saveAutomaticChecks(db.sql, audit, { ...manager, role }, edit(c => { c.cod.firstOrder.enabled = false; }));
-      expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/^Only a Manager or the CEO/) });
+      expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/^Only a Manager/) });
     }
     expect(await loadAutomaticChecks(db.sql)).toEqual(DEFAULT_AUTOMATIC_CHECKS);
     expect(audit).not.toHaveBeenCalled();

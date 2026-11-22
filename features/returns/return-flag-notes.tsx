@@ -14,7 +14,7 @@ const LABELS: Record<ReturnFlag["rule"], string> = {
 export function ReturnFlagNotes({ flags, compact = false, explain }: {
   flags?: ReturnFlag[];
   compact?: boolean;
-  /** On the Return only: Managers may ask for an explanation; kept ones are shown to Managers, Admin and CEO. */
+  /** On the Return only: Managers may ask for an explanation; kept ones are shown to Managers and Admin. */
   explain?: { returnId: number; canExplain: boolean; kept: Partial<Record<ReturnFlag["rule"], string>> };
 }) {
   if (!flags || flags.length === 0) return null;

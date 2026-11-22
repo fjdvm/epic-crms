@@ -33,7 +33,7 @@ function fake(sentences = ["Hello!", "{{status}}", "Thank you for your patience.
 it("only a working Claimer of an Open Ticket may configure a model", async () => {
   const id = await ticket();
   const never = () => { throw new Error("must not configure"); };
-  for (const role of ["Admin", "CEO", "unknown"]) {
+  for (const role of ["Admin", "unknown"]) {
     expect((await draftReply(deps(), { ...actor, role }, id, { language: "English" }, never)).ok).toBe(false);
   }
   expect((await draftReply(deps(), { ...actor, id: "other" }, id, { language: "English" }, never)).ok).toBe(false);

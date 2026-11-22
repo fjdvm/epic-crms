@@ -272,7 +272,7 @@ _Avoid_: Result, resolution (a Resolution is refund or replacement)
 The 24 hours starting at the storefront's `delivered_at` (`collected_at` for a Pickup Order), during which the Customer may request a Return. It limits the request, not Staff handling: an in-time Return remains valid. A Customer marking the Order `received` (from `delivered` or `collected`) ends the window and gives up the right to a Return. A Manager may extend the window once per Order by another 24 hours, with a reason; Staff see "Request approval".
 
 **Role**:
-What a Staff member is in CREOMS: Staff / Employee, Manager, Admin or CEO. The Admin assigns it in the Portal, and it ticks that Role's usual Modules; the Modules remain the gate to each page. Only the Role decides who approves, and a Manager still needs the Module (Payments, Fulfilment, Returns or Orders) for the page they act on; Admin and CEO view everything and change nothing except the CEO's final approval and the Management pages. Staff do daily work that is easy to undo; a Manager also approves; the Admin runs the system and views every module; the CEO views everything and gives final approval above the Approval limit. The one other thing the CEO may change is the Management pages (Payment accounts and the Free delivery threshold), together with Managers.
+What a Staff member is in CREOMS: Staff / Employee, Manager or Admin. General Manager, CEO and VP are Manager-level: they have exactly a Manager's access and permissions, but are never assigned Tickets. The Admin assigns the Role in the Portal, and it ticks that Role's usual Modules; the Modules remain the gate to each page. Only the Role decides who approves, and a Manager still needs the Module (Payments, Fulfilment, Returns or Orders) for the page they act on. Staff do daily work that is easy to undo; a Manager also approves (one Manager-level approval is final at any amount) and manages the Management pages; the Admin runs the system and views every module without changing shop work.
 _Avoid_: Permission, level
 
 **Request approval**:
@@ -284,7 +284,7 @@ How Staff hand a Requested Return to a Manager: "Request approval · decide retu
 _Avoid_: Suggest, escalate
 
 **Approval limit**:
-₱5,000, set by the Admin. A refund or write-off of more than the limit, measured by the selling price of the Return's items, also needs the CEO's final approval; exactly ₱5,000 or less stops at the Manager.
+A stored amount (initially ₱5,000) that used to send refunds and write-offs above it to the CEO for a final approval. Since the CEO became Manager-level (2026-11-23) it decides nothing: one Manager-level approval is final at any amount, and the limit is no longer shown in Commerce Settings. Requests still snapshot it.
 _Avoid_: Threshold, cap
 
 **Warehouse**:
@@ -340,7 +340,7 @@ The Fulfilment page's board, with tabs To pack (paid Online Orders and confirmed
 _Avoid_: Packed (for `preparing`)
 
 **Free delivery threshold**:
-The subtotal after discounts above which a Delivery Order gets free delivery, set by a Manager or the CEO on the Commerce Settings screen under Management in CREOMS (for example ₱2,500). The storefront uses the current value; threshold changes affect only Orders not yet placed. Each change is recorded in the Audit Logs.
+The subtotal after discounts above which a Delivery Order gets free delivery, set by a Manager (CEO and VP included) on the Commerce Settings screen under Management in CREOMS (for example ₱2,500). The storefront uses the current value; threshold changes affect only Orders not yet placed. Each change is recorded in the Audit Logs.
 _Avoid_: Minimum order, free shipping limit
 
 **Senior/PWD verified**:

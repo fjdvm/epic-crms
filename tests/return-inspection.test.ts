@@ -122,7 +122,7 @@ it("refuses inspection before goods are received and from read-only Roles", asyn
   await db.sql`update order_returns set status = 'approved' where id = ${id}`;
   await signIn("ana"); expect(await inspectReturn(id, randomUUID(), mixed(lines))).toMatchObject({ ok: false });
   await db.sql`update order_returns set status = 'goods received' where id = ${id}`;
-  for (const actor of ["ada", "owner"]) { await signIn(actor); expect(await inspectReturn(id, randomUUID(), mixed(lines))).toMatchObject({ ok: false }); }
+  for (const actor of ["ada"]) { await signIn(actor); expect(await inspectReturn(id, randomUUID(), mixed(lines))).toMatchObject({ ok: false }); }
   expect(storefront.restocked).toEqual([]);
 });
 
@@ -136,7 +136,7 @@ it("holds a refund until the items are inspected, then refunds the way the Custo
   expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "return.refund_approved", operationId: `return:${id}:return.refund_approved` })]);
 });
 
-it.each([[1000_00, false], [2000_01, true]])("write-off on a Return whose items sell for %i + 3000 is CEO-final: %s", async (jar, ceo) => {
+it.each([1000_00, 2000_01])("write-off on a Return whose items sell for %i + 3000 is final once a Manager approves", async (jar) => {
   // 3,000 sellable + the jar: the limit counts every item on the Return, not only the damaged one.
   const { id, lines } = await received(jar === 1000_00 ? 2000_00 : jar);
   await signIn("ana");
@@ -145,8 +145,7 @@ it.each([[1000_00, false], [2000_01, true]])("write-off on a Return whose items 
   expect(pending).toMatchObject({ ok: false, status: "waiting-manager" });
   if (pending.ok || !("approvalId" in pending) || !pending.approvalId) throw new Error("Expected approval id");
   expect(storefront.writtenOff).toEqual([]);
-  await signIn("mario"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: true, request: { status: ceo ? "waiting-ceo" : "approved" } });
-  if (ceo) { await signIn("owner"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: true }); }
+  await signIn("mario"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: true, request: { status: "approved" } });
   await signIn("ana");
   expect(await writeOffReturn(id, { approvalId: pending.approvalId })).toMatchObject({ ok: true });
   expect(storefront.writtenOff).toEqual([{ returnId: id, orderLineId: lines[1], quantity: 1 }]);

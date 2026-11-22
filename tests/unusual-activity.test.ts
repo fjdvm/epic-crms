@@ -100,7 +100,7 @@ it("gates Managers by Module, excludes Staff, permits Admin and CEO to read and 
   expect((await open(staff, [])).cards).toEqual([]);
   expect((await open(staff, ["Returns"])).cards.map(c => c.module)).toEqual(["Returns"]);
   expect((await open({ ...staff, role: "CREOMS Manager" }, ["Payments"])).cards.map(c => c.module)).toEqual(["Payments"]);
-  for (const role of ["Admin", "CEO"]) {
+  for (const role of ["Admin"]) {
     expect((await open({ ...staff, role }, [])).cards).toHaveLength(2);
     expect(await dismissUnusualActivity({ source: db.sql, crms: db.sql }, { ...staff, role }, modules, "unverified-payments", { count: 1, oldestHours: 24 }, now)).toMatchObject({ ok: false });
   }

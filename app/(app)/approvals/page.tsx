@@ -11,7 +11,7 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 /**
  * Figma "Manager · Approvals". Everything that waits for a person's decision, grouped by type: ID checks, Refunds,
  * Payments, Cancellations, Write-offs, Returns. Staff see the ID checks and the requests they raised; a Manager sees
- * all and decides; the CEO takes the final step on large refunds and write-offs; Admin views.
+ * all and decides; CEO and VP decide as Managers; Admin views.
  */
 export default async function ApprovalsPage({ searchParams }: { searchParams: SearchParams }) {
   const { type } = await searchParams;

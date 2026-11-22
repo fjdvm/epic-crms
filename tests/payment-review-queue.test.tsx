@@ -51,7 +51,7 @@ describe("the Manager review list", () => {
     openReviewTab();
     expect(screen.getAllByRole("button", { name: "Claim review" })).toHaveLength(1);
     unmount();
-    for (const role of ["staff", "admin", "ceo"] as const) {
+    for (const role of ["staff", "admin"] as const) {
       const view = render(<PaymentsView rows={[inReview(1, 5, false)]} now={NOW} role={role} />);
       openReviewTab();
       expect(screen.queryByRole("button", { name: "Claim review" })).toBeNull();

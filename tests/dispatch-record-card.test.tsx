@@ -103,7 +103,7 @@ describe("the Order page", () => {
     delivered.unmount();
   });
 
-  it.each(["admin", "ceo"] as const)("is read-only for %s", role => {
+  it.each(["admin"] as const)("is read-only for %s", role => {
     view({ role, dispatch: record({ rider: null }) });
     expect(screen.getByTestId("dispatch-record")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Edit dispatch details" })).toBeNull();
