@@ -92,16 +92,9 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
     ? { amountInCentavos: draft.amountInCentavos, method: draft.method, refundedOn: draft.refundedOn, reference: draft.reference, reading: review.reading, unresolved: review.unresolved }
     : null;
 
-  // Stock is read only while a replacement may still be chosen or sent; the CEO step depends on the items' selling price.
+  // Stock is read only while a replacement may still be chosen or sent.
   const mayReplace = detail.status === "requested" || ((detail.status === "approved" || detail.status === "goods received") && detail.finalResolution === "replacement");
-  const selling = detail.items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-  const [stock, limit] = await Promise.all([
-    mayReplace ? loadReplacementStock(ticketsDatabase, detail.id) : undefined,
-    crmsDatabase()<{ limit_in_centavos: string }[]>`select limit_in_centavos from crms.approval_settings where singleton`
-      .then(([row]) => (row ? Number(row.limit_in_centavos) : null)).catch(() => null),
-  ]);
-  // An unreadable limit errs toward asking the CEO; the server decides either way.
-  const needsCeo = limit === null || selling > limit;
+  const stock = mayReplace ? await loadReplacementStock(ticketsDatabase, detail.id) : undefined;
 
   // Photos not yet fingerprinted are done now; a failure here only means no flag, never an error page.
   const flags = await (async () => {
@@ -141,7 +134,6 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
         windowRequest={windowRequest}
         destinationRequest={destinationRequest}
         stock={stock}
-        needsCeo={needsCeo}
       />
     </>
   );

@@ -238,7 +238,7 @@ async function waitingRequest(id: number, requestId: string): Promise<boolean> {
 
 /**
  * Staff or a Manager approves a Customer's request to cancel before payment or preparing. The storefront cancels the Order, releases
- * its stock and emails the Customer, so this waits for the server and is never optimistic. Admin and CEO only view.
+ * its stock and emails the Customer, so this waits for the server and is never optimistic. Admin only view.
  */
 export async function approveCancelRequest(id: number, requestId: string): Promise<OrderChangeResult> {
   return act(id, async (order, staff) => {

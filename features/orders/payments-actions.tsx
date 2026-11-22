@@ -126,12 +126,12 @@ function canCheckPayment(order: OrderDetail): boolean {
 
 /**
  * The Payments Module's actions on an Order's detail. `withCancel` is false for Staff who also hold the
- * Orders Module, whose own actions already offer cancel. Admin and the CEO only view.
+ * Orders Module, whose own actions already offer cancel. Admin only view.
  */
 export function PaymentsActions({ order, withCancel, role = "staff", approvalId, waiting }: {
   order: OrderDetail; withCancel: boolean; role?: ShopRole | null; approvalId?: string; waiting?: boolean;
 }) {
-  if (role === "admin" || role === "ceo" || role === null) return null;
+  if (role === "admin" || role === null) return null;
   const rejected = order.paymentProof?.rejectedAt != null;
   const capped = order.proofRejections >= MANAGER_AFTER_REJECTIONS;
   const reusedOn = order.paymentProofs.at(-1)?.checks?.reference.otherOrderIds ?? [];

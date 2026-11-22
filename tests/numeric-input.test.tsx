@@ -46,20 +46,12 @@ describe("NumericInput", () => {
 });
 
 import { vi } from "vitest";
-import { ApprovalLimitForm } from "@/features/management/approval-limit-form";
 import { ServiceLevelsForm } from "@/features/management/service-levels-form";
 
-vi.mock("@/features/management/settings-actions", () => ({ changeApprovalLimit: vi.fn(), changeServiceLevels: vi.fn() }));
+vi.mock("@/features/management/settings-actions", () => ({ changeServiceLevels: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 describe("Commerce Settings number fields", () => {
-  it("do not let letters into the Approval limit", () => {
-    render(<ApprovalLimitForm currentInCentavos={500_000} />);
-    const input = screen.getByLabelText("Limit (₱)") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "5,000abc" } });
-    expect(input.value).toBe("5,000");
-  });
-
   it("do not let letters or decimals into the Service level hours", () => {
     render(<ServiceLevelsForm current={{ firstReplyHours: 4, resolveHours: 24 }} />);
     const input = screen.getByLabelText("First reply (hours)") as HTMLInputElement;

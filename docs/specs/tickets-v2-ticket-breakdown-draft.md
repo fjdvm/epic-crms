@@ -125,7 +125,7 @@ Every ticket also follows: the Roles and permissions rule, Instant UI (optimisti
 ### C1: Five statuses, pills and the four Tickets tabs
 **Blocked by:** E1. **Figma:** Staff 1459:16976 and 1459:17298, Manager 1465:17948 and 1465:18153, Roles & access 577:10412.
 **What to build:** The Tickets page uses the new statuses and tabs with role-correct visibility.
-- [ ] Tabs Unclaimed, My Tickets, All open and Resolved & Closed with counts that follow the list's visibility; Staff and Managers see My Tickets; All open for Manager, Admin, CEO (Admin and CEO read-only), with the Claimed by filter; Legacy completions appear under Resolved & Closed.
+- [ ] Tabs Unclaimed, My Tickets, All open and Resolved & Closed with counts that follow the list's visibility; Staff and Managers see My Tickets; All open for Manager, Admin, CEO (Admin read-only), with the Claimed by filter; Legacy completions appear under Resolved & Closed.
 - [ ] Awaiting Staff Reply, Awaiting Customer Reply, On hold, Escalated and Claimer unavailable are pills and filters.
 - [ ] Resolve button, Completed and "Waiting on customer" removed; Overdue now means Open or Awaiting Staff Reply with the Customer's last Message unanswered past the first reply target.
 - [ ] Any Staff can open any Ticket read-only; only the Claimer sees reply, hold, release and escalate; non-Claimers see no Resolve, Release or Reassign.
@@ -137,13 +137,13 @@ Every ticket also follows: the Roles and permissions rule, Instant UI (optimisti
 **What to build:** A Manager can Assign an Unclaimed Ticket; only the Claimer replies.
 - [ ] Assign: Manager only, eligible Staff with the Tickets Module, optional note, moves it to the assignee's My Tickets, audited with the Manager as Actor.
 - [ ] Reassign keeps its required reason and stale-Claimer check and now also covers Closed Tickets (refused); Conversation and history preserved.
-- [ ] Only the current Claimer can reply, only on an active Ticket; a Manager takes ownership first; other Staff cannot Claim an Assigned Ticket; Admin and CEO see no actions.
+- [ ] Only the current Claimer can reply, only on an active Ticket; a Manager takes ownership first; other Staff cannot Claim an Assigned Ticket; Admin see no actions.
 - [ ] C2 owns the Assign and Reassign notifications (assignee, and previous Claimer on Reassign); C7 only verifies them.
 - [ ] A Staff-created Ticket starts Open and Claimed by its creator.
 
 ### C3: Conversations tabs (Mine, Unclaimed, All)
 **Blocked by:** C2. **Figma:** Staff 1461:18281, Manager 1465:19097, Phone 1464:18578, 1465:32921.
-- [ ] Mine (Staff, Manager), Unclaimed (everyone with the Module), All (Manager, Admin, CEO, read-only for Admin and CEO), each enforced on the server.
+- [ ] Mine (Staff, Manager), Unclaimed (everyone with the Module), All (Manager, Admin, CEO, read-only for Admin), each enforced on the server.
 - [ ] Claim, and for Managers Assign, from an Unclaimed chat's header.
 - [ ] Resolved and Closed chats are read-only with a note that the Customer can reopen on the storefront; browsing never marks anything read.
 

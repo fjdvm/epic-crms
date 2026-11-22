@@ -66,7 +66,7 @@ async function OrdersData({ params }: { params: OrderListParams }) {
   }
 
   const { list } = result;
-  // Flags are for Staff and Managers; Admin and CEO see none. A failure to work them out leaves the list as it was.
+  // Flags are for Staff and Managers; Admin see none. A failure to work them out leaves the list as it was.
   const role = shopRole(staff.role);
   const flagged = role === "staff" || role === "manager" ? await loadCodFlagsForOrders(list.rows.map((r) => r.id)) : null;
 

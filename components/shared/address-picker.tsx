@@ -53,7 +53,7 @@ function plain(a: LegacyAddress): string {
 /**
  * Country, Region, Province, City and Barangay dropdowns that narrow one another (Philippine PSGC list), plus a Street
  * text field with the profile masks. An old free-text address shows as plain text and asks for a fresh pick when edited.
- * Read-only (Admin and CEO) shows the address as text only.
+ * Read-only (Admin) shows the address as text only.
  */
 export function AddressPicker({
   legacy = null,

@@ -95,7 +95,7 @@ export const pesos = (centavos: number) =>
 
 export function waitingLabel(status: string): string {
   if (status === "waiting-id") return "Waiting for review";
-  return status === "waiting-ceo" ? "Waiting for the CEO's final approval" : "Waiting for approval";
+  return status === "waiting-ceo" ? "Waiting for final approval" : "Waiting for approval";
 }
 
 export function ago(iso: string, now: number): string {
@@ -121,9 +121,9 @@ export function summarize(requests: ApprovalView[], now: number) {
 }
 
 /** Which step, if any, this Role may decide on this request. */
-export function stepFor(role: string | null, status: string): "manager" | "ceo" | null {
-  if (role === "manager" && status === "waiting-manager") return "manager";
-  if (role === "ceo" && status === "waiting-ceo") return "ceo";
+export function stepFor(role: string | null, status: string): "manager" | null {
+  // A request left waiting for the old CEO step is finished by any Manager-level person.
+  if (role === "manager" && (status === "waiting-manager" || status === "waiting-ceo")) return "manager";
   return null;
 }
 

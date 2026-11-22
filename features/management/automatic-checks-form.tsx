@@ -58,7 +58,7 @@ const group = "space-y-2.5";
 const groupTitle = "text-sm font-semibold text-[#1f1a2e]";
 
 /**
- * Plain rules that only ever flag, never block. A Manager or the CEO switches each rule and edits its numbers. The
+ * Plain rules that only ever flag, never block. A Manager switches each rule and edits its numbers. The
  * Senior/PWD duplicate-ID check is always on and locked. Never optimistic: the new values show only once CREOMS accepts them.
  */
 export function AutomaticChecksForm({ initial, overdueUrl = null }: { initial: AutomaticChecks | null; overdueUrl?: string | null }) {

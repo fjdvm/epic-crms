@@ -834,7 +834,7 @@ describe("the proof check dialog by Role", () => {
     expect(markPaid).not.toHaveBeenCalled();
   });
 
-  it.each(["admin", "ceo"] as const)("is view only for %s", (role) => {
+  it.each(["admin"] as const)("is view only for %s", (role) => {
     render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role={role} />);
     open();
     const dialog = screen.getByRole("dialog");
@@ -966,7 +966,7 @@ describe("payment proof history, reject and approve anyway", () => {
     expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
     expect(screen.getByRole("button", { name: "Approve anyway" })).toBeTruthy();
     manager.unmount();
-    render(<OrderDetailView order={reused()} modules={PAYMENTS} role="ceo" />);
+    render(<OrderDetailView order={reused()} modules={PAYMENTS} role="admin" />);
     expect(screen.queryByRole("button", { name: "Approve anyway" })).toBeNull();
   });
 
@@ -1050,7 +1050,7 @@ describe("payment proof history, reject and approve anyway", () => {
   });
 
   it("gives Admin and the CEO no payment buttons", () => {
-    render(<OrderDetailView order={awaiting()} modules={PAYMENTS} role="ceo" />);
+    render(<OrderDetailView order={awaiting()} modules={PAYMENTS} role="admin" />);
     expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
   });
 });

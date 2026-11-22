@@ -75,7 +75,7 @@ it("only Manager assigns or reassigns and may change another owner's Task", asyn
   expect(await changeCustomerTaskDueDate("c1", id, "2026-11-25", randomUUID())).toMatchObject({ ok: true });
   expect(await create({ owner: { id: "ana", name: "Ana" } })).toMatchObject({ ok: true, task: { ownerId: "ana" } });
 });
-it.each(["Admin", "CEO", "Unknown"])("refuses every %s write with a plain reason", async role => {
+it.each(["Admin", "Unknown"])("refuses every %s write with a plain reason", async role => {
   const id = await task(); audit.mockClear(); actor.role = role;
   const results = [await create(), await markCustomerTaskDone("c1", id, randomUUID()), await reopenCustomerTask("c1", id, randomUUID()), await changeCustomerTaskDueDate("c1", id, "2026-11-20", randomUUID()), await reassignCustomerTask("c1", id, { id: "bea", name: "Bea" }, randomUUID())];
   for (const result of results) expect(result).toMatchObject({ ok: false, message: "Your Role can only view shop work." });
@@ -164,7 +164,7 @@ it("retains pending audit after the real gateway refuses delivery and retries th
 
 it("resolves canonical owner names and refuses nonexistent, read-only or ungranted owners", async () => {
   actor.role = "CREOMS Manager";
-  for (const person of [undefined, { id: "other", name: "Other", role: "Admin", modules: ["Customer Profiles"] }, { id: "other", name: "Other", role: "CEO", modules: ["Customer Profiles"] }, { id: "other", name: "Other", role: "Staff", modules: [] }]) {
+  for (const person of [undefined, { id: "other", name: "Other", role: "Admin", modules: ["Customer Profiles"] }, { id: "other", name: "Other", role: "Staff", modules: [] }]) {
     recipients.mockResolvedValueOnce(person ? [person] : []);
     expect(await create({ owner: { id: "other", name: "Forged" } })).toMatchObject({ ok: false, message: expect.any(String) });
   }

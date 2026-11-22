@@ -94,7 +94,7 @@ async function signInWithModules(modules: string[]) {
   return portal;
 }
 describe("Order actions", () => {
-  it.each(["Admin", "CEO"])("keeps packing read-only for %s while allowing packing-slip reads", async role => {
+  it.each(["Admin"])("keeps packing read-only for %s while allowing packing-slip reads", async role => {
     const id = await order("delivery", "paid", "gcash");
     vi.mocked(requireModule).mockResolvedValue({ id: "owner", username: "owner", name: "Owner", email: "owner@example.com", role });
     expect(await startPreparing(id)).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
@@ -414,7 +414,7 @@ describe("Changing the dispatch record later", () => {
     expect((await loadDispatchRecord(db.sql, id, true))?.courier).toBe("Lalamove");
     expect(audit).not.toHaveBeenCalled();
   });
-  it.each(["Admin", "CEO"])("is read-only for %s", async role => {
+  it.each(["Admin"])("is read-only for %s", async role => {
     const id = await dispatched();
     vi.mocked(requireModule).mockResolvedValue({ id: "o", username: "o", name: "Owner", email: "o@example.com", role });
     expect(await updateDispatchRecord(id, { courier: "Grab" })).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
@@ -1056,9 +1056,9 @@ describe("resendStatusEmail", () => {
     expect(requireModule).toHaveBeenLastCalledWith("Fulfilment");
   });
 
-  it("refuses Admin and the CEO", async () => {
+  it("refuses Admin", async () => {
     const id = await failedEmail();
-    asRole("CEO");
+    asRole("Admin");
     expect(await resendStatusEmail(id, "confirmation")).toEqual({ ok: false, reason: expect.stringContaining("view") });
     expect(storefront.resentEmails).toEqual([]);
   });
@@ -1150,7 +1150,7 @@ describe("a Customer's cancellation request", () => {
 
   it("Admin and CEO only view: neither can decide", async () => {
     const id = await requested();
-    for (const role of ["Admin", "CEO"]) {
+    for (const role of ["Admin"]) {
       vi.mocked(requireModule).mockResolvedValue({ id: "x", username: "x", name: "X", email: "x@example.com", role });
       expect(await approveCancelRequest(id, rid)).toMatchObject({ ok: false });
       expect(await declineCancelRequest(id, rid, "No")).toMatchObject({ ok: false });

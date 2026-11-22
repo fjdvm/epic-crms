@@ -17,4 +17,4 @@ node --env-file=.env --env-file=.env.local scripts/deploy/migrate-complaint-them
   counts once per theme; under 3 items drops the theme; at most 5 themes. Counts and links come from valid IDs only.
 - Kept per period with time, counts read, what was sent. Made when none exists, remade only on `refresh`. A failed refresh
   keeps the old result. Fewer than 3 items stores an empty result without a model call.
-- Managers make and refresh; Admin and CEO read the kept result (never a model call); Staff are refused.
+- Managers make and refresh; Admin read the kept result (never a model call); Staff are refused.

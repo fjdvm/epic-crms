@@ -65,7 +65,7 @@ async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
     ticketFileStorage,
     query,
     scope,
-    role === "manager" || role === "admin" || role === "ceo",
+    role === "manager" || role === "admin",
   );
 
   const escalatedIds = await openEscalatedIds(crmsDatabase()).catch(() => [] as number[]);

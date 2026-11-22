@@ -20,7 +20,7 @@ const OPTIONS: [Condition, string, string][] = [
 /**
  * Figma "Inspect what came back", with the spec's limits: whole line items only, no part quantities.
  * Saving adds sellable items back to IMS stock, which is an outside effect, so it waits for the server (spinner at once)
- * and is never optimistic. A write-off is a Manager decision (and the CEO's above the Approval limit), so it never is either.
+ * and is never optimistic. A write-off is a Manager decision, so it never is either.
  */
 export function InspectReturn({ id, number, status, items, role = "manager", requests = [] }: {
   id: number; number: string; status: ReturnStatus; items: ReturnItem[]; role?: ShopRole | null; requests?: ApprovalView[];
@@ -88,12 +88,12 @@ export function InspectReturn({ id, number, status, items, role = "manager", req
               trigger={role === "staff" && !approved ? "Request approval to write off" : "Write off damaged items"}
               tone="destructive"
               title={`Write off damaged items on ${number}?`}
-              description={`The Approval limit counts every item on the Return (${formatPesos(total)}). A Manager approves; the CEO also approves above the limit.`}
+              description={`The Approval limit counts every item on the Return (${formatPesos(total)}). A Manager approves.`}
               confirm={role === "staff" && !approved ? "Send request" : "Write off"} busy="Saving…"
               disabled={!approved && !note.trim()}
               run={async () => {
                 const result = await writeOffReturn(id, approved ? { approvalId: approved } : { reason: note });
-                // A request waiting for the Manager or CEO is the expected answer, not a refusal.
+                // A request waiting for the Manager is the expected answer, not a refusal.
                 return !result.ok && result.reason === "Waiting for approval" ? { ok: true as const } : result;
               }}
               successMessage="Write-off recorded, or sent for approval."

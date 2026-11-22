@@ -131,7 +131,7 @@ it("refuses rejection and payment for Cash on Delivery and non-Staff roles, and 
   const id = await proofOrder();
   await signIn("ana");
   expect(await rejectPaymentProof(cod, "No")).toMatchObject({ ok: false });
-  for (const actor of ["ada", "owner"]) {
+  for (const actor of ["ada"]) {
     await signIn(actor);
     expect(await rejectPaymentProof(id, "No")).toMatchObject({ ok: false });
     expect(await markPaid(id)).toMatchObject({ ok: false });
@@ -259,7 +259,7 @@ describe("a reference already used on another Order", () => {
 
   it("never lets Admin or the CEO approve", async () => {
     const { second } = await reusedPair();
-    for (const who of ["ada", "owner"]) {
+    for (const who of ["ada"]) {
       await signIn(who);
       expect(await markPaid(second, { reason: "Looks fine" })).toMatchObject({ ok: false });
     }

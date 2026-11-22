@@ -116,7 +116,7 @@ A Manager decides on the Return itself with `decideReturn(id, { outcome, goodsRe
 | Decision | What happens |
 | --- | --- |
 | `reject` | `declineReturn` with the reason, which the Customer sees. |
-| `refund` | `approveReturn(id, goodsRequired, "refund")`. The refund steps follow; over the Approval limit the Manager first asks the CEO (`markReturnRefunded(id, undefined, { reason })`) and uploads no proof until the CEO approves. |
+| `refund` | `approveReturn(id, goodsRequired, "refund")`. The refund steps follow at any amount; there is no CEO step. |
 | `replacement` | `approveReturn(id, goodsRequired, "replacement")`. With no goods to come back, `markReturnReplaced` then creates the ₱0 Replacement Order at once. |
 
 The `return.decide` request is closed (`completed`, under the Manager's name) by any successful Manager approve or decline,

@@ -6,7 +6,7 @@ import { listMethodAvailability } from "@/features/management/payment-accounts";
 export const dynamic = "force-dynamic";
 
 /**
- * Which payment methods the storefront may offer at checkout: GCash, Maya and Bank transfer, each true only when a Manager or the CEO
+ * Which payment methods the storefront may offer at checkout: GCash, Maya and Bank transfer, each true only when a Manager
  * has it on and an account is active. Read-only, booleans only (no account details), called by the storefront's server with the
  * shared service secret. Cash on Delivery is not listed; it has no account.
  */

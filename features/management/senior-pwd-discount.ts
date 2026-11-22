@@ -19,9 +19,9 @@ export async function loadSeniorPwdDiscount(sql: postgres.Sql): Promise<SeniorPw
 
 type Staff = { id: string; name: string; role: string };
 
-/** Manager or CEO only, checked here and not only on the page. Saved at once and audited with the old and new rule. */
+/** Manager only, checked here and not only on the page. Saved at once and audited with the old and new rule. */
 export async function changeSeniorPwdDiscount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<DiscountResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can change the Senior/PWD discount." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the Senior/PWD discount." };
   const valid = parseDiscount(input);
   if (!valid.ok) return valid;
   const next = valid.discount;

@@ -59,7 +59,7 @@ export function CustomerProfileView({
   /** Staff with the Returns Module get the Returns tab. */
   canViewReturns?: boolean;
   noteAuthor?: { id: string; name: string };
-  /** Staff and Managers only; Admin and CEO see Tasks without controls. */
+  /** Staff and Managers only; Admin see Tasks without controls. */
   taskViewer?: TaskViewer;
 }) {
   const p = profile;

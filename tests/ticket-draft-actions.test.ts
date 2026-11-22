@@ -58,7 +58,7 @@ it('requires the Tickets Module, refuses read-only Roles before configuring mode
   requireModule.mockRejectedValueOnce(new Error('denied'));
   await expect(requestDraftedReply(1, { language: 'English' })).rejects.toThrow('denied');
   expect(requireModule).toHaveBeenCalledWith('Tickets');
-  for (const role of ['Admin', 'CEO']) {
+  for (const role of ['Admin']) {
     requireModule.mockResolvedValue({ id: 'portal-id', username: 'liza', name: 'Liza Cruz', role });
     expect((await requestDraftedReply(1, { language: 'English' })).ok).toBe(false);
   }

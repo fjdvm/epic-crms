@@ -7,7 +7,7 @@ import { ticketsDatabase } from "@/lib/tickets-db";
 const headers = { "Cache-Control": "private, no-store" };
 const STATUS = { forbidden: 403, "not-flagged": 404, unavailable: 502 } as const;
 
-/** "Explain this flag", asked by a Manager on a click. Never a timer; Staff, Admin and CEO are refused before any model call. */
+/** "Explain this flag", asked by a Manager on a click. Never a timer; Staff and Admin are refused before any model call. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (request.headers.get("x-creoms-flag-explain") !== "1" || request.headers.get("sec-fetch-site") === "cross-site")
     return Response.json({ ok: false, reason: "forbidden" }, { status: 403, headers });

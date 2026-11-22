@@ -73,13 +73,10 @@ export function ReturnDetailView({
   flags,
   flagExplanations,
   stock,
-  needsCeo = false,
 }: {
   detail: ReturnDetail;
   /** Whether a replacement can be sent from stock; read only while a replacement may still be chosen or sent. */
   stock?: ReplacementStock;
-  /** This Return's refund is over the Approval limit, so the CEO approves before any money is sent. */
-  needsCeo?: boolean;
   imageUrls: ImageUrls;
   /** Null when the Delivery photo exists but could not be reached; undefined when the Order has none. */
   deliveryPhotoUrl?: string | null;
@@ -99,7 +96,7 @@ export function ReturnDetailView({
   destinationRequest?: ApprovalView;
   /** Why this Return is flagged, for Staff to double-check. Nothing here blocks the Return. */
   flags?: ReturnFlag[];
-  /** Kept explanations by rule, for Managers, Admin and CEO; absent for Staff. */
+  /** Kept explanations by rule, for Managers and Admin; absent for Staff. */
   flagExplanations?: Partial<Record<ReturnFlag["rule"], string>>;
 }) {
   const goods = goodsLine(detail);
@@ -133,7 +130,6 @@ export function ReturnDetailView({
             requests={requests}
             inWindow={detail.refundWindowEndsAt !== null && detail.requestedAt < detail.refundWindowEndsAt}
             stock={stock}
-            needsCeo={needsCeo}
             reasonLabel={orderLabel(detail.reason)}
             refund={{ customerName: detail.customer.name, amount: detail.amount, paymentMethod: detail.paymentMethod, destinationMethod: detail.refundDestination?.method ?? null, saved: savedProof, deliveryFee: detail.deliveryFeeRefundable ? detail.orderDeliveryFee : 0, items: detail.items.map((item) => ({ name: `${item.product} · ${item.size}`, quantity: item.quantity })) }}
           />

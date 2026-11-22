@@ -39,7 +39,7 @@ export async function loadDispatchedCancellations() {
   } catch { return { ok: false as const, reason: "Cancellation requests are temporarily unavailable." }; }
 }
 
-/** A Manager settles only a separately approved cancellation. CEO authority applies to the money/stock step. */
+/** A Manager settles only a separately approved cancellation. Manager authority applies to the money/stock step. */
 export async function settleDispatchedCancellation(id: number, requestId: string, stockOutcome: "restock" | "write-off", form?: FormData, options: ApprovalOptions = {}): Promise<CancellationResult | ApprovalResult> {
   const staff = await requireModule(FULFILMENT_MODULE);
   if (shopRole(staff.role) !== "manager") return { ok: false, reason: "Only a CREOMS Manager can settle a dispatched cancellation." };

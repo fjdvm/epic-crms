@@ -329,7 +329,7 @@ export async function inspectReturn(id: number, inspectionId: string, items: { o
 }
 
 /**
- * Write off a Return's damaged items. A Manager approves; above the Approval limit the CEO also does.
+ * Write off a Return's damaged items. A Manager approves.
  * The limit is measured by the selling price of all the Return's items, per Return, not just the damaged ones.
  */
 export async function writeOffReturn(id: number, options: ApprovalOptions = {}): Promise<ReturnInspectionResult | ApprovalResult> {
@@ -419,7 +419,7 @@ async function destinationRow(id: number): Promise<DestinationRow | undefined> {
 
 /**
  * The full account number, only where refund processing needs it: an approved refund whose goods are back (or not required) and
- * that is not yet Refunded. Staff and Managers only (Admin and CEO view it masked). Every look is audited, with the number masked.
+ * that is not yet Refunded. Staff and Managers only (Admin view it masked). Every look is audited, with the number masked.
  */
 export async function revealRefundDestination(id: number): Promise<{ ok: true; destination: RefundDestination } | { ok: false; reason: string }> {
   const staff = await requireModule(RETURNS_MODULE);

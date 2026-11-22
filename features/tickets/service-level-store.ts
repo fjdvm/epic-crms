@@ -37,7 +37,7 @@ export async function currentTargets(sql: postgres.Sql): Promise<ServiceTargets>
 const wholeHours = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 1 && (n as number) <= MAX_TARGET_HOURS;
 
 /**
- * A Manager or the CEO saves the two targets. It adds a row rather than changing one, so Tickets already opened keep
+ * A Manager saves the two targets. It adds a row rather than changing one, so Tickets already opened keep
  * their pair. The row records who and what it replaced, and the change is sent to the Audit service.
  */
 export async function setServiceTargets(
@@ -46,7 +46,7 @@ export async function setServiceTargets(
   staff: Staff,
   input: { firstReplyHours: unknown; resolveHours: unknown },
 ): Promise<Result> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can change the Service levels." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the Service levels." };
   if (!wholeHours(input.firstReplyHours) || !wholeHours(input.resolveHours))
     return { ok: false, reason: `Enter whole hours from 1 to ${MAX_TARGET_HOURS}.` };
   if (input.resolveHours < input.firstReplyHours)

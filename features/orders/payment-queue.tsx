@@ -66,7 +66,7 @@ function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow
   const { reference, submittedAt } = order.proof!;
   const reusedOn = order.proofChecks?.checks.reference.otherOrderIds ?? [];
   const [found, setFound] = useState(false);
-  // Admin and the CEO only look; nobody's reading of the screenshot ever marks an Order paid.
+  // Admin only look; nobody's reading of the screenshot ever marks an Order paid.
   const canWork = role === "staff" || role === "manager";
   const needsManager = order.rejections >= MANAGER_AFTER_REJECTIONS || reusedOn.length > 0;
   const last4 = reference ? reference.replace(/\s/g, "").slice(-4) : "";

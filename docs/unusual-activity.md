@@ -23,7 +23,7 @@ Named constants live in `features/dashboard/unusual-activity.ts`.
   Links: Customer profile and relevant Orders. Settled Orders do not count.
 
 Per the owner’s decision on #474, Staff see no Unusual activity. Managers see only held Modules. Both Payments rules need Payments; the other rules need
-Returns and Fulfilment respectively. Admin and CEO read all three Modules and cannot dismiss.
+Returns and Fulfilment respectively. Admin read all three Modules and cannot dismiss.
 Unknown Roles read nothing. The authenticated route checks Dashboard access and discovers Modules server-side.
 This owner decision supersedes the Staff access in #471 stories 31–42 and the original #474 Module-gating criterion. It avoids exposing shop-wide records on the Staff Dashboard.
 
@@ -74,7 +74,7 @@ Part of #471. `features/dashboard/unusual-activity-explain.ts`, kept in `crms.un
 
 - `POST /api/dashboard/unusual-activity/explain` (header `x-creoms-alert-explain: 1`, body `{ key }`) is asked for by the Dashboard
   open, once per card that has none. The server recomputes the card; client numbers are never trusted.
-- Only Staff or a Manager can cause a call. Admin and CEO only read kept text (`GET` merges kept explanations; it never calls a model).
+- Only Staff or a Manager can cause a call. Admin only read kept text (`GET` merges kept explanations; it never calls a model).
 - Sent: the rule text and the alert's own numbers, masked. No links, Orders or Customers. The sent text and system prompt are stored.
 - Kept per alert key with the numbers it was made from; made again only when a number is larger than the kept one.
 - Fact check: each of "why" and "what to do" is dropped if it quotes a digit or spelled-out number, or a link,

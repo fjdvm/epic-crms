@@ -61,15 +61,16 @@ describe("dev bypass", () => {
     });
   });
 
-  it("signs in as each of the four Roles, Staff by default", async () => {
-    expect(DEV_ROLES).toEqual(["staff", "manager", "admin", "ceo"]);
+  it("signs in as each dev Role, Staff by default; CEO and VP act as a Manager", async () => {
+    expect(DEV_ROLES).toEqual(["staff", "manager", "admin", "ceo", "vp"]);
     expect(DEV_STAFF.role).toBe("Staff");
 
     for (const [role, expected] of [
       ["staff", "staff"],
       ["manager", "manager"],
       ["admin", "admin"],
-      ["ceo", "ceo"],
+      ["ceo", "manager"],
+      ["vp", "manager"],
     ] as const) {
       const access = accessFor(undefined, { bypass: true, devRole: role });
       const result = await access.check("Customer Profiles");
@@ -78,5 +79,6 @@ describe("dev bypass", () => {
       expect(shopRole(devUser(role).role)).toBe(expected);
     }
     expect(devUser("ceo").name).toBe("Dev CEO");
+    expect(devUser("vp").name).toBe("Dev VP");
   });
 });

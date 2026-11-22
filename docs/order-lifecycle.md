@@ -10,7 +10,7 @@ Returns, refunds and Tickets start after delivery and are not covered here.
 - There is no payment gateway. The Customer pays outside the shop (GCash, Maya or bank transfer) and Staff check
   the proof by hand. CREOMS never takes money.
 - Payment accounts (number and QR), the Free delivery threshold, the payment window and the Approval limit are
-  Commerce Settings under Management (Manager and CEO), never values in code.
+  Commerce Settings under Management (Manager-level Roles, CEO and VP included), never values in code.
 
 ## Flow
 
@@ -56,17 +56,17 @@ flowchart TD
 
 ## Who does what
 
-| Step | Customer | Staff | Manager | CEO |
-|---|---|---|---|---|
-| Place the Order | yes | never (except a Replacement Order) | | |
-| Confirm with a Delivery fee, or reject with a reason | | yes | yes | view |
-| Cancel | until paid | up to Preparing | after dispatch, with a plan for courier, money and stock | view |
-| Upload payment proof | yes | | | |
-| Mark paid / Reject proof | | yes | yes | view |
-| Reused reference, 3rd rejection | | Request approval | approves | view |
-| Pack, dispatch, failed delivery, mark delivered | | yes | yes | view |
-| Mark received | yes | | | |
-| Payment accounts, threshold, payment window | | | yes | yes |
+| Step | Customer | Staff | Manager (also General Manager, CEO, VP) |
+|---|---|---|---|
+| Place the Order | yes | never (except a Replacement Order) | |
+| Confirm with a Delivery fee, or reject with a reason | | yes | yes |
+| Cancel | until paid | up to Preparing | after dispatch, with a plan for courier, money and stock |
+| Upload payment proof | yes | | |
+| Mark paid / Reject proof | | yes | yes |
+| Reused reference, 3rd rejection | | Request approval | approves |
+| Pack, dispatch, failed delivery, mark delivered | | yes | yes |
+| Mark received | yes | | |
+| Payment accounts, threshold, payment window | | | yes |
 
 ## Money
 

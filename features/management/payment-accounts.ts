@@ -8,7 +8,7 @@ import { maskNumber, methodLabel, PAYMENT_METHODS, validateAccount } from "./pay
 
 export type PaymentAccountRow = {
   id: string; method: string; label: string; accountName: string; maskedNumber: string; bankName: string | null; active: boolean; hasQr: boolean; used: boolean;
-  /** Raw number for the edit form only; the Manager or CEO already holds the Module that lists it. */
+  /** Raw number for the edit form only; the Manager already holds the Module that lists it. */
   accountNumber: string;
 };
 
@@ -21,9 +21,9 @@ export async function listPaymentAccounts(sql: postgres.Sql): Promise<PaymentAcc
 type Staff = { id: string; name: string; role: string };
 export type AddAccountResult = { ok: true } | { ok: false; reason: string };
 
-/** Manager or CEO only, checked here and not only on the page. The Audit Log never holds more than the last four digits. */
+/** Manager only, checked here and not only on the page. The Audit Log never holds more than the last four digits. */
 export async function addPaymentAccount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<AddAccountResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can add a Payment account." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can add a Payment account." };
   const valid = validateAccount(input);
   if (!valid.ok) return valid;
   const a = valid.account;
@@ -56,7 +56,7 @@ export type QrFiles = {
 export async function setPaymentAccountQr(
   sql: postgres.Sql, audit: AuditTrail, files: QrFiles, staff: Staff & { username: string }, accountId: string, reference: string | null,
 ): Promise<AddAccountResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can change a Payment account's QR." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change a Payment account's QR." };
   const claimed = reference === null ? null : await files.claim(reference, staff.username);
   if (reference !== null && !claimed) return { ok: false, reason: "That image upload is invalid or expired. Choose the image again." };
 
@@ -88,7 +88,7 @@ export async function qrFileId(sql: postgres.Sql, accountId: string): Promise<st
   return row?.qr_file_id ?? null;
 }
 
-/** Methods a Manager or the CEO has switched off. A method with no row is on. */
+/** Methods a Manager has switched off. A method with no row is on. */
 export async function listDisabledMethods(sql: postgres.Sql): Promise<string[]> {
   const rows = await sql<{ method: string }[]>`select method from crms.payment_methods where not enabled`;
   return rows.map((r) => r.method);
@@ -96,7 +96,7 @@ export async function listDisabledMethods(sql: postgres.Sql): Promise<string[]> 
 
 export type MethodAvailability = Record<(typeof PAYMENT_METHODS)[number]["value"], boolean>;
 
-/** Per method: on only when a Manager or the CEO has not switched it off and at least one account is active. The storefront reads this, nothing more. */
+/** Per method: on only when a Manager has not switched it off and at least one account is active. The storefront reads this, nothing more. */
 export async function listMethodAvailability(sql: postgres.Sql): Promise<MethodAvailability> {
   const [disabled, withAccount] = await Promise.all([
     listDisabledMethods(sql),
@@ -113,7 +113,7 @@ const MISSING = { ok: false, reason: "That Payment account no longer exists." } 
 
 /** Edits an account's details. The method cannot change; add a new account instead. The audit holds the masked number only. */
 export async function editPaymentAccount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, input: unknown): Promise<AddAccountResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can edit a Payment account." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can edit a Payment account." };
   const before = await find(sql, accountId);
   if (!before) return MISSING;
   const valid = validateAccount({ ...(input && typeof input === "object" ? input : {}), method: before.method });
@@ -138,7 +138,7 @@ export async function editPaymentAccount(sql: postgres.Sql, audit: AuditTrail, s
 
 /** Switches an account off or on without deleting it. Switching off the last active account of an enabled method is refused. */
 export async function setPaymentAccountActive(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, active: boolean): Promise<AddAccountResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can switch a Payment account on or off." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can switch a Payment account on or off." };
   const done = await sql.begin(async (tx) => {
     const [row] = await tx<Found[]>`
       select label, method, active, account_number, bank_name, first_used_at from crms.payment_accounts where id::text = ${accountId} for update`;
@@ -170,7 +170,7 @@ export async function setPaymentAccountActive(sql: postgres.Sql, audit: AuditTra
 
 /** Disables or re-enables a whole method. A method cannot come back on without an active account to receive money. */
 export async function setPaymentMethodEnabled(sql: postgres.Sql, audit: AuditTrail, staff: Staff, method: string, enabled: boolean): Promise<AddAccountResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can enable or disable a payment method." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can enable or disable a payment method." };
   if (!PAYMENT_METHODS.some((m) => m.value === method)) return { ok: false, reason: "Choose GCash, Maya or Bank transfer." };
   if (enabled) {
     const [n] = await sql<{ n: number }[]>`select count(*)::int as n from crms.payment_accounts where method = ${method} and active`;
@@ -193,7 +193,7 @@ export async function setPaymentMethodEnabled(sql: postgres.Sql, audit: AuditTra
 
 /** Deletes an account nobody has used. Once a Customer has seen or used it, it can only be switched off, so history stays whole. */
 export async function deletePaymentAccount(sql: postgres.Sql, audit: AuditTrail, files: Pick<QrFiles, "remove">, staff: Staff, accountId: string): Promise<AddAccountResult> {
-  if (!canManage(staff)) return { ok: false, reason: "Only a Manager or the CEO can delete a Payment account." };
+  if (!canManage(staff)) return { ok: false, reason: "Only a Manager can delete a Payment account." };
   const [row] = await sql<(Found & { qr_file_id: string | null })[]>`
     delete from crms.payment_accounts where id::text = ${accountId} and first_used_at is null
     returning label, method, active, account_number, bank_name, first_used_at, qr_file_id`;

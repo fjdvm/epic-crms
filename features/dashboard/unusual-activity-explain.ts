@@ -65,7 +65,7 @@ export async function keptExplanations(crms: postgres.Sql, cards: UnusualActivit
 
 /**
  * Made once per alert on first sight by Staff or a Manager, kept, and made again only when the numbers get worse.
- * Admin and CEO never reach a model. A failure returns null and the card simply shows without it.
+ * Admin never reach a model. A failure returns null and the card simply shows without it.
  */
 export async function explainUnusualActivity(
   deps: Deps, staff: Staff, modules: readonly string[], key: string,

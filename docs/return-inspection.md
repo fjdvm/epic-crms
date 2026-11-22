@@ -5,10 +5,10 @@ After Goods received, Staff inspect each **whole line item** of a Return: **sell
 | Action | Who | Notes |
 | --- | --- | --- |
 | `inspectReturn(id, inspectionId, items)` | Staff, Manager | Return must be Goods received and not yet inspected; every item must be marked. Never optimistic: restocking is an outside effect. Audit `return.inspected`. |
-| `writeOffReturn(id, options)` | Staff request, Manager approves, CEO also above the Approval limit | Shared Request approval workflow (`write-off`). The limit is measured by the selling price of **all** the Return's items, per Return, not only the damaged ones. Exactly the limit stops at the Manager. Audit `writeoff.requested` (workflow) and `writeoff.approved` on execution. |
+| `writeOffReturn(id, options)` | Staff request, Manager approves (final at any amount) | Shared Request approval workflow (`write-off`). Audit `writeoff.requested` (workflow) and `writeoff.approved` on execution. |
 | `markReturnRefunded` | as before | Refused until the items are inspected (when goods came back and the Return has items). Sends the Order's payment method so the refund goes back the way the Customer paid; proof upload still required. Audit `return.refund_approved`. |
 
-Admin and CEO can read the inspection but not act.
+Admin can read the inspection but not act.
 
 ## Storefront contract
 

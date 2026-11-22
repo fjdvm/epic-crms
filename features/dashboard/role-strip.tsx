@@ -5,7 +5,7 @@ import type { ShopRole } from "@/lib/portal/roles";
 
 const CARD = "rounded-xl border border-[#e6e1ee] bg-white px-4 py-4";
 
-/** What each Role sees first on its Dashboard (Figma Staff, Manager, CEO and Admin dashboards). */
+/** What each Role sees first on its Dashboard (Figma Staff, Manager and Admin dashboards; the CEO and VP see the Manager one). */
 export function RoleStrip({ role, requests, now }: { role: ShopRole | null; requests: ApprovalView[]; now: number }) {
   if (role === null) return null;
   const stats = summarize(requests, now);
@@ -32,17 +32,5 @@ export function RoleStrip({ role, requests, now }: { role: ShopRole | null; requ
       </section>
     );
   }
-  if (role === "ceo") {
-    const finals = requests.filter(r => r.status === "waiting-ceo");
-    return (
-      <section aria-label="Final approvals" className="flex flex-wrap items-center gap-4 rounded-xl border border-[#e6e1ee] bg-white px-4 py-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-[#18181b]">{finals.length === 0 ? "No final approvals waiting" : `${finals.length} refund or write-off over the Approval limit waiting for you`}</p>
-          <p className="text-xs text-[#71717a]">Everything else here is read-only. Amounts at or under the limit stop at the Manager.</p>
-        </div>
-        {finals.length > 0 && <Link href="/approvals" prefetch className="rounded-lg bg-[#5b2a86] px-3.5 py-2 text-sm font-medium text-white">Review</Link>}
-      </section>
-    );
-  }
-  return <p className="rounded-xl border border-[#e6e1ee] bg-white px-4 py-3 text-sm text-[#52525b]">Admin view: every module is read-only here. Business decisions stay with Managers and the CEO.</p>;
+  return <p className="rounded-xl border border-[#e6e1ee] bg-white px-4 py-3 text-sm text-[#52525b]">Admin view: every module is read-only here. Business decisions stay with Managers.</p>;
 }

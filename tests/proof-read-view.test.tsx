@@ -31,7 +31,7 @@ it("shows each finding with a plain reason, including the amount explanation", (
   expect(screen.getByRole("link", { name: "Order #42" }).getAttribute("href")).toBe("/orders/42");
 });
 
-it.each(["staff", "manager", "admin", "ceo"] as const)("%s sees the findings and no control that starts a read", role => {
+it.each(["staff", "manager", "admin"] as const)("%s sees the findings and no control that starts a read", role => {
   render(<ProofReadFindings read={read} role={role} />);
   expect(screen.getByLabelText("Proof reader findings")).toBeTruthy();
   expect(screen.queryAllByRole("button")).toHaveLength(0);
@@ -64,7 +64,7 @@ it("offers Correct and Proceed anyway only to Staff and Managers; Admin and the 
     expect(screen.getAllByRole("button", { name: "Proceed anyway" })).toHaveLength(3);
     unmount();
   }
-  for (const role of ["admin", "ceo"] as const) {
+  for (const role of ["admin"] as const) {
     const { unmount } = render(<ProofReadFindings read={read} role={role} proofId={7} />);
     expect(screen.queryAllByRole("button")).toHaveLength(0);
     unmount();

@@ -147,7 +147,7 @@ describe("marking delivered with a courier image link", () => {
   });
 
   it("is refused for a read-only role before anything is downloaded", async () => {
-    vi.mocked(requireModule).mockResolvedValue({ id: "ceo", username: "ceo", name: "Owner", email: "ceo@example.com", role: "CEO" });
+    vi.mocked(requireModule).mockResolvedValue({ id: "admin", username: "admin", name: "Ada", email: "admin@example.com", role: "Admin" });
     const fetcher = host({});
     link.fetcher = fetcher;
     expect(await importDeliveryPhotoLink("https://share.lalamove.com/pod.png")).toMatchObject({ ok: false });

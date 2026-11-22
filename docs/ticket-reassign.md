@@ -3,7 +3,7 @@
 Apply `docs/db/crms-ticket-reassign.sql` as `creoms_writer` before deploying. No ecommerce migration: the
 Claimer stays on `tickets.claimed_by_id` / `claimed_by_name`, already updated by the `creoms_tickets` role.
 
-- `crms.ticket_reassignments` is the Ticket's activity and the history Admin and CEO read; one row per
+- `crms.ticket_reassignments` is the Ticket's activity and the history Admin read; one row per
   Ticket moved, unique on `(operation_id, ticket_id)` so a retry replays.
 - `crms.notifications` gains `detail jsonb` and the kind `ticket-reassigned`, addressed to the previous and
   the new Claimer by Portal username. A bulk move sends one alert each, not one per Ticket. The Manager is

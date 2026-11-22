@@ -137,7 +137,7 @@ function WriteOff({ order, attempt, role, writeOff }: { order: FailedDeliveryOrd
       trigger={request ? "Request approval…" : "Write off…"}
       tone="destructive"
       title={request ? `Ask a Manager to write off Order #${order.id}'s goods` : `Write off Order #${order.id}'s goods?`}
-      description={`The goods are recorded as a loss and cannot go back to stock afterwards. Above the Approval limit the CEO also approves.`}
+      description={`The goods are recorded as a loss and cannot go back to stock afterwards.`}
       confirm={request ? "Send request" : "Write off"} busy={request ? "Sending…" : "Writing off…"}
       disabled={!writeOff.approvalId && staff && !reason.trim()}
       run={async () => {

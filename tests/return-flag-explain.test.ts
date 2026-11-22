@@ -41,7 +41,7 @@ beforeEach(async () => {
 const explain = (who = manager) => explainReturnFlag(deps(), who, c, "frequent-returns", models);
 
 it("lets only a Manager cause a call", async () => {
-  for (const role of ["Staff", "Admin", "CEO", "Unknown"]) {
+  for (const role of ["Staff", "Admin", "Unknown"]) {
     expect(await explain(person(role))).toEqual({ ok: false, reason: "forbidden" });
   }
   expect(spy).not.toHaveBeenCalled();

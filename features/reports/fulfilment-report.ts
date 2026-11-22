@@ -19,10 +19,10 @@ export interface FulfilmentFigures {
 
 export type FulfilmentReport = { ok: true; figures: FulfilmentFigures } | { ok: false; reason: "forbidden" | "unavailable" };
 
-/** Managers, Admins and the CEO read it; Admin and CEO only read. Staff and unknown Roles never do. */
+/** Managers (CEO and VP included) and Admins read it; Admin only reads. Staff and unknown Roles never do. */
 export function mayReadFulfilmentReport(role: string): boolean {
   const shop = shopRole(role);
-  return shop === "manager" || shop === "admin" || shop === "ceo";
+  return shop === "manager" || shop === "admin";
 }
 
 /**

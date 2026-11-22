@@ -32,7 +32,7 @@ describe("changeFreeDeliveryThreshold", () => {
 
   it.each(["Staff/Employee", "Super Admin"])("refuses %s on the server and writes nothing", async (role) => {
     const r = await changeFreeDeliveryThreshold(db.sql, audit, { id: "x", name: "X", role }, "3000");
-    expect(r).toEqual({ ok: false, reason: "Only a Manager or the CEO can change the Free delivery threshold." });
+    expect(r).toEqual({ ok: false, reason: "Only a Manager can change the Free delivery threshold." });
     expect(await loadFreeDeliveryThreshold(db.sql)).toBe(250000);
     expect(audit).not.toHaveBeenCalled();
   });

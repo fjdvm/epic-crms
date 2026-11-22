@@ -154,7 +154,7 @@ describe("Take an escalated Ticket", () => {
     expect(await takeEscalation(deps(), mara, id, "op")).toEqual({ ok: false, reason: "not-escalated" });
 
     await escalate(id);
-    for (const role of ["Staff", "Super Admin", "CEO"])
+    for (const role of ["Staff", "Super Admin"])
       expect(await takeEscalation(deps(), { ...mara, role }, id, "op")).toEqual({ ok: false, reason: "forbidden" });
     expect((await getTicket(db.sql, id))?.claimerId).toBe("liza");
     expect(await openEscalatedIds(db.sql)).toEqual([id]);

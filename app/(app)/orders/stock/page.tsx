@@ -23,7 +23,7 @@ export default function ProductsStockPage() {
 }
 
 async function StockData() {
-  // Orders gates this page for Staff, Manager, and the read-only Admin and CEO alike; only Staff and Manager may edit a product.
+  // Orders gates this page for Staff, Manager, and the read-only Admin alike; only Staff and Manager may edit a product.
   const staff = await requireModule(ORDERS_MODULE);
   const result = await loadStockCopy(ticketsDatabase, readPublishedContent, stockMirror);
   if (!result.ok) {

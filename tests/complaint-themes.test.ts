@@ -128,8 +128,8 @@ describe("Complaint themes", () => {
     for (let n = 1; n <= 3; n++) await ticket(n, "leak");
     const boom = () => { throw new Error("must not configure"); };
     expect(await openComplaintThemes(deps(), { role: "Staff" }, {}, { models: boom })).toEqual({ themes: null, unavailable: true, refused: "read-only" });
-    for (const role of ["Admin", "CEO"]) expect(await openComplaintThemes(deps(), { role }, {}, { models: boom, refresh: true })).toEqual({ themes: null, unavailable: true });
+    for (const role of ["Admin"]) expect(await openComplaintThemes(deps(), { role }, {}, { models: boom, refresh: true })).toEqual({ themes: null, unavailable: true });
     const kept = await openComplaintThemes(deps(), manager, {}, use(fake([])));
-    for (const role of ["Admin", "CEO"]) expect(await openComplaintThemes(deps(), { role }, {}, { models: boom, refresh: true })).toEqual({ themes: kept.themes, unavailable: false });
+    for (const role of ["Admin"]) expect(await openComplaintThemes(deps(), { role }, {}, { models: boom, refresh: true })).toEqual({ themes: kept.themes, unavailable: false });
   });
 });

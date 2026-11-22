@@ -86,7 +86,7 @@ describe("Manager reassign", () => {
   it("refuses Staff, Admin and CEO", async () => {
     const id = await ticket();
 
-    for (const role of ["Staff", "Super Admin", "CEO"])
+    for (const role of ["Staff", "Super Admin"])
       expect(await reassignTickets(deps(), { ...staffer, role }, req([id]))).toEqual({ ok: false, reason: "forbidden" });
     expect((await getTicket(db.sql, id))?.claimerId).toBe("liza");
   });

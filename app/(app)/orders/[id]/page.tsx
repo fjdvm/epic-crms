@@ -78,9 +78,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const cancellation = order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) ? await loadCancellationState(order.id) : null;
   const cancelRequest = ["placed", "confirmed", "awaiting payment"].includes(order.status) ? await loadCancelRequest(order.id) : null;
   const role = shopRole(staff.role);
-  // Flags are for Staff and Managers who hold Orders; Admin and CEO see none, and a Customer never reaches this page.
+  // Flags are for Staff and Managers who hold Orders; Admin see none, and a Customer never reaches this page.
   const codResult = modules.includes(ORDERS_MODULE) && (role === "staff" || role === "manager") ? await loadCodFlags(order.id) : null;
-  // Rider details go only to Staff and Managers; Admin and CEO never receive them.
+  // Rider details go only to Staff and Managers; Admin never receive them.
   const dispatch = order.fulfillmentMethod === "delivery" && ["dispatched", "delivered", "received"].includes(order.status)
     ? await loadDispatchRecord(ticketsDatabase(), order.id, role === "staff" || role === "manager").catch(() => null)
     : null;

@@ -36,7 +36,7 @@ it.each(["Staff", "CREOMS Manager"])("%s saves attributed notes newest first, pr
   expect(result.ok && result.notes.every(n => !Number.isNaN(Date.parse(n.createdAt)))).toBe(true);
   expect(mocks.requireModule).toHaveBeenCalledWith("Customer Profiles");
 });
-it.each(["Admin", "CEO"])("%s reads but cannot write", async role => {
+it.each(["Admin"])("%s reads but cannot write", async role => {
   mocks.role = role;
   expect(await addCustomerNote("customer", "Secret", "one")).toMatchObject({ ok: false, message: READ_ONLY_REASON });
   expect(await readCustomerNotes("customer")).toEqual({ ok: true, notes: [] });

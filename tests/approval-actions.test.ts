@@ -98,26 +98,22 @@ it.each([500000, 500001])("requires the right steps for a refund selling at %i c
   expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved" } });
   expect(await getApprovalRequests()).toMatchObject([{ reason: "Damaged cake", status: "waiting-manager" }]);
   expect(notices).toContainEqual(expect.objectContaining({ userIds: ["mario"] }));
-  for (const actor of ["ana", "ada", "owner"]) {
+  for (const actor of ["ana", "ada"]) {
     await signIn(actor); expect(await approveReturn(id)).toMatchObject({ ok: false }); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false });
   }
-  await signIn("mario");
+  // One Manager-level approval is final at any amount; the CEO decides as a Manager does.
+  await signIn(amount > 500000 ? "owner" : "mario");
+  const approver = amount > 500000 ? "owner Person" : "mario Person";
   const decision = await decideApproval("Returns", pending.approvalId, "approve");
-  expect(decision).toMatchObject({ ok: true, request: { manager_name: "mario Person", manager_at: expect.any(Date), status: amount > 500000 ? "waiting-ceo" : "approved" } });
-  if (amount > 500000) {
-    await signIn("ana"); expect(await refundVia(db.sql, id, proof((amount / 100).toFixed(2)), { approvalId: pending.approvalId })).toMatchObject({ ok: false });
-    for (const actor of ["mario", "ada"]) { await signIn(actor); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false }); }
-    await signIn("owner"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: true, request: { ceo_name: "owner Person", ceo_at: expect.any(Date) } });
-  } else {
-    await signIn("owner"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false });
-  }
+  expect(decision).toMatchObject({ ok: true, request: { manager_name: approver, manager_at: expect.any(Date), status: "approved" } });
+  for (const actor of ["mario", "owner"]) { await signIn(actor); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false }); }
   await signIn("ana"); expect(await refundVia(db.sql, id, proof((amount / 100).toFixed(2)), { approvalId: pending.approvalId })).toMatchObject({ ok: true });
   expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded" } });
   expect(audit.mock.calls.map(([e]) => e.action)).toEqual(expect.arrayContaining(["approval.requested", "approval.granted"]));
   expect(notices).toContainEqual(expect.objectContaining({ userIds: ["ana"] }));
 });
 
-it("uses a Manager's changed limit and records both write-off decisions and a decline", async () => {
+it("lets a Manager save the limit, and records a Manager's write-off approval and the CEO's decline", async () => {
   const id = await returned(500001);
   await signIn("ana"); await expect(setApprovalLimit(600000)).rejects.toThrow();
   await signIn("ada"); expect(await setApprovalLimit(600000)).toMatchObject({ ok: false });
@@ -132,8 +128,7 @@ it("uses a Manager's changed limit and records both write-off decisions and a de
   await signIn("mario"); await setApprovalLimit(400000);
   await signIn("ana"); const other = await requestWriteOff(id, "Second inspection");
   if (!other.approvalId) throw new Error("Missing request");
-  await signIn("mario"); expect(await decideApproval("Returns", other.approvalId, "approve")).toMatchObject({ ok: true, request: { status: "waiting-ceo" } });
-  await signIn("owner"); expect(await decideApproval("Returns", other.approvalId, "decline", "Restock it")).toMatchObject({ ok: true, request: { status: "declined", ceo_name: "owner Person" } });
+  await signIn("owner"); expect(await decideApproval("Returns", other.approvalId, "decline", "Restock it")).toMatchObject({ ok: true, request: { status: "declined", manager_name: "owner Person" } });
   expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "approval.declined" })]);
 });
 
@@ -149,7 +144,7 @@ it("records a human's accepted AI suggestion without sending or changing an Orde
   expect(await acceptAISuggestion("Returns", "suggestion-1", "1")).toEqual({ ok: true });
   expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "ai_suggestion.accepted", actor: { type: "user", id: "ana", display_name: "ana Person" } })]);
   expect(storefront.requests).toBe(0);
-  await signIn("owner"); expect(await acceptAISuggestion("Returns", "suggestion-2", "1")).toMatchObject({ ok: false });
+  await signIn("ada"); expect(await acceptAISuggestion("Returns", "suggestion-2", "1")).toMatchObject({ ok: false });
 });
 
 vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));
@@ -171,20 +166,18 @@ it("lets a Manager change the Approval limit without granting any Returns page a
   await expect(getApprovalRequests()).rejects.toThrow();
 });
 
-it("records a Manager's first step but prevents their direct above-limit refund", async () => {
+it("lets a Manager refund above the limit directly, with no CEO step", async () => {
   const id = await returned(500001);
   await signIn("mario"); expect(await approveReturn(id)).toMatchObject({ ok: true });
-  const pending = await markReturnRefunded(id, undefined, { reason: "Refund damaged cake" });
-  expect(pending).toMatchObject({ status: "waiting-ceo", reason: "Waiting for approval" });
-  expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved" } });
-  expect(await getApprovalRequests()).toMatchObject([{ manager_name: "mario Person", manager_at: expect.any(Date), status: "waiting-ceo" }]);
-  if (!("approvalId" in pending) || !pending.approvalId) throw new Error("Missing request");
-  await signIn("owner"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: true });
-  expect(await markReturnRefunded(id, undefined, { approvalId: pending.approvalId })).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
+  const direct = await markReturnRefunded(id, undefined, { reason: "Refund damaged cake" });
+  expect(direct).not.toMatchObject({ reason: "Waiting for approval" });
+  expect(await getApprovalRequests()).toEqual([]);
+  const own = new FormData(); own.set("proof", storage.readyEvidence("Returns", PNG, "mario"));
+  expect(await refundVia(db.sql, id, withRefundDetails(own, { amount: "5000.01" }))).toMatchObject({ ok: true });
+  expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded" } });
 });
 
-
-it.each([500000, 500001])("failed-delivery write-off at %i uses the Manager and CEO boundary", async amount => {
+it.each([500000, 500001])("failed-delivery write-off at %i is final once a Manager approves", async amount => {
   await db.sql`update orders set status = 'dispatched', fulfillment_method = 'delivery' where id = 1`;
   await db.sql`insert into order_lines (order_id, product_name, price_in_centavos, quantity) values (1,'Cake',${amount},1)`;
   const attemptId = randomUUID();
@@ -196,9 +189,9 @@ it.each([500000, 500001])("failed-delivery write-off at %i uses the Manager and 
   if (!("approvalId" in pending) || !pending.approvalId) throw new Error("Expected approval");
   expect((await db.sql`select disposition from failed_deliveries`)[0].disposition).toBeNull();
   await signIn("mario");
-  expect(await decideApproval("Fulfilment", pending.approvalId, "approve")).toMatchObject({ ok: true, request: { status: amount > 500000 ? "waiting-ceo" : "approved" } });
-  await signIn("owner");
-  expect(await decideApproval("Fulfilment", pending.approvalId, "approve")).toMatchObject({ ok: amount > 500000 });
+  expect(await decideApproval("Fulfilment", pending.approvalId, "approve")).toMatchObject({ ok: true, request: { status: "approved" } });
+  await signIn("ada");
+  expect(await decideApproval("Fulfilment", pending.approvalId, "approve")).toMatchObject({ ok: false });
   expect(await changeFailedDelivery(1, { action: "restock", attemptId })).toMatchObject({ ok: false });
   await signIn("ana");
   expect(await changeFailedDelivery(1, { action: "write-off", attemptId }, { approvalId: pending.approvalId })).toMatchObject({ ok: true });
@@ -217,7 +210,7 @@ it("failed delivery actions preserve refusals, rebook courier details and enforc
   storefront.refusal = null;
   expect(await changeFailedDelivery(1, { action: "rebook", attemptId, courier: { name: "Grab", trackingUrl: "https://grab.test/new" } })).toMatchObject({ ok: true });
   expect(storefront.couriers.get(1)).toEqual({ name: "Grab", trackingUrl: "https://grab.test/new" });
-  for (const actor of ["ada", "owner"]) {
+  for (const actor of ["ada"]) {
     await signIn(actor);
     expect(await changeFailedDelivery(1, { action: "restock", attemptId })).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
     expect(await loadFailedDeliveryHistory(1)).toMatchObject({ ok: true });
@@ -271,7 +264,7 @@ it("requires a Manager decision before COD cancellation and records stock withou
   expect(await decideApproval("Fulfilment", id, "approve")).toMatchObject({ ok: true });
   expect(await requestDispatchedCancellation(1, "Same request")).toMatchObject({ status: "approved", reason: "Cancellation approved; settlement pending" });
   expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof())).toMatchObject({ ok: false, reason: "Cash on Delivery has no refund." });
-  for (const actor of ["ana", "ada", "owner"]) {
+  for (const actor of ["ana", "ada"]) {
     await signIn(actor); expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: false });
   }
   await signIn("mario");
@@ -290,17 +283,11 @@ it.each(["gcash", "maya", "bank-transfer"])("refunds a prepaid %s cancellation u
   expect([...storage.files.values()].some(file => file.orderId === 1 && file.retentionType === "permanent")).toBe(true);
 });
 
-it.each([["gcash", "restock"], ["cash-on-delivery", "write-off"]] as const)("requires CEO above the saved limit for %s/%s and binds the settlement", async (method, outcome) => {
+it.each([["gcash", "restock"], ["cash-on-delivery", "write-off"]] as const)("settles %s/%s above the saved limit once a Manager approves, with no CEO step", async (method, outcome) => {
   const id = await cancellation(500001, method);
   await signIn("mario"); await decideApproval("Fulfilment", id, "approve");
-  const pending = await settleDispatchedCancellation(1, id, outcome);
-  expect(pending).toMatchObject({ ok: false, status: "waiting-ceo" });
-  expect([...storage.files.values()].every(file => !file.orderId)).toBe(true);
-  if (!("approvalId" in pending) || !pending.approvalId) throw new Error("Expected CEO approval");
-  await signIn("owner"); expect(await decideApproval("Fulfilment", pending.approvalId, "approve")).toMatchObject({ ok: true });
-  await signIn("mario");
-  expect(await settleDispatchedCancellation(1, id, outcome === "restock" ? "write-off" : "restock", undefined, { approvalId: pending.approvalId })).toMatchObject({ ok: false });
-  expect(await settleDispatchedCancellation(1, id, outcome, method === "gcash" ? cancellationProof() : undefined, { approvalId: pending.approvalId })).toMatchObject({ ok: true });
+  expect(await settleDispatchedCancellation(1, id, outcome, method === "gcash" ? cancellationProof() : undefined)).toMatchObject({ ok: true, status: "cancelled" });
+  expect((await db.sql`select status from crms.approval_requests where status = 'waiting-ceo'`)).toHaveLength(0);
 });
 
 it("preserves storefront refusals and does not consume the cancellation approval", async () => {
@@ -340,14 +327,11 @@ it("resumes an interrupted prepaid settlement from stored proof after the browse
   expect(await loadDispatchedCancellations()).toMatchObject({ ok: true, requests: [expect.objectContaining({ status: "cancelled", refundMethod: "maya" })] });
 });
 
-it("releases a CEO-approved settlement claim when proof preparation fails before any cancellation", async () => {
+it("keeps an above-limit settlement retryable when proof preparation fails before any cancellation", async () => {
   const id = await cancellation(500001, "gcash");
   await signIn("mario"); await decideApproval("Fulfilment", id, "approve");
-  const pending = await settleDispatchedCancellation(1, id, "restock");
-  if (!("approvalId" in pending) || !pending.approvalId) throw new Error("Expected CEO approval");
-  await signIn("owner"); await decideApproval("Fulfilment", pending.approvalId, "approve");
-  await signIn("mario"); storage.failPromote = true;
-  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof(), { approvalId: pending.approvalId })).toMatchObject({ ok: false, reason: expect.stringContaining("No cancellation was sent") });
+  storage.failPromote = true;
+  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof())).toMatchObject({ ok: false, reason: expect.stringContaining("No cancellation was sent") });
   storage.failPromote = false;
-  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof(), { approvalId: pending.approvalId })).toMatchObject({ ok: true, status: "cancelled" });
+  expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof())).toMatchObject({ ok: true, status: "cancelled" });
 });

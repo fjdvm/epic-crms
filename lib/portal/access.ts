@@ -63,7 +63,7 @@ export function accessFor(
       }
     }
 
-    // Management also needs the Manager or CEO Role, so a Module that reached anyone else opens nothing.
+    // Management also needs the Manager-level Role, so a Module that reached anyone else opens nothing.
     const allowed = results.flatMap((result, i) =>
       result.decision === "allowed" && (pages[i].module !== MANAGEMENT_MODULE || canManage(result.staff))
         ? [{ staff: result.staff, href: pages[i].href }]

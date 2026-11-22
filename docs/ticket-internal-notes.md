@@ -7,7 +7,7 @@ columns; `docs/sql/creoms-tickets-role.sql` in ecommerce restates the grant.
 
 - A note is a `ticket_messages` row with `sender = 'staff'`, `internal = true` and the writer's name in `author_name`.
   Any Staff or Manager with the Tickets Module may add one, on any Ticket (claimed by someone else, unclaimed or
-  Completed). Admin and CEO only read. Text only, at most 2,000 characters; permanent.
+  Completed). Admin only read. Text only, at most 2,000 characters; permanent.
 - Every query that decides "who spoke last" (list Overdue and waiting, Dashboard Needs attention, the Conversations preview,
   the Service level clocks) filters `not internal`, so a note never counts as a Staff reply and never clears Overdue.
 - No alert and no audit event. Shown on the Ticket page and in Conversations, styled apart from replies.

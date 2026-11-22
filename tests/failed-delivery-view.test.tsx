@@ -59,7 +59,7 @@ describe("the Failed delivery screen", () => {
     const { unmount } = render(<FailedDeliveryView order={order} attempts={[attempt()]} role="manager" writeOff={none} />);
     expect(screen.getByRole("button", { name: "Write off…" })).toBeTruthy();
     unmount();
-    render(<FailedDeliveryView order={order} attempts={[attempt()]} role="ceo" writeOff={none} />);
+    render(<FailedDeliveryView order={order} attempts={[attempt()]} role="admin" writeOff={none} />);
     expect(screen.queryByRole("button", { name: "Write off…" })).toBeNull();
     expect(screen.getByText("View only.")).toBeTruthy();
   });

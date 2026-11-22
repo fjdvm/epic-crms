@@ -120,7 +120,7 @@ it("opens the full number only when the refund is ready to send, and audits the 
 
 it("Admin and CEO see it masked and cannot open the full number", async () => {
   const id = await approvedRefund();
-  for (const actor of ["ada", "owner"]) {
+  for (const actor of ["ada"]) {
     await signIn(actor);
     expect(await revealRefundDestination(id)).toMatchObject({ ok: false });
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { refundDestination: { maskedNumber: "•••••••4567" } } });
@@ -198,6 +198,6 @@ it("Staff see Request approval; the request holds no full number; the approved c
 
 it("Admin and CEO cannot change it", async () => {
   const id = await approvedRefund();
-  for (const actor of ["ada", "owner"]) { await signIn(actor); expect(await changeRefundDestination(id, NEW)).toMatchObject({ ok: false }); }
+  for (const actor of ["ada"]) { await signIn(actor); expect(await changeRefundDestination(id, NEW)).toMatchObject({ ok: false }); }
   expect((await stored(id)).refund_account_number).toBe("09171234567");
 });

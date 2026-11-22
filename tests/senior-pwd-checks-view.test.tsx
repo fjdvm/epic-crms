@@ -33,7 +33,7 @@ describe("how long the photo has left", () => {
 });
 
 describe("the Senior/PWD check screen", () => {
-  const detail = (verification = v(), props: { readOnly?: boolean; role?: "staff" | "manager" | "admin" | "ceo" } = {}) =>
+  const detail = (verification = v(), props: { readOnly?: boolean; role?: "staff" | "manager" | "admin" } = {}) =>
     render(<SeniorPwdCheckDetail verification={verification} now={NOW} readOnly={props.readOnly ?? false} role={props.role ?? "staff"} />);
   const approveButton = () => screen.getAllByRole("button", { name: "Approve" }).at(-1) as HTMLButtonElement;
   const READ = "SANTOS, MARIA L.\nID No. SC-123456\nValid until 15 Mar 2031";
@@ -142,7 +142,7 @@ describe("the Senior/PWD check screen", () => {
       const manager = detail(declined, { role: "manager" });
       expect(screen.getByRole("button", { name: "Override" })).toBeTruthy();
       manager.unmount();
-      detail(declined, { readOnly: true, role: "ceo" });
+      detail(declined, { readOnly: true, role: "admin" });
       // Only the Back navigation is left; no decision button.
       expect(screen.queryAllByRole("button").map((b) => b.textContent)).toEqual(["Approvals"]);
     });

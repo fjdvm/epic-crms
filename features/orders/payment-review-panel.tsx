@@ -70,7 +70,7 @@ function ReassignDialog({ id, review }: { id: number; review: PaymentReview }) {
 /**
  * The Manager payment review on an Order with 3 rejected proofs. Opening the Order never claims it: only
  * "Claim review" does. Claiming and reassigning wait for the server (a Manager decision, never optimistic).
- * Only a Manager sees the buttons; Staff, Admin and the CEO see the state. Nothing here cancels the Order.
+ * Only a Manager sees the buttons; Staff, Admin see the state. Nothing here cancels the Order.
  */
 export function PaymentReviewPanel({ id, review, role }: { id: number; review: PaymentReview; role: ShopRole | null }) {
   const manager = role === "manager";

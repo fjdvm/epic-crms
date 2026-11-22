@@ -51,7 +51,7 @@ describe("changeSeniorPwdDiscount", () => {
 
   it.each(["Staff/Employee", "Super Admin"])("refuses %s on the server and writes nothing", async (role) => {
     const r = await changeSeniorPwdDiscount(db.sql, audit, { id: "x", name: "X", role }, input());
-    expect(r).toEqual({ ok: false, reason: "Only a Manager or the CEO can change the Senior/PWD discount." });
+    expect(r).toEqual({ ok: false, reason: "Only a Manager can change the Senior/PWD discount." });
     expect((await loadSeniorPwdDiscount(db.sql))?.limitInCentavos).toBe(12500);
     expect(audit).not.toHaveBeenCalled();
   });

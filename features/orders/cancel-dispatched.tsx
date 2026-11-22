@@ -136,7 +136,7 @@ function Settle({ id, state, paymentMethod, total }: { id: number; state: Cancel
     >
       <fieldset className="space-y-2">
         <legend className="text-[13px] font-medium text-foreground">What happens to the stock?</legend>
-        {([["restock", "Back to stock", "The box came back and is safe to sell."], ["write-off", "Write off", "The goods cannot be sold. Above the Approval limit the CEO also approves."]] as const).map(([value, title, text]) => (
+        {([["restock", "Back to stock", "The box came back and is safe to sell."], ["write-off", "Write off", "The goods cannot be sold."]] as const).map(([value, title, text]) => (
           <label key={value} className={`flex items-start gap-2.5 rounded-[10px] border px-3 py-2.5 ${outcome === value ? "border-[#8b5cf6] bg-[#f5f0ff]" : "border-[#e4e4e7]"}`}>
             <input type="radio" name={`outcome-${id}`} checked={outcome === value} onChange={() => setOutcome(value)} className="mt-1" />
             <span><span className="block text-sm font-medium">{title}</span><span className="block text-xs text-[#71717a]">{text}</span></span>
@@ -161,7 +161,7 @@ export function CancelDispatched({ id, total, paymentMethod, role, state }: Prop
   const can = manager || role === "staff";
   if (state?.status === "waiting-manager" || state?.status === "waiting-ceo") {
     if (state.status === "waiting-manager" && manager) return <Decide id={id} state={state} paymentMethod={paymentMethod} total={total} />;
-    return <span className={PILL}>{state.status === "waiting-ceo" ? "Waiting for the CEO" : "Waiting for approval"}</span>;
+    return <span className={PILL}>{state.status === "waiting-ceo" ? "Waiting for final approval" : "Waiting for approval"}</span>;
   }
   if (state?.status === "approved") {
     return manager ? <Settle id={id} state={state} paymentMethod={paymentMethod} total={total} /> : <span className={PILL}>Approved, a Manager settles it</span>;

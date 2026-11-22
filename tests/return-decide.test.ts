@@ -119,7 +119,7 @@ it("Staff check a Return and ask a Manager to decide it; the window comes from t
     await signIn(actor);
     expect(await requestReturnDecision(late, { photoSupportsReason: true, note: "x" })).toMatchObject({ ok: false });
   }
-  for (const actor of ["ada", "owner"]) expect(await (await signIn(actor), decideReturn(late, { outcome: "reject", reason: "No" }))).toMatchObject({ ok: false });
+  for (const actor of ["ada"]) expect(await (await signIn(actor), decideReturn(late, { outcome: "reject", reason: "No" }))).toMatchObject({ ok: false });
 });
 
 it("the Manager picks the outcome on the Return; the request closes under their name and Staff are told", async () => {
@@ -170,14 +170,12 @@ it("refuses a replacement when the IMS is short of an item, and leaves stock it 
   expect(await decideReturn(id, { outcome: "replacement", goodsRequired: false })).toMatchObject({ ok: true });
 });
 
-it("over the Approval limit the Manager decides the refund, then asks the CEO before any proof or money", async () => {
+it("over the Approval limit the CEO decides the refund as a Manager, with no extra CEO step", async () => {
   const id = await requested({ amount: 600000 });
-  await signIn("mario");
-  expect(await decideReturn(id, { outcome: "refund", goodsRequired: false })).toMatchObject({ ok: true });
-  const asked = await markReturnRefunded(id, undefined, { reason: "Whole batch spoiled" });
-  expect(asked).toMatchObject({ ok: false, reason: "Waiting for approval", status: "waiting-ceo" });
-  expect(storage.files.size).toBe(0);
-  expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved", finalResolution: "refund" } });
   await signIn("owner");
-  expect(await decideApproval("Returns", (asked as { approvalId: string }).approvalId, "approve")).toMatchObject({ ok: true, request: { status: "approved", ceo_name: "owner Person" } });
+  expect(await decideReturn(id, { outcome: "refund", goodsRequired: false })).toMatchObject({ ok: true });
+  const next = await markReturnRefunded(id, undefined, { reason: "Whole batch spoiled" });
+  expect(next).not.toMatchObject({ reason: "Waiting for approval" });
+  expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved", finalResolution: "refund" } });
+  expect(await db.sql`select id from crms.approval_requests where target_id = ${String(id)} and action = 'return.refund'`).toHaveLength(0);
 });

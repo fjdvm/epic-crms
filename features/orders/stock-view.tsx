@@ -113,7 +113,7 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
   );
 }
 
-/** `canEdit` is false for the read-only Roles (Admin, CEO), who see no edit button. */
+/** `canEdit` is false for the read-only Roles (Admin), who see no edit button. */
 export function StockView({ page, canEdit = false }: { page: StockPage; canEdit?: boolean }) {
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");

@@ -92,7 +92,7 @@ it("records the reason and Staff identity, emits an Audit Event and never overwr
 });
 it("rejects read-only roles, invalid reasons, customer messages and answers from another Ticket", async () => {
   const deps = { tickets: db.sql, crms: db.sql, audit: vi.fn() };
-  for (const role of ["Admin", "CEO", "Unknown"])
+  for (const role of ["Admin", "Unknown"])
     expect((await flagAnswer(deps, { ...staff, role }, 1, 2, "wrong")).ok).toBe(
       false,
     );

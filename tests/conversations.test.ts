@@ -64,7 +64,6 @@ describe("who may open which tab", () => {
     expect(scopesFor("staff")).toEqual(["mine", "unclaimed"]);
     expect(scopesFor("manager")).toEqual(["mine", "unclaimed", "all"]);
     expect(scopesFor("admin")).toEqual(["unclaimed", "all"]);
-    expect(scopesFor("ceo")).toEqual(["unclaimed", "all"]);
     expect(scopesFor(null)).toEqual(["unclaimed"]);
   });
 

@@ -15,7 +15,7 @@ export const CHAT_SCOPES: ChatScope[] = ["mine", "unclaimed", "all"];
 
 /**
  * The tabs a Role may open: Mine for Staff and Managers, Unclaimed for everyone with the Tickets Module, All
- * (Resolved and Closed too) for Managers, Admin and CEO. The first one is the Role's default tab.
+ * (Resolved and Closed too) for Managers (CEO and VP included) and Admin. The first one is the Role's default tab.
  */
 export function scopesFor(role: ShopRole | null): ChatScope[] {
   switch (role) {
@@ -24,7 +24,6 @@ export function scopesFor(role: ShopRole | null): ChatScope[] {
     case "manager":
       return ["mine", "unclaimed", "all"];
     case "admin":
-    case "ceo":
       return ["unclaimed", "all"];
     default:
       return ["unclaimed"];

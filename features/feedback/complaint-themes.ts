@@ -129,7 +129,7 @@ function made(row: Row): ComplaintThemes {
 
 /**
  * Managers open the page for a period: made once when the period has none, remade only when `refresh` is true.
- * Admin and CEO read the kept result and never cause a model call; Staff and unknown Roles get nothing.
+ * Admin read the kept result and never cause a model call; Staff and unknown Roles get nothing.
  */
 export async function openComplaintThemes(
   deps: { tickets: postgres.Sql; crms: postgres.Sql },
@@ -138,7 +138,7 @@ export async function openComplaintThemes(
   options: { refresh?: boolean; models?: () => StructuredModel[] } = {},
 ): Promise<ThemesResult> {
   const role = shopRole(viewer.role);
-  if (role !== "manager" && role !== "admin" && role !== "ceo") return { themes: null, unavailable: true, refused: "read-only" };
+  if (role !== "manager" && role !== "admin") return { themes: null, unavailable: true, refused: "read-only" };
   let from = validDay(period.from), to = validDay(period.to);
   if (from && to && from > to) [from, to] = [to, from];
   try {

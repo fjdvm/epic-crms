@@ -18,12 +18,6 @@ export type ApprovalNotice = (input: { request: ApprovalRequest; audience: "mana
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const failure = (reason: string): ApprovalResult => ({ ok: false, reason });
 
-/** Money is integer centavos; a refund/write-off alone can enter the CEO step. */
-function needsCEO(request: Pick<ApprovalRequest, "action" | "amount_in_centavos" | "limit_in_centavos" | "payload">): boolean {
-  return (["return.refund", "write-off"].includes(request.action) || request.action === "order.cancel-settle" && request.payload.moneyDecision === true) &&
-    BigInt(request.amount_in_centavos) > BigInt(request.limit_in_centavos);
-}
-
 export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: ApprovalNotice, defer: (work: () => Promise<void>) => void | Promise<void> = work => work()) {
   async function event(tx: postgres.TransactionSql, staff: Staff, action: string, requestId: string | null, details: Record<string, unknown> = {}) {
     const id = randomUUID();
@@ -54,7 +48,7 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
     }
   }
   async function setLimit(staff: Staff, amount: number) {
-    if (!canManage(staff)) return failure("Only a Manager or the CEO can change the Approval limit.");
+    if (!canManage(staff)) return failure("Only a Manager can change the Approval limit.");
     if (!Number.isSafeInteger(amount) || amount < 0) return failure("Enter a nonnegative whole number of centavos.");
     const e = await sql.begin(async tx => {
       const [previous] = await tx`select limit_in_centavos from crms.approval_settings where singleton for update`;
@@ -77,19 +71,20 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
       const [request] = await tx<ApprovalRequest[]>`select * from crms.approval_requests where id = ${id} for update`;
       if (!request || request.module !== module) return { error: failure("Approval request was not found.") };
       const role = shopRole(staff.role);
+      // CEO and VP are Manager-level, so one Manager-level decision is final. A request left
+      // waiting for the old CEO step is finished by any Manager-level person.
       const manager = request.status === "waiting-manager" && role === "manager";
-      const ceo = request.status === "waiting-ceo" && role === "ceo" && needsCEO(request);
+      const ceo = request.status === "waiting-ceo" && role === "manager";
       if (!manager && !ceo) return { error: failure("Your Role cannot decide this approval step.") };
       if (request.action === "return.decide") return { error: failure("Open the Return and pick its outcome there.") };
       if (request.action === "order.cancel-after-dispatch" && decision === "decline" &&
           (typeof reason !== "string" || !reason.trim() || reason.length > 1000 || /[<>\p{C}\u034f\u17b4\u17b5\u3164\uffa0]/u.test(reason))) return { error: failure("Enter a single plain-text decline reason of up to 1,000 characters.") };
       if (decision === "decline" && !reason.trim()) return { error: failure("Enter a reason for declining.") };
-      const status = decision === "decline" ? "declined" : manager && needsCEO(request) ? "waiting-ceo" : "approved";
+      const status = decision === "decline" ? "declined" : "approved";
       const [updated] = manager
         ? await tx<ApprovalRequest[]>`update crms.approval_requests set status = ${status}, manager_id = ${staff.id}, manager_name = ${staff.name}, manager_at = now(), decline_reason = ${decision === "decline" ? reason.trim() : null} where id = ${id} returning *`
         : await tx<ApprovalRequest[]>`update crms.approval_requests set status = ${status}, ceo_id = ${staff.id}, ceo_name = ${staff.name}, ceo_at = now(), decline_reason = ${decision === "decline" ? reason.trim() : null} where id = ${id} returning *`;
       await queueNotice(tx, updated, "requester", `${staff.name} ${decision === "approve" ? "approved" : "declined"} your request: ${updated.status}.`);
-      if (updated.status === "waiting-ceo") await queueNotice(tx, updated, "ceo", "Waiting for your final approval.");
       return { request: updated, event: await event(tx, staff, decision === "approve" ? "approval.granted" : "approval.declined", id, { step: manager ? "manager" : "ceo", status, reason }) };
     });
     if (result.error) return result.error;
@@ -120,10 +115,9 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
       return result;
     }
 
+    if (role === "manager") return execute();
     const reason = options.reason?.trim();
     const [settings] = await sql`select limit_in_centavos from crms.approval_settings where singleton`;
-    const large = needsCEO({ action: input.action, payload: input.payload, amount_in_centavos: String(input.amountInCentavos), limit_in_centavos: String(settings.limit_in_centavos) });
-    if (role === "manager" && !large) return execute();
     if (!reason) return failure("Request approval with a reason.");
     const result = await sql.begin(async tx => {
       const id = randomUUID();
@@ -131,11 +125,10 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
         (id, module, action, target_id, payload, amount_in_centavos, limit_in_centavos, reason, requester_id, requester_name,
          status, manager_id, manager_name, manager_at)
         values (${id}, ${input.module}, ${input.action}, ${input.targetId}, ${tx.json(input.payload as postgres.JSONValue)}, ${input.amountInCentavos}, ${settings.limit_in_centavos}, ${reason}, ${staff.id}, ${staff.name},
-          ${role === "manager" ? "waiting-ceo" : "waiting-manager"}, ${role === "manager" ? staff.id : null}, ${role === "manager" ? staff.name : null}, ${role === "manager" ? new Date() : null}) returning *`;
+          'waiting-manager', null, null, null) returning *`;
       const events = [await event(tx, staff, "approval.requested", id, { action: input.action, reason })];
       if (input.action === "write-off") events.push(await event(tx, staff, "writeoff.requested", id, { targetId: input.targetId, reason }));
-      if (role === "manager") events.push(await event(tx, staff, "approval.granted", id, { step: "manager" }));
-      await queueNotice(tx, request, role === "manager" ? "ceo" : "manager", `${staff.name} requested approval: ${reason}`);
+      await queueNotice(tx, request, "manager", `${staff.name} requested approval: ${reason}`);
       return { request, events };
     });
     await defer(async () => { for (const e of result.events) await publish(e); await deliverNotices(); });

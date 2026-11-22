@@ -261,7 +261,6 @@ function SaveProof({ id, number, context, canIncludeFee = false }: { id: number;
 function MarkRefunded({ id, number, approvalId, context, showRefunded }: { id: number; number: string; approvalId?: string; context?: RefundContext; showRefunded?: () => void }) {
   const saved = context?.saved ?? null;
   const [verified, setVerified] = useState(false);
-  const [note, setNote] = useState("");
   if (!saved) return null;
   const amount = formatPesos(saved.amountInCentavos);
   const blocked = saved.reading ? "The Proof reader is still checking the refund proof. Wait for its findings." : saved.unresolved.length > 0 ? `Correct or proceed past the flagged details on the Refund proof card first: ${saved.unresolved.join(", ")}.` : null;
@@ -278,7 +277,7 @@ function MarkRefunded({ id, number, approvalId, context, showRefunded }: { id: n
       run={() => {
         const form = new FormData();
         form.set(TRANSFER_VERIFIED, "true");
-        return approvalId || note.trim() ? markReturnRefunded(id, form, { approvalId, reason: note }) : markReturnRefunded(id, form);
+        return approvalId ? markReturnRefunded(id, form, { approvalId }) : markReturnRefunded(id, form);
       }}
       successMessage={`${number} marked refunded.`}
     >
@@ -294,12 +293,6 @@ function MarkRefunded({ id, number, approvalId, context, showRefunded }: { id: n
         <input type="checkbox" className="mt-0.5" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
         I verified the real transfer with the payment provider
       </label>
-      {!approvalId && (
-        <div className="space-y-1.5">
-          <Label htmlFor={`refund-note-${id}`} className="text-[13px] font-medium text-foreground">Note for the CEO, if the amount needs their final approval</Label>
-          <Textarea id={`refund-note-${id}`} value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
-      )}
     </OrderActionDialog>
   );
 }
@@ -401,30 +394,6 @@ function DecideReturn({ id, number, preferred, paymentMethod, stock, request }: 
   );
 }
 
-/** Above the Approval limit the CEO gives final approval before any money is sent, so this asks first and needs no proof. */
-function AskCeo({ id, number, amount }: { id: number; number: string; amount: number }) {
-  const [note, setNote] = useState("");
-  return (
-    <OrderActionDialog
-      trigger="Ask the CEO for final approval"
-      title={`Final approval for ${number}`}
-      description={`This refund is ${formatPesos(amount)}, over the Approval limit. Send nothing to the Customer until the CEO approves.`}
-      confirm="Send to the CEO" busy="Sending…"
-      disabled={!note.trim()}
-      run={async () => {
-        const result = await markReturnRefunded(id, undefined, { reason: note });
-        return !result.ok && result.reason === "Waiting for approval" ? { ok: true as const } : result;
-      }}
-      successMessage="Sent to the CEO. Refund once they approve."
-    >
-      <div className="space-y-1.5">
-        <Label htmlFor={`ceo-note-${id}`} className="text-[13px] font-medium text-foreground">Note for the CEO <span className="text-[#dc2626]">*</span></Label>
-        <Textarea id={`ceo-note-${id}`} value={note} onChange={(e) => setNote(e.target.value)} />
-      </div>
-    </OrderActionDialog>
-  );
-}
-
 /** The Return's next steps, each behind a confirm dialog; refusals and uncertain answers surface as an error toast. */
 export function ReturnActions({
   id,
@@ -438,7 +407,6 @@ export function ReturnActions({
   refund,
   inWindow = true,
   stock,
-  needsCeo = false,
   reasonLabel = "",
 }: {
   id: number;
@@ -456,16 +424,14 @@ export function ReturnActions({
   inWindow?: boolean;
   /** Whether a replacement can be sent from stock; undefined when not read. */
   stock?: ReplacementStock;
-  /** The refund is over the Approval limit, so the CEO approves before any money is sent. */
-  needsCeo?: boolean;
   /** The Customer's reason, as Staff read it. */
   reasonLabel?: string;
 }) {
   const { show } = useShownStatus(status);
-  // Only a refund whose approval is already decided shows at once. A Manager's or the CEO's own decision waits for the server.
+  // Only a refund whose approval is already decided shows at once. A Manager's own decision waits for the server.
   const showRefunded = () => show("refunded");
   const steps = availableSteps(status, goodsRequired, finalResolution);
-  if (role === "admin" || role === "ceo" || role === null) return <p className="text-sm text-[#71717a]">View only</p>;
+  if (role === "admin" || role === null) return <p className="text-sm text-[#71717a]">View only</p>;
   const waiting = requests.find((r) => WAITING.includes(r.status));
   const ready = (action: string) => requests.find((r) => r.status === "approved" && r.action === action)?.id;
   const gated = steps.filter((s) => s !== "receive");
@@ -507,13 +473,11 @@ export function ReturnActions({
     );
   }
 
-  const ceoApproved = ready("return.refund");
-  const ceoWaiting = requests.find((r) => r.action === "return.refund" && WAITING.includes(r.status));
-  const askCeo = steps.includes("refund") && needsCeo && !ceoApproved;
+  // An approved refund request (from Staff, or left from the old CEO step) is carried out with its approval.
+  const refundApproved = ready("return.refund");
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {decideRequest && <span className="rounded-full bg-[#fdf1d8] px-3 py-1 text-xs font-medium text-[#8a5a00]">{decideRequest.requesterName} asked you to decide</span>}
-      {askCeo && ceoWaiting && <span className="rounded-full bg-[#fdf1d8] px-3 py-1 text-xs font-medium text-[#8a5a00]">{waitingLabel(ceoWaiting.status)}</span>}
       {status === "requested" && <DecideReturn id={id} number={number} preferred={preferredResolution} paymentMethod={refund?.paymentMethod} stock={stock} request={decideRequest} />}
       {steps.includes("receive") && (
         <OrderActionDialog
@@ -526,8 +490,7 @@ export function ReturnActions({
           successMessage={`${number} marked goods received.`}
         />
       )}
-      {askCeo && !ceoWaiting && <AskCeo id={id} number={number} amount={refund?.amount ?? 0} />}
-      {steps.includes("refund") && !askCeo && <RefundSteps id={id} number={number} approvalId={ceoApproved} context={refund} canIncludeFee showRefunded={ceoApproved ? showRefunded : undefined} />}
+      {steps.includes("refund") && <RefundSteps id={id} number={number} approvalId={refundApproved} context={refund} canIncludeFee showRefunded={refundApproved ? showRefunded : undefined} />}
       {steps.includes("replace") && (
         <OrderActionDialog
           trigger="Send replacement"

@@ -57,7 +57,7 @@ export async function keptFlagExplanation(crms: postgres.Sql, returnId: number, 
 }
 
 /**
- * "Explain this flag". Only a Manager can cause the call; Staff, Admin and CEO are refused before anything is read or sent.
+ * "Explain this flag". Only a Manager can cause the call; Staff and Admin are refused before anything is read or sent.
  * The explanation is kept with what was sent. A failure or a quoted number not in the record keeps nothing, and the flag stays as it was.
  */
 export async function explainReturnFlag(

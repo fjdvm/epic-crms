@@ -12,4 +12,4 @@ role grant: `crms.ticket_ai_suggestions` is CREOMS's own table.
   (`ticket.ai_category_accepted`, `ticket.ai_priority_changed`, ...) with the Portal user as actor.
 - **Failure is harmless.** Groq is tried, then Gemini (shared `configuredCompleters` in the feedback AI plumbing, #323).
   If none answers, or no key is set, the card says so and Category and Priority stay editable by hand.
-- Staff and Managers work; Admin and CEO see the card read-only. Not sent to the Customer, ever.
+- Staff and Managers work; Admin see the card read-only. Not sent to the Customer, ever.

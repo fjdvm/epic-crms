@@ -73,14 +73,14 @@ export default async function TicketsPage({
   );
 }
 
-/** Only a CREOMS Manager is offered "Reassign all"; Staff, Admin and CEO see no button. */
+/** Only a CREOMS Manager is offered "Reassign all"; Staff and Admin see no button. */
 async function ReassignAllEntry() {
   const staff = await requireModule(TICKETS_MODULE);
 
   return shopRole(staff.role) === "manager" ? <ReassignAllDialog /> : null;
 }
 
-/** Manager, Admin and CEO who hold the Reports Module are offered the Ticket reports; Staff see no link. */
+/** Manager and Admin who hold the Reports Module are offered the Ticket reports; Staff see no link. */
 async function ReportsEntry() {
   const staff = await requireModule(TICKETS_MODULE);
   if (!mayReadTicketReport(staff.role) || !(await heldModules([REPORTS_MODULE])).includes(REPORTS_MODULE)) return null;

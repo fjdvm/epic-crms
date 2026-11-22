@@ -191,7 +191,7 @@ describe("the Conversations page as designed", () => {
   });
 });
 
-describe("the read-only chat for Admin and CEO", () => {
+describe("the read-only chat for Admin", () => {
   it("shows the Messages but no reply box, notes, claim buttons or draft panel", () => {
     render(
       <ConversationsView
@@ -204,7 +204,7 @@ describe("the read-only chat for Admin and CEO", () => {
     const chat = screen.getByRole("region", { name: "Chat" });
 
     expect(within(chat).getByText("One of the halaya pouches was leaking.")).toBeTruthy();
-    expect(within(chat).getByText(/Read-only · Admin and CEO & VP can read chats but never reply or run AI/)).toBeTruthy();
+    expect(within(chat).getByText(/Read-only · Admin can read chats but never reply or run AI/)).toBeTruthy();
     expect(within(chat).getByRole("link", { name: "Open ticket" })).toBeTruthy();
     expect(within(chat).queryByRole("textbox")).toBeNull();
     expect(within(chat).queryByRole("tab", { name: "Internal note" })).toBeNull();

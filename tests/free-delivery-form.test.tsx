@@ -40,11 +40,11 @@ describe("FreeDeliveryForm", () => {
   });
 
   it("says why when the server refuses", async () => {
-    vi.mocked(setFreeDeliveryThreshold).mockResolvedValue({ ok: false, reason: "Only a Manager or the CEO can change the Free delivery threshold." });
+    vi.mocked(setFreeDeliveryThreshold).mockResolvedValue({ ok: false, reason: "Only a Manager can change the Free delivery threshold." });
     render(<FreeDeliveryForm currentInCentavos={250000} />);
     type("3000");
     fireEvent.click(screen.getByRole("button", { name: "Save threshold" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Save threshold" }).at(-1)!);
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Only a Manager or the CEO can change the Free delivery threshold."));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Only a Manager can change the Free delivery threshold."));
   });
 });
