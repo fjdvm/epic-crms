@@ -31,6 +31,11 @@ export function OrderLiveProvider({ status, children }: { status: string; childr
   return <LiveStatusContext.Provider value={{ status: live, move }}>{children}</LiveStatusContext.Provider>;
 }
 
+/** Shows its children only while the live status is `status`, so they leave the moment a move is confirmed and return on a rollback. */
+export function LiveWhen({ status, children }: { status: string; children: React.ReactNode }) {
+  return useLiveStatus().status === status ? children : null;
+}
+
 export function LiveStatus() {
   return <StatusPill status={useLiveStatus().status} />;
 }
