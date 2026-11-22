@@ -12,7 +12,7 @@ import { ProofAccountView, ProofBadge, proofOutcome } from "./proof-account";
 import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import { hasPaymentAnomaly } from "./payment-anomaly";
 import { ProofReadFindings } from "./proof-read-view";
-import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
+import { CELL, COLUMNS, GRID, HEAD, STEPS, TABS } from "./payments-layout";
 import type { ShopRole } from "@/lib/portal/roles";
 import { ApproveAnywayDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
@@ -217,7 +217,7 @@ function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRo
 
   return (
     <div data-payment-row data-anomaly={anomaly || undefined} className="mb-2 rounded-xl border border-[#e6e1ee] bg-white px-2">
-      <div className="flex items-center py-2.5">
+      <div className={`${GRID} items-center py-2.5`}>
         {cells.map((cell, i) => (
           <div key={i} className={`${CELL} ${COLUMNS[i].className}`}>
             {cell}
@@ -312,23 +312,27 @@ export function PaymentsView({ rows: served, now, role = "staff", approvals = {}
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[#e6e1ee] bg-white p-5">
+        {/* No padding on the scroller, so the sticky header sits flush at its top edge; the content carries the padding. */}
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[#e6e1ee] bg-white">
           {tab === "refunds" ? (
-            <RefundsTable refunds={refunds} canOpenReturns={canOpenReturns} />
+            <div className="p-5"><RefundsTable refunds={refunds} canOpenReturns={canOpenReturns} /></div>
           ) : shown.length === 0 ? (
-            <p className="p-3 text-center text-sm text-[#6e6680]">{empty}</p>
+            <p className="p-8 text-center text-sm text-[#6e6680]">{empty}</p>
           ) : (
-            <div className="min-w-[860px]">
-              <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white px-2 pt-1 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]">
+            <div className="min-w-[860px] pb-5">
+              {/* Lined up with the row cards: the page padding, the card border and the card's own inset. */}
+              <div className={`${GRID} sticky top-0 z-30 mb-2 items-center border-b border-[#efebf4] bg-white px-[29px] pt-6 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]`}>
                 {COLUMNS.map((col, i) => (
                   <div key={i} className={`${HEAD} ${col.className}`}>
                     {col.header}
                   </div>
                 ))}
               </div>
-              {shown.map((order) => (
-                <Row key={order.id} order={order} tab={tab as PaymentTab} now={now} role={role} approval={approvals[order.id]} onMarkPaid={() => markPaid(order.id)} />
-              ))}
+              <div className="px-5">
+                {shown.map((order) => (
+                  <Row key={order.id} order={order} tab={tab as PaymentTab} now={now} role={role} approval={approvals[order.id]} onMarkPaid={() => markPaid(order.id)} />
+                ))}
+              </div>
             </div>
           )}
         </div>

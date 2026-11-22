@@ -1,6 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { CELL, COLUMNS, HEAD, STEPS, TABS } from "@/features/orders/payments-layout";
+import { CELL, COLUMNS, GRID, HEAD, STEPS, TABS } from "@/features/orders/payments-layout";
 import { PAYMENTS_WINDOW_DAYS } from "@/features/orders/payments";
 
 const STATS = ["Receipts to check", `Paid (${PAYMENTS_WINDOW_DAYS} days)`, "COD to collect", `Rejected (${PAYMENTS_WINDOW_DAYS} days)`];
@@ -46,9 +46,9 @@ export default function Loading() {
         </div>
 
         <div className="flex min-h-0 flex-1 gap-4">
-          <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-[#e6e1ee] bg-white p-5">
-            <div className="min-w-[860px]">
-              <div className="flex items-center border-b border-[#efebf4] bg-white pt-1 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-[#e6e1ee] bg-white">
+            <div className="min-w-[860px] px-5 pb-5">
+              <div className={cn(GRID, "items-center border-b border-[#efebf4] bg-white pt-6 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]")}>
                 {COLUMNS.map((col) => (
                   <div key={col.header || "action"} className={cn(HEAD, col.className)}>
                     {col.header}
@@ -56,7 +56,7 @@ export default function Loading() {
                 ))}
               </div>
               {Array.from({ length: 8 }, (_, i) => (
-                <div key={i} className="flex items-center border-b border-[#efebf4] py-2.5">
+                <div key={i} className={cn(GRID, "items-center border-b border-[#efebf4] py-2.5")}>
                   {COLUMNS.map((col) => (
                     <div key={col.header || "action"} className={cn(CELL, col.className)}>
                       {col.header && <Skeleton className="h-4 w-3/4" />}
