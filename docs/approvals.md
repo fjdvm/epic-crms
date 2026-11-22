@@ -52,10 +52,10 @@ mandatory. There is no autonomous suggestion execution path.
 
 ## The Approvals page, by type
 
-`/approvals` lists everything waiting for a person, grouped by type: ID checks, Refunds, Payments (approve anyway), Cancellations, Write-offs and Returns
+`/approvals` lists everything waiting for a person, grouped by type: ID checks, Refunds, Payments (approve anyway), Cancellations, Write-offs, Returns and Shop prices
 (`kindOf` in `features/approvals/view.ts`). Status tabs (Waiting, Approved, Declined, All) combine with a type filter that shows a count for each type;
 `?type=id-check` opens on one type. `loadApprovalRows` (`features/approvals/overview.ts`) reads the requests of every Module the person holds (Returns,
-Payments, Fulfilment) plus the Senior/PWD ID checks; one unreadable Module shows a notice and never hides the rest. Each row links to its Return, its Order
+Payments, Fulfilment, Orders) plus the Senior/PWD ID checks; one unreadable Module shows a notice and never hides the rest. Each row links to its Return, its Order
 or its ID check's review page, and Approve/Decline use the row's own Module. Staff see the ID checks (and check them, but a Manager approves or declines; the row shows how many things the ID reader flagged) and the requests they raised; a Manager-level person (CEO and VP included) sees and decides
 all; Admin views. Money decisions are never optimistic.
 
@@ -63,3 +63,12 @@ all; Admin views. Money decisions are never optimistic.
 
 A field that holds a number uses `NumericInput` (`components/ui/numeric-input.tsx`, mask in `lib/numeric-mask.ts`): `peso` takes digits, commas and one dot
 with two decimals; `whole` takes digits only (hours, counts, account numbers). Letters never get in, typed or pasted. The server parsers stay the authority.
+
+## Shop prices
+
+`setProductPrice(productId, price, reason?)` (`features/orders/product-content-actions.ts`) runs through `approvals().run` as
+`product.price` under the Orders Module, with the price in centavos as the amount. A Manager-level person sets it at once; Staff
+send it with a reason. When a Manager approves, `features/approvals/server.ts` sets the price under that Manager's name
+(`applyProductPrice`), marks the request completed and nudges the storefront. The price lives only in `crms.product_content`
+(migration `docs/db/crms-product-content-name-price.sql`, `scripts/deploy/migrate-product-content-name-price.mjs`); the IMS
+price is never changed.

@@ -167,8 +167,8 @@ describe("Approvals by type", () => {
   const payment = request({ id: "p1", action: "payment.approve-anyway", module: "Payments", targetId: "1046", amountInCentavos: 0 });
 
   it("sorts each action into its type", () => {
-    expect(["return.refund", "payment.approve-anyway", "order.cancel-after-dispatch", "order.cancel-settle", "write-off", "return.replace", "id-check"].map(a => kindOf(a as never)))
-      .toEqual(["refund", "payment", "cancellation", "cancellation", "write-off", "return", "id-check"]);
+    expect(["return.refund", "payment.approve-anyway", "order.cancel-after-dispatch", "order.cancel-settle", "write-off", "return.replace", "id-check", "product.price"].map(a => kindOf(a as never)))
+      .toEqual(["refund", "payment", "cancellation", "cancellation", "write-off", "return", "id-check", "price"]);
   });
 
   it("groups rows under a heading per type, with counts on the type filter", () => {

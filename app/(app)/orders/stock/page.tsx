@@ -6,7 +6,7 @@ import { readPublishedContent, stockMirror } from "@/features/orders/published-c
 import { loadStockCopy } from "@/features/orders/stock";
 import { StockHeader, StockSkeleton } from "@/features/orders/stock-view";
 import { ORDERS_MODULE } from "@/lib/portal/config";
-import { canWork } from "@/lib/portal/roles";
+import { canManage, canWork } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
@@ -37,5 +37,6 @@ async function StockData({ searchParams }: { searchParams: Promise<Record<string
       </Alert>
     );
   }
-  return <LiveStock page={result.page} canEdit={canWork(staff)} initialQuery={initialQuery} />;
+  // The shop price is money: Manager-level Roles (CEO and VP included) set it; Staff ask for approval.
+  return <LiveStock page={result.page} canEdit={canWork(staff)} canPrice={canManage(staff)} initialQuery={initialQuery} />;
 }

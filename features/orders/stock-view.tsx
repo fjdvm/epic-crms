@@ -83,7 +83,9 @@ function ProductImage({ row }: { row: StockRow }) {
 
 const peso = (value: number | null) => (value === null ? "–" : `₱${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
-const IMS_URL = process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/";
+/** "Open IMS" goes straight to the IMS Finished Products page, where products and their stock are changed. */
+export const IMS_FINISHED_PRODUCTS_URL = new URL("inventory/finished-products",
+  (process.env.NEXT_PUBLIC_IMS_URL ?? "https://br-sims.vercel.app/").replace(/\/?$/, "/")).toString();
 
 /** Shared by the page and its loading state, so the Open IMS button never pops in after load. */
 export function StockHeader() {
@@ -94,9 +96,9 @@ export function StockHeader() {
           <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Stock</h1>
           <Pill className="bg-[#e1f5ee] text-[#0f6e56]"><Link2 className="mr-1 inline size-3" aria-hidden />From IMS</Pill>
         </div>
-        <p className="text-sm text-[#6e6680]">What the online shop can sell. CREOMS keeps its own copy of the IMS: name, image, stock and price. Reserved is what open Orders hold. Staff add the shop image and description.</p>
+        <p className="text-sm text-[#6e6680]">What the online shop can sell. Products and stock come live from the IMS. CREOMS sets the shop name, image and description, and Managers set the price; these stay in CREOMS. Reserved is what open Orders hold.</p>
       </div>
-      <a href={IMS_URL} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
+      <a href={IMS_FINISHED_PRODUCTS_URL} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
         <Link2 className="size-4" aria-hidden />
         Open IMS
       </a>
@@ -114,8 +116,8 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
   );
 }
 
-/** `canEdit` is false for the read-only Roles (Admin), who see no edit button. */
-export function StockView({ page, canEdit = false, initialQuery = "" }: { page: StockPage; canEdit?: boolean; /** The search the page opened with, e.g. from an Order line. */ initialQuery?: string }) {
+/** `canEdit` is false for the read-only Roles (Admin), who see no edit button; `canPrice` is for Manager-level Roles only. */
+export function StockView({ page, canEdit = false, canPrice = false, initialQuery = "" }: { page: StockPage; canEdit?: boolean; canPrice?: boolean; /** The search the page opened with, e.g. from an Order line. */ initialQuery?: string }) {
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState(initialQuery);
   const [opened, setOpened] = useState<StockRow | null>(null);
@@ -195,6 +197,7 @@ export function StockView({ page, canEdit = false, initialQuery = "" }: { page: 
               <ProductImage row={row} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{rowLabel(row)}</p>
+                {row.product !== row.imsName && <p data-ims-name className="truncate text-xs font-normal text-[#6e6680]">IMS: {row.imsName}</p>}
                 {row.marker?.kind === "not-on-shop" && <p data-missing className="truncate text-xs font-normal text-[#6e6680]">Missing: {row.marker.missing.join(", ")}</p>}
               </div>
               <div className={COLUMN.price}>{peso(row.price)}</div>
@@ -217,7 +220,7 @@ export function StockView({ page, canEdit = false, initialQuery = "" }: { page: 
         </div>
       </div>
       <HoldingOrders row={opened} onClose={() => setOpened(null)} />
-      <ProductEditDrawer row={page.rows.find((row) => row.sizeId === editingId) ?? null} onClose={() => setEditingId(null)} />
+      <ProductEditDrawer row={page.rows.find((row) => row.sizeId === editingId) ?? null} canPrice={canPrice} onClose={() => setEditingId(null)} />
     </div>
   );
 }

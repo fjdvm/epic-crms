@@ -11,12 +11,12 @@ import { OrderDetailView } from "@/features/orders/order-detail";
 import type { OrderDetail } from "@/features/orders/orders";
 import { type StockPage } from "@/features/orders/stock";
 import { PILL } from "@/features/tickets/pill";
-import { StockSkeleton, StockView } from "@/features/orders/stock-view";
+import { StockSkeleton, StockView, StockHeader } from "@/features/orders/stock-view";
 
 afterEach(cleanup);
 
 const row = (sizeId: number, product: string, available: number | null, shows: StockPage["rows"][number]["shows"]) =>
-  ({ sizeId, product, size: "250 g", image: null, price: 120.5, description: "", marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
+  ({ sizeId, product, imsName: product, size: "250 g", image: null, price: 120.5, description: "", marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
 const page: StockPage = {
   hasStock: true,
   summary: { sizes: 3, soldOut: 1, reserved: 6, low: 1 },
@@ -198,4 +198,11 @@ it("never says the IMS could not be reached while it shows the copy", () => {
   expect(screen.queryByText(/could not be reached/)).toBeNull();
   expect(screen.queryByRole("status", { name: "Stock copy" })).toBeNull();
   expect(screen.getByText("Only 7 left")).toBeTruthy();
+});
+
+it("opens the IMS Finished Products page from Open IMS, in a new tab", () => {
+  render(<StockHeader />);
+  const link = screen.getByRole("link", { name: "Open IMS" }) as HTMLAnchorElement;
+  expect(link.href).toBe("https://br-sims.vercel.app/inventory/finished-products");
+  expect(link.target).toBe("_blank");
 });
