@@ -106,7 +106,7 @@ export function ReturnDetailView({
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">{detail.number}</h1>
-              <ReturnStatusPill status={detail.status} goodsRequired={detail.goodsRequired} />
+              <ReturnStatusPill status={detail.status} goodsRequired={detail.goodsRequired} replacement={detail.replacement} />
             </div>
             <p className="text-sm leading-[normal] text-[#6e6680]">
               Requested {formatDate(detail.requestedAt)} · Order{" "}
@@ -304,6 +304,15 @@ export function ReturnDetailView({
                 <Link href={`/orders/${detail.replacementOrderId}`} className="font-medium text-[#5b2a86]">Order #{detail.replacementOrderId}</Link>
                 {" "}· ₱0, packed and dispatched like any Order. The shop pays the courier.
               </p>
+              {detail.replacement && (
+                <p className="text-sm text-[#6e6680]">
+                  {detail.replacement.status === "delivered" || detail.replacement.status === "received"
+                    ? "Delivered to the Customer, so this Return is Completed."
+                    : detail.replacement.status === "cancelled"
+                      ? "The Replacement Order was cancelled. A Manager decides what happens next."
+                      : `Now ${detail.replacement.status}. The Return is Completed once it is delivered.`}
+                </p>
+              )}
             </section>
           )}
 

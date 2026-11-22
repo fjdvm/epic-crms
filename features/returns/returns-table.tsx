@@ -3,7 +3,7 @@ import Link from "next/link";
 import { formatDate, formatPesos } from "@/features/customer-profiles/format";
 import { PILL, Pill } from "@/features/tickets/pill";
 
-import { returnLabel } from "./refund-record";
+import { returnDisplayLabel } from "./outcome";
 import type { ReturnRow, ReturnStatus } from "./returns";
 
 export const STATUS_PILLS: Record<ReturnStatus, string> = {
@@ -68,7 +68,7 @@ export function ReturnsTable({
                 </td>
               )}
               <td className={CELL}>
-                <Pill className={STATUS_PILLS[r.status]}>{returnLabel(r.status, r.goodsRequired)}</Pill>
+                <Pill className={STATUS_PILLS[r.status]}>{returnDisplayLabel(r.status, r.goodsRequired, r.replacement)}</Pill>
               </td>
               <td className={CELL}>{formatPesos(r.amount)}</td>
               <td className={CELL}>{formatDate(r.requestedAt)}</td>

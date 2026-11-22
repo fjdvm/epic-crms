@@ -80,7 +80,7 @@ describe("Returns on the Order detail page", () => {
     expect(within(rows[0]).getByText("Pending Review")).toBeTruthy();
     expect(within(rows[0]).getByText("₱219.00")).toBeTruthy();
     expect(within(rows[1]).getByText("RMA-16")).toBeTruthy();
-    expect(within(rows[1]).getByText("Refunded")).toBeTruthy();
+    expect(within(rows[1]).getByText("Completed · Refunded")).toBeTruthy();
     expect(within(rows[1]).getByText("₱50.00")).toBeTruthy();
   });
 
@@ -105,6 +105,37 @@ describe("Returns on the Order detail page", () => {
       expect(screen.queryByText("RMA-15")).toBeNull();
       view.unmount();
     }
+  });
+
+  it("shows a replacement as in progress until its Replacement Order is delivered", () => {
+    const { unmount } = render(<OrderDetailView order={detail()} modules={RETURNS} returns={[ret({ status: "replaced", replacement: { orderId: 90, status: "dispatched" } })]} />);
+    expect(screen.getByText("Replacement in progress")).toBeTruthy();
+    unmount();
+    render(<OrderDetailView order={detail()} modules={RETURNS} returns={[ret({ status: "replaced", replacement: { orderId: 90, status: "delivered" } })]} />);
+    expect(screen.getByText("Completed · Replaced")).toBeTruthy();
+  });
+
+  it("shows how the Returns ended to Staff without the Returns Module, without the Returns themselves", () => {
+    const summary = { replacementFor: null, returns: [
+      { id: 15, number: "RMA-15", label: "Completed · Refunded", detail: "₱1,200.00 by GCash", replacementOrderId: null },
+      { id: 16, number: "RMA-16", label: "Replacement in progress", detail: "Replacement Order #90", replacementOrderId: 90 },
+    ] };
+    render(<OrderDetailView order={detail()} modules={["Payments"]} returnSummary={summary} />);
+    const card = screen.getByRole("region", { name: "Return outcome" });
+    expect(within(card).getByText("RMA-15").closest("li")?.textContent).toBe("RMA-15 · Completed · Refunded · ₱1,200.00 by GCash");
+    expect(within(card).getByText("RMA-16").closest("li")?.textContent).toBe("RMA-16 · Replacement in progress · Replacement Order #90");
+    expect(screen.queryByRole("heading", { name: "Returns" })).toBeNull();
+    expect(within(card).queryByRole("link")).toBeNull();
+  });
+
+  it("says what a Replacement Order replaces, linking the Return only for Returns Staff", () => {
+    const summary = { returns: [], replacementFor: { orderId: 7, returnId: 15 } };
+    const { unmount } = render(<OrderDetailView order={detail()} modules={["Fulfilment"]} returnSummary={summary} />);
+    expect(screen.getByTestId("replacement-for").textContent).toBe("Replacement for Order #7 · RMA-15 · ₱0");
+    expect(screen.queryByRole("link", { name: "RMA-15" })).toBeNull();
+    unmount();
+    render(<OrderDetailView order={detail()} modules={RETURNS} returnSummary={summary} />);
+    expect(screen.getByRole("link", { name: "RMA-15" }).getAttribute("href")).toBe("/returns/15");
   });
 
   it("offers Returns Staff no Return action yet: the card only reads", () => {

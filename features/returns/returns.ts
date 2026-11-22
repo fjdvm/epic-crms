@@ -3,6 +3,7 @@ import { customerNameSql } from "@/lib/deleted-customer";
 import { failedEmails } from "@/features/orders/orders";
 import { RETURN_REFUNDED_EMAIL, type FailedEmail } from "@/features/orders/status-emails";
 import { DELIVERY_FEE_REASONS } from "./refund-rules";
+import { REPLACEMENT_COLUMNS, replacementRef, type ReplacementRef } from "./outcome";
 import { DESTINATION_LOCKED_STATUSES, maskDestination, readDestination, type MaskedRefundDestination } from "./refund-destination";
 
 export const RETURN_STATUSES = ["requested", "approved", "goods received", "refunded", "replaced", "declined", "cancelled"] as const;
@@ -37,6 +38,8 @@ export interface ReturnRow {
   /** Centavos, captured by the storefront when the Customer requests the Return. */
   amount: number;
   items: ReturnItem[];
+  /** The ₱0 Replacement Order this Return sent, and its status; decides whether a Replaced Return is Completed. */
+  replacement?: ReplacementRef | null;
 }
 export interface ReturnList {
   rows: ReturnRow[];
@@ -52,6 +55,7 @@ type Row = {
   id: number; order_id: number; customer_id: string; full_name: string; deleted: boolean;
   preferred_resolution: ReturnResolution; final_resolution: ReturnResolution | null;
   status: ReturnStatus; requested_at: Date; amount_in_centavos: number; goods_required: boolean | null;
+  replacement_order_id?: number | null; replacement_status?: string | null;
 };
 function returnRow(row: Row, items: ReturnItem[]): ReturnRow {
   return {
@@ -59,6 +63,7 @@ function returnRow(row: Row, items: ReturnItem[]): ReturnRow {
     customer: { id: row.customer_id, name: row.full_name, deleted: row.deleted }, status: row.status,
     preferredResolution: row.preferred_resolution, finalResolution: row.final_resolution, goodsRequired: row.goods_required ?? null,
     requestedAt: row.requested_at, amount: row.amount_in_centavos, items,
+    replacement: replacementRef({ replacement_order_id: row.replacement_order_id ?? null, replacement_status: row.replacement_status ?? null }),
   };
 }
 async function itemsFor(sql: postgres.Sql, ids: number[]): Promise<Map<number, ReturnItem[]>> {
@@ -102,7 +107,8 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const page = Math.min(totalPages, positiveInteger(query.page, 1));
     const rows = await sql<Row[]>`
-      select r.id, r.order_id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, r.status, r.preferred_resolution, r.final_resolution, r.goods_required, r.requested_at, r.amount_in_centavos
+      select r.id, r.order_id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, r.status, r.preferred_resolution, r.final_resolution, r.goods_required, r.requested_at, r.amount_in_centavos,
+        ${sql.unsafe(REPLACEMENT_COLUMNS("r"))}
       from public.order_returns r join public.orders o on o.id = r.order_id
       join public.customers c on c.id = o.customer_id
       where true ${scope}
@@ -214,7 +220,7 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       reason: ReturnDetail["reason"]; note: string; goods_required: boolean | null; decline_reason: string | null;
       refunded_at: Date | null; replaced_at: Date | null; video_file_id: string | null; refund_proof_file_id: string | null; order_status: string; payment_method: string;
       delivered_at: Date | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null;
-      window_extended_at: string | null; replacement_order_id: number | null;
+      window_extended_at: string | null; replacement_order_id: number | null; replacement_status: string | null;
       dest_method: string | null; dest_name: string | null; dest_number: string | null; dest_bank: string | null;
       paid_amount: string | null; paid_method: string | null; paid_on: string | null; paid_reference: string | null;
       fulfillment_method: string; order_delivery_fee: number | null; fee_refunded: string | null; fee_refunded_elsewhere: boolean;
@@ -229,7 +235,7 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,
       to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at,
       to_jsonb(o)->>'refund_window_extended_at' as window_extended_at,
-      (select ro.id from public.orders ro where to_jsonb(ro)->>'replacement_for_return_id' = r.id::text limit 1) as replacement_order_id,
+      ${sql.unsafe(REPLACEMENT_COLUMNS("r"))},
       ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted from public.order_returns r
       join public.orders o on o.id = r.order_id join public.customers c on c.id = o.customer_id
       where r.id = ${id}`;
