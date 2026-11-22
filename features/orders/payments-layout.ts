@@ -7,20 +7,22 @@ export const TABS: { key: PaymentTab; label: string; empty: string }[] = [
   { key: "rejected", label: "Rejected", empty: "No cancelled GCash Orders in the last 30 days." },
 ];
 
-/** The Figma queue's columns; they share the table width in proportion, so the rows fill the card. */
+/** The Figma queue's columns. Header and rows share one grid template, so they always line up. */
 export const COLUMNS: { header: string; className: string }[] = [
-  { header: "Receipt", className: "flex-[0_0_56px]" },
-  { header: "Order", className: "flex-[1_1_80px]" },
-  { header: "Customer", className: "min-w-0 flex-[2_1_130px]" },
-  { header: "Method", className: "min-w-0 flex-[1_1_110px]" },
-  { header: "Reference", className: "min-w-0 flex-[1_1_120px]" },
-  { header: "Amount due", className: "flex-[1_1_100px]" },
-  { header: "Uploaded", className: "flex-[1_1_90px]" },
-  { header: "", className: "flex-[0_0_84px] justify-end" },
+  { header: "Receipt", className: "" },
+  { header: "Order", className: "" },
+  { header: "Customer", className: "" },
+  { header: "Method", className: "" },
+  { header: "Reference", className: "" },
+  { header: "Amount due", className: "" },
+  { header: "Uploaded", className: "" },
+  { header: "", className: "justify-end" },
 ];
 
-export const HEAD = "flex items-start overflow-clip";
-export const CELL = "flex items-center overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
+export const GRID =
+  "grid grid-cols-[56px_minmax(80px,1fr)_minmax(130px,2fr)_minmax(110px,1fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(90px,1fr)_84px]";
+export const HEAD = "flex min-w-0 items-start overflow-clip";
+export const CELL = "flex min-w-0 items-center overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
 export const STEPS: { title: string; note: string }[] = [
   { title: "Customer pays", note: "GCash, outside the website" },

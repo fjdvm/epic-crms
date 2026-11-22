@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-profiles/format";
 
-import { CELL, COLUMNS, HEAD, STEPS, TABS } from "./payments-layout";
+import { CELL, COLUMNS, GRID, HEAD, STEPS, TABS } from "./payments-layout";
 import { AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { isViewableScreenshot } from "./payment-screenshot";
@@ -127,7 +127,7 @@ function Row({ order, tab, now, onMarkPaid }: { order: PaymentRow; tab: PaymentT
   ];
 
   return (
-    <div data-payment-row className="flex items-center border-b border-[#efebf4] py-2.5">
+    <div data-payment-row className={`${GRID} items-center border-b border-[#efebf4] py-2.5`}>
       {cells.map((cell, i) => (
         <div key={COLUMNS[i].header || "action"} className={`${CELL} ${COLUMNS[i].className}`}>
           {cell}
@@ -196,12 +196,12 @@ export function PaymentsView({ rows: served, now }: { rows: PaymentRow[]; now: D
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[#e6e1ee] bg-white p-5">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[#e6e1ee] bg-white">
           {shown.length === 0 ? (
-            <p className="p-3 text-center text-sm text-[#6e6680]">{empty}</p>
+            <p className="p-8 text-center text-sm text-[#6e6680]">{empty}</p>
           ) : (
-            <div className="min-w-[860px]">
-              <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white pt-1 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]">
+            <div className="min-w-[860px] px-5 pb-5">
+              <div className={`${GRID} sticky top-0 z-20 items-center border-b border-[#efebf4] bg-white pt-6 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]`}>
                 {COLUMNS.map((col) => (
                   <div key={col.header || "action"} className={`${HEAD} ${col.className}`}>
                     {col.header}
