@@ -46,6 +46,16 @@ describe("the Manager review list", () => {
     expect(within(rows[1] as HTMLElement).getByText("Not claimed")).toBeTruthy();
   });
 
+  it("opens the Order from anywhere on its row, with the row's own actions kept above it", () => {
+    render(<PaymentsView rows={[inReview(1, 5, false)]} now={NOW} role="manager" />);
+    openReviewTab();
+    const r = document.querySelector("[data-payment-row]") as HTMLElement;
+    const open = within(r).getByRole("link", { name: "#1" });
+    expect(open.getAttribute("href")).toBe("/orders/1");
+    expect(open.className).toContain("after:inset-0");
+    expect(within(r).getByRole("button", { name: "Claim review" }).closest(".z-10")).toBeTruthy();
+  });
+
   it("offers Claim review to a Manager only, and only while unclaimed", () => {
     const { unmount } = render(<PaymentsView rows={[inReview(1, 5, false), inReview(2, 6, false, { id: "m", name: "Marta" })]} now={NOW} role="manager" />);
     openReviewTab();

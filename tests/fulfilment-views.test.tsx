@@ -80,6 +80,15 @@ describe("the Fulfilment board", () => {
     }
   });
 
+  it("opens the Order from anywhere on its card; the failed-delivery link keeps its own target", () => {
+    board({ dispatched: [card({ id: 5, status: "dispatched", failedOpen: true })] });
+    tab("All");
+    const c = cardFor(5);
+    expect(c.className).toContain("relative");
+    expect(within(c).getByRole("link", { name: "#5" }).className).toContain("after:inset-0");
+    expect(within(c).getByRole("link", { name: /Failed delivery/ }).className).toContain("z-10");
+  });
+
   it("filters the same Orders by tab: Failed apart from Out for delivery, Completed apart from the rest", () => {
     board({
       ready: [card({ id: 1 })],

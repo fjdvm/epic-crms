@@ -59,6 +59,7 @@ describe("OrdersTab", () => {
     render(<OrdersTab orders={[order({})]} expanded={open} onToggle={() => {}} canOpenOrder />);
 
     expect(screen.getByRole("link", { name: "#1" }).getAttribute("href")).toBe("/orders/1");
+    expect(screen.getByRole("link", { name: "#1" }).className).toContain("after:inset-0");
     expect(screen.queryByRole("button", { name: "#1" })).toBeNull();
     expect(screen.queryByText(/1 Old St/)).toBeNull();
   });

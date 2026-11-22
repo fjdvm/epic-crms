@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 
+import { ABOVE_ROW_LINK, CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { orderAnchor } from "@/features/customer-profiles/orders";
 import { formatDate } from "@/features/customer-profiles/format";
 
@@ -58,31 +60,32 @@ export function FeedbackListView({ list, filters }: { list: FeedbackList; filter
       ) : (
         <ul className="min-h-0 flex-1 overflow-auto">
           {list.rows.map((row) => (
-            <li key={row.orderId} id={feedbackAnchor(row.orderId)} className="flex scroll-mt-3 flex-col gap-1 border-b border-[#efebf4] py-3">
+            <li key={row.orderId} id={feedbackAnchor(row.orderId)} className={cn(CLICKABLE_ROW, "flex scroll-mt-3 flex-col gap-1 border-b border-[#efebf4] py-3")}>
               <div className="flex items-center gap-[10px] text-[13px] font-medium leading-[normal] text-[#1f1a2e]">
                 <Stars rating={row.rating} />
                 <p className="min-w-0 flex-1">
                   {row.customerDeleted ? (
                     <span data-testid="deleted-customer-tag" className="text-[#6e6680]">{row.customerName}</span>
                   ) : (
-                    <Link href={`/customer-profiles/${row.customerId}`} className="text-[#5b2a86] hover:underline">
+                    <Link href={`/customer-profiles/${row.customerId}`} className={cn(ABOVE_ROW_LINK, "text-[#5b2a86] hover:underline")}>
                       {row.customerName}
                     </Link>
                   )}
                   {" · "}
-                  <Link
+                  {/* The row opens the Order this Feedback is about. */}
+                  <RowLink
                     href={row.customerDeleted ? `/orders/${row.orderId}` : `/customer-profiles/${row.customerId}#${orderAnchor(row.orderId)}`}
                     className="text-[#5b2a86] hover:underline"
                   >
                     #{row.orderId}
-                  </Link>
+                  </RowLink>
                   {row.products.length > 0 && " · "}
                   {row.products.map((name, i) => (
                     <span key={name}>
                       {i > 0 && ", "}
                       <Link
                         href={feedbackHref({ ...filters, product: name, page: 1 })}
-                        className="text-[#5b2a86] hover:underline"
+                        className={cn(ABOVE_ROW_LINK, "text-[#5b2a86] hover:underline")}
                       >
                         {name}
                       </Link>

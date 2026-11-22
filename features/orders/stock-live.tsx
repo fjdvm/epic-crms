@@ -11,7 +11,7 @@ import { StockView } from "./stock-view";
  * or reconnect refetches everything. Nothing here runs on a timer, focus or visibility: the only timers are
  * the reconnect back-off, which makes no data request.
  */
-export function LiveStock({ page: initial, canEdit = false }: { page: StockPage; canEdit?: boolean }) {
+export function LiveStock({ page: initial, canEdit = false, initialQuery = "" }: { page: StockPage; canEdit?: boolean; /** The search the page opened with (`?q=`). */ initialQuery?: string }) {
   const [page, setPage] = useState(initial);
   const [seen, setSeen] = useState(initial);
   if (initial !== seen) {
@@ -115,5 +115,5 @@ export function LiveStock({ page: initial, canEdit = false }: { page: StockPage;
     };
   }, []);
 
-  return <StockView page={page} canEdit={canEdit} />;
+  return <StockView page={page} canEdit={canEdit} initialQuery={initialQuery} />;
 }

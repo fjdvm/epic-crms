@@ -1,4 +1,6 @@
 import { BackButton } from "@/components/shared/back-button";
+import { CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
+import { cn } from "@/lib/utils";
 import { ProofAccountView, ProofBadge, proofOutcome } from "./proof-account";
 import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import { ProofReadFindings } from "./proof-read-view";
@@ -282,8 +284,13 @@ export function OrderDetailView({
                 </thead>
                 <tbody>
                   {order.lines.map((l, i) => (
-                    <tr key={i} className="border-t border-[#efebf4]">
-                      <td className="py-2">{l.product}</td>
+                    // A line opens Stock searched to its product, for those who hold the Stock page (Orders).
+                    <tr key={i} className={cn("border-t border-[#efebf4]", modules.includes(ORDERS_MODULE) && CLICKABLE_ROW)}>
+                      <td className="py-2">
+                        {modules.includes(ORDERS_MODULE)
+                          ? <RowLink href={`/orders/stock?q=${encodeURIComponent(l.product)}`} aria-label={`${l.product} in Stock`}>{l.product}</RowLink>
+                          : l.product}
+                      </td>
                       <td className="py-2">{l.size}</td>
                       <td className="py-2 text-right">{l.quantity}</td>
                       <td className="py-2 pl-4">

@@ -199,11 +199,16 @@ function TicketDrawerContent({ row, viewer, staffs, now, savedNotes }: { row: Ti
 
       <DrawerNotes ticketId={row.id} canNote={canWork} refreshKey={savedNotes} />
 
-      {canOpenConversation(row, viewer) && (
-        <Link href={`/conversations?ticket=${row.id}${row.claimedById === null ? "&tab=unclaimed" : ""}`} prefetch className="mt-auto rounded-lg bg-[#5b2a86] px-[14px] py-[10px] text-center text-sm font-medium text-white">
-          Open conversation
+      <div className="mt-auto flex flex-col gap-2">
+        <Link href={`/tickets/${row.id}`} prefetch className="rounded-lg border border-[#e4e4e7] bg-white px-[14px] py-[10px] text-center text-sm font-medium text-[#18181b]">
+          Open full page
         </Link>
-      )}
+        {canOpenConversation(row, viewer) && (
+          <Link href={`/conversations?ticket=${row.id}${row.claimedById === null ? "&tab=unclaimed" : ""}`} prefetch className="rounded-lg bg-[#5b2a86] px-[14px] py-[10px] text-center text-sm font-medium text-white">
+            Open conversation
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

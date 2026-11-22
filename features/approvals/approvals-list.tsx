@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useOptimistic, useState } from "react";
 
+import { ABOVE_ROW_LINK, CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
@@ -107,20 +108,20 @@ export function ApprovalsList({ requests, role, now, initialKind = "all" }: { re
               const mayReview = role === "staff" || role === "manager";
 
               return (
-                <li key={request.id} className="space-y-2.5 rounded-xl border border-[#e6e1ee] bg-white px-4 py-3.5">
+                <li key={request.id} className={`${CLICKABLE_ROW} space-y-2.5 rounded-xl border border-[#e6e1ee] bg-white px-4 py-3.5`}>
                   <div className="flex items-center gap-2.5">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-[#18181b]">{actionLabel(request.action)} · <Link className="text-[#5b2a86]" href={target.href}>{target.label}</Link></p>
+                      <p className="text-sm font-semibold text-[#18181b]">{actionLabel(request.action)} · <RowLink className="text-[#5b2a86]" href={target.href}>{target.label}</RowLink></p>
                       <p className="text-xs text-[#71717a]">{idCheck ? "Customer" : "From"} {request.requesterName} · {ago(request.requestedAt, now)} · {KIND_LABELS[kindOf(request.action)].replace(/s$/, "")}</p>
                     </div>
                     {!idCheck && <p className="text-base font-semibold text-[#18181b]">{pesos(request.amountInCentavos)}</p>}
                   </div>
                   <div className="flex items-center gap-2">
                     <p className="min-w-0 flex-1 text-xs text-[#71717a]">{idCheck ? request.reason : `“${request.reason}”`}</p>
-                    {step && request.requesterId && request.action !== "return.decide" && <Decide request={request} onOptimistic={status => setStatus({ id: request.id, status })} />}
+                    {step && request.requesterId && request.action !== "return.decide" && <span className={ABOVE_ROW_LINK}><Decide request={request} onOptimistic={status => setStatus({ id: request.id, status })} /></span>}
                     {/* The Manager picks a Return's outcome on the Return itself, where the evidence is. */}
-                    {step && request.action === "return.decide" && <Link href={target.href} prefetch className="shrink-0 rounded-lg bg-[#5b2a86] px-3.5 py-[7px] text-sm font-medium text-white">Open Return to decide</Link>}
-                    {idCheck && <Link href={target.href} prefetch className="shrink-0 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[7px] text-sm font-medium text-[#18181b]">{request.status === "waiting-id" && mayReview ? "Review" : "View"}</Link>}
+                    {step && request.action === "return.decide" && <Link href={target.href} prefetch className="relative z-10 shrink-0 rounded-lg bg-[#5b2a86] px-3.5 py-[7px] text-sm font-medium text-white">Open Return to decide</Link>}
+                    {idCheck && <Link href={target.href} prefetch className="relative z-10 shrink-0 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[7px] text-sm font-medium text-[#18181b]">{request.status === "waiting-id" && mayReview ? "Review" : "View"}</Link>}
                     {!step && !idCheck && WAITING.includes(request.status) && <span className="text-xs font-medium text-[#b45309]">{waitingLabel(request.status)}</span>}
                     {request.status === "declined" && <span className="text-xs text-[#9a3412]">Declined{request.declineReason ? `: ${request.declineReason}` : ""}</span>}
                     {!WAITING.includes(request.status) && request.status !== "declined" && <span className="text-xs text-[#1e6b3a]">{request.action === "return.decide" ? "Decided" : "Approved"}{request.ceoName ? ` by ${request.ceoName}` : request.managerName ? ` by ${request.managerName}` : ""}</span>}

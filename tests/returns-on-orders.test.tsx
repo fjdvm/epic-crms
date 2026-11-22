@@ -138,13 +138,15 @@ describe("Returns on the Order detail page", () => {
     expect(screen.getByRole("link", { name: "RMA-15" }).getAttribute("href")).toBe("/returns/15");
   });
 
-  it("offers Returns Staff no Return action yet: the card only reads", () => {
+  it("offers Returns Staff no Return action here: each row only opens its Return", () => {
     render(<OrderDetailView order={detail()} returns={[ret({})]} modules={RETURNS} />);
 
     const card = screen.getByRole("heading", { name: "Returns" }).closest("section") as HTMLElement;
 
     expect(within(card).queryAllByRole("button")).toHaveLength(0);
-    expect(within(card).queryAllByRole("link")).toHaveLength(0);
+    const links = within(card).getAllByRole("link");
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(["/returns/15"]);
+    expect(links[0].closest("tr")?.className).toContain("relative");
   });
 
   it("shows a received Order as a status with its own step", () => {

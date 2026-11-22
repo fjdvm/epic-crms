@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Star } from "lucide-react";
 
 import { BackButton } from "@/components/shared/back-button";
+import { CLICKABLE_ROW, rowButton } from "@/components/shared/row-link";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -153,7 +154,8 @@ export function CustomerProfileView({
         <section aria-label="Open Tasks" className="space-y-1.5 rounded-xl border border-border bg-card px-5 py-3">
           <h2 className="text-[13px] font-medium text-muted-foreground">Open Tasks</h2>
           <ul className="space-y-1">
-            {openTasks.map(task => <li key={task.id} className="flex flex-wrap gap-x-2 text-sm text-foreground">
+            {/* Each Task opens the Notes & tasks tab, where it can be worked. */}
+            {openTasks.map(task => <li key={task.id} {...rowButton(() => setTab("notes"), `Open Task: ${task.description}`)} className={cn(CLICKABLE_ROW, "-mx-2 flex flex-wrap gap-x-2 rounded-md px-2 text-sm text-foreground")}>
               <span>{task.description}</span>
               <span className={task.overdue ? "font-semibold text-destructive" : "text-muted-foreground"}>{task.overdue ? "Overdue · " : ""}Due {task.dueDate} · {task.ownerName}</span>
             </li>)}

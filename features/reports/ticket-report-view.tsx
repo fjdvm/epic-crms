@@ -1,6 +1,6 @@
-import Link from "next/link";
-
+import { CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ticketsHref } from "@/features/tickets/ticket-params";
 import { describeTarget } from "@/features/tickets/service-level";
 
 import type { TicketReport } from "./ticket-report";
@@ -60,8 +60,8 @@ export function TicketReportView({ report }: { report: TicketReport }) {
           {report.categories.length === 0 ? <Empty>No Tickets were opened in this period.</Empty> : (
             <ul className="flex flex-col gap-2">
               {report.categories.map((c) => (
-                <li key={c.category} className="flex items-center gap-3 text-sm">
-                  <span className="w-40 shrink-0 truncate text-[#18181b]">{c.category}</span>
+                <li key={c.category} className={`${CLICKABLE_ROW} flex items-center gap-3 rounded text-sm`}>
+                  <RowLink href={ticketsHref({ tab: "all", page: 1, category: c.category })} prefetch className="w-40 shrink-0 truncate text-[#18181b]">{c.category}</RowLink>
                   <span className="h-2 flex-1 rounded bg-[#f1eef6]" aria-hidden>
                     <span className="block h-2 rounded bg-[#5b2a86]" style={{ width: `${(c.count / maxCategory) * 100}%` }} />
                   </span>
@@ -82,8 +82,8 @@ export function TicketReportView({ report }: { report: TicketReport }) {
                 </thead>
                 <tbody>
                   {report.staff.map((s) => (
-                    <tr key={s.id} className="border-t border-[#f1eef6]">
-                      <td className="py-2 text-[#18181b]">{s.name}</td>
+                    <tr key={s.id} className={`${CLICKABLE_ROW} border-t border-[#f1eef6]`}>
+                      <td className="py-2 text-[#18181b]"><RowLink href={ticketsHref({ tab: "all", page: 1, claimedBy: s.id })} prefetch>{s.name}</RowLink></td>
                       <td className="py-2 text-right">{s.open}</td>
                       <td className="py-2 text-right">{s.resolved}</td>
                       <td className="py-2 text-right">{formatStars(s.averageRating)}</td>
@@ -101,10 +101,10 @@ export function TicketReportView({ report }: { report: TicketReport }) {
         {report.lowest.length === 0 ? <Empty>No Ticket was rated in this period.</Empty> : (
           <ul className="flex flex-col divide-y divide-[#f1eef6]">
             {report.lowest.map((r) => (
-              <li key={r.ticketId} className="flex flex-col gap-1 py-2 text-sm">
+              <li key={r.ticketId} className={`${CLICKABLE_ROW} flex flex-col gap-1 py-2 text-sm`}>
                 <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="font-semibold text-[#18181b]">{r.rating} / 5</span>
-                  <Link href={`/tickets/${r.ticketId}`} prefetch className="font-medium text-[#5b2a86] underline-offset-2 hover:underline">TKT-{r.ticketId}</Link>
+                  <RowLink href={`/tickets/${r.ticketId}`} prefetch className="font-medium text-[#5b2a86] underline-offset-2 hover:underline">TKT-{r.ticketId}</RowLink>
                   <span className="text-[#52525b]">{r.subject}</span>
                   <span className="text-xs text-[#71717a]">{r.customerName}</span>
                 </p>
