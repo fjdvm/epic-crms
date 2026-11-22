@@ -16,7 +16,7 @@ import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
 import { SENIOR_PWD_WEEKLY_CAP, type OrderDetail } from "./orders";
 import type { LineReservation } from "./stock";
-import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
+import { LiveActions, LiveProgress, LiveStatus, LiveWhen, OrderLiveProvider } from "./order-live";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { PaymentReviewPanel } from "./payment-review-panel";
 import type { PaymentReview } from "./payment-review";
@@ -235,13 +235,16 @@ export function OrderDetailView({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {order.status === "dispatched" && order.fulfillmentMethod === "delivery" && modules.includes(FULFILMENT_MODULE) && (
-              <Link href={`/orders/${order.id}/failed-delivery`} className="rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
-                Failed delivery
-              </Link>
-            )}
+            {/* Follows the live status, so Mark as delivered hides both at once and a refusal brings them back. */}
             {order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) && (
-              <CancelDispatched id={order.id} total={order.total} paymentMethod={order.paymentMethod} role={role} state={cancellation} />
+              <LiveWhen status="dispatched">
+                {order.fulfillmentMethod === "delivery" && (
+                  <Link href={`/orders/${order.id}/failed-delivery`} className="rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
+                    Failed delivery
+                  </Link>
+                )}
+                <CancelDispatched id={order.id} total={order.total} paymentMethod={order.paymentMethod} role={role} state={cancellation} />
+              </LiveWhen>
             )}
             {cancelRequest?.status === "waiting" ? (
               <CancelRequestAction id={order.id} state={cancelRequest} role={role} canDecide={modules.includes(ORDERS_MODULE)} />

@@ -451,6 +451,27 @@ describe("Order detail packing", () => {
 const MOVES = ["Pack order", "Mark as dispatched", "Mark as delivered"];
 
 describe("the Fulfilment Module's moves on an Order's detail", () => {
+  it("hides Failed delivery and Cancel order the moment Mark as delivered is confirmed, and brings them back with the reason on a refusal", async () => {
+    let answer!: (result: Awaited<ReturnType<typeof deliverOrder>>) => void;
+    vi.mocked(deliverOrder).mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<OrderDetailView order={detail({ status: "dispatched" })} modules={FULFILMENT} role="manager" />);
+    expect(screen.getByRole("link", { name: "Failed delivery" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel order…" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark as delivered" }));
+    choosePhoto(screen.getByRole("alertdialog"), png());
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark as delivered" }));
+
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Failed delivery" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "Cancel order…" })).toBeNull();
+
+    const reason = "Only a dispatched Order can be delivered; it may have already changed. Refresh it before trying again.";
+    await act(async () => answer({ ok: false, reason }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(reason));
+    expect(screen.getByRole("link", { name: "Failed delivery" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel order…" })).toBeTruthy();
+  });
+
   it("offers the next move for each status", () => {
     const cases: [Partial<OrderDetail>, string[]][] = [
       [{ status: "paid" }, ["Pack order"]],
