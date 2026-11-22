@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 
+import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
@@ -15,14 +16,16 @@ import {
   currentStatus, listVerifications, loadVerification, philippineToday,
   type Verification, type VerificationList,
 } from "./verifications";
+import type { IdReadState } from "./id-read-types";
+import { loadIdRead } from "./id-reader";
 
 /**
  * Senior/PWD review belongs to the Orders Module: Staff review the ID before the Order confirms.
- * Approve and decline are Staff work; override and revoke need a Manager.
+ * Staff check the ID; every decision (approve, decline, override, revoke) is a Manager's.
  */
 export type VerificationActionResult = { ok: true; status: string; photoRemoved: boolean } | { ok: false; reason: string };
 
-const MANAGER_ONLY = "Request approval from a CREOMS Manager to override or revoke a verification.";
+const MANAGER_ONLY = "Only a Manager decides a Senior/PWD ID check. Request approval from a CREOMS Manager.";
 const ALREADY_CHANGED = "This verification already changed; refresh it before trying again.";
 const UNAVAILABLE = "Senior/PWD verification is temporarily unavailable.";
 const clean = (text: unknown) => (typeof text === "string" ? text.trim() : "");
@@ -36,14 +39,16 @@ export async function loadVerifications(): Promise<{ ok: true; list: Verificatio
 }
 
 /** One verification for the review page, with its status as of now. */
-export async function loadVerificationDetail(id: number): Promise<{ ok: true; verification: Verification; now: Date } | { ok: false; reason: string; missing?: true }> {
+export async function loadVerificationDetail(id: number): Promise<{ ok: true; verification: Verification; now: Date; idRead: IdReadState } | { ok: false; reason: string; missing?: true }> {
   await requireModule(SENIOR_PWD_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid verification number.", missing: true };
   try {
     const now = new Date();
     const v = await loadVerification(database(), id);
     if (!v) return { ok: false, reason: "Verification was not found.", missing: true };
-    return { ok: true, verification: { ...v, status: currentStatus(v, now) }, now };
+    // The ID reader's findings are extra help: if they cannot be loaded, the check still opens without them.
+    const idRead = await loadIdRead(crmsDatabase(), id).catch(() => null);
+    return { ok: true, verification: { ...v, status: currentStatus(v, now) }, now, idRead };
   } catch { return { ok: false, reason: UNAVAILABLE }; }
 }
 
@@ -124,21 +129,23 @@ function validExpiry(expiresOn: unknown, now: Date): string | null {
   return null;
 }
 
-/** Staff approve a pending verification: the Customer is marked verified until the ID's expiry date. */
+/** A Manager approves a pending verification: the Customer is marked verified until the ID's expiry date. */
 export async function approveVerification(id: number, expiresOn: string): Promise<VerificationActionResult> {
   return decide(id,
     (v, _staff, now) => currentStatus(v, now) !== "pending" ? ALREADY_CHANGED : validExpiry(expiresOn, now),
     () => ({ action: "approve", expiresOn }),
-    { action: "pwd.approved", verb: "approved", metadata: () => ({ expiresOn }) });
+    { action: "pwd.approved", verb: "approved", metadata: () => ({ expiresOn }) },
+    true);
 }
 
-/** Staff decline a pending verification with a reason the Customer is told. */
+/** A Manager declines a pending verification with a reason the Customer is told. */
 export async function declineVerification(id: number, reason: string): Promise<VerificationActionResult> {
   const text = clean(reason);
   return decide(id,
     (v, _staff, now) => currentStatus(v, now) !== "pending" ? ALREADY_CHANGED : text ? null : "Enter a reason for declining.",
     () => ({ action: "decline", reason: text }),
-    { action: "pwd.declined", verb: "declined", metadata: () => ({ reason: text }) });
+    { action: "pwd.declined", verb: "declined", metadata: () => ({ reason: text }) },
+    true);
 }
 
 /** A Manager approves a verification Staff declined, or one that lapsed, with a reason. */

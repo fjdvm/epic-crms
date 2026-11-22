@@ -8,7 +8,8 @@ The storefront owns the verification; CREOMS reads it and asks the storefront to
 - `loadVerifications()`: waiting reviews (oldest first) and the latest decisions. Status is as of now, so a
   photo past 7 days or an ID past its expiry date reads `expired`.
 - `loadVerificationPhoto(id)`: short-lived private address, only while the photo waits for review.
-- `approveVerification(id, expiresOn)` and `declineVerification(id, reason)`: Staff and Managers. Never
+- `approveVerification(id, expiresOn)` and `declineVerification(id, reason)`: Manager-level only (Manager, General Manager,
+  CEO, VP); Staff check the ID and are told to request a Manager. Never
   optimistic (the Customer is emailed). After the storefront confirms, CREOMS deletes the photo; if that
   fails the decision stands and file-storage's seven-day expiry removes it.
 - `overrideVerification(id, expiresOn, reason)` (approve a declined or revoked one) and
@@ -59,9 +60,9 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
 - Each ID check is a row: Customer, "Waiting for review" until decided, then Approved or Declined (revoked and expired count as declined), with Review (Staff and
   Manager) or View (Admin) opening the detail page. The old per-row "ID already used by another account" flag now shows only on the detail page.
 - Detail (`/customer-profiles/senior-pwd/<id>`): the private photo (zoom, rotate, back of the ID when sent) beside "Check each field". The browser reads the
-  photo and pre-fills Full name and Valid until; Staff confirm each. ID type shows as the Customer chose it. The ID number is never read into a field: the
+  photo and pre-fills Full name and Valid until; Staff or a Manager confirm each. ID type shows as the Customer chose it. The ID number is never read into a field: the
   Figma shows it as "Shown only on the photo · not stored". Approve stays disabled until name (which must match the account) and expiry are confirmed; Decline
-  needs a reason. Both are confirm-first and never optimistic (the Customer is emailed). A decided ID shows its decision, never a photo, and a Manager gets
+  needs a reason. Both are Manager-level only (Staff see "Request approval"), confirm-first and never optimistic (the Customer is emailed). A decided ID shows its decision, never a photo, and a Manager gets
   Override or Revoke; Staff see "Request approval". Admin see a "Read-only" badge and no buttons.
 - File storage: the photo address is short-lived and fetched only while the ID waits; the photo is deleted right after a decision (unchanged).
 - Audit: decisions as before, plus `pwd.photo_viewed` when Staff open the photo (module Senior/PWD, who and which ID, never the number), at most one per Staff
@@ -72,6 +73,23 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
   The text is "<Customer> uploaded a Senior/PWD ID to review" and leads to the detail page. Apply `docs/db/crms-senior-pwd-notifications.sql` as
   `creoms_writer` (`node --env-file=.env scripts/deploy/migrate-senior-pwd-notifications.mjs`); applied to production on 2026-11-19. The Ecommerce
   storefront should signal CREOMS after saving an upload so the alert does not wait for the next sync.
+
+## ID reader and Manager approval (2026-11-23)
+
+- **Storefront:** the Customer's browser reads the ID number off the photo (Tesseract) and fills the field for them to check. An ID number pending or
+  approved on another account is refused at once with the toast "This ID is already used by another account." (sign-up step 3, complete-profile, Account
+  settings), before any account or upload is made. The storefront compares the number read with the number typed and saves only
+  `id_number_read` ('matched' | 'differs' | 'unread'), and on approval copies the account's full name beside the hash as `verified_name` (migration `0069`).
+  It signals CREOMS right after an ID is saved.
+- **ID reader** (`features/senior-pwd/id-reader.ts`): on that signal (`startIdRead` in the signal route) and on the backstop schedule
+  (`GET /api/cron/id-reader`, `.github/workflows/proof-reader.yml`), it reads each waiting ID's front photo once with server Tesseract and the vision model
+  (Gemini via `configuredVisionModels`). The model gets only the photo and is told never to read the number. Flags: `unreadable`, `not-an-id`,
+  `possible-edit`, `name-mismatch`, `expired`, `type-mismatch`, `number-differs`, `photo-reused` (fingerprint like another account's ID). One row per
+  verification in `crms.senior_pwd_id_reads` (`docs/db/crms-senior-pwd-id-reads.sql`, `scripts/deploy/migrate-senior-pwd-id-reads.mjs`). Audit
+  `pwd.id_read` under the process actor "ID reader", with only the flags.
+- **Review screen:** an "ID reader" panel lists the flags in plain words (or "Reading the photo…" / "Needs review"); the Approvals row says how many
+  things it flagged. Approve and Decline show only for a Manager-level person; Staff see "Request approval". A decided ID shows "Verified as".
+- Grants: `docs/db/creoms-senior-pwd-readonly.sql` now includes `id_number_read` and `verified_name`.
 
 ## Senior/PWD discount setting (Commerce Settings)
 

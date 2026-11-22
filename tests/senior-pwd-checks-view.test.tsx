@@ -7,6 +7,7 @@ import { SeniorPwdCheckDetail } from "@/features/senior-pwd/check-detail";
 import { readIdPhoto } from "@/features/senior-pwd/read-id-photo";
 import { formatRemaining } from "@/features/senior-pwd/shared";
 import type { Verification } from "@/features/senior-pwd/verifications";
+import type { IdReadState } from "@/features/senior-pwd/id-read-types";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/features/senior-pwd/actions", () => ({
@@ -33,8 +34,9 @@ describe("how long the photo has left", () => {
 });
 
 describe("the Senior/PWD check screen", () => {
-  const detail = (verification = v(), props: { readOnly?: boolean; role?: "staff" | "manager" | "admin" } = {}) =>
-    render(<SeniorPwdCheckDetail verification={verification} now={NOW} readOnly={props.readOnly ?? false} role={props.role ?? "staff"} />);
+  // Approve and decline are a Manager's, so the screen is shown as a Manager unless a test says otherwise.
+  const detail = (verification = v(), props: { readOnly?: boolean; role?: "staff" | "manager" | "admin"; idRead?: IdReadState } = {}) =>
+    render(<SeniorPwdCheckDetail verification={verification} idRead={props.idRead} now={NOW} readOnly={props.readOnly ?? false} role={props.role ?? "manager"} />);
   const approveButton = () => screen.getAllByRole("button", { name: "Approve" }).at(-1) as HTMLButtonElement;
   const READ = "SANTOS, MARIA L.\nID No. SC-123456\nValid until 15 Mar 2031";
   const photo = () => vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: true, url: "https://files.test/photo.png", backUrl: null });
@@ -113,6 +115,47 @@ describe("the Senior/PWD check screen", () => {
     vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: false, reason: "The ID photo has been removed." });
     detail();
     expect((await screen.findByRole("alert")).textContent).toContain("removed");
+  });
+
+  it("lets Staff check the ID but shows Request approval instead of Approve and Decline", async () => {
+    photo();
+    vi.mocked(readIdPhoto).mockResolvedValue(READ);
+    detail(v(), { role: "staff" });
+    expect(await screen.findByText(/Request approval/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Confirm name" })).toBeTruthy();
+  });
+
+  it("shows what the ID reader flagged, in plain words, without any ID number", () => {
+    photo();
+    vi.mocked(readIdPhoto).mockReturnValue(new Promise(() => {}));
+    detail(v(), { idRead: { verificationId: 1, status: "read", model: "gemini", flags: ["name-mismatch", "possible-edit"], findings: {
+      name: "SANTOS, JOSE", nameMatches: false, expiresOn: "2031-03-15", idKind: "senior", editNote: "Name looks pasted over", reusedPhotoVerificationIds: [],
+    } } });
+    const panel = screen.getByRole("region", { name: "ID reader" });
+    expect(within(panel).getByText("2 to check")).toBeTruthy();
+    expect(within(panel).getByText("The name on the ID does not match the account.")).toBeTruthy();
+    expect(within(panel).getByText("The photo may have been edited.")).toBeTruthy();
+    expect(within(panel).getByText(/Name looks pasted over/)).toBeTruthy();
+    expect(within(panel).getByText(/a Manager decides/)).toBeTruthy();
+  });
+
+  it("says the reader is still working, or that nothing was flagged", () => {
+    photo();
+    vi.mocked(readIdPhoto).mockReturnValue(new Promise(() => {}));
+    const { unmount } = detail(v(), { idRead: { status: "reading" } });
+    expect(screen.getByText(/Reading the photo… The findings appear here/)).toBeTruthy();
+    unmount();
+    detail(v(), { idRead: { verificationId: 1, status: "read", model: "gemini", flags: [], findings: {
+      name: "SANTOS, MARIA L.", nameMatches: true, expiresOn: "2031-03-15", idKind: "senior", editNote: null, reusedPhotoVerificationIds: [],
+    } } });
+    expect(screen.getByText("Nothing flagged")).toBeTruthy();
+  });
+
+  it("shows the name the ID was verified under once approved", () => {
+    detail(v({ status: "approved", expiresOn: "2031-03-15", decidedByName: "Mario", photoFileId: null, verifiedName: "Maria Santos" }));
+    expect(screen.getByText("Verified as")).toBeTruthy();
   });
 
   it("gives Admin and CEO no buttons and the Read-only badge", async () => {

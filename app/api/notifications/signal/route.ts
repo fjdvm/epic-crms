@@ -4,6 +4,7 @@ import { crmsDatabase } from "@/lib/crms-db";
 import { signalNotifications } from "@/features/notifications/signal";
 import { syncNotifications, syncNotificationCopies } from "@/features/notifications/sync";
 import { startPaymentProofRead } from "@/features/orders/payment-proof-start";
+import { startIdRead } from "@/features/senior-pwd/id-read-start";
 import { nudgeStaff } from "@/features/notifications/staff-live";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ export async function POST(request: NextRequest) {
   }
   // Read any new payment proof in the background; this never waits and never changes the reply.
   startPaymentProofRead();
+  // Likewise any newly sent Senior/PWD ID, while its photo is still there.
+  startIdRead();
   // Ignore every body field and query parameter: signals cannot manufacture or select events.
   try {
     const result = await signalNotifications(crmsDatabase(), () => syncNotifications({ copies: false }), nudgeStaff);

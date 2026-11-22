@@ -32,5 +32,5 @@ async function Data({ params }: { params: Promise<{ id: string }> }) {
       </div>
     );
   }
-  return <SeniorPwdCheckDetail verification={result.verification} now={result.now.toISOString()} readOnly={!canWork(staff)} role={shopRole(staff.role)} />;
+  return <SeniorPwdCheckDetail verification={result.verification} idRead={result.idRead} now={result.now.toISOString()} readOnly={!canWork(staff)} role={shopRole(staff.role)} />;
 }

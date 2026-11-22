@@ -56,7 +56,7 @@ mandatory. There is no autonomous suggestion execution path.
 (`kindOf` in `features/approvals/view.ts`). Status tabs (Waiting, Approved, Declined, All) combine with a type filter that shows a count for each type;
 `?type=id-check` opens on one type. `loadApprovalRows` (`features/approvals/overview.ts`) reads the requests of every Module the person holds (Returns,
 Payments, Fulfilment) plus the Senior/PWD ID checks; one unreadable Module shows a notice and never hides the rest. Each row links to its Return, its Order
-or its ID check's review page, and Approve/Decline use the row's own Module. Staff see the ID checks and the requests they raised; a Manager-level person (CEO and VP included) sees and decides
+or its ID check's review page, and Approve/Decline use the row's own Module. Staff see the ID checks (and check them, but a Manager approves or declines; the row shows how many things the ID reader flagged) and the requests they raised; a Manager-level person (CEO and VP included) sees and decides
 all; Admin views. Money decisions are never optimistic.
 
 ## Number fields
