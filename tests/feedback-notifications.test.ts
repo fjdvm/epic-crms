@@ -143,7 +143,7 @@ describe("who the bell is for", () => {
   const staff = { username: "ada" };
 
   it("shows the Feedback alerts to Staff who may open the Feedback page", () => {
-    expect(viewerFor(staff, ["/feedback"])).toEqual({ customerProfiles: false, ticketsStaffId: null, feedback: true, orders: false, payments: false, returns: false });
+    expect(viewerFor(staff, ["/feedback"])).toEqual({ customerProfiles: false, ticketsStaffId: null, feedback: true, orders: false, payments: false, returns: false, seniorPwd: false, manager: false });
   });
 
   it("gives Staff with only the Tickets Module no Feedback alerts", () => {

@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { deliverOrder, dispatchOrder, loadPackingSlip, startPreparing } from "@/features/orders/actions";
+import { deliverOrder, dispatchOrder, startPreparing } from "@/features/orders/actions";
+import { importDeliveryPhotoLink } from "@/features/files/actions";
 import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
 import type { FulfilmentBoard, FulfilmentOrder } from "@/features/orders/fulfilment";
 import { OrderDetailView } from "@/features/orders/order-detail";
@@ -10,10 +11,10 @@ import type { OrderDetail } from "@/features/orders/orders";
 
 const refresh = vi.fn();
 vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn(async () => ({ ok: true, reference: "confirmed-image" })) }));
+vi.mock("@/features/files/actions", () => ({ importDeliveryPhotoLink: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/orders/actions", () => ({
   quoteDeliveryFee: vi.fn(),
-  confirmPickup: vi.fn(),
   cancelOrder: vi.fn(),
   startPreparing: vi.fn(),
   loadPackingSlip: vi.fn(),
@@ -46,50 +47,69 @@ const card = (overrides: Partial<FulfilmentOrder>): FulfilmentOrder => ({
   paymentMethod: "gcash",
   deliveredAt: null,
   packedBy: null,
+  failedOpen: false,
   ...overrides,
 });
 
-const EMPTY: FulfilmentBoard = { ready: [], preparing: [], dispatched: [], delivered: [] };
+type Columns = Partial<Record<"ready" | "preparing" | "dispatched" | "delivered", FulfilmentOrder[]>>;
 
-function board(columns: Partial<FulfilmentBoard>) {
-  return render(<FulfilmentBoardView board={{ ...EMPTY, ...columns }} />);
+/** Renders the board on its default All active tab; the keys only group Orders for readability. */
+function board(columns: Columns) {
+  const value: FulfilmentBoard = { orders: Object.values(columns).flat() };
+  return render(<FulfilmentBoardView board={value} />);
 }
 
 const png = (name = "delivered.png") => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: "image/png" });
 const choosePhoto = (dialog: HTMLElement, file: File) =>
   fireEvent.change(within(dialog).getByLabelText("Delivery photo"), { target: { files: [file] } });
 
-const column = (name: string) => screen.getByRole("region", { name });
+const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name: new RegExp(`^${name}\\d`) }));
 const cardFor = (id: number) => screen.getByRole("link", { name: `#${id}` }).closest("[data-fulfilment-card]") as HTMLElement;
 
 describe("the Fulfilment board", () => {
-  it("has a column per status with its count, named after the storefront's statuses", () => {
+  it("has the seven tabs with their counts, named in screen wording", () => {
     board({
       ready: [card({ id: 1 }), card({ id: 2, status: "confirmed", paymentMethod: "cash-on-delivery", paymentLabel: "Unpaid" })],
       preparing: [card({ id: 3, status: "preparing" })],
     });
 
-    expect(within(column("Ready to prepare")).getByText("2")).toBeTruthy();
-    expect(within(column("Preparing")).getByText("1")).toBeTruthy();
-    expect(within(column("Dispatched")).getByText("0")).toBeTruthy();
-    expect(within(column("Delivered (7 days)")).getByText("0")).toBeTruthy();
-    for (const design of ["To pack", "Packed", "Shipped"]) {
-      expect(screen.queryByText(design)).toBeNull();
+    const names = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(names).toEqual(["All active3", "To pack2", "Preparing1", "Out for delivery0", "Failed0", "Completed0", "All3"]);
+    for (const old of ["Waiting for rider", "Packed", "Shipped"]) {
+      expect(screen.queryByRole("tab", { name: new RegExp(`^${old}`) })).toBeNull();
     }
   });
 
-  it("puts each card in the column the board gives it", () => {
+  it("filters the same Orders by tab: Failed apart from Out for delivery, Completed apart from the rest", () => {
     board({
       ready: [card({ id: 1 })],
-      preparing: [card({ id: 2, status: "preparing" })],
-      dispatched: [card({ id: 3, status: "dispatched" })],
+      dispatched: [card({ id: 3, status: "dispatched" }), card({ id: 5, status: "dispatched", failedOpen: true })],
       delivered: [card({ id: 4, status: "delivered", deliveredAt: new Date("2026-10-21T00:00:00Z") })],
     });
 
-    expect(within(column("Ready to prepare")).getByRole("link", { name: "#1" })).toBeTruthy();
-    expect(within(column("Preparing")).getByRole("link", { name: "#2" })).toBeTruthy();
-    expect(within(column("Dispatched")).getByRole("link", { name: "#3" })).toBeTruthy();
-    expect(within(column("Delivered (7 days)")).getByRole("link", { name: "#4" })).toBeTruthy();
+    tab("To pack");
+    expect(screen.getByRole("link", { name: "#1" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "#3" })).toBeNull();
+    tab("Out for delivery");
+    expect(screen.getByRole("link", { name: "#3" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "#5" })).toBeNull();
+    tab("Failed");
+    expect(screen.getByRole("link", { name: "#5" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Failed delivery/ }).getAttribute("href")).toBe("/orders/5/failed-delivery");
+    tab("Completed");
+    expect(screen.getByRole("link", { name: "#4" })).toBeTruthy();
+    tab("All active");
+    expect(screen.queryByRole("link", { name: "#4" })).toBeNull();
+    tab("All");
+    expect(screen.getByRole("link", { name: "#4" })).toBeTruthy();
+  });
+
+  it("uses the screen wording Out for delivery", () => {
+    board({
+      dispatched: [card({ id: 3, status: "dispatched" })],
+    });
+    expect(within(cardFor(3)).getByText("Out for delivery")).toBeTruthy();
+    expect(screen.queryByText("Dispatched")).toBeNull();
   });
 
   it("shows each card's number, status, Customer, items and how it is fulfilled and paid, and links to its Order", () => {
@@ -105,6 +125,7 @@ describe("the Fulfilment board", () => {
 
   it("shows when a delivered Order was delivered", () => {
     board({ delivered: [card({ status: "delivered", deliveredAt: new Date("2026-10-21T03:00:00Z") })] });
+    tab("Completed");
 
     expect(within(cardFor(1042)).getByText("Delivered 21 Oct 2026")).toBeTruthy();
   });
@@ -117,6 +138,7 @@ describe("the Fulfilment board", () => {
       delivered: [card({ id: 4, status: "delivered", deliveredAt: new Date("2026-10-21T00:00:00Z") })],
     });
 
+    tab("All");
     const buttons = (id: number) => within(cardFor(id)).queryAllByRole("button").map((b) => b.textContent);
     expect(buttons(1)).toEqual(["Pack order"]);
     expect(buttons(2)).toEqual(["Mark as dispatched"]);
@@ -126,17 +148,18 @@ describe("the Fulfilment board", () => {
 
   it("says so when a column is empty", () => {
     board({});
+    tab("Preparing");
 
-    expect(within(column("Preparing")).getByText("No Orders here.")).toBeTruthy();
+    expect(screen.getByText("No Orders here.")).toBeTruthy();
   });
 
-  it("asks for no courier on a Pickup dispatch or a delivery, but a Delivery dispatch asks for the booking", () => {
+  it("asks for no courier on a delivery, but a dispatch asks for the booking", () => {
     board({
-      preparing: [card({ id: 1, status: "preparing", fulfillmentMethod: "pickup" }), card({ id: 3, status: "preparing" })],
+      preparing: [card({ id: 3, status: "preparing" })],
       dispatched: [card({ id: 2, status: "dispatched" })],
     });
-    for (const id of [1, 2]) {
-      fireEvent.click(within(cardFor(id)).getByRole("button", { name: id === 1 ? "Mark as dispatched" : "Mark as delivered" }));
+    for (const id of [2]) {
+      fireEvent.click(within(cardFor(id)).getByRole("button", { name: "Mark as delivered" }));
       const dialog = screen.getByRole("alertdialog");
       expect(within(dialog).queryAllByRole("textbox")).toHaveLength(0);
       expect(within(dialog).queryAllByLabelText(/courier|link/i)).toHaveLength(0);
@@ -145,7 +168,7 @@ describe("the Fulfilment board", () => {
     fireEvent.click(within(cardFor(3)).getByRole("button", { name: "Mark as dispatched" }));
     const dialog = screen.getByRole("alertdialog");
     expect(within(dialog).getByRole("radio", { name: "Lalamove" })).toBeTruthy();
-    expect(within(dialog).getByLabelText("Booking share link")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Booking share link (optional)")).toBeTruthy();
     for (const label of ["Rider name (optional)", "Rider contact (optional)", "Plate no. (optional)"]) expect(within(dialog).getByLabelText(label)).toBeTruthy();
   });
 });
@@ -171,26 +194,15 @@ describe("moving an Order on the board", () => {
     expect(startPreparing).not.toHaveBeenCalled();
   });
 
-  it("closes the dialog at once, and tells Staff only once the server confirms", async () => {
-    const pending = deferred<Awaited<ReturnType<typeof dispatchOrder>>>();
-    vi.mocked(dispatchOrder).mockReturnValue(pending.promise);
-    board({ preparing: [card({ status: "preparing", fulfillmentMethod: "pickup" })] });
-    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as dispatched" }));
-
-    const dialog = screen.getByRole("alertdialog", { name: "Mark Order #1042 as dispatched?" });
-    expect(within(dialog).getByText(/no courier or tracking link/i)).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark as dispatched" }));
-
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" })).toBeTruthy();
-    expect(dispatchOrder).toHaveBeenCalledWith(1042);
-    expect(toast.success).not.toHaveBeenCalled();
-    expect(refresh).not.toHaveBeenCalled();
-
-    await act(async () => pending.settle(moved(1042, "dispatched")));
-
-    expect(toast.success).toHaveBeenCalledWith("Order #1042 dispatched.");
-    expect(refresh).toHaveBeenCalled();
+  it("sends the typed COD amount with a delivery, and cannot confirm an unreadable one", async () => {
+    vi.mocked(deliverOrder).mockResolvedValue(moved(1042, "delivered"));
+    board({ dispatched: [card({ status: "dispatched", paymentMethod: "cash-on-delivery", total: 115_000 })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+    const amount = within(dialog).getByLabelText("Payment collected (₱)") as HTMLInputElement;
+    expect(amount.value).toBe("1150.00");
+    fireEvent.change(amount, { target: { value: "abc" } });
+    expect((within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("marks an Order delivered following the Figma dialog, saying the store emails the Customer and asks for Feedback", async () => {
@@ -270,20 +282,18 @@ describe("moving an Order on the board", () => {
     expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 
-  it("waits for packing confirmation with a spinner and leaves the card ready on refusal", async () => {
+  it("shows the Order packed at once, and rolls it back with the reason on refusal", async () => {
     const pending = deferred<Awaited<ReturnType<typeof startPreparing>>>();
     vi.mocked(startPreparing).mockReturnValue(pending.promise);
     board({ ready: [card({})] });
-    const readyCard = cardFor(1042);
-    fireEvent.click(within(readyCard).getByRole("button", { name: "Pack order" }));
-    const dialog = screen.getByRole("alertdialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Pack order" }));
-    expect(within(dialog).getByRole("button", { name: "Packing…" }).getAttribute("aria-busy")).toBe("true");
-    expect(within(readyCard).queryByText("Mark as dispatched")).toBeNull();
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Pack order" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Pack order" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(within(cardFor(1042)).getByRole("button", { name: "Mark as dispatched" })).toBeTruthy();
     expect(toast.success).not.toHaveBeenCalled();
     await act(async () => pending.settle({ ok: false, reason: "IMS deduction could not be confirmed. Refresh before retrying." }));
     expect(toast.error).toHaveBeenCalledWith("IMS deduction could not be confirmed. Refresh before retrying.");
-    expect(within(cardFor(1042)).getByRole("button", { name: "Pack order" })).toBeTruthy();
+    await waitFor(() => expect(within(cardFor(1042)).getByRole("button", { name: "Pack order" })).toBeTruthy());
   });
 
   it("shows who packed an Order on its board card", () => {
@@ -311,8 +321,60 @@ describe("moving an Order on the board", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(reason));
     expect(toast.success).not.toHaveBeenCalled();
-    expect(within(column("Dispatched")).getByRole("link", { name: "#1042" })).toBeTruthy();
+    tab("Out for delivery");
+    await waitFor(() => expect(screen.getByRole("link", { name: "#1042" })).toBeTruthy());
     expect(refresh).toHaveBeenCalled();
+  });
+
+  const openDelivery = () => {
+    board({ dispatched: [card({ status: "dispatched" })] });
+    fireEvent.click(within(cardFor(1042)).getByRole("button", { name: "Mark as delivered" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Paste image link" }));
+    return dialog;
+  };
+  const confirmButton = (dialog: HTMLElement) => within(dialog).getByRole("button", { name: "Mark as delivered" }) as HTMLButtonElement;
+
+  it("accepts the Lalamove or Grab image link as the proof instead of an upload, and enables confirm only for an https link", () => {
+    const dialog = openDelivery();
+    expect(within(dialog).getByText("Proof of delivery (required)")).toBeTruthy();
+    expect(within(dialog).queryByLabelText("Delivery photo")).toBeNull();
+    expect(confirmButton(dialog).disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("Delivery photo link"), { target: { value: "http://share.lalamove.com/pod.jpg" } });
+    expect(within(dialog).getByRole("alert").textContent).toBe("Paste the image link as a web address starting with https://.");
+    expect(confirmButton(dialog).disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("Delivery photo link"), { target: { value: "https://share.lalamove.com/pod.jpg" } });
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(confirmButton(dialog).disabled).toBe(false);
+  });
+
+  it("downloads the linked image, then delivers with it and records the link", async () => {
+    vi.mocked(importDeliveryPhotoLink).mockResolvedValue({ ok: true, reference: "linked-image", filename: "delivery-proof.jpg", contentType: "image/jpeg", size: 10 });
+    vi.mocked(deliverOrder).mockResolvedValue(moved(1042, "delivered"));
+    const dialog = openDelivery();
+    fireEvent.change(within(dialog).getByLabelText("Delivery photo link"), { target: { value: " https://share.lalamove.com/pod.jpg " } });
+    fireEvent.click(confirmButton(dialog));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 delivered."));
+    expect(importDeliveryPhotoLink).toHaveBeenCalledWith("https://share.lalamove.com/pod.jpg");
+    const [, form] = vi.mocked(deliverOrder).mock.calls[0];
+    expect(form?.getAll("photo")).toEqual(["linked-image"]);
+    expect(form?.get("photoLink")).toBe("https://share.lalamove.com/pod.jpg");
+  });
+
+  it("rolls the card back with the reason when the link gives no image, without delivering", async () => {
+    const reason = "That link didn't give us a JPG or PNG image. Save the image and upload it instead.";
+    vi.mocked(importDeliveryPhotoLink).mockResolvedValue({ ok: false, reason });
+    const dialog = openDelivery();
+    fireEvent.change(within(dialog).getByLabelText("Delivery photo link"), { target: { value: "https://share.lalamove.com/page" } });
+    fireEvent.click(confirmButton(dialog));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(reason));
+    expect(deliverOrder).not.toHaveBeenCalled();
+    tab("Out for delivery");
+    await waitFor(() => expect(screen.getByRole("link", { name: "#1042" })).toBeTruthy());
   });
 });
 
@@ -322,6 +384,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
+  codCollection: null,
   packedBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),
@@ -330,6 +393,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   paymentMethod: "gcash",
   lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }],
   subtotal: 100_000,
+  discount: 0,
   deliveryFee: 15_000,
   total: 115_000,
   address: null,
@@ -362,22 +426,26 @@ describe("Order detail packing", () => {
     expect(screen.getByRole("button", { name: "Print packing slip" })).toBeTruthy();
   });
 
-  it("loads the slip and prints it, and says why when it cannot", async () => {
-    const print = vi.fn();
-    window.print = print;
-    vi.mocked(loadPackingSlip).mockResolvedValueOnce({ ok: false, reason: "Order was not found." });
+  it("opens the slip PDF in a new tab, and says why when it cannot", async () => {
+    const tab = { location: { href: "" }, close: vi.fn() };
+    const open = vi.spyOn(window, "open").mockReturnValue(tab as never);
+    URL.createObjectURL = vi.fn(() => "blob:slip");
+    URL.revokeObjectURL = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(Response.json({ reason: "Order was not found." }, { status: 404 }));
     render(<OrderDetailView order={detail({ status: "paid" })} modules={FULFILMENT} />);
     fireEvent.click(screen.getByRole("button", { name: "Print packing slip" }));
+    expect(screen.getByRole("button", { name: "Preparing slip…" })).toBeTruthy();
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Order was not found."));
-    expect(print).not.toHaveBeenCalled();
+    expect(tab.close).toHaveBeenCalled();
+    expect(tab.location.href).toBe("");
 
-    vi.mocked(loadPackingSlip).mockResolvedValueOnce({ ok: true, slip: {
-      id: 1042, createdAt: new Date("2026-10-20T00:00:00Z"), customer: { id: "c1", name: "Maria Santos" },
-      fulfillmentMethod: "delivery", lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }], address: null, packedBy: null,
-    } } as never);
+    fetchMock.mockResolvedValueOnce(new Response(new Blob(["%PDF-"], { type: "application/pdf" })));
     fireEvent.click(screen.getByRole("button", { name: "Print packing slip" }));
-    await waitFor(() => expect(print).toHaveBeenCalled());
-    expect(screen.getByLabelText("Packing slip").textContent).toContain("Halaya");
+    await waitFor(() => expect(tab.location.href).toBe("blob:slip"));
+    expect(fetchMock).toHaveBeenLastCalledWith(expect.stringMatching(/\/api\/orders\/\d+\/packing-slip$/));
+    open.mockRestore();
+    fetchMock.mockRestore();
   });
 });
 const MOVES = ["Pack order", "Mark as dispatched", "Mark as delivered"];
@@ -392,7 +460,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     ];
     for (const [overrides, expected] of cases) {
       const { unmount } = render(<OrderDetailView order={detail(overrides)} modules={FULFILMENT} />);
-      expect(screen.getAllByRole("button").map((b) => b.textContent).filter((t) => t !== "Print packing slip")).toEqual(expected);
+      expect(screen.getAllByRole("button").map((b) => b.textContent).filter((t) => t !== "Print packing slip" && t !== "Orders")).toEqual(expected);
       unmount();
     }
   });
@@ -406,7 +474,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
       { status: "cancelled", paymentLabel: "Cancelled" as const },
     ]) {
       const { unmount } = render(<OrderDetailView order={detail(overrides)} modules={FULFILMENT} />);
-      expect(screen.queryAllByRole("button").filter((b) => b.textContent !== "Print packing slip")).toHaveLength(0);
+      expect(screen.queryAllByRole("button").filter((b) => b.textContent !== "Print packing slip" && b.textContent !== "Orders")).toHaveLength(0);
       unmount();
     }
   });
@@ -419,10 +487,10 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     const confirm = within(dialog).getByRole("button", { name: "Mark as dispatched" }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     fireEvent.click(within(dialog).getByRole("radio", { name: "Grab" }));
-    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "http://grab.test/1" } });
-    expect(within(dialog).getByText("The link must start with https://")).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText("Booking share link (optional)"), { target: { value: "http://grab.test/1" } });
+    expect(within(dialog).getByRole("alert").textContent).toContain("https://");
     expect(confirm.disabled).toBe(true);
-    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "https://grab.test/1" } });
+    fireEvent.change(within(dialog).getByLabelText("Booking share link (optional)"), { target: { value: "https://grab.test/1" } });
     fireEvent.change(within(dialog).getByLabelText("Rider contact (optional)"), { target: { value: "0917 123 4567" } });
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
@@ -430,7 +498,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     // A Delivery dispatch emails the Customer, so it is never shown as done before the server confirms.
     expect(toast.success).not.toHaveBeenCalled();
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 dispatched."));
-    expect(dispatchOrder).toHaveBeenCalledWith(1042, { courier: "Grab", trackingUrl: "https://grab.test/1", riderName: "", riderPlate: "", riderPhone: "0917 123 4567" });
+    expect(dispatchOrder).toHaveBeenCalledWith(1042, { courier: "Grab", trackingUrl: "https://grab.test/1", riderName: "", riderPlate: "", riderPhone: "09171234567" });
   });
 
   it("says why when the server refuses a Delivery dispatch", async () => {
@@ -439,7 +507,7 @@ describe("the Fulfilment Module's moves on an Order's detail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mark as dispatched" }));
     const dialog = screen.getByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("radio", { name: "Lalamove" }));
-    fireEvent.change(within(dialog).getByLabelText("Booking share link"), { target: { value: "https://x.test/1" } });
+    fireEvent.change(within(dialog).getByLabelText("Booking share link (optional)"), { target: { value: "https://x.test/1" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as dispatched" }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Enter the booking's share link, starting with https://."));
@@ -517,5 +585,14 @@ describe("the Delivery photo on an Order's detail", () => {
     render(<OrderDetailView order={detail({ status: "received" })} />);
 
     expect(screen.getByText("No photo")).toBeTruthy();
+  });
+});
+
+describe("Order detail for a Deleted Customer", () => {
+  it("tags the Customer without a profile link, and Staff can still move the Order forward", () => {
+    render(<OrderDetailView order={detail({ status: "paid", customer: { id: "c1", name: "Deleted customer", deleted: true } })} modules={FULFILMENT} />);
+    expect(screen.getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
+    expect(screen.queryByRole("link", { name: "Deleted customer" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Pack order" })).toBeTruthy();
   });
 });

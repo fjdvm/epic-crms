@@ -2,10 +2,17 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import { ClaimButton } from "./ticket-controls";
-import { PILL, Pill, PRIORITY_LABELS, PRIORITY_PILLS } from "./pill";
+import type { AssignableStaff } from "./staffs";
+import { CELL, COLUMNS, HEAD } from "./ticket-layout";
+import { TicketRows, type RowsViewer } from "./ticket-rows";
+import {
+  hasTicketFilters,
+  ticketsHref,
+  type TicketParams,
+} from "./ticket-params";
 import {
   TICKET_TABS,
   type TicketList,
@@ -13,58 +20,54 @@ import {
   type TicketTab,
 } from "./tickets";
 
-export interface TicketListParams {
-  tab: TicketTab;
-  page: number;
-}
+export type TicketListParams = TicketParams;
 
 export const TAB_LABELS: Record<TicketTab, string> = {
   open: "Open",
   waiting: "Waiting on customer",
+  on_hold: "On hold",
   resolved: "Resolved",
+  completed: "Completed",
+  all: "All",
+  mine: "Mine",
+  staffs: "Staffs",
 };
 
-/** The Figma frame's columns, minus Channel: a Ticket has no Channel. They share the table width in proportion, so the rows fill the card. */
-export const COLUMNS: { header: string; className: string }[] = [
-  { header: "Ticket", className: "flex-[1_1_100px]" },
-  { header: "Subject", className: "min-w-0 flex-[3_1_270px]" },
-  { header: "Customer", className: "min-w-0 flex-[2_1_150px]" },
-  { header: "Linked order", className: "flex-[1_1_120px]" },
-  { header: "Priority", className: "flex-[1_1_100px]" },
-  { header: "Status", className: "flex-[1_1_110px]" },
-  { header: "", className: "flex-[0_0_90px] justify-end" },
-];
-
-function href(params: TicketListParams, change: Partial<TicketListParams>): string {
-  const next = { ...params, ...change };
-  const query = new URLSearchParams();
-
-  if (next.tab !== "open") query.set("tab", next.tab);
-  if (next.page > 1) query.set("page", String(next.page));
-
-  const text = query.toString();
-
-  return text ? `/tickets?${text}` : "/tickets";
+function href(
+  params: TicketListParams,
+  change: Partial<TicketListParams>,
+): string {
+  return ticketsHref({ ...params, ...change });
 }
 
-function StatusPill({ row }: { row: TicketRow }) {
-  if (row.status === "resolved" || row.status === "completed") {
-    return <Pill className={PILL.green}>Resolved</Pill>;
-  }
-  if (row.overdue) return <Pill className={PILL.red}>Overdue</Pill>;
-  if (row.waiting) return <Pill className={PILL.amber}>Waiting</Pill>;
+export { COLUMNS, HEAD, CELL };
 
-  return <Pill className={PILL.red}>Open</Pill>;
-}
+const NO_VIEWER: RowsViewer = { id: "", name: "", role: null };
 
-export const HEAD = "flex items-start overflow-clip";
-export const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
+export function TicketListView({
+  list,
+  params,
+  viewer = NO_VIEWER,
+  staffs = [],
+  openId = null,
+  now = Date.now(),
+}: {
+  list: TicketList;
+  params: TicketListParams;
+  viewer?: RowsViewer;
+  /** Everyone a Ticket can be assigned to, for the Staffs tab and the drawer. */
+  staffs?: AssignableStaff[];
+  openId?: number | null;
+  now?: number;
+}) {
+  // Staff only ever see their own work, so the Staffs tab is for everyone else.
+  const tabs = TICKET_TABS.filter((t) => t !== "staffs" || viewer.role !== "staff");
+  const staffsOverview = params.tab === "staffs" && !params.claimedBy;
 
-export function TicketListView({ list, params }: { list: TicketList; params: TicketListParams }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       <nav className="flex shrink-0 gap-1" aria-label="Ticket tabs">
-        {TICKET_TABS.map((tab) => {
+        {tabs.map((tab) => {
           const active = tab === params.tab;
 
           return (
@@ -81,46 +84,39 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
             </Link>
           );
         })}
+        <Link href="/tickets/assistant" prefetch className="rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] text-[#6e6680]">From order assistant</Link>
       </nav>
 
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
-        {list.rows.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[#6e6680]">No Tickets here.</div>
+        {staffsOverview ? (
+          <ul className="min-h-0 flex-1 overflow-auto" aria-label="Staffs">
+            {staffs.length === 0 && <li className="p-8 text-center text-sm text-[#6e6680]">No one is available to assign.</li>}
+            {staffs.map((s) => (
+              <li key={s.id} className="border-b border-[#efebf4]">
+                <Link href={href(params, { tab: "staffs", claimedBy: s.id, page: 1 })} className="flex items-center justify-between py-3 text-sm text-[#1f1a2e]">
+                  <span className="font-medium">{s.name} <span className="text-xs font-normal text-[#6e6680]">{s.role === "manager" ? "Manager" : "Staff / Employee"}</span></span>
+                  <span className="text-[#6e6680]">{s.open} open</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : list.rows.length === 0 ? (
+          <div className="p-8 text-center text-sm text-[#6e6680]">
+            {hasTicketFilters(params)
+              ? "No Tickets match this search and these filters."
+              : "No Tickets here."}
+          </div>
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
-            <div className="min-w-[740px]">
+            <div className="min-w-[1130px]">
               <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
-                {COLUMNS.map((col) => (
-                  <div key={col.header} className={cn(HEAD, col.className)}>
+                {COLUMNS.map((col, c) => (
+                  <div key={c} className={cn(HEAD, col.className)}>
                     {col.header}
                   </div>
                 ))}
               </div>
-              {list.rows.map((row) => (
-                <div key={row.id} className="flex items-center border-b border-[#efebf4] py-[11px]">
-                  <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
-                    <Link href={`/tickets/${row.id}`}>TKT-{row.id}</Link>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[1].className)}>
-                    <span className="truncate pr-3">{row.subject}</span>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[2].className)}>
-                    <span className="truncate pr-3">{row.customerName}</span>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[3].className)}>
-                    {row.orderId === null ? "None yet" : `#${row.orderId}`}
-                  </div>
-                  <div className={cn(CELL, COLUMNS[4].className)}>
-                    <Pill className={PRIORITY_PILLS[row.priority]}>{PRIORITY_LABELS[row.priority]}</Pill>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[5].className)}>
-                    <StatusPill row={row} />
-                  </div>
-                  <div className={cn(CELL, COLUMNS[6].className)}>
-                    {row.status !== "completed" && <ClaimButton ticketId={row.id} />}
-                  </div>
-                </div>
-              ))}
+              <TicketRows rows={list.rows} viewer={viewer} staffs={staffs} now={now} openId={openId} />
             </div>
           </div>
         )}
@@ -147,6 +143,61 @@ export function TicketListView({ list, params }: { list: TicketList; params: Tic
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** The tabs and table with only the data (counts, rows) as skeleton; shown at once while a tab, search or filter loads. */
+export function TicketListSkeleton({
+  announce = true,
+}: {
+  announce?: boolean;
+}) {
+  return (
+    <div
+      {...(announce ? { role: "status", "aria-label": "Loading Tickets" } : {})}
+      className="flex min-h-0 flex-1 flex-col gap-5"
+    >
+      <nav
+        className="flex shrink-0 gap-1 overflow-hidden"
+        aria-label="Ticket tabs"
+      >
+        {TICKET_TABS.filter((t) => t !== "staffs").map((tab) => (
+          <span
+            key={tab}
+            className="flex items-center gap-1.5 rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] whitespace-nowrap text-[#6e6680]"
+          >
+            {TAB_LABELS[tab]} <Skeleton className="h-4 w-5" />
+          </span>
+        ))}
+        <Link href="/tickets/assistant" prefetch className="rounded-lg px-[14px] py-2 text-sm font-medium leading-[normal] text-[#6e6680]">From order assistant</Link>
+      </nav>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-w-[1130px]">
+            <div className="flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
+              {COLUMNS.map((col, c) => (
+                <div key={c} className={cn(HEAD, col.className)}>
+                  {col.header}
+                </div>
+              ))}
+            </div>
+            {Array.from({ length: 10 }, (_, i) => (
+              <div
+                key={i}
+                className="flex items-center border-b border-[#efebf4] py-[11px]"
+              >
+                {COLUMNS.map((col, c) => (
+                  <div key={c} className={cn(CELL, col.className)}>
+                    {col.header && <Skeleton className="h-4 w-3/4" />}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -16,20 +16,33 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/returns/actions", () => ({
   approveReturn: vi.fn(),
   declineReturn: vi.fn(),
+  decideReturn: vi.fn(),
+  requestReturnDecision: vi.fn(),
   markReturnGoodsReceived: vi.fn(),
   markReturnRefunded: vi.fn(),
   markReturnReplaced: vi.fn(),
   extendRefundWindow: vi.fn(),
+  changeRefundDestination: vi.fn(),
+  revealRefundDestination: vi.fn(),
 }));
+vi.mock("@/features/returns/refund-proof-actions", () => ({ saveRefundProof: vi.fn(), correctRefundReading: vi.fn(), proceedDespiteRefundFlag: vi.fn() }));
+vi.mock("@/features/orders/actions", () => ({ resendStatusEmail: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
-import { approveReturn, declineReturn, extendRefundWindow, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
+import { resendStatusEmail } from "@/features/orders/actions";
+import { saveRefundProof } from "@/features/returns/refund-proof-actions";
+import { approveReturn, changeRefundDestination, declineReturn, decideReturn, extendRefundWindow, revealRefundDestination, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
+
+/** Every button except the Back navigation, which is not an action. */
+const NAV = new Set(["Orders", "Returns", "Tickets"]);
+const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? "") && !b.getAttribute("aria-label")?.startsWith("Zoom "));
+
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 const detail = (overrides: Partial<ReturnDetail> = {}): ReturnDetail => ({
-  replacedAt: null, videoFileId: null, refundProofFileId: null, refundWindowExtendedAt: null, replacementOrderId: null,
+  replacedAt: null, videoFileId: null, refundProofFileId: null, refundWindowExtendedAt: null, replacementOrderId: null, refundDestination: null, refundDestinationLocked: false, orderDeliveryFee: 0, deliveryFeeRefunded: 0, deliveryFeeRefundable: false,
   preferredResolution: "refund", finalResolution: null,
   id: 15,
   number: "RMA-15",
@@ -66,7 +79,7 @@ const view = (
 
 const picture = (name = "proof.png", type = "image/png") => new File([new Uint8Array([1, 2, 3])], name, { type });
 
-const buttons = () => screen.queryAllByRole("button").map((b) => b.textContent);
+const buttons = () => actionButtons().map((b) => b.textContent);
 
 describe("the Return detail", () => {
   it("says the Delivery photo was removed, and No photo when the Order never had one", () => {
@@ -89,7 +102,7 @@ describe("the Return detail", () => {
     expect(screen.getByText("Damaged")).toBeTruthy();
     expect(screen.getByText("Lid was cracked on arrival")).toBeTruthy();
     expect(screen.getByText("Smooth tub")).toBeTruthy();
-    expect(screen.getByText("₱219.00")).toBeTruthy();
+    expect(screen.getAllByText("₱219.00")).toHaveLength(2); // Items and the refund amount: no Delivery fee was refunded
     expect(screen.getByText("GCash")).toBeTruthy();
     expect(screen.getByAltText("Defect image 1 for RMA-15").getAttribute("src")).toBe("https://files/img-1");
     expect(screen.getByAltText("Delivery photo for Order #1042").getAttribute("src")).toBe("https://files/photo-1");
@@ -118,10 +131,10 @@ describe("the Return detail", () => {
   });
 
   it.each([
-    ["requested", null, ["Decline", "Approve"]],
+    ["requested", null, ["Decide return"]],
     ["approved", true, ["Mark goods received"]],
-    ["approved", false, ["Issue refund"]],
-    ["goods received", true, ["Issue refund", "Save inspection"]],
+    ["approved", false, ["Save refund proof"]],
+    ["goods received", true, ["Save refund proof", "Save inspection"]],
     ["refunded", true, []],
     ["replaced", true, []],
     ["declined", null, []],
@@ -134,11 +147,11 @@ describe("the Return detail", () => {
 
   it("offers Mark replaced, not Mark refunded, once Staff chose a replacement", () => {
     view(detail({ status: "approved", goodsRequired: false, finalResolution: "replacement" }));
-    expect(buttons()).toEqual(["Mark replaced"]);
+    expect(buttons()).toEqual(["Send replacement"]);
     cleanup();
 
     view(detail({ status: "goods received", goodsRequired: true, finalResolution: "replacement" }));
-    expect(buttons()).toEqual(["Mark replaced", "Save inspection"]);
+    expect(buttons()).toEqual(["Send replacement", "Save inspection"]);
   });
 
   it("shows the preferred and final Resolution", () => {
@@ -190,85 +203,116 @@ describe("the Return detail", () => {
   });
 });
 
-describe("approving", () => {
-  const open = () => {
-    view(detail());
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+describe("deciding a Return", () => {
+  const open = (overrides: Partial<ReturnDetail> = {}, stock?: import("@/features/returns/replacement-stock").ReplacementStock) => {
+    render(<ReturnDetailView detail={detail(overrides)} imageUrls={[]} stock={stock} />);
+    fireEvent.click(screen.getByRole("button", { name: "Decide return" }));
 
     return screen.getByRole("alertdialog");
   };
+  const confirm = (dialog: HTMLElement, name: RegExp) => within(dialog).getByRole("button", { name }) as HTMLButtonElement;
 
-  it("cannot be confirmed until Staff say whether the goods must come back", () => {
+  it("cannot be confirmed until the Manager says whether the goods must come back", () => {
     const dialog = open();
 
-    expect((within(dialog).getByRole("button", { name: "Approve Return" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(approveReturn).not.toHaveBeenCalled();
+    expect(confirm(dialog, /Approve refund/).disabled).toBe(true);
+    expect(decideReturn).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["Yes, the Customer returns the goods", true],
+    ["Yes, inspect them before finishing", true],
     ["No, refund without the goods", false],
-  ])("sends the choice %s", async (label, goodsRequired) => {
-    vi.mocked(approveReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
+  ])("sends a refund with the choice %s", async (label, goodsRequired) => {
+    vi.mocked(decideReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
     const dialog = open();
 
     fireEvent.click(within(dialog).getByLabelText(label));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
+    fireEvent.click(confirm(dialog, /Approve refund/));
 
-    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, goodsRequired, "refund"));
+    await waitFor(() => expect(decideReturn).toHaveBeenCalledWith(15, { outcome: "refund", goodsRequired }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15 approved."));
   });
 
-  it.each(["refund", "replacement"] as const)("defaults the Resolution to the Customer's preference (%s)", async (preferred) => {
-    vi.mocked(approveReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
-    view(detail({ preferredResolution: preferred }));
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    const dialog = screen.getByRole("alertdialog");
+  it.each(["refund", "replacement"] as const)("starts on the Customer's preference (%s)", (preferred) => {
+    const dialog = open({ preferredResolution: preferred });
 
     expect((within(dialog).getByLabelText(new RegExp(`^${preferred}`, "i")) as HTMLInputElement).checked).toBe(true);
-    fireEvent.click(within(dialog).getByLabelText("No, refund without the goods"));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
-
-    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, false, preferred));
   });
 
-  it("sends a Resolution that differs from the preference", async () => {
-    vi.mocked(approveReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
-    const dialog = open();
+  it("sends a replacement now when the goods need not come back", async () => {
+    vi.mocked(decideReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "replaced" } });
+    const dialog = open({}, { state: "available" });
 
     fireEvent.click(within(dialog).getByLabelText(/^replacement/i));
-    fireEvent.click(within(dialog).getByLabelText("Yes, the Customer returns the goods"));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
+    fireEvent.click(within(dialog).getByLabelText("No, send the replacement now"));
+    fireEvent.click(confirm(dialog, /Approve replacement/));
 
-    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, true, "replacement"));
+    await waitFor(() => expect(decideReturn).toHaveBeenCalledWith(15, { outcome: "replacement", goodsRequired: false }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15: Replacement Order created."));
+  });
+
+  it("does not offer a replacement when an item is out of stock, and says which", () => {
+    const dialog = open({ preferredResolution: "replacement" }, { state: "short", items: [{ product: "Halaya tub", size: "L" }] });
+    const replacement = within(dialog).getByLabelText(/^replacement/i) as HTMLInputElement;
+
+    expect(replacement.disabled).toBe(true);
+    expect(replacement.checked).toBe(false);
+    expect(within(dialog).getByText("Out of stock: Halaya tub (L).")).toBeTruthy();
+  });
+
+  it("rejects only with a reason, which is shown to the Customer", async () => {
+    vi.mocked(decideReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "declined" } });
+    const dialog = open();
+
+    fireEvent.click(within(dialog).getByLabelText(/^reject/i));
+    const reject = confirm(dialog, /Reject Return/);
+    expect(reject.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Reason, shown to the Customer/), { target: { value: "   " } });
+    expect(reject.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Reason, shown to the Customer/), { target: { value: "Normal wear" } });
+    fireEvent.click(reject);
+
+    await waitFor(() => expect(decideReturn).toHaveBeenCalledWith(15, { outcome: "reject", reason: "Normal wear" }));
+    expect(approveReturn).not.toHaveBeenCalled();
+    expect(declineReturn).not.toHaveBeenCalled();
+  });
+
+  it("shows what Staff checked when they asked", () => {
+    render(<ReturnDetailView detail={detail()} imageUrls={[]} requests={[{ id: "r1", action: "return.decide", targetId: "15", amountInCentavos: 0, limitInCentavos: 0,
+      reason: "Seal is broken in the photo", requesterId: "ana", requesterName: "Ana Reyes", status: "waiting-manager", requestedAt: new Date().toISOString(),
+      managerName: null, ceoName: null, declineReason: null, check: { inWindow: true, photoSupportsReason: true } }]} />);
+    expect(screen.getByText("Ana Reyes asked you to decide")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Decide return" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("✓ Requested within the Refund window")).toBeTruthy();
+    expect(within(dialog).getByText("✓ The photo supports the reason")).toBeTruthy();
+    expect(within(dialog).getByText("“Seal is broken in the photo”")).toBeTruthy();
   });
 });
 
-describe("declining", () => {
-  const open = () => {
-    view(detail());
-    fireEvent.click(screen.getByRole("button", { name: "Decline" }));
+describe("a refund over the Approval limit", () => {
+  it("asks the CEO first, with no proof, and only then offers the refund steps", async () => {
+    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: false, reason: "Waiting for approval", status: "waiting-ceo", approvalId: "a1" });
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo />);
+    expect(buttons()).toEqual(["Ask the CEO for final approval"]);
+    fireEvent.click(screen.getByRole("button", { name: "Ask the CEO for final approval" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/Note for the CEO/), { target: { value: "Whole order spoiled" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send to the CEO" }));
 
-    return screen.getByRole("alertdialog");
-  };
+    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledWith(15, undefined, { reason: "Whole order spoiled" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Sent to the CEO. Refund once they approve."));
+    cleanup();
 
-  it("cannot be confirmed without a reason, even a blank one", () => {
-    const dialog = open();
-    const confirm = within(dialog).getByRole("button", { name: "Decline Return" }) as HTMLButtonElement;
+    const approved = { id: "a1", action: "return.refund" as const, targetId: "15", amountInCentavos: 600000, limitInCentavos: 500000, reason: "Whole order spoiled",
+      requesterId: "mario", requesterName: "Mario", status: "approved", requestedAt: new Date().toISOString(), managerName: "Mario", ceoName: "Owner", declineReason: null };
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo requests={[{ ...approved, status: "waiting-ceo" }]} />);
+    expect(screen.getByText("Waiting for the CEO's final approval")).toBeTruthy();
+    expect(buttons()).toEqual([]);
+    cleanup();
 
-    expect(confirm.disabled).toBe(true);
-    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "   " } });
-    expect(confirm.disabled).toBe(true);
-  });
-
-  it("sends the reason", async () => {
-    vi.mocked(declineReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "declined" } });
-    const dialog = open();
-
-    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Normal wear" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Decline Return" }));
-
-    await waitFor(() => expect(declineReturn).toHaveBeenCalledWith(15, "Normal wear"));
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo requests={[approved]} />);
+    expect(buttons()).toEqual(["Save refund proof"]);
   });
 });
 
@@ -285,63 +329,106 @@ describe("goods received and refunded", () => {
   });
 
   const refundable = () => detail({ status: "goods received", goodsRequired: true, finalResolution: "refund" });
-  const attach = (file: File) =>
-    fireEvent.change(within(screen.getByRole("alertdialog")).getByLabelText("Refund proof"), { target: { files: [file] } });
+  /** Fills what Staff record with a refund (#613), then attaches the proof. The amount is left as the dialog pre-fills it. */
+  const fillDetails = (dialog: ReturnType<typeof within>, reference = "GC-2026-0001") => {
+    fireEvent.change(dialog.getByLabelText(/Sent by/), { target: { value: "gcash" } });
+    fireEvent.change(dialog.getByLabelText(/Reference/), { target: { value: reference } });
+  };
+  const attach = (file: File) => {
+    const dialog = within(screen.getByRole("alertdialog"));
+    fillDetails(dialog);
+    fireEvent.change(dialog.getByLabelText("Refund proof"), { target: { files: [file] } });
+  };
   const confirmRefund = () =>
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save proof" }));
 
   it("cannot mark refunded until a refund proof is attached", () => {
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
-    const confirm = within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }) as HTMLButtonElement;
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
+    const confirm = within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save proof" }) as HTMLButtonElement;
 
     expect(confirm.disabled).toBe(true);
-    expect(markReturnRefunded).not.toHaveBeenCalled();
+    expect(saveRefundProof).not.toHaveBeenCalled();
   });
 
   it("refuses a proof that is not a JPG or PNG", () => {
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture("proof.gif", "image/gif"));
 
     expect(within(screen.getByRole("alertdialog")).getByRole("alert")).toBeTruthy();
-    expect((within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Mark refunded|Refund ₱)/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save proof" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("asks before marking refunded, and sends the proof", async () => {
-    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: true, return: { id: 15, status: "refunded" } });
+    vi.mocked(saveRefundProof).mockResolvedValue({ ok: true });
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture());
-    expect(markReturnRefunded).not.toHaveBeenCalled();
+    expect(saveRefundProof).not.toHaveBeenCalled();
     confirmRefund();
 
-    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledTimes(1));
-    const [id, form] = vi.mocked(markReturnRefunded).mock.calls[0];
+    await waitFor(() => expect(saveRefundProof).toHaveBeenCalledTimes(1));
+    const [id, form] = vi.mocked(saveRefundProof).mock.calls[0];
     expect(id).toBe(15);
     expect((form as FormData).get("proof")).toBe("confirmed-image");
+  });
+
+  it("offers a Manager the Delivery fee for a wrong or defective item, needing a reason, and sends it with the proof", async () => {
+    vi.mocked(saveRefundProof).mockResolvedValue({ ok: true });
+    view({ ...refundable(), reason: "wrong item", orderDeliveryFee: 15_000, deliveryFeeRefundable: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
+    attach(picture());
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(dialog.getByText(/The Delivery fee is not included/)).toBeTruthy();
+    fireEvent.click(dialog.getByRole("checkbox", { name: /Also refund the Delivery fee/ }));
+    expect(dialog.getByText("Items").nextSibling?.textContent).toBe("₱219.00");
+    expect(dialog.getByText("Delivery fee").nextSibling?.textContent).toBe("₱150.00");
+    expect(dialog.getByText("Total").nextSibling?.textContent).toBe("₱369.00");
+    expect((dialog.getByRole("button", { name: "Save proof" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(dialog.getByLabelText(/Reason/), { target: { value: "Shop sent the wrong flavour" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Save proof" }));
+
+    await waitFor(() => expect(saveRefundProof).toHaveBeenCalledTimes(1));
+    const form = vi.mocked(saveRefundProof).mock.calls[0][1] as FormData;
+    expect(form.get("includeDeliveryFee")).toBe("true");
+    expect(form.get("deliveryFeeReason")).toBe("Shop sent the wrong flavour");
+  });
+
+  it("shows Items, Delivery fee and Total before approval, noting a Delivery fee a Manager may add", () => {
+    view({ ...refundable(), status: "requested", reason: "defective", orderDeliveryFee: 15_000, deliveryFeeRefundable: true });
+    expect(screen.getByText("Delivery fee").nextSibling?.textContent).toBe("₱0.00");
+    expect(screen.getByText(/A Manager may add the ₱150\.00 Delivery fee/)).toBeTruthy();
+    expect(screen.getByText("Refund amount").nextSibling?.textContent).toBe("₱219.00");
+  });
+
+  it("offers no Delivery fee when it cannot be refunded", () => {
+    view(refundable());
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
+    expect(screen.queryByRole("checkbox", { name: /Delivery fee/ })).toBeNull();
   });
 
   it("asks before marking replaced", async () => {
     vi.mocked(markReturnReplaced).mockResolvedValue({ ok: true, return: { id: 15, status: "replaced" } });
     view(detail({ status: "approved", goodsRequired: false, finalResolution: "replacement" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark replaced" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send replacement" }));
     expect(markReturnReplaced).not.toHaveBeenCalled();
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark replaced" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Create Replacement Order" }));
 
     await waitFor(() => expect(markReturnReplaced).toHaveBeenCalledWith(15));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15 marked replaced."));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15: Replacement Order created."));
   });
 
   it("shows a refusal as an error and never as success", async () => {
-    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: false, reason: "Return already changed; refresh it before trying again." });
+    vi.mocked(saveRefundProof).mockResolvedValue({ ok: false, reason: "Return already changed; refresh it before trying again." });
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture());
     confirmRefund();
 
@@ -350,10 +437,10 @@ describe("goods received and refunded", () => {
   });
 
   it("treats an action that never answers as a failure", async () => {
-    vi.mocked(markReturnRefunded).mockRejectedValue(new Error("offline"));
+    vi.mocked(saveRefundProof).mockRejectedValue(new Error("offline"));
     view(refundable());
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
     attach(picture());
     confirmRefund();
 
@@ -366,12 +453,12 @@ describe("Issue refund dialog", () => {
   it("shows the Figma dialog: items, where the money goes back, the amount and the proof", () => {
     render(<ReturnActions id={15} number="RMA-15" status="goods received" goodsRequired preferredResolution="refund" finalResolution="refund"
       refund={{ customerName: "Maria Santos", amount: 39_900, paymentMethod: "maya", items: [{ name: "Ube Halaya · Tub", quantity: 1 }] }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Issue refund" }));
-    const dialog = screen.getByRole("alertdialog", { name: "Issue refund" });
+    fireEvent.click(screen.getByRole("button", { name: "Save refund proof" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Save refund proof" });
     expect(within(dialog).getByText(/RMA-15 · Maria Santos · paid ₱399\.00 via Maya/)).toBeTruthy();
     expect(within(dialog).getByText("Send back by Maya")).toBeTruthy();
     expect(within(dialog).getByText("Refund amount")).toBeTruthy();
-    expect((within(dialog).getByRole("button", { name: "Refund ₱399.00" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(dialog).getByRole("button", { name: "Save proof" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
@@ -415,5 +502,147 @@ describe("Refund window", () => {
   it("links the Replacement Order", () => {
     view("manager", { replacementOrderId: 77 });
     expect(screen.getByRole("link", { name: "Order #77" }).getAttribute("href")).toBe("/orders/77");
+  });
+});
+
+describe("Return detail for a Deleted Customer", () => {
+  it("tags the Customer without a profile link, and Return decisions are still offered", () => {
+    render(<ReturnDetailView detail={detail({ customer: { id: "c1", name: "Deleted customer", deleted: true } })} imageUrls={[]} />);
+    expect(screen.getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
+    expect(screen.queryByRole("link", { name: "Deleted customer" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Decide return" })).toBeTruthy();
+  });
+});
+
+describe("Refund destination", () => {
+  const masked = { method: "gcash" as const, accountName: "Maria Santos", maskedNumber: "•••••••4567", bankName: null };
+  const view = (role: "staff" | "manager" | "admin" | "ceo", overrides: Partial<ReturnDetail> = {}, request?: import("@/features/approvals/view").ApprovalView) =>
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund", refundDestination: masked, refundDestinationLocked: true, ...overrides })}
+      imageUrls={[]} role={role} destinationRequest={request} />);
+  const card = () => within(screen.getByRole("heading", { name: "Refund destination" }).closest("section")!);
+
+  it("shows the number masked and says it is locked", () => {
+    view("staff");
+    expect(card().getByTestId("destination-number").textContent).toBe("•••••••4567");
+    expect(card().getByText(/Locked when the Return was approved/)).toBeTruthy();
+  });
+
+  it("opens the full number at once with a pending label, hides it again, and never shows it when not ready", async () => {
+    vi.mocked(revealRefundDestination).mockResolvedValue({ ok: true, destination: { method: "gcash", accountName: "Maria Santos", accountNumber: "09171234567", bankName: null } });
+    view("staff");
+    fireEvent.click(card().getByRole("button", { name: "Show full number to send the refund" }));
+    expect(card().getByRole("button", { name: "Opening…" })).toBeTruthy();
+    await waitFor(() => expect(card().getByTestId("destination-number").textContent).toBe("09171234567"));
+    await waitFor(() => expect(card().getByRole("button", { name: "Hide full number" })).toBeTruthy());
+    fireEvent.click(card().getByRole("button", { name: "Hide full number" }));
+    expect(card().getByTestId("destination-number").textContent).toBe("•••••••4567");
+    cleanup();
+    view("staff", { status: "approved", goodsRequired: true });
+    expect(card().queryByRole("button", { name: /full number/ })).toBeNull();
+  });
+
+  it("says why when the full number is refused", async () => {
+    vi.mocked(revealRefundDestination).mockResolvedValue({ ok: false, reason: "The full number is shown only when the refund is ready to be sent." });
+    view("manager");
+    fireEvent.click(card().getByRole("button", { name: "Show full number to send the refund" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The full number is shown only when the refund is ready to be sent."));
+    expect(card().getByTestId("destination-number").textContent).toBe("•••••••4567");
+  });
+
+  it("lets a Manager change it only with every field, a reason and the Customer's confirmation, waiting for the server", async () => {
+    vi.mocked(changeRefundDestination).mockResolvedValue({ ok: true, destination: { ...masked, method: "maya" } });
+    view("manager");
+    fireEvent.click(card().getByRole("button", { name: "Change destination…" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    const confirm = () => dialog.getByRole("button", { name: "Change destination" }) as HTMLButtonElement;
+    expect(confirm().disabled).toBe(true);
+    fireEvent.change(dialog.getByLabelText(/Refund method/), { target: { value: "maya" } });
+    fireEvent.change(dialog.getByLabelText(/Account name/), { target: { value: "Maria S. Santos" } });
+    fireEvent.change(dialog.getByLabelText(/Account number/), { target: { value: "09189876543" } });
+    fireEvent.change(dialog.getByLabelText(/Reason/), { target: { value: "Her GCash was closed" } });
+    expect(confirm().disabled).toBe(true);
+    fireEvent.click(dialog.getByLabelText(/Customer confirmed/));
+    fireEvent.click(confirm());
+    expect(dialog.getByRole("button", { name: "Changing…" })).toBeTruthy();
+    await waitFor(() => expect(changeRefundDestination).toHaveBeenCalledWith(15, { method: "maya", accountName: "Maria S. Santos", accountNumber: "09189876543", bankName: null, reason: "Her GCash was closed", customerConfirmed: true }, { reason: "Her GCash was closed" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("The refund destination was changed."));
+  });
+
+  it("tells a Manager why when the server refuses, and the number stays masked", async () => {
+    vi.mocked(changeRefundDestination).mockResolvedValue({ ok: false, reason: "Money was already sent." });
+    view("manager");
+    fireEvent.click(card().getByRole("button", { name: "Change destination…" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    fireEvent.change(dialog.getByLabelText(/Account name/), { target: { value: "Maria" } });
+    fireEvent.change(dialog.getByLabelText(/Account number/), { target: { value: "09189876543" } });
+    fireEvent.change(dialog.getByLabelText(/Reason/), { target: { value: "Closed" } });
+    fireEvent.click(dialog.getByLabelText(/Customer confirmed/));
+    fireEvent.click(dialog.getByRole("button", { name: "Change destination" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Money was already sent."));
+    expect(card().getByTestId("destination-number").textContent).toBe("•••••••4567");
+  });
+
+  it("asks for a bank name only for a bank transfer", () => {
+    view("manager");
+    fireEvent.click(card().getByRole("button", { name: "Change destination…" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(dialog.queryByLabelText(/Bank name/)).toBeNull();
+    fireEvent.change(dialog.getByLabelText(/Refund method/), { target: { value: "bank-transfer" } });
+    expect(dialog.getByLabelText(/Bank name/)).toBeTruthy();
+  });
+
+  it("shows Staff Request approval, then Waiting", () => {
+    view("staff");
+    expect(card().queryByRole("button", { name: "Change destination…" })).toBeNull();
+    expect(card().getByRole("button", { name: "Request approval to change…" })).toBeTruthy();
+    cleanup();
+    view("staff", {}, { id: "d1", action: "return.change-destination", targetId: "15", status: "waiting-manager" } as never);
+    expect(card().getByText("Waiting for approval")).toBeTruthy();
+  });
+
+  it("offers nothing to change to Admin or CEO, nor after the money was sent", () => {
+    view("admin"); expect(card().queryByRole("button", { name: /Change|Request approval|full number/ })).toBeNull(); cleanup();
+    view("ceo"); expect(card().queryByRole("button", { name: /Change|Request approval|full number/ })).toBeNull(); cleanup();
+    view("manager", { status: "refunded" });
+    expect(card().queryByRole("button", { name: /Change destination/ })).toBeNull();
+  });
+
+  it("says when the Customer gave none, and hides the card on a replacement", () => {
+    view("manager", { refundDestination: null });
+    expect(card().getByText(/has not confirmed a refund destination/)).toBeTruthy();
+    cleanup();
+    view("manager", { preferredResolution: "replacement", finalResolution: "replacement" });
+    expect(screen.queryByRole("heading", { name: "Refund destination" })).toBeNull();
+  });
+});
+
+describe("Refund email not sent", () => {
+  const failed = { emailFailures: [{ kind: "return-refunded" as const, occurrence: "15", reason: "mailbox full" }] };
+  const open = (role: "staff" | "ceo") => render(<ReturnDetailView detail={detail({ status: "refunded", ...failed })} imageUrls={[]} role={role} />);
+
+  it("shows the notice and, after confirming, resends once, then says so", async () => {
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: true });
+    open("staff");
+    expect(screen.getByText("Email not sent")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Resend refund email" }));
+    expect(resendStatusEmail).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(resendStatusEmail).toHaveBeenCalledWith(1042, "return-refunded", "15"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Refund email sent."));
+  });
+
+  it("says why when the storefront refuses, and keeps the notice", async () => {
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: false, reason: "Resend is not available right now." });
+    open("staff");
+    fireEvent.click(screen.getByRole("button", { name: "Resend refund email" }));
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Resend is not available right now."));
+    expect(screen.getByText("Email not sent")).toBeTruthy();
+  });
+
+  it("is read-only for the CEO", () => {
+    open("ceo");
+    expect(screen.getByText("Email not sent")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resend refund email" })).toBeNull();
   });
 });

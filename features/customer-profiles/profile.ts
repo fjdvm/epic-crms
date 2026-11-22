@@ -1,18 +1,17 @@
 import type postgres from "postgres";
+import { listCustomerNotes, type CustomerNote } from "./notes";
 import { readCustomerTasks, type CustomerTask } from "./tasks";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
-import type { CustomerAudit } from "./walk-ins";
+import type { CustomerAudit } from "./audit";
 
 import { getCustomerCart, type Cart } from "./cart";
 import { getCustomerOrders, type CustomerOrder } from "./orders";
-import { listEmailsReceived, type EmailReceived } from "@/features/marketing/announcements";
 import { loadEmbeddedReturns, type ReturnRow } from "@/features/returns/returns";
 import { crmsDatabase } from "@/lib/crms-db";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "./rules";
 import { notReplacement } from "@/lib/replacement-order";
-import { getMergedWalkIn, getWalkIn, isWalkInId, type MergedWalkIn, type WalkInProfileData } from "./walk-ins";
 
 export interface CustomerAddress {
   id: number;
@@ -34,7 +33,6 @@ export interface CustomerProfile {
   lastName: string;
   email: string;
   contactNumber: string;
-  marketingOptIn: boolean;
   customerSince: Date;
   stage: Stage;
   /** City of the Default address, if the Customer has one. */
@@ -52,16 +50,12 @@ export interface CustomerProfile {
   /** Newest first. */
   orderHistory: CustomerOrder[];
   cart: Cart;
-  /** Set for a Walk-in Customer: the fields Staff entered. Such a profile has no storefront Orders or Cart. */
-  walkIn: WalkInProfileData | null;
-  /** Marketing Emails this Customer was sent, newest first. Null when CREOMS could not read them. */
-  emailsReceived: EmailReceived[] | null;
   /** The Customer's Returns, Requested ones first, as the Returns page orders them. Empty unless loaded for Staff with the Returns Module; null when CREOMS could not read them. */
   returns: ReturnRow[] | null;
-  /** Tags and internal notes carried over from the Walk-in Customer this Customer used to be. */
-  mergedWalkIn: MergedWalkIn | null;
   /** Open first; null means the Task store is unavailable. */
   tasks?: CustomerTask[] | null;
+  /** Preloaded with the Profile so the tab opens without a network round trip. */
+  notes?: CustomerNote[] | null;
 }
 
 /** One verified Customer's Profile, or null for a Lead or an id that does not exist. */
@@ -73,7 +67,7 @@ export async function getCustomerProfile(
   const [row] = await sql<Record<string, unknown>[]>`
     select
       c.id, c.full_name, c.first_name, c.middle_name, c.last_name, c.email, c.contact_number,
-      c.marketing_opt_in, u."createdAt" as customer_since,
+      u."createdAt" as customer_since,
       o.orders, o.total_spent, o.paid_orders, o.stage_orders, o.last_order,
       f.feedback_count, f.average_rating
     from public.customers c
@@ -96,7 +90,7 @@ export async function getCustomerProfile(
       join public.orders oo on oo.id = ff.order_id
       where oo.customer_id = c.id
     ) f
-    where c.id = ${id}`;
+    where c.id = ${id} and to_jsonb(c)->>'deleted_at' is null`;
 
   if (!row) return null;
 
@@ -131,7 +125,6 @@ export async function getCustomerProfile(
     lastName: row.last_name as string,
     email: row.email as string,
     contactNumber: row.contact_number as string,
-    marketingOptIn: row.marketing_opt_in as boolean,
     customerSince: row.customer_since as Date,
     stage: stageOf({ orders: row.stage_orders as number, lastOrder }, now),
     defaultCity: mapped.find((a) => a.isDefault)?.city ?? null,
@@ -144,40 +137,7 @@ export async function getCustomerProfile(
     addresses: mapped,
     orderHistory,
     cart,
-    walkIn: null,
-    emailsReceived: [],
     returns: [],
-    mergedWalkIn: null,
-  };
-}
-
-/** A Walk-in Customer's profile: the entered fields, a New Stage, and empty Orders, Cart and Feedback. */
-export function walkInProfile(w: WalkInProfileData): CustomerProfile {
-  return {
-    id: w.id,
-    name: w.name,
-    firstName: w.firstName,
-    middleName: null,
-    lastName: w.lastName,
-    email: w.email ?? "No email",
-    contactNumber: w.mobile,
-    marketingOptIn: w.emailConsent,
-    customerSince: w.createdAt,
-    stage: stageOf({ orders: 0, lastOrder: null }, new Date()),
-    defaultCity: w.address?.city || null,
-    orders: 0,
-    totalSpent: 0,
-    averageOrder: null,
-    lastOrder: null,
-    feedbackCount: 0,
-    averageRating: null,
-    addresses: [],
-    orderHistory: [],
-    cart: { lines: [], total: 0 },
-    walkIn: w,
-    emailsReceived: [],
-    returns: [],
-    mergedWalkIn: null,
   };
 }
 
@@ -193,12 +153,6 @@ export async function loadCustomerProfile(
   withReturns = false,
 ): Promise<CustomerProfileResult> {
   try {
-    if (isWalkInId(id)) {
-      const walkIn = await getWalkIn(connectCrms(), id);
-
-      return { ok: true, profile: walkIn ? walkInProfile(walkIn) : null };
-    }
-
     const profile = await getCustomerProfile(connect(), id);
     if (profile) {
       try {
@@ -207,8 +161,12 @@ export async function loadCustomerProfile(
         console.error("Customer Profile could not read Tasks", error);
         profile.tasks = null;
       }
-      profile.mergedWalkIn = await readMergedWalkIn(connectCrms, profile.email);
-      profile.emailsReceived = await readEmailsReceived(connectCrms, profile.id);
+      try {
+        profile.notes = await listCustomerNotes(connectCrms(), profile.id);
+      } catch (error) {
+        console.error("Customer Profile could not read Customer notes", error);
+        profile.notes = null;
+      }
       if (withReturns) profile.returns = await loadEmbeddedReturns(connect, { customerId: profile.id });
     }
 
@@ -219,48 +177,19 @@ export async function loadCustomerProfile(
   }
 }
 
-/** Walk-in data is CREOMS's own: if it cannot be read, the Customer's profile still opens without it. */
-async function readMergedWalkIn(connectCrms: () => postgres.Sql, email: string): Promise<MergedWalkIn | null> {
-  try {
-    return await getMergedWalkIn(connectCrms(), email);
-  } catch (error) {
-    console.error("Customer Profile could not read the merged Walk-in Customer", error);
-    return null;
-  }
-}
-
-/** The Returns are the storefront's: if they cannot be read, the profile still opens and the tab says so. */
-/** Announcements are CREOMS's own data: if they cannot be read, the profile still opens and the tab says so. */
-async function readEmailsReceived(connectCrms: () => postgres.Sql, customerId: string): Promise<EmailReceived[] | null> {
-  try {
-    return await listEmailsReceived(connectCrms(), customerId);
-  } catch (error) {
-    console.error("Customer Profile could not read the Emails received", error);
-    return null;
-  }
-}
-
 /** Audit a visible profile using only its identity; background reads never call this. */
 export async function recordCustomerProfileView(
   connect: () => postgres.Sql,
   id: string,
   audit: CustomerAudit & { operationId: string },
-  connectCrms: () => postgres.Sql = crmsDatabase,
 ): Promise<void> {
   try {
-    let name: string;
-    if (isWalkInId(id)) {
-      const walkIn = await getWalkIn(connectCrms(), id);
-      if (!walkIn) return;
-      name = walkIn.name;
-    } else {
-      const [customer] = await connect()<{ name: string }[]>`
-        select c.full_name as name from public.customers c
-        join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
-        where c.id = ${id}`;
-      if (!customer) return;
-      name = customer.name;
-    }
+    const [customer] = await connect()<{ name: string }[]>`
+      select c.full_name as name from public.customers c
+      join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
+      where c.id = ${id} and to_jsonb(c)->>'deleted_at' is null`;
+    if (!customer) return;
+    const name = customer.name;
     await recordAudit(audit.trail, {
       module: CUSTOMER_PROFILES_MODULE, action: "customer_profile.viewed", outcome: "success",
       actor: staffAuditActor(audit.staff),

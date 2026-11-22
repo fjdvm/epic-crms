@@ -35,19 +35,21 @@ CREATE TABLE crms.sync_state (
 -- Bell notifications. kind says what happened: a New Customer (at most one per Customer) or a
 -- Ticket event, Order event, Return request or low-rating Feedback. recipient_id is the Claimer's Portal id; NULL means every
 -- Staff member who may see that kind (Customer Profiles for new-customer, Tickets for the Ticket
--- kinds, Feedback for feedback-low, Orders for order-delivery-fee and order-placed, Payments for order-payment-proof, Returns for return-requested).
+-- kinds, Feedback for feedback-low, Orders for order-delivery-fee and order-placed, Payments for order-payment-proof, Managers with Orders for order-overdue, Managers with Payments for payment-review and payment-review-overdue, Returns for return-requested, Senior/PWD for senior-pwd-waiting).
 -- read_at is shared.
 CREATE TABLE crms.notifications (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   kind          text NOT NULL DEFAULT 'new-customer'
-                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'feedback-low', 'order-delivery-fee', 'order-placed', 'order-free-delivery', 'order-payment-proof', 'return-requested')),
+                CHECK (kind IN ('new-customer', 'ticket-new', 'ticket-message', 'ticket-not-fixed', 'ticket-reassigned', 'ticket-escalated', 'ticket-sent-back', 'feedback-low', 'order-delivery-fee', 'order-placed', 'order-free-delivery', 'order-payment-proof', 'order-overdue', 'payment-review', 'payment-review-overdue', 'return-requested', 'senior-pwd-waiting')),
   customer_id   text NOT NULL,
   customer_name text NOT NULL,
   ticket_id     integer,
   order_id      integer,
   rating        smallint,
   return_id     integer,
+  verification_id integer,
   recipient_id  text,
+  detail        jsonb,
   created_at    timestamptz NOT NULL DEFAULT now(),
   read_at       timestamptz
 );
@@ -56,33 +58,20 @@ CREATE UNIQUE INDEX notifications_new_customer ON crms.notifications (customer_i
 
 CREATE INDEX notifications_unread ON crms.notifications (created_at DESC) WHERE read_at IS NULL;
 
--- Walk-in Customers: people Staff add by hand, with no storefront account. Never written to the
--- storefront. mobile is stored normalised (11 digits, 09XXXXXXXXX); email is stored lower-case.
-CREATE TABLE crms.walk_in_customers (
-  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  first_name        text NOT NULL,
-  last_name         text NOT NULL,
-  mobile            text NOT NULL CHECK (mobile ~ '^09[0-9]{9}$'),
-  email             text CHECK (email = lower(email)),
-  birthday          date,
-  preferred_contact text,
-  source            text,
-  tags              text[] NOT NULL DEFAULT '{}',
-  email_consent     boolean NOT NULL DEFAULT false,
-  sms_consent       boolean NOT NULL DEFAULT false,
-  notes             text,
-  address_street    text,
-  address_province  text,
-  address_city      text,
-  address_barangay  text,
-  address_zip       text,
-  address_landmark  text,
-  created_at        timestamptz NOT NULL DEFAULT now()
+-- Run as creoms_writer on the target database. No storefront tables are changed.
+CREATE TABLE IF NOT EXISTS crms.customer_notes (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  customer_id text NOT NULL,
+  author_id text NOT NULL,
+  author_name text NOT NULL,
+  body text NOT NULL CHECK (char_length(body) BETWEEN 1 AND 2000 AND body ~ '[^[:space:]]'),
+  operation_id text NOT NULL CHECK (char_length(operation_id) BETWEEN 1 AND 200),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  UNIQUE (author_id, operation_id)
 );
+CREATE INDEX IF NOT EXISTS customer_notes_customer_created ON crms.customer_notes (customer_id, created_at DESC, id DESC);
 
--- One profile per person: the backstop for the duplicate check under concurrent saves.
-CREATE UNIQUE INDEX walk_in_customers_mobile ON crms.walk_in_customers (mobile);
-CREATE UNIQUE INDEX walk_in_customers_email ON crms.walk_in_customers (email) WHERE email IS NOT NULL;
+-- Permanence trigger: installed by docs/db/crms-customer-notes.sql.
 
 -- Ticket events CREOMS has already seen, one row per event (ticket-new:<id>, ticket-message:<id>,
 -- ticket-not-fixed:<id>:<resolved_at>). The first sync fills this with every event already in
@@ -141,6 +130,28 @@ CREATE TABLE crms.seen_returns (
 CREATE TABLE crms.return_sync_state (
   singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
   baselined_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Each uploaded Senior/PWD ID alerts once, regardless of what happens to it later.
+CREATE TABLE crms.seen_senior_pwd (
+  verification_id integer PRIMARY KEY,
+  seen_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE crms.senior_pwd_sync_state (
+  singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  baselined_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- The similar-image fingerprint of each Return evidence photo, computed by CREOMS from the stored
+-- file (no outside service sees it) and kept with the Return. See docs/return-flags.md.
+CREATE TABLE crms.return_photo_fingerprints (
+  return_id   integer NOT NULL,
+  position    integer NOT NULL CHECK (position BETWEEN 1 AND 3),
+  file_id     text NOT NULL,
+  fingerprint text NOT NULL CHECK (fingerprint ~ '^[0-9a-f]{16}:[0-9a-f]{16}$'),
+  computed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (return_id, position)
 );
 
 -- Run as creoms_writer before deploying #249. Additive and safe to re-run.
@@ -210,3 +221,21 @@ CREATE TABLE IF NOT EXISTS crms.customer_task_operations (
 
 RESET ROLE;
 REVOKE creoms_writer FROM CURRENT_USER;
+
+-- Order placement and email outcome Audit Events already delivered to the gateway (#572).
+CREATE TABLE IF NOT EXISTS crms.seen_order_audit_events (
+  operation_id text PRIMARY KEY,
+  delivered_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- The Senior/PWD discount rule (Commerce Settings). See crms-senior-pwd-discount.sql.
+CREATE TABLE crms.senior_pwd_discount_settings (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  discount_kind text NOT NULL DEFAULT 'percent' CHECK (discount_kind IN ('percent', 'pesos')),
+  discount_hundredths bigint NOT NULL DEFAULT 500 CHECK (discount_hundredths > 0 AND discount_hundredths <= 100000000),
+  limit_in_centavos bigint NOT NULL DEFAULT 12500 CHECK (limit_in_centavos > 0 AND limit_in_centavos <= 100000000),
+  limit_per text NOT NULL DEFAULT 'week' CHECK (limit_per IN ('day', 'week', 'month')),
+  changed_by_id text, changed_by_name text, changed_at timestamptz,
+  CHECK (discount_kind <> 'percent' OR discount_hundredths <= 10000)
+);
+INSERT INTO crms.senior_pwd_discount_settings (singleton) VALUES (true);

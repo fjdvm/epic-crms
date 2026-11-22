@@ -67,7 +67,7 @@ for polling.
 ## Order placement and upgrade
 
 Every newly observed Order has one placement key `order-placed:<id>`, even when
-Pickup, Cash on Delivery, GCash, already quoted, or progressed between reads.
+Cash on Delivery, GCash, already quoted, or progressed between reads.
 An unquoted placed Delivery Order retains kind `order-delivery-fee` and says a
 Delivery fee is needed. Other placements use `order-placed` and say the Customer
 placed the Order. Both require the Orders Module. GCash proof remains a separate
@@ -78,7 +78,7 @@ CREOMS change.** This is a CREOMS-only schema migration: it adds the new kind,
 the wider Order baseline marker and coordinator table. It preserves old Delivery
 placement keys and existing notifications/read state, and is safe to re-run.
 The first widened sync baselines historical Orders that previously had no
-placement event, avoiding an old Pickup alert flood; the existing actionable
+placement event, avoiding an old alert flood; the existing actionable
 Delivery/proof rules continue during this upgrade. Run the normal authenticated
 sync once after migration and deployment to establish that baseline before
 activating the new signal sender. New installs retain the existing first-sync
@@ -92,7 +92,7 @@ connection strings. Keep every key server-side. This signal secret is separate
 from both the storefront Caller key and scheduler `CREOMS_SYNC_SECRET`.
 
 For rollout verification, apply the SQL and configure both ends, baseline, then
-create a Pickup Order and send a storefront-authenticated gateway signal. Verify
+create a Delivery Order and send a storefront-authenticated gateway signal. Verify
 one Orders alert, a content-free nudge after it exists, no duplicate after a
 repeat signal, and discovery by the five-second poll without signaling. Verify
 wrong/missing Caller keys and an anonymous Live-ticket action are refused. These

@@ -14,6 +14,7 @@ import {
   Users2,
   Package,
   ClipboardCheck,
+  Landmark,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -39,7 +40,7 @@ export interface SystemItem {
 export type SystemChild = SystemItem;
 
 export const dashboardItem: NavItem = {
-  group: "",
+  group: "OVERVIEW",
   name: "Dashboard",
   href: "/dashboard",
   icon: LayoutDashboard,
@@ -53,66 +54,74 @@ export const customerProfilesItem: NavItem = {
 };
 
 export const ordersItem: NavItem = {
-  group: "SALES",
+  group: "COMMERCE",
   name: "Orders",
   href: "/orders",
   icon: ShoppingCart,
 };
 
+/** Read-only stock screen; the quantities come from the IMS. */
+export const productsStocksItem: NavItem = {
+  group: "COMMERCE",
+  name: "Products & Stocks",
+  href: "/orders/stock",
+  icon: Package,
+};
+
 export const paymentsItem: NavItem = {
-  group: "SALES",
+  group: "COMMERCE",
   name: "Payments",
   href: "/payments",
   icon: CreditCard,
 };
 
 export const fulfilmentItem: NavItem = {
-  group: "SALES",
+  group: "COMMERCE",
   name: "Fulfilment",
   href: "/fulfilment",
   icon: Truck,
 };
 
 export const returnsItem: NavItem = {
-  group: "SALES",
+  group: "COMMERCE",
   name: "Returns",
   href: "/returns",
   icon: RotateCcw,
 };
 
 export const approvalsItem: NavItem = {
-  group: "SALES",
+  group: "MANAGEMENT",
   name: "Approvals",
   href: "/approvals",
   icon: ClipboardCheck,
 };
 
 export const ticketsItem: NavItem = {
-  group: "SERVICE",
+  group: "CUSTOMER SUPPORT",
   name: "Tickets",
   href: "/tickets",
   icon: Ticket,
 };
 
 export const conversationsItem: NavItem = {
-  group: "SERVICE",
+  group: "CUSTOMER SUPPORT",
   name: "Conversations",
   href: "/conversations",
   icon: MessageCircle,
 };
 
 export const feedbackItem: NavItem = {
-  group: "SERVICE",
+  group: "CUSTOMER SUPPORT",
   name: "Feedback",
   href: "/feedback",
   icon: Star,
 };
 
-export const emailCampaignsItem: NavItem = {
-  group: "MARKETING",
-  name: "Email Campaigns",
-  href: "/email-campaigns",
-  icon: Mail,
+export const commerceSettingsItem: NavItem = {
+  group: "MANAGEMENT",
+  name: "Commerce Settings",
+  href: "/management/commerce-settings",
+  icon: Landmark,
 };
 
 /** The Figma sidebar, top to bottom. */
@@ -120,14 +129,15 @@ export const sidebarItems: NavItem[] = [
   dashboardItem,
   customerProfilesItem,
   ordersItem,
+  productsStocksItem,
   paymentsItem,
   fulfilmentItem,
   returnsItem,
-  approvalsItem,
   ticketsItem,
   conversationsItem,
   feedbackItem,
-  emailCampaignsItem,
+  approvalsItem,
+  commerceSettingsItem,
 ];
 
 export const systems: SystemItem[] = [
@@ -141,7 +151,7 @@ export const systems: SystemItem[] = [
   },
   {
     fullName: "Customer Relationship Management",
-    desc: "Contact profiles, tickets & marketing",
+    desc: "Contact profiles, tickets & feedback",
     icon: Building2,
     active: true,
     url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://creoms.buildwrite.me/",

@@ -22,6 +22,8 @@ export interface OrderAddress {
   province: string;
   postalCode: string;
   country: string;
+  /** Set only on Orders saved with the structured picker; older Orders have none and show as plain text. */
+  region?: string | null;
 }
 
 export interface CustomerOrder {
@@ -35,7 +37,9 @@ export interface CustomerOrder {
   subtotal: number;
   /** Centavos; null when the Order has no Delivery fee. */
   deliveryFee: number | null;
-  /** Centavos; subtotal plus Delivery fee. */
+  /** Centavos; the approved Senior/PWD discount saved on the Order, 0 when it has none. */
+  discount: number;
+  /** Centavos; subtotal minus approved discount plus Delivery fee. */
   total: number;
   /** The Address as it was at checkout, not the Customer's current one. */
   address: OrderAddress | null;
@@ -63,10 +67,12 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
   const orders = await sql<Record<string, unknown>[]>`
     select o.id, o.created_at, o.status, o.fulfillment_method, o.payment_method,
       o.subtotal_in_centavos, o.delivery_fee_in_centavos,
+      coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as discount_in_centavos,
       o.gcash_reference_number, o.payment_proof_screenshot_pathname, o.payment_proof_file_id, o.payment_proof_submitted_at,
       o.payment_proof_rejected_at, o.payment_proof_rejections,
       a.label as a_label, a.street as a_street, a.barangay as a_barangay, a.city as a_city,
       a.province as a_province, a.postal_code as a_postal_code, a.country as a_country,
+      to_jsonb(a) ->> 'region' as a_region,
       f.rating as f_rating, f.comment as f_comment, f.created_at as f_created_at, f.sentiment as f_sentiment
     from public.orders o
     left join public.order_delivery_addresses a on a.order_id = o.id
@@ -85,6 +91,7 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
   return orders.map((o) => {
     const subtotal = o.subtotal_in_centavos as number;
     const deliveryFee = (o.delivery_fee_in_centavos as number | null) ?? null;
+    const discount = (o.discount_in_centavos as number | null) ?? 0;
     const reference = (o.gcash_reference_number as string | null) ?? null;
     const screenshot = paymentScreenshotSource(
       o.id as number,
@@ -110,7 +117,8 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
         })),
       subtotal,
       deliveryFee,
-      total: subtotal + (deliveryFee ?? 0),
+      discount,
+      total: subtotal - discount + (deliveryFee ?? 0),
       address: o.a_street === undefined || o.a_street === null
         ? null
         : {
@@ -121,6 +129,7 @@ async function fetchOrders(sql: postgres.Sql, where: postgres.PendingQuery<postg
             province: o.a_province as string,
             postalCode: o.a_postal_code as string,
             country: o.a_country as string,
+            region: (o.a_region as string | null) || null,
           },
       feedback:
         o.f_rating === null || o.f_rating === undefined

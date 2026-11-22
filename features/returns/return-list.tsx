@@ -7,7 +7,11 @@ import { orderLabel } from "@/features/customer-profiles/rules";
 import { Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
 
+import { returnLabel } from "./refund-record";
+import { returnDisplayLabel } from "./outcome";
 import { returnAnchor } from "./anchor";
+import { ReturnFlagNotes } from "./return-flag-notes";
+import type { ReturnFlag } from "./return-flags";
 import { RETURN_TABS, type ReturnList, type ReturnStats, type ReturnTab } from "./returns";
 import { STATUS_PILLS } from "./returns-table";
 
@@ -17,7 +21,7 @@ export interface ReturnListParams {
 }
 
 export const TAB_LABELS: Record<ReturnTab, string> = Object.fromEntries(
-  RETURN_TABS.map((t) => [t, orderLabel(t)]),
+  RETURN_TABS.map((t) => [t, returnLabel(t)]),
 ) as Record<ReturnTab, string>;
 
 /** The Figma frame's columns; they share the table width in proportion. */
@@ -109,10 +113,13 @@ export function ReturnListView({
   list,
   stats,
   params,
+  flags,
 }: {
   list: ReturnList;
   stats: ReturnStats | null;
   params: ReturnListParams;
+  /** Return flags by Return id; absent when they could not be read. */
+  flags?: Map<number, ReturnFlag[]>;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
@@ -138,10 +145,11 @@ export function ReturnListView({
               </div>
               {list.rows.map((row) => (
                 <div key={row.id} id={returnAnchor(row.id)} data-return-row className="flex scroll-mt-10 items-center border-b border-[#efebf4] py-[11px]">
-                  <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
+                  <div className={cn(CELL, COLUMNS[0].className, "flex-col font-medium text-[#5b2a86]")}>
                     <Link href={`/returns/${row.id}`} className="hover:underline">
                       {row.number}
                     </Link>
+                    <ReturnFlagNotes flags={flags?.get(row.id)} compact />
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className)}>
                     <span className="truncate pr-3">{row.customer.name}</span>
@@ -158,7 +166,7 @@ export function ReturnListView({
                   </div>
                   <div className={cn(CELL, COLUMNS[4].className)}>{orderLabel(row.finalResolution ?? row.preferredResolution)}</div>
                   <div className={cn(CELL, COLUMNS[5].className)}>
-                    <Pill className={STATUS_PILLS[row.status]}>{orderLabel(row.status)}</Pill>
+                    <Pill className={STATUS_PILLS[row.status]}>{returnDisplayLabel(row.status, row.goodsRequired, row.replacement)}</Pill>
                   </div>
                   <div className={cn(CELL, COLUMNS[6].className)}>{formatDate(row.requestedAt)}</div>
                 </div>

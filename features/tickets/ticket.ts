@@ -1,9 +1,12 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
 import { PAID_OR_FULFILLED, stageOf, type Stage } from "@/features/customer-profiles/rules";
 
 import type { FileStorage } from "./attachments";
-import type { TicketPriority, TicketStatus } from "./tickets";
+import { DEFAULT_HISTORY, type ServiceLevel } from "./service-level";
+import { withServiceLevels, type ServiceLevels } from "./service-level-store";
+import type { HoldReason, TicketHold, TicketPriority, TicketStatus } from "./tickets";
 
 export interface TicketMessage {
   id: number;
@@ -13,6 +16,10 @@ export interface TicketMessage {
   body: string;
   /** The Message carries an image, PDF or video. */
   hasAttachment: boolean;
+  /** An Internal note: Staff-only, written by `senderName`, never a Staff reply. */
+  internal?: boolean;
+  /** A note shown before the server has confirmed it. */
+  sending?: boolean;
   /** The file-storage id of the image, when it was stored there; old storefront images have none. */
   fileId?: string | null;
   /** A short-lived address to show the image from; null when there is none to show. */
@@ -20,6 +27,8 @@ export interface TicketMessage {
   /** The attachment's content type and file name, when file-storage could say; they decide how it is shown. */
   attachmentType?: string | null;
   attachmentName?: string | null;
+  /** The attachment's size in bytes, when file-storage could say. */
+  attachmentSize?: number | null;
   createdAt: Date;
 }
 
@@ -34,10 +43,27 @@ export interface TicketOrder {
 export interface TicketCustomer {
   id: string;
   name: string;
+  /** True once the storefront has soft-deleted the Customer: no profile link, no contact details. */
+  deleted?: boolean;
   stage: Stage;
   orders: number;
   /** Centavos. */
   totalSpent: number;
+}
+
+/** The Customer's rating of the support they got, given once when they confirmed a fix or completed the Ticket. */
+export interface TicketRatingRecord {
+  /** 1 to 5; null when the Customer left only a comment. */
+  stars: number | null;
+  comment: string | null;
+  at: Date;
+}
+
+/** A Ticket linked to this one as its earlier or later half of a Follow-up. */
+export interface RelatedTicket {
+  id: number;
+  subject: string;
+  status: TicketStatus;
 }
 
 export interface TicketDetail {
@@ -45,14 +71,26 @@ export interface TicketDetail {
   id: number;
   subject: string;
   status: TicketStatus;
+  /** One of the storefront's Categories. */
+  category: string;
   priority: TicketPriority;
   openedAt: Date;
   /** The Claimer's name; null while Unclaimed. */
   claimerName: string | null;
   /** The Claimer's opaque Staff id; null while Unclaimed. */
   claimerId: string | null;
+  /** Set while the Ticket is On hold; null otherwise. */
+  hold: TicketHold | null;
+  /** The countdown to the first reply or resolve target, taken from the pair in force when it was opened. */
+  serviceLevel: ServiceLevel;
   /** Oldest first. */
   messages: TicketMessage[];
+  /** The Customer's rating; null when they skipped it, or when the Ticket was completed automatically. */
+  rating: TicketRatingRecord | null;
+  /** The Completed Ticket this one follows up; null for an ordinary Ticket. */
+  followUpOf: RelatedTicket | null;
+  /** Tickets the Customer opened to follow up this one, oldest first. */
+  followUps: RelatedTicket[];
   /** The Linked order; null when the Ticket has none. */
   order: TicketOrder | null;
   customer: TicketCustomer;
@@ -65,10 +103,12 @@ export async function getTicket(
   sql: postgres.Sql,
   id: number,
   now: Date = new Date(),
+  levels: ServiceLevels = { history: DEFAULT_HISTORY },
 ): Promise<TicketDetail | null> {
   const [t] = await sql<Record<string, unknown>[]>`
-    select t.id, t.subject, t.status, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id,
-      c.id as customer_id, c.full_name, c.first_name
+    select t.id, t.subject, t.status, t.category, t.priority, t.created_at, t.claimed_by_name, t.claimed_by_id, t.order_id, t.hold_reason, t.hold_note, t.hold_until, t.resolved_at, t.held_seconds, t.hold_started_at,
+      t.follow_up_of_id, t.rating, t.rating_comment, t.rated_at,
+      c.id as customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, case when to_jsonb(c)->>'deleted_at' is null then c.first_name else '' end as first_name
     from tickets t
     join customers c on c.id = t.customer_id
     where t.id = ${id}`;
@@ -80,10 +120,20 @@ export async function getTicket(
   const customerFirstName = (t.first_name as string) || (t.full_name as string);
 
   const messages = await sql<Record<string, unknown>[]>`
-    select id, sender, body, file_id, attachment_pathname, created_at
+    select id, sender, body, file_id, attachment_pathname, internal, author_name, created_at
     from ticket_messages
     where ticket_id = ${id}
     order by created_at, id`;
+
+  const relatedRows = await sql<Record<string, unknown>[]>`
+    select id, subject, status, follow_up_of_id from tickets
+    where id = ${(t.follow_up_of_id as number | null) ?? 0} or follow_up_of_id = ${id}
+    order by id`;
+  const related = (r: Record<string, unknown>): RelatedTicket => ({
+    id: r.id as number,
+    subject: r.subject as string,
+    status: r.status as TicketStatus,
+  });
 
   const [totals] = await sql<Record<string, unknown>[]>`
     select
@@ -113,28 +163,74 @@ export async function getTicket(
     };
   }
 
+  const serviceLevel = (
+    await withServiceLevels(
+      levels,
+      [
+        {
+          id,
+          createdAt: t.created_at as Date,
+          input: {
+            status: t.status as TicketStatus,
+            resolvedAt: (t.resolved_at as Date | null) ?? null,
+            heldSeconds: t.held_seconds as number,
+            holdStartedAt: (t.hold_started_at as Date | null) ?? null,
+            // An Internal note is not a Message to the Customer, so it never starts, stops or restarts a clock.
+            messages: messages
+              .filter((m) => !m.internal)
+              .map((m) => ({ sender: m.sender as "customer" | "staff", at: m.created_at as Date })),
+          },
+        },
+      ],
+      now,
+    )
+  ).get(id)!;
+
   return {
     id: t.id as number,
     subject: t.subject as string,
     status: t.status as TicketStatus,
+    category: t.category as string,
     priority: t.priority as TicketPriority,
     openedAt: t.created_at as Date,
     claimerName,
     claimerId: (t.claimed_by_id as string | null) ?? null,
+    hold:
+      t.status === "on_hold" && t.hold_reason && t.hold_until
+        ? {
+            reason: t.hold_reason as HoldReason,
+            note: (t.hold_note as string | null) ?? null,
+            until: t.hold_until as Date,
+          }
+        : null,
+    serviceLevel,
     messages: messages.map((m) => ({
       id: m.id as number,
       sender: m.sender as "customer" | "staff",
-      senderName: m.sender === "customer" ? customerFirstName : (claimerName ?? "Staff"),
+      internal: m.internal === true,
+      senderName:
+        m.sender === "customer" ? customerFirstName : m.internal ? ((m.author_name as string | null) ?? "Staff") : (claimerName ?? "Staff"),
       body: m.body as string,
       hasAttachment: m.file_id !== null || m.attachment_pathname !== null,
       fileId: (m.file_id as string | null) ?? null,
       attachmentUrl: null,
       createdAt: m.created_at as Date,
     })),
+    rating:
+      t.rated_at !== null && t.rated_at !== undefined
+        ? {
+            stars: (t.rating as number | null) ?? null,
+            comment: (t.rating_comment as string | null) ?? null,
+            at: t.rated_at as Date,
+          }
+        : null,
+    followUpOf: relatedRows.filter((r) => r.id === t.follow_up_of_id).map(related)[0] ?? null,
+    followUps: relatedRows.filter((r) => r.follow_up_of_id === id).map(related),
     order,
     customer: {
       id: customerId,
       name: t.full_name as string,
+      deleted: t.deleted as boolean,
       stage: stageOf(
         {
           orders: totals.stage_orders as number,
@@ -156,9 +252,10 @@ export async function loadTicket(
   connect: () => postgres.Sql,
   id: number,
   storage?: FileStorage,
+  levels?: ServiceLevels,
 ): Promise<TicketResult> {
   try {
-    const ticket = await getTicket(connect(), id);
+    const ticket = await getTicket(connect(), id, new Date(), levels);
     if (ticket && storage) await addImageAddresses(ticket, storage);
 
     return { ok: true, ticket };
@@ -180,6 +277,7 @@ async function addImageAddresses(ticket: TicketDetail, storage: FileStorage) {
           m.attachmentUrl = file.url;
           m.attachmentType = file.contentType;
           m.attachmentName = file.filename;
+          m.attachmentSize = file.size ?? null;
         } else m.attachmentUrl = await storage.viewUrl(m.fileId);
       } catch (error) {
         console.error(`The image on Ticket TKT-${ticket.id} Message ${m.id} could not be reached`, error);

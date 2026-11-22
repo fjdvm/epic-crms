@@ -17,6 +17,7 @@ export interface OrderListParams {
 export const TAB_LABELS: Record<OrderTab, string> = {
   all: "All",
   ...Object.fromEntries(ORDER_TABS.slice(1).map((t) => [t, orderLabel(t)])),
+  "cancel-requests": "Cancel requests",
 } as Record<OrderTab, string>;
 
 /** The Figma frame's columns; they share the table width in proportion, so the rows fill the card. */
@@ -99,10 +100,10 @@ export function OrderListView({ list, params, codFlags = {} }: { list: OrderList
                 <div
                   key={row.id}
                   data-order-row
-                  className="flex items-center border-b border-[#efebf4] py-[11px]"
+                  className="relative flex items-center border-b border-[#efebf4] py-[11px] hover:bg-[#faf8fc]"
                 >
                   <div className={cn(CELL, COLUMNS[0].className, "font-medium text-[#5b2a86]")}>
-                    <Link href={`/orders/${row.id}`}>#{row.id}</Link>
+                    <Link href={`/orders/${row.id}`} className="after:absolute after:inset-0">#{row.id}</Link>
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className)}>{formatDate(row.createdAt)}</div>
                   <div className={cn(CELL, COLUMNS[2].className)}>
@@ -127,7 +128,7 @@ export function OrderListView({ list, params, codFlags = {} }: { list: OrderList
                     </div>
                   </div>
                   <div className={cn(CELL, COLUMNS[6].className)}>
-                    <StatusPill status={row.status} />
+                    <StatusPill status={row.status} />{row.cancelRequested && <span className="ml-1.5 rounded-full bg-[#fdf1d8] px-2 py-0.5 text-[11px] font-medium text-[#8a5a00]">Cancel requested</span>}
                   </div>
                 </div>
               ))}

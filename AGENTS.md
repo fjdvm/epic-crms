@@ -33,38 +33,46 @@ Every screen in the CRM prototype has a dark note card beside it stating who can
 Handle the shop's daily work and can do anything that is easy to undo. Dashboard shows only their own work for the day.
 - **Customer Profiles:** add and edit customers; write notes and tasks.
 - **Orders:** confirm orders, quote the delivery fee, check the cash-on-delivery flags. Orders are placed by Customers on the storefront; Staff never create them (the one exception is the Replacement Order, made when a Manager approves a replacement).
-- **Payments:** check payment proofs (GCash, Maya or bank transfer, all manual), mark orders paid, ask a customer for a new proof.
-- **Fulfilment:** pack, dispatch with the Lalamove or Grab link, handle pickups, mark orders delivered, record failed deliveries.
+- **Payments:** check payment proofs (GCash, Maya or bank transfer, all manual), mark orders paid, ask a customer for a new proof. When a payment reference was already used on another Order, "Mark paid" is stopped for Staff (they see "Request approval"); a Manager can approve it anyway, with a reason.
+- **Fulfilment:** pack, dispatch with the Lalamove or Grab link, mark orders delivered, record failed deliveries.
 - **Returns:** inspect what came back, record whether it goes back to stock or gets written off, request a replacement or refund.
 - **Tickets and Conversations:** claim, reply, put tickets on hold, escalate, resolve, write internal notes, use AI assist.
 - **Feedback:** reply to customers.
-- **No access** to Email campaigns, Segments, Reports or the Portal.
+- **No access** to Reports or the Portal.
 - When they try something that needs a Manager, they see "Request approval" instead of the button.
 
 ### CREOMS Manager
 
-Everything Staff can do, plus approvals, reports and marketing. Dashboard shows the whole team and the approvals waiting for them.
+**General Manager** is treated as a CREOMS Manager (same powers). Tickets can be assigned only to Staff / Employee, CREOMS Manager and General Manager; never to Admin, CEO or VP. Staff only claim for themselves; a Manager assigns anyone.
+
+Everything Staff can do, plus approvals and reports. Dashboard shows the whole team and the approvals waiting for them.
 - **Approves** anything involving money, removing stock, overriding an AI warning, or moving someone else's work: refunds and "approve anyway" on payments, cancelling an order after dispatch, approving replacements, refunds and store credit on returns, holding a bad batch, extending the 24-hour return window.
 - **Tickets:** reassign tickets, move all of an absent teammate's tickets at once, take escalations.
 - **Customers and feedback:** merge duplicate customers, send win-back offers, publish or hide reviews, open the complaint themes.
-- **Marketing:** full use of Email campaigns and Segments, including AI drafts, sending and automations.
 - **Reports:** view the fulfilment and ticket reports.
-- **Portal:** view settings only. Cannot manage users or open system logs or system health.
+- **Management:** Commerce Settings: Payment accounts, free-delivery threshold, Payment window, Approval limit, Automatic checks and Service levels. The Portal is not for Managers.
 
 ### Admin
 
 Runs the system, not the shop.
-- **Portal:** full control of User management and user account requests (every account and role is created by an Admin); full control of Settings (general, automatic checks, AI, service levels, loyalty and referrals, notifications); full control of Activity logs, System logs and System health.
+- **Portal:** full control of User management and user account requests (every account and role is created by an Admin); full control of Activity logs, System logs and System health. The Portal has no Settings screen: the Approval limit, Automatic checks and Service levels live in Commerce Settings under Management, with the Payment accounts.
 - **CREOMS:** can view every module, including reports. Does not approve business decisions such as refunds or write-offs.
 
 ### CEO
 
 The owner. Read-only everywhere: their own owner dashboard, every CREOMS module, all reports, and the Portal's users, settings, logs and system health.
 - The only thing the CEO acts on is the final approval of refunds and write-offs **over ₱5,000**. Amounts of ₱5,000 or less stop at the Manager.
+- **Owner exception:** the CEO, like a Manager, may also manage the shop's Payment accounts, the free-delivery threshold, the Payment window, the Approval limit, the Automatic checks and the Service levels, on the one Commerce Settings screen under Management (the Management Module). Only Manager and CEO can open Management; Staff and Admin cannot. The Figma "Roles & access" section (node `577:10412`) still needs the same change.
 
 ### For everyone
 
 AI never acts on its own. Anything sent to a customer, or that changes an order, ticket or payment, needs a person, and every accepted AI suggestion is logged with that person's name.
+
+**One exception, the Order assistant.** It may answer a signed-in Customer about their own Orders and the shop, read-only, and may show a Handoff summary that the Customer approves before it goes to the team. This is the one place AI words reach a Customer without a person reviewing them. Its limits: read-only (it never changes, cancels or refunds anything), own data only (never another Customer's Order), and no promises about refunds, discounts or replacements; those go to a person as a Ticket.
+
+**Second exception, the Proof reader.** The owner authorized OCR that reads a payment proof (Customer upload) or a refund proof (Staff upload) by itself, because Staff need the findings ready when they open it. Its limits: it runs in the background after the proof is saved, and the Customer's submit never waits for it; it only extracts details, compares them with the Order's facts and writes findings; it never approves or rejects a payment or refund, changes an Order or payment status, or sends anything to a Customer; if it fails or times out the proof is kept and shows Needs Review; findings are visible only to Staff and Managers (Admin and CEO view, never cause a call); the model gets only the proof image and the minimum comparison facts, no other personal details; one result is stored per saved proof, so retries never run it twice, and a replacement proof gets its own check; Staff must verify the real transfer with the payment provider before marking Paid or Refunded; outcomes and the deciding Staff member's name go to the Audit Logs. Matching details are supporting evidence only, not proof of payment or of the image's authenticity.
+
+**AI features have fixed defaults.** Their numbers, caps and lists are fixed in code. There are no Admin AI settings and no kill switch, and Admin and CEO view AI results but never cause a model call.
 
 ## Checks and PR completion
 
@@ -76,7 +84,7 @@ AI never acts on its own. Anything sent to a customer, or that changes an order,
 
 ## Hosting: Azure, not Vercel
 
-Production runs on Azure (Container Apps) with the database on Neon. Do not use Vercel tools, the Vercel CLI or `vercel env pull` in this repo. Environment variables and secrets live in the Azure Container App and GitHub Actions secrets. Reading production secrets and applying production migrations need the owner's explicit approval for that exact command.
+Production runs on Azure (Container Apps) with the database on Neon. Do not use Vercel tools, the Vercel CLI or `vercel env pull` in this repo. Environment variables and secrets live in the Azure Container App and GitHub Actions secrets. The owner pre-approves database migrations needed to complete requested work, including production migrations, using the available `.env` variables. Apply and verify those migrations without asking for command-by-command approval. Destructive data operations outside the requested migration still need explicit approval. Reading production secrets outside the authorized `.env` files needs the owner's explicit approval for that exact command.
 
 ## No polling
 
@@ -88,7 +96,11 @@ Every screen must feel instant. This builds on `docs/adr/0002-instant-reads-and-
 
 - **Instant navigation.** A click on a link, tab, tile or period control reacts at once: show the loading skeleton or the cached page immediately, prefetch the likely next page, and never leave a blank or frozen screen while data loads. Keep the page fixed and let inner containers scroll.
 - **Optimistic by default.** For a reversible action, update the screen the moment the user confirms and send the change in the background. If the server refuses, roll the screen back and say why in plain words. A Customer Message shows "sending…" until confirmed.
-- **Not optimistic:** anything that moves money or has an outside effect, or that a Manager or the CEO decides. That includes approving a refund, write-off, "approve anyway" or a cancellation after dispatch, a Delivery fee quote, a Senior/PWD decision, sending an Announcement, and placing an Order. These wait for the server and show a spinner within 100 ms.
+- **Not optimistic:** anything that moves money or has an outside effect, or that a Manager or the CEO decides. That includes approving a refund, write-off, "approve anyway" or a cancellation after dispatch, a Delivery fee quote, a Senior/PWD decision, and placing an Order. These wait for the server and show a spinner within 100 ms.
 - **Confirm first still applies.** The confirm dialog on a submit comes first; the optimistic update starts after the user confirms.
 - **Targets:** react in under 100 ms, confirm in under 500 ms; a flow that misses gets its own follow-up issue.
 - **Tests:** cover the rollback and the refusal message for each optimistic action, and the immediate loading state for each new page.
+
+## Exports (rule)
+
+Every exported or printed document (PDF, image, anything downloaded) starts from the shared template in `lib/export/pdf-template.ts`: the Bren Raphael's Ube Jam & Halaya logo (`public/images/brand/logo-ube-jam-halaya.jpeg`), brand colours, Philippine-time footer and page numbers. Never hand-draw a header or call `window.print()` on page content. Details in `docs/exports.md`.

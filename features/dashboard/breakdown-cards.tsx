@@ -155,13 +155,12 @@ function Section({ title, rows }: { title: string; rows: ReturnType<typeof secti
 
 export function PaymentCard({ widget }: { widget: Breakdown<PaymentAndReceiving> }) {
   if (!widget.ok) return <Failed title="How customers pay" />;
-  if (widget.payment.length === 0 && widget.receiving.length === 0) return <Empty title="How customers pay" />;
+  if (widget.payment.length === 0) return <Empty title="How customers pay" />;
 
   return (
     <section className={CARD}>
       <h2 className="text-[15px] font-semibold leading-snug text-[#18181b]">{paymentHeadline(widget.payment)}</h2>
       <Section title="Payment method" rows={section(widget.payment, ["gcash", "cash-on-delivery"])} />
-      <Section title="How Orders are received" rows={section(widget.receiving, ["pickup", "delivery"])} />
     </section>
   );
 }

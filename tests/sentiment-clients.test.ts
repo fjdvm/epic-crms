@@ -1,112 +1,66 @@
 import { describe, expect, it, vi } from "vitest";
+import { suggestionSchema } from "@/features/tickets/suggest";
+import { configuredClients, configuredCompleters, geminiClient, groqClient } from "@/features/feedback/sentiment-clients";
 
-import { configuredClients, geminiClient, groqClient, parseSentiment, parseTopProduct } from "@/features/feedback/sentiment-clients";
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const groqReply = (text: string) => json({ id: "1", created: 1, model: "m", choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: text } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
+const geminiReply = (text: string) => json({ candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 } });
+const candidates = [{ product: "Halaya Smooth", feedbackCount: 5, feedback: [{ rating: 5, comment: "So creamy" }] }];
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-
-describe("parseSentiment", () => {
-  it("accepts a bare label in any case, with punctuation or whitespace", () => {
-    expect(parseSentiment("Positive.")).toBe("positive");
-    expect(parseSentiment("  NEGATIVE\n")).toBe("negative");
-    expect(parseSentiment("neutral")).toBe("neutral");
-  });
-
-  it("rejects anything else, so the next model is tried", () => {
-    expect(() => parseSentiment("mixed")).toThrow();
-    expect(() => parseSentiment(undefined)).toThrow();
-  });
-});
-
-describe("parseTopProduct", () => {
-  it("reads the product and reason from a JSON reply, even inside a code fence", () => {
-    expect(parseTopProduct('```json\n{"product": "Halaya Smooth", "reason": "Rich and smooth."}\n```')).toEqual({
-      product: "Halaya Smooth",
-      reason: "Rich and smooth.",
-    });
-  });
-
-  it("rejects a reply that is not JSON or lacks either field, so the next model is tried", () => {
-    expect(() => parseTopProduct("Halaya Smooth")).toThrow();
-    expect(() => parseTopProduct('{"product": "Halaya Smooth"}')).toThrow();
-    expect(() => parseTopProduct('{"product": "", "reason": "x"}')).toThrow();
-    expect(() => parseTopProduct(undefined)).toThrow();
-  });
-});
-
-const CANDIDATES = [{ product: "Halaya Smooth", feedbackCount: 5, feedback: [{ rating: 5, comment: "So creamy" }] }];
-
-describe("groqClient", () => {
-  it("sends the Feedback to Groq with its key and model and reads the label", async () => {
-    const fetcher = vi.fn(async () => json({ choices: [{ message: { content: "negative" } }] }));
-    const client = groqClient({ apiKey: "groq-key", model: "groq-4", fetcher: fetcher as unknown as typeof fetch });
-
+describe("Feedback through SDK providers", () => {
+  it("sends Feedback to Groq with its key and model and returns the Sentiment", async () => {
+    const fetcher = vi.fn(async () => groqReply('{"sentiment":"negative"}'));
+    const client = groqClient({ apiKey: "groq-key", model: "groq-4", fetcher });
     expect(await client.classify({ comment: "Too sweet", rating: 2 })).toBe("negative");
-
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://api.groq.com/openai/v1/chat/completions");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer groq-key");
-    expect(JSON.parse(init.body as string)).toMatchObject({ model: "groq-4" });
+    expect(String(url)).toBe("https://api.groq.com/openai/v1/chat/completions");
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer groq-key");
+    expect(JSON.parse(init.body as string)).toMatchObject({ model: "groq-4", temperature: 0, response_format: { type: "json_schema" } });
     expect(init.body).toContain("Too sweet");
   });
-
-  it("throws when Groq refuses", async () => {
-    const client = groqClient({ apiKey: "k", model: "m", fetcher: (async () => json({}, 429)) as unknown as typeof fetch });
-
-    await expect(client.classify({ comment: "x", rating: 3 })).rejects.toThrow(/429/);
-  });
-});
-
-describe("choosing the Top product", () => {
-  it("sends each candidate's Feedback to Groq and reads its choice", async () => {
-    const fetcher = vi.fn(async () =>
-      json({ choices: [{ message: { content: '{"product": "Halaya Smooth", "reason": "Customers call it creamy."}' } }] }),
-    );
-    const client = groqClient({ apiKey: "k", model: "groq-4", fetcher: fetcher as unknown as typeof fetch });
-
-    expect(await client.pickTopProduct(CANDIDATES)).toEqual({ product: "Halaya Smooth", reason: "Customers call it creamy." });
-
-    const body = (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string;
+  it("sends each candidate's Feedback and returns the Top product", async () => {
+    const fetcher = vi.fn(async () => groqReply('{"product":"Halaya Smooth","reason":"Creamy."}'));
+    expect(await groqClient({ apiKey: "k", model: "m", fetcher }).pickTopProduct(candidates)).toEqual({ product: "Halaya Smooth", reason: "Creamy." });
+    const body = (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body;
     expect(body).toContain("Product: Halaya Smooth (5 feedback)");
     expect(body).toContain("5 stars: So creamy");
   });
-
-  it("reads Gemini's choice, and throws when Gemini refuses", async () => {
-    const answer = json({ candidates: [{ content: { parts: [{ text: '{"product": "Halaya Smooth", "reason": "Creamy."}' }] } }] });
-    const gemini = geminiClient({ apiKey: "k", model: "m", fetcher: (async () => answer) as unknown as typeof fetch });
-
-    expect(await gemini.pickTopProduct(CANDIDATES)).toMatchObject({ product: "Halaya Smooth" });
-
-    const refusing = geminiClient({ apiKey: "k", model: "m", fetcher: (async () => json({}, 503)) as unknown as typeof fetch });
-    await expect(refusing.pickTopProduct(CANDIDATES)).rejects.toThrow(/503/);
-  });
-});
-
-describe("geminiClient", () => {
-  it("sends the Feedback to the model's endpoint with its key and reads the label", async () => {
-    const fetcher = vi.fn(async () => json({ candidates: [{ content: { parts: [{ text: "Positive" }] } }] }));
-    const client = geminiClient({ apiKey: "g-key", model: "gemini-2.5-flash", fetcher: fetcher as unknown as typeof fetch });
-
-    expect(await client.classify({ comment: "Loved it", rating: 5 })).toBe("positive");
-
+  it("uses Gemini's key and endpoint and describes a blank comment by its stars", async () => {
+    const fetcher = vi.fn(async () => geminiReply('{"sentiment":"neutral"}'));
+    expect(await geminiClient({ apiKey: "g-key", model: "gemini-2.5-flash", fetcher }).classify({ comment: " ", rating: 3 })).toBe("neutral");
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toContain("/models/gemini-2.5-flash:generateContent");
-    expect((init.headers as Record<string, string>)["x-goog-api-key"]).toBe("g-key");
+    expect(String(url)).toContain("/models/gemini-2.5-flash:generateContent");
+    expect(new Headers(init.headers).get("x-goog-api-key")).toBe("g-key");
+    expect(init.body).toContain("Stars: 3 out of 5");
   });
-
-  it("describes a blank comment by its stars", async () => {
-    const fetcher = vi.fn(async () => json({ candidates: [{ content: { parts: [{ text: "neutral" }] } }] }));
-
-    await geminiClient({ apiKey: "k", model: "m", fetcher: fetcher as unknown as typeof fetch }).classify({ comment: "  ", rating: 3 });
-
-    expect((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body).toContain("Stars: 3 out of 5");
+  it("reads Gemini's Top product", async () => {
+    expect(await geminiClient({ apiKey: "k", model: "m", fetcher: async () => geminiReply('{"product":"Halaya Smooth","reason":"Creamy."}') }).pickTopProduct(candidates)).toEqual({ product: "Halaya Smooth", reason: "Creamy." });
+  });
+  it("rejects provider failures and invalid output so callers can fall back", async () => {
+    for (const client of [groqClient({ apiKey: "k", model: "m", fetcher: async () => json({}, 429) }), geminiClient({ apiKey: "k", model: "m", fetcher: async () => json({}, 503) }), groqClient({ apiKey: "k", model: "m", fetcher: async () => groqReply('{"sentiment":"mixed"}') })]) {
+      await expect(client.classify({ comment: "x", rating: 3 })).rejects.toThrow();
+    }
+    await expect(groqClient({ apiKey: "k", model: "m", fetcher: async () => groqReply('{"product":"","reason":"x"}') }).pickTopProduct(candidates)).rejects.toThrow();
   });
 });
 
-describe("configuredClients", () => {
-  it("builds only the clients whose key and model are both set", () => {
-    const { groq, gemini } = configuredClients({ GROQ_API_KEY: "k", GROQ_MODEL: "groq-4", GOOGLE_GENERATIVE_AI_API_KEY: "", GEMINI_MODEL: "g" });
-
-    expect(groq?.model).toBe("groq-4");
-    expect(gemini).toBeNull();
+describe("configured models", () => {
+  it("runs the Ticket completer through the shared schema-checked SDK helper", async () => {
+    const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async () => groqReply(JSON.stringify({
+      category: "delivery issue", categoryReason: "Leak", priority: " HIGH ", priorityReason: "x".repeat(130),
+    })));
+    try {
+      const [model] = configuredCompleters({ GROQ_API_KEY: "k", GROQ_MODEL: "groq" });
+      expect(await model.complete("Triage this Ticket", "Leaking pouch", suggestionSchema)).toEqual({
+        category: "Delivery Issue", categoryReason: "Leak", priority: "high", priorityReason: "x".repeat(120),
+      });
+    } finally {
+      fetcher.mockRestore();
+    }
+  });
+  it("builds only clients with a key and model, and keeps Groq before Gemini", () => {
+    expect(configuredClients({ GROQ_API_KEY: "k", GROQ_MODEL: "groq", GEMINI_MODEL: "gemini" })).toMatchObject({ groq: { model: "groq" }, gemini: null });
+    expect(configuredCompleters({ GROQ_API_KEY: "k", GROQ_MODEL: "groq", GOOGLE_GENERATIVE_AI_API_KEY: "g", GEMINI_MODEL: "gemini" }).map((m) => m.model)).toEqual(["groq", "gemini"]);
+    expect(configuredCompleters({})).toEqual([]);
   });
 });

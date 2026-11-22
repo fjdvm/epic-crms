@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { someServiceLevel } from "./service-level-fixture";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { claim, release } from "@/features/tickets/actions";
+import { claim, putOnHold, release, takeOffHold } from "@/features/tickets/actions";
 
 import { TicketDetailView } from "@/features/tickets/ticket-detail";
 import type { TicketDetail } from "@/features/tickets/ticket";
@@ -14,10 +15,17 @@ vi.mock("@/features/tickets/actions", () => ({
   release: vi.fn(),
   reply: vi.fn(),
   resolve: vi.fn(),
+  putOnHold: vi.fn(),
+  takeOffHold: vi.fn(),
   liveUrl: vi.fn(async () => null),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
+/** Every button except the Back navigation, which is not an action. */
+const NAV = new Set(["Orders", "Returns", "Tickets"]);
+const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? ""));
+
 
 afterEach(() => {
   cleanup();
@@ -28,10 +36,16 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   id: 208,
   subject: "Halaya pouch arrived leaking",
   status: "open",
+  category: "Order Issue",
   priority: "high",
   openedAt: new Date("2026-10-19T02:00:00Z"),
   claimerName: "Bernice",
   claimerId: "bernice",
+  hold: null,
+  serviceLevel: someServiceLevel(),
+  rating: null,
+  followUpOf: null,
+  followUps: [],
   messages: [
     {
       id: 1,
@@ -78,6 +92,14 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
 });
 
 describe("the Ticket page as designed", () => {
+  it("tags a Deleted Customer with no profile link", () => {
+    render(<TicketDetailView ticket={ticket({ customer: { id: "c1", name: "Deleted customer", deleted: true, stage: "repeat", orders: 6, totalSpent: 473_400 } })} viewerId="bernice" />);
+
+    expect(screen.getByTestId("deleted-customer-tag").textContent).toContain("Deleted customer");
+    expect(screen.queryByRole("link", { name: "View customer profile →" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open order →" })).toBeNull();
+  });
+
   it("has the TKT number, subject and status in the title, and the opened date, Claimer and Priority beneath", () => {
     render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
@@ -185,12 +207,13 @@ describe("the Ticket page as designed", () => {
 });
 
 describe("working the Ticket", () => {
-  const buttons = () => screen.getAllByRole("button").map((b) => b.textContent);
+  const buttons = () => actionButtons().map((b) => b.textContent);
 
-  it("offers Release and Mark resolved to the Claimer, and not Claim", () => {
+  it("offers Release, Escalate and Put on hold to the Claimer, and not Claim", () => {
     render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
 
-    expect(buttons()).toEqual(["Release", "Mark resolved"]);
+    expect(buttons()).toEqual(["Release", "Escalate", "Put on hold"]);
+    expect(buttons()).not.toContain("Mark resolved");
   });
 
   it("offers Claim on an Unclaimed Ticket, and no Release", () => {
@@ -207,13 +230,13 @@ describe("working the Ticket", () => {
     expect(buttons()).not.toContain("Release");
   });
 
-  it("offers no Mark resolved once Resolved, and no buttons at all once Completed", () => {
+  it("never offers Mark resolved, and no buttons at all once Completed", () => {
     render(<TicketDetailView ticket={ticket({ status: "resolved" })} viewerId="bernice" />);
     expect(buttons()).not.toContain("Mark resolved");
     cleanup();
 
     render(<TicketDetailView ticket={ticket({ status: "completed" })} viewerId="bernice" />);
-    expect(screen.queryAllByRole("button")).toEqual([]);
+    expect(actionButtons()).toEqual([]);
   });
 });
 
@@ -382,5 +405,125 @@ describe("Claim and Release show at once", () => {
 
     await screen.findByText(/Claimed by Bernice/);
     expect(toast.error).toHaveBeenCalledWith("Only the Staff member who claimed a Ticket can release it.");
+  });
+});
+
+describe("On hold", () => {
+  const held = {
+    status: "on_hold" as const,
+    hold: { reason: "courier" as const, note: "Lalamove is down", until: new Date("2026-10-21T10:00:00Z") },
+  };
+  const view = (t = ticket(), viewer = "bernice") => render(<TicketDetailView ticket={t} viewerId={viewer} viewerName="Bernice" />);
+
+  async function fillAndConfirm() {
+    await userEvent.click(screen.getByRole("button", { name: "Put on hold" }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: /Supplier/ }));
+    await userEvent.type(within(dialog).getByLabelText(/Note/), "Waiting on boxes");
+    fireEvent.change(within(dialog).getByLabelText(/Back to Open on/), { target: { value: "2099-01-01T10:00" } });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Put on hold" }));
+  }
+
+  it("offers Put on hold only to the Claimer of an Open Ticket", () => {
+    view();
+    expect(screen.getByRole("button", { name: "Put on hold" })).toBeTruthy();
+    cleanup();
+    view(ticket(), "carlo");
+    expect(screen.queryByRole("button", { name: "Put on hold" })).toBeNull();
+    cleanup();
+    view(ticket(held));
+    expect(screen.queryByRole("button", { name: "Put on hold" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Take off hold" })).toBeTruthy();
+  });
+
+  it("asks first, and requires a date and time before it sends anything", async () => {
+    view();
+    await userEvent.click(screen.getByRole("button", { name: "Put on hold" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Put TKT-208 on hold?")).toBeTruthy();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Put on hold" }));
+
+    expect(within(dialog).getByRole("alert").textContent).toMatch(/when the Ticket returns to Open/);
+    expect(putOnHold).not.toHaveBeenCalled();
+  });
+
+  it("shows On hold and the reason at once, and keeps it once confirmed", async () => {
+    let confirm: (r: { ok: true }) => void = () => {};
+    vi.mocked(putOnHold).mockReturnValueOnce(new Promise((resolve) => (confirm = resolve)));
+    view();
+
+    await fillAndConfirm();
+
+    expect(screen.getByText("On hold")).toBeTruthy();
+    expect(screen.getByText(/waiting on Supplier/)).toBeTruthy();
+    expect(screen.getByText(/Note \(Staff only\): Waiting on boxes/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Take off hold" })).toBeTruthy();
+    expect(putOnHold).toHaveBeenCalledWith(208, expect.objectContaining({ reason: "supplier", note: "Waiting on boxes" }), expect.any(String));
+
+    confirm({ ok: true });
+    await vi.waitFor(() => expect(toast.error).not.toHaveBeenCalled());
+    expect(screen.getByText("On hold")).toBeTruthy();
+  });
+
+  it("rolls back and says why when the server refuses", async () => {
+    vi.mocked(putOnHold).mockResolvedValueOnce({ ok: false, reason: "not-claimed" });
+    view();
+
+    await fillAndConfirm();
+
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith("This Ticket is no longer claimed by you."));
+    expect(screen.queryByText(/waiting on Supplier/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Put on hold" })).toBeTruthy();
+  });
+
+  it("shows any Staff the reason, the return time and the note, and tells them the Customer does not see it", () => {
+    view(ticket(held), "carlo");
+
+    const panel = screen.getByRole("region", { name: "On hold" });
+    expect(within(panel).getByText(/waiting on Courier \(Lalamove or Grab\)/)).toBeTruthy();
+    expect(within(panel).getByText(/Note \(Staff only\): Lalamove is down/)).toBeTruthy();
+    expect(within(panel).getByText(/not the reason/)).toBeTruthy();
+  });
+
+  it("takes it off hold at once, and rolls back with the reason on a refusal", async () => {
+    vi.mocked(takeOffHold).mockResolvedValueOnce({ ok: false, reason: "not-on-hold" });
+    view(ticket(held));
+
+    await userEvent.click(screen.getByRole("button", { name: "Take off hold" }));
+    expect(takeOffHold).toHaveBeenCalledWith(208, expect.any(String));
+
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith("This Ticket is no longer on hold."));
+    expect(screen.getByRole("region", { name: "On hold" })).toBeTruthy();
+  });
+});
+
+describe("Customer rating and Related tickets", () => {
+  it("shows the rating and comment, and no rating section when there is none", () => {
+    render(<TicketDetailView ticket={ticket({ rating: { stars: 4, comment: "Quick help", at: new Date("2026-10-20T03:00:00Z") } })} viewerId="bernice" />);
+    const section = screen.getByRole("region", { name: "Customer rating" });
+    expect(within(section).getByText("4 out of 5")).toBeTruthy();
+    expect(within(section).getByText(/Quick help/)).toBeTruthy();
+    cleanup();
+    render(<TicketDetailView ticket={ticket()} viewerId="bernice" />);
+    expect(screen.queryByRole("region", { name: "Customer rating" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Related tickets" })).toBeNull();
+  });
+
+  it("links Follow-up of TKT-x and Follow-up: TKT-y", () => {
+    render(
+      <TicketDetailView
+        ticket={ticket({
+          followUpOf: { id: 100, subject: "Leaking pouch", status: "completed" },
+          followUps: [{ id: 300, subject: "Still no refund", status: "open" }],
+        })}
+        viewerId="bernice"
+      />,
+    );
+    const section = screen.getByRole("region", { name: "Related tickets" });
+    expect(within(section).getByText(/Follow-up of/)).toBeTruthy();
+    expect(within(section).getByRole("link", { name: "TKT-100" }).getAttribute("href")).toBe("/tickets/100");
+    expect(within(section).getByText(/Follow-up:/)).toBeTruthy();
+    expect(within(section).getByRole("link", { name: "TKT-300" }).getAttribute("href")).toBe("/tickets/300");
   });
 });

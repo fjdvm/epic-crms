@@ -1,3 +1,4 @@
+import { withRefundDetails } from "./refund-details";
 import { randomUUID } from "node:crypto";
 import { changeFailedDelivery, loadFailedDeliveryHistory } from "@/features/orders/failed-delivery-actions";
 import { requestDispatchedCancellation, settleDispatchedCancellation, loadDispatchedCancellations } from "@/features/orders/cancellation-actions";
@@ -9,6 +10,7 @@ import { decideApproval, getApprovalRequests, setApprovalLimit, requestWriteOff,
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 import { FakeFileStorage, PNG } from "./fake-file-storage";
+import { refundVia, REFUND_PROOF_SQL, REFUND_PROOF_TABLES } from "./refund-via";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 const session = vi.hoisted(() => ({ handle: "" }));
@@ -17,6 +19,7 @@ const storage = new FakeFileStorage();
 vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: (id: string) => storage.view(id) } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }), headers: async () => new Headers() }));
+vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
@@ -28,14 +31,14 @@ const notices: { userIds: string[]; body: string }[] = [];
 beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create schema crms`;
-  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); for (const file of REFUND_PROOF_SQL) await db.sql.unsafe(readFileSync(file, "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.sql`truncate crms.approval_requests, crms.approval_events, order_returns, orders, customers restart identity cascade`;
+  await db.sql.unsafe(`truncate ${REFUND_PROOF_TABLES}`); await db.sql`truncate crms.approval_requests, crms.approval_events, order_returns, orders, customers restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
-  await db.sql`insert into orders (customer_id, status, payment_method) values ('c1','delivered','gcash')`;
+  await db.sql`insert into orders (customer_id, status, payment_method, subtotal_in_centavos) values ('c1','delivered','gcash', 10000000)`;
   portal = new FakePortal(); storefront = new FakeStorefront(db.sql, undefined, storage); storage.reset(); notices.length = 0; oldDirectory = false; audit.mockClear();
   for (const [id, role] of Object.entries({ ana: "Staff/Employee", mario: "CRMS Manager", ada: "Super Admin", owner: "CEO" })) {
     portal.addStaff(id, { id, username: id, name: `${id} Person`, email: `${id}@example.com`, role }, ["Returns", "Fulfilment"]);
@@ -82,16 +85,16 @@ async function returned(amount: number) {
     values (${r.id},${line.id},'Cake','',1,${amount})`;
   return Number(r.id);
 }
-function proof() { const f = new FormData(); f.set("proof", storage.readyEvidence("Returns", PNG, "ana")); return f; }
+function proof(pesos = "100.00") { const f = new FormData(); f.set("proof", storage.readyEvidence("Returns", PNG, "ana")); return withRefundDetails(f, { amount: pesos }); }
 
 it.each([500000, 500001])("requires the right steps for a refund selling at %i centavos, excluding delivery", async amount => {
   const id = await returned(amount);
   await signIn("mario"); expect(await approveReturn(id)).toMatchObject({ ok: true });
   await signIn("ana");
-  const pending = await markReturnRefunded(id, proof(), { reason: "Damaged cake" });
+  const pending = await refundVia(db.sql, id, proof((amount / 100).toFixed(2)), { reason: "Damaged cake" });
   expect(pending).toMatchObject({ ok: false, status: "waiting-manager", reason: "Waiting for approval" });
   if (pending.ok || !("approvalId" in pending) || !pending.approvalId) throw new Error("Expected approval id");
-  expect([...storage.files.values()].every(file => !file.returnId && file.retentionType === "temporary")).toBe(true);
+  expect([...storage.files.values()].every(file => file.retentionType === "temporary")).toBe(true);
   expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "approved" } });
   expect(await getApprovalRequests()).toMatchObject([{ reason: "Damaged cake", status: "waiting-manager" }]);
   expect(notices).toContainEqual(expect.objectContaining({ userIds: ["mario"] }));
@@ -102,30 +105,31 @@ it.each([500000, 500001])("requires the right steps for a refund selling at %i c
   const decision = await decideApproval("Returns", pending.approvalId, "approve");
   expect(decision).toMatchObject({ ok: true, request: { manager_name: "mario Person", manager_at: expect.any(Date), status: amount > 500000 ? "waiting-ceo" : "approved" } });
   if (amount > 500000) {
-    await signIn("ana"); expect(await markReturnRefunded(id, proof(), { approvalId: pending.approvalId })).toMatchObject({ ok: false });
+    await signIn("ana"); expect(await refundVia(db.sql, id, proof((amount / 100).toFixed(2)), { approvalId: pending.approvalId })).toMatchObject({ ok: false });
     for (const actor of ["mario", "ada"]) { await signIn(actor); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false }); }
     await signIn("owner"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: true, request: { ceo_name: "owner Person", ceo_at: expect.any(Date) } });
   } else {
     await signIn("owner"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false });
   }
-  await signIn("ana"); expect(await markReturnRefunded(id, proof(), { approvalId: pending.approvalId })).toMatchObject({ ok: true });
+  await signIn("ana"); expect(await refundVia(db.sql, id, proof((amount / 100).toFixed(2)), { approvalId: pending.approvalId })).toMatchObject({ ok: true });
   expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded" } });
   expect(audit.mock.calls.map(([e]) => e.action)).toEqual(expect.arrayContaining(["approval.requested", "approval.granted"]));
   expect(notices).toContainEqual(expect.objectContaining({ userIds: ["ana"] }));
 });
 
-it("uses an Admin's changed limit and records both write-off decisions and a decline", async () => {
+it("uses a Manager's changed limit and records both write-off decisions and a decline", async () => {
   const id = await returned(500001);
   await signIn("ana"); await expect(setApprovalLimit(600000)).rejects.toThrow();
-  for (const actor of ["mario", "owner"]) { await signIn(actor); expect(await setApprovalLimit(600000)).toMatchObject({ ok: false }); }
-  await signIn("ada"); expect(await setApprovalLimit(600000)).toMatchObject({ ok: true });
-  expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "approval_limit.changed", actor: { type: "user", id: "ada", display_name: "ada Person" } })]);
+  await signIn("ada"); expect(await setApprovalLimit(600000)).toMatchObject({ ok: false });
+  await signIn("owner"); expect(await setApprovalLimit(500000)).toMatchObject({ ok: true });
+  await signIn("mario"); expect(await setApprovalLimit(600000)).toMatchObject({ ok: true });
+  expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "approval_limit.changed", actor: { type: "user", id: "mario", display_name: "mario Person" } })]);
   await signIn("ana");
   const requested = await requestWriteOff(id, "Damaged stock");
   expect(requested).toMatchObject({ status: "waiting-manager" });
   if (!requested.approvalId) throw new Error("Missing request");
   await signIn("mario"); expect(await decideApproval("Returns", requested.approvalId, "approve")).toMatchObject({ ok: true, request: { status: "approved" } });
-  await signIn("ada"); await setApprovalLimit(400000);
+  await signIn("mario"); await setApprovalLimit(400000);
   await signIn("ana"); const other = await requestWriteOff(id, "Second inspection");
   if (!other.approvalId) throw new Error("Missing request");
   await signIn("mario"); expect(await decideApproval("Returns", other.approvalId, "approve")).toMatchObject({ ok: true, request: { status: "waiting-ceo" } });
@@ -161,8 +165,8 @@ it("retains Manager notifications when an old Portal directory omits Roles, then
   expect(notices).toContainEqual(expect.objectContaining({ userIds: ["mario"] }));
 });
 
-it("lets an Admin change Portal Settings without granting any Returns page access", async () => {
-  await signIn("ada"); portal.revoke("ada", "Returns");
+it("lets a Manager change the Approval limit without granting any Returns page access", async () => {
+  await signIn("mario"); portal.revoke("mario", "Returns");
   expect(await setApprovalLimit(700000)).toEqual({ ok: true });
   await expect(getApprovalRequests()).rejects.toThrow();
 });
@@ -228,7 +232,7 @@ it("a changed Admin limit applies to failed-delivery requests, and module revoca
   expect(await changeFailedDelivery(1, { action: "record", attemptId, reason: "Damaged", nextStep: "request-cancellation", customerMessage: "Staff requested cancellation." })).toMatchObject({ ok: true });
   const { approvals } = await import("@/features/approvals/server");
   // The same Admin setting entry point used by Portal Settings.
-  expect(await approvals().setLimit({ id: "ada", username: "ada", name: "Ada", email: "ada@example.com", role: "Admin" }, 600000)).toMatchObject({ ok: true });
+  expect(await approvals().setLimit({ id: "mario", username: "mario", name: "Mario", email: "mario@example.com", role: "CRMS Manager" }, 600000)).toMatchObject({ ok: true });
   await signIn("mario");
   expect(await changeFailedDelivery(1, { action: "write-off", attemptId })).toMatchObject({ ok: true });
   portal.addStaff("no-fulfilment", { id: "no-fulfilment", username: "no-fulfilment", name: "Other Person", email: "other@example.com", role: "Staff" }, ["Orders"]);

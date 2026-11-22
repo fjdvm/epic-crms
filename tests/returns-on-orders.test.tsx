@@ -11,7 +11,6 @@ import type { ReturnRow } from "@/features/returns/returns";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), back: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/features/orders/actions", () => ({
   quoteDeliveryFee: vi.fn(),
-  confirmPickup: vi.fn(),
   cancelOrder: vi.fn(),
   cancelPaymentOrder: vi.fn(),
   markPaid: vi.fn(),
@@ -43,6 +42,7 @@ const detail = (overrides: Partial<OrderDetail> = {}): OrderDetail => ({
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
+  codCollection: null,
   packedBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),
@@ -51,6 +51,7 @@ const detail = (overrides: Partial<OrderDetail> = {}): OrderDetail => ({
   paymentMethod: "cash-on-delivery",
   lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }],
   subtotal: 100_000,
+  discount: 0,
   deliveryFee: 15_000,
   total: 115_000,
   address: null,
@@ -76,10 +77,10 @@ describe("Returns on the Order detail page", () => {
 
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("RMA-15")).toBeTruthy();
-    expect(within(rows[0]).getByText("Requested")).toBeTruthy();
+    expect(within(rows[0]).getByText("Pending Review")).toBeTruthy();
     expect(within(rows[0]).getByText("₱219.00")).toBeTruthy();
     expect(within(rows[1]).getByText("RMA-16")).toBeTruthy();
-    expect(within(rows[1]).getByText("Refunded")).toBeTruthy();
+    expect(within(rows[1]).getByText("Completed · Refunded")).toBeTruthy();
     expect(within(rows[1]).getByText("₱50.00")).toBeTruthy();
   });
 
@@ -104,6 +105,37 @@ describe("Returns on the Order detail page", () => {
       expect(screen.queryByText("RMA-15")).toBeNull();
       view.unmount();
     }
+  });
+
+  it("shows a replacement as in progress until its Replacement Order is delivered", () => {
+    const { unmount } = render(<OrderDetailView order={detail()} modules={RETURNS} returns={[ret({ status: "replaced", replacement: { orderId: 90, status: "dispatched" } })]} />);
+    expect(screen.getByText("Replacement in progress")).toBeTruthy();
+    unmount();
+    render(<OrderDetailView order={detail()} modules={RETURNS} returns={[ret({ status: "replaced", replacement: { orderId: 90, status: "delivered" } })]} />);
+    expect(screen.getByText("Completed · Replaced")).toBeTruthy();
+  });
+
+  it("shows how the Returns ended to Staff without the Returns Module, without the Returns themselves", () => {
+    const summary = { replacementFor: null, returns: [
+      { id: 15, number: "RMA-15", label: "Completed · Refunded", detail: "₱1,200.00 by GCash", replacementOrderId: null },
+      { id: 16, number: "RMA-16", label: "Replacement in progress", detail: "Replacement Order #90", replacementOrderId: 90 },
+    ] };
+    render(<OrderDetailView order={detail()} modules={["Payments"]} returnSummary={summary} />);
+    const card = screen.getByRole("region", { name: "Return outcome" });
+    expect(within(card).getByText("RMA-15").closest("li")?.textContent).toBe("RMA-15 · Completed · Refunded · ₱1,200.00 by GCash");
+    expect(within(card).getByText("RMA-16").closest("li")?.textContent).toBe("RMA-16 · Replacement in progress · Replacement Order #90");
+    expect(screen.queryByRole("heading", { name: "Returns" })).toBeNull();
+    expect(within(card).queryByRole("link")).toBeNull();
+  });
+
+  it("says what a Replacement Order replaces, linking the Return only for Returns Staff", () => {
+    const summary = { returns: [], replacementFor: { orderId: 7, returnId: 15 } };
+    const { unmount } = render(<OrderDetailView order={detail()} modules={["Fulfilment"]} returnSummary={summary} />);
+    expect(screen.getByTestId("replacement-for").textContent).toBe("Replacement for Order #7 · RMA-15 · ₱0");
+    expect(screen.queryByRole("link", { name: "RMA-15" })).toBeNull();
+    unmount();
+    render(<OrderDetailView order={detail()} modules={RETURNS} returnSummary={summary} />);
+    expect(screen.getByRole("link", { name: "RMA-15" }).getAttribute("href")).toBe("/returns/15");
   });
 
   it("offers Returns Staff no Return action yet: the card only reads", () => {
@@ -133,7 +165,7 @@ const profile = (overrides: Partial<CustomerProfile> = {}): CustomerProfile => (
   lastName: "Santos",
   email: "maria@example.com",
   contactNumber: "0917 555 0142",
-  marketingOptIn: true,
+ 
   customerSince: new Date("2026-03-01T00:00:00Z"),
   stage: "repeat",
   defaultCity: "Antipolo",
@@ -146,9 +178,7 @@ const profile = (overrides: Partial<CustomerProfile> = {}): CustomerProfile => (
   addresses: [],
   orderHistory: [],
   cart: { lines: [], total: 0 },
-  walkIn: null,
-  emailsReceived: [],
-  mergedWalkIn: null,
+ 
   returns: [],
   ...overrides,
 });
@@ -177,9 +207,9 @@ describe("Returns on the Customer Profile", () => {
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("RMA-15")).toBeTruthy();
     expect(within(rows[0]).getByRole("link", { name: "#1042" }).getAttribute("href")).toBe("/orders/1042");
-    expect(within(rows[0]).getByText("Requested")).toBeTruthy();
+    expect(within(rows[0]).getByText("Pending Review")).toBeTruthy();
     expect(within(rows[0]).getByText("₱219.00")).toBeTruthy();
-    expect(within(rows[1]).getByText("Declined")).toBeTruthy();
+    expect(within(rows[1]).getByText("Rejected")).toBeTruthy();
   });
 
   it("does not link to Orders the viewer cannot open", () => {

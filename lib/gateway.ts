@@ -1,7 +1,6 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash } from "node:crypto";
 
 import { recordAudit, type AuditTrail } from "@/lib/audit-trail";
-import type { MarketingMail, MarketingMailer, Subscriber } from "@/features/marketing/announcements";
 import type { FileStorage } from "@/features/tickets/attachments";
 import type { LiveConversationUrl } from "@/features/tickets/live";
 import type { SendAppEmail } from "@/features/tickets/ticket-actions";
@@ -23,7 +22,10 @@ export const sendAppEmail: SendAppEmail = async (email) => {
 };
 
 /** Delivers every CREOMS Audit Event through the gateway, with a bounded, best-effort write. */
-export const gatewayAuditTrail: AuditTrail = (event) => recordAudit(async () => {
+export const gatewayAuditTrail: AuditTrail = (event) => recordAudit(deliverGatewayAuditEvent, event);
+
+/** Acknowledged delivery for callers with a persisted audit receipt. Failures remain retryable. */
+export const deliverGatewayAuditEvent: AuditTrail = async (event) => {
   const { base, key } = gateway();
   const { operationId, ...fields } = event;
   const idempotencyKey = createHash("sha256")
@@ -36,7 +38,7 @@ export const gatewayAuditTrail: AuditTrail = (event) => recordAudit(async () => 
     signal: AbortSignal.timeout(5_000),
   });
   if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
-}, event);
+};
 
 /** Where the Customer reviews a Ticket in the storefront. */
 export function storefrontTicketUrl(id: number): string {
@@ -137,87 +139,5 @@ export const gatewayFileStorage: Omit<FileStorage, "upload"> & {
 
   async remove(fileId) {
     await storage(`/${fileId}`, { method: "DELETE" });
-  },
-};
-
-/**
- * The link in a Marketing Email that sets one Customer's Marketing opt-in to no. The storefront verifies the
- * same token, `<base64url id>.<base64url HMAC-SHA256 of the id>`, signed with the secret both share.
- */
-export function unsubscribeUrl(customerId: string): string {
-  const secret = process.env.UNSUBSCRIBE_SECRET;
-  const site = process.env.CREOMS_STOREFRONT_URL;
-
-  if (!secret || !site) throw new Error("UNSUBSCRIBE_SECRET and CREOMS_STOREFRONT_URL must be set; see .env.example");
-
-  const signature = createHmac("sha256", secret).update(customerId).digest("base64url");
-
-  return `${site.replace(/\/$/, "")}/unsubscribe?token=${Buffer.from(customerId).toString("base64url")}.${signature}`;
-}
-
-/** How many Marketing Emails are in flight to the gateway at once within a batch. */
-const MAX_CONCURRENT_EMAILS = 10;
-
-/**
- * Hands a batch to the notifications service as the CRMS Caller. Each Subscriber gets their own Email, because
- * each carries their own Unsubscribe link, and the Email asserts that its recipient is a Subscriber.
- */
-export const gatewayMarketingMailer: MarketingMailer = {
-  async sendBatch(mail, to) {
-    const { base, key } = gateway();
-    const handedOver: Subscriber[] = [];
-
-    for (let i = 0; i < to.length; i += MAX_CONCURRENT_EMAILS) {
-      const settled = await Promise.allSettled(
-        to.slice(i, i + MAX_CONCURRENT_EMAILS).map(async (subscriber) => {
-          const response = await fetch(`${base}/notifications/emails/marketing`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: subscriber.email,
-              app: "CRMS",
-              subscriberConsent: true,
-              title: mail.title,
-              body: mail.description,
-              images: mail.images,
-              ...(mail.imageLayout && { imageLayout: mail.imageLayout }),
-              unsubscribeUrl: unsubscribeUrl(subscriber.customerId),
-            }),
-            signal: AbortSignal.timeout(15_000),
-          });
-
-          if (!response.ok) throw new Error(`The gateway refused a Marketing Email: ${response.status}`);
-
-          return subscriber;
-        }),
-      );
-
-      for (const result of settled) {
-        if (result.status === "fulfilled") handedOver.push(result.value);
-        else console.error("A Marketing Email could not be handed over", result.reason);
-      }
-    }
-
-    return handedOver;
-  },
-};
-
-/**
- * Queues one Marketing Email through the api-gateway's notifications service, as the "crms" Caller.
- * The service requires the sender to assert the recipient is a Subscriber; a test copy goes to the Staff
- * member who asked for it, so that assertion stands for their own consent to receive it.
- */
-export const gatewayMarketingMail: MarketingMail = {
-  async sendOne({ to, title, body, images, imageLayout }) {
-    const { base, key } = gateway();
-
-    const response = await fetch(`${base}/notifications/emails/marketing`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ to, app: "CRMS", subscriberConsent: true, title, body, images, ...(imageLayout && { imageLayout }) }),
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (!response.ok) throw new Error(`The gateway refused the marketing email: ${response.status}`);
   },
 };

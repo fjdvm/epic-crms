@@ -1,9 +1,42 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
 
+import type { ShopRole } from "@/lib/portal/roles";
 import { formatDate } from "@/features/customer-profiles/format";
 
 import type { FileStorage } from "./attachments";
 import { loadTicket, type TicketDetail } from "./ticket";
+import { ticketSearch } from "./tickets";
+
+/** The inbox tabs: the viewer's own chats, chats nobody has claimed, or every chat. */
+export type ChatScope = "mine" | "unclaimed" | "all";
+
+export const CHAT_SCOPES: ChatScope[] = ["mine", "unclaimed", "all"];
+
+/**
+ * The tabs a Role may open: Mine for Staff and Managers, Unclaimed for everyone with the Tickets Module, All
+ * (Resolved and Closed too) for Managers, Admin and CEO. The first one is the Role's default tab.
+ */
+export function scopesFor(role: ShopRole | null): ChatScope[] {
+  switch (role) {
+    case "staff":
+      return ["mine", "unclaimed"];
+    case "manager":
+      return ["mine", "unclaimed", "all"];
+    case "admin":
+    case "ceo":
+      return ["unclaimed", "all"];
+    default:
+      return ["unclaimed"];
+  }
+}
+
+/** The tab asked for when the Role may open it, otherwise the Role's default; the page never trusts the address. */
+export function allowedScope(role: ShopRole | null, asked: string | undefined): ChatScope {
+  const allowed = scopesFor(role);
+
+  return allowed.find((s) => s === asked) ?? allowed[0];
+}
 
 export interface ConversationRow {
   /** The Ticket number is this id, written TKT-<id>. */
@@ -14,13 +47,28 @@ export interface ConversationRow {
   lastActivity: Date;
 }
 
-/** The chats of the Tickets this Staff member Claimed, newest activity first. A chat is a Ticket's Conversation; there is none without a Ticket. */
-export async function listConversations(sql: postgres.Sql, viewerId: string): Promise<ConversationRow[]> {
+/**
+ * The chats of the Tickets this Staff member Claimed (or the Unclaimed ones; All adds Resolved and Closed too, but never a Ticket someone else Claimed), by `scope`, newest activity first, narrowed by the same search as
+ * the Tickets list when one is given. A chat is a Ticket's Conversation; there is none without a Ticket.
+ */
+export async function listConversations(
+  sql: postgres.Sql,
+  viewerId: string,
+  search?: string,
+  scope: ChatScope = "mine",
+): Promise<ConversationRow[]> {
+  const owner =
+    scope === "mine"
+      ? sql`t.claimed_by_id = ${viewerId} and t.status in ('open', 'on_hold')`
+      : scope === "unclaimed"
+        ? sql`t.claimed_by_id is null and t.status in ('open', 'on_hold')`
+        : sql`(t.claimed_by_id is null or t.claimed_by_id = ${viewerId})`;
+
   const rows = await sql<Record<string, unknown>[]>`
     select
       t.id,
       t.subject,
-      c.full_name as customer_name,
+      ${sql.unsafe(customerNameSql('c'))} as customer_name,
       m.body,
       (m.file_id is not null or m.attachment_pathname is not null) as has_attachment,
       coalesce(m.created_at, t.created_at) as last_activity
@@ -28,11 +76,11 @@ export async function listConversations(sql: postgres.Sql, viewerId: string): Pr
     join customers c on c.id = t.customer_id
     left join lateral (
       select body, file_id, attachment_pathname, created_at from ticket_messages
-      where ticket_id = t.id
+      where ticket_id = t.id and not internal
       order by created_at desc, id desc
       limit 1
     ) m on true
-    where t.claimed_by_id = ${viewerId}
+    where ${owner} and ${ticketSearch(sql, search)}
     order by last_activity desc, t.id desc`;
 
   return rows.map((r) => ({
@@ -75,10 +123,14 @@ export async function loadConversations(
   viewerId: string,
   selectedId?: number,
   storage?: FileStorage,
+  search?: string,
+  scope: ChatScope = "mine",
+  /** A Manager-level Role may open any Ticket by id, even one outside the list. Staff never can: they see only their own and unclaimed. */
+  openAny = false,
 ): Promise<ConversationsResult> {
   try {
-    const chats = await listConversations(connect(), viewerId);
-    const id = chats.find((c) => c.ticketId === selectedId)?.ticketId ?? chats[0]?.ticketId;
+    const chats = await listConversations(connect(), viewerId, search, scope);
+    const id = chats.find((c) => c.ticketId === selectedId)?.ticketId ?? (openAny ? selectedId : undefined) ?? chats[0]?.ticketId;
     if (id === undefined) return { ok: true, conversations: { chats, selected: null } };
 
     const result = await loadTicket(connect, id, storage);

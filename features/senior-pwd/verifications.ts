@@ -11,10 +11,22 @@ export type IdType = "senior" | "pwd";
  * What Staff may see of one verification. The ID number and its hash are never selected: the
  * storefront keeps only the keyed hash, and CREOMS has no grant on that column.
  */
+export interface SameIdHolder {
+  /** The other account's verification that carries the same ID number. */
+  verificationId: number;
+  customerName: string;
+  customerEmailHint: string;
+  status: VerificationStatus;
+}
+
 export interface Verification {
   id: number;
   customerId: string;
   customerName: string;
+  /** The Customer's email with most of it hidden, such as `lito.r@...`. The full address never reaches the browser. */
+  customerEmailHint: string;
+  /** The Order this ID holds (it cannot be confirmed until the ID is reviewed); null when the Customer has none waiting. */
+  orderId: number | null;
   idType: IdType;
   status: VerificationStatus;
   submittedAt: Date;
@@ -28,6 +40,11 @@ export interface Verification {
   declineReason: string | null;
   /** The ID's expiry date, `YYYY-MM-DD`. The discount stops on this date. */
   expiresOn: string | null;
+  /**
+   * Set when the storefront saw this ID number on another account too. The number itself is never read: the storefront
+   * compares the hashes and points to the other account's verification, so Staff can tell who else used it.
+   */
+  sameIdAs?: SameIdHolder | null;
 }
 
 export interface VerificationList { pending: Verification[]; decided: Verification[] }
@@ -36,19 +53,37 @@ type Row = Record<string, unknown>;
 
 const SELECT = (sql: postgres.Sql) => sql<Row[]>`
   select v.id, v.customer_id, c.full_name, v.id_type, v.status, v.submitted_at, v.photo_file_id, v.photo_back_file_id,
-    v.decided_by_name, v.decided_at, v.decline_reason, to_char(v.expires_on, 'YYYY-MM-DD') as expires_on
-  from public.senior_pwd_verifications v join public.customers c on c.id = v.customer_id`;
+    v.decided_by_name, v.decided_at, v.decline_reason, to_char(v.expires_on, 'YYYY-MM-DD') as expires_on,
+    c.email, held.id as order_id,
+    same.id as same_id, same_c.full_name as same_full_name, same_c.email as same_email, same.status as same_status
+  from public.senior_pwd_verifications v join public.customers c on c.id = v.customer_id
+  left join public.senior_pwd_verifications same on same.id = v.same_id_as_verification_id
+  left join public.customers same_c on same_c.id = same.customer_id
+  left join lateral (
+    select o.id from public.orders o where o.senior_pwd_verification_id = v.id order by o.id desc limit 1
+  ) held on true`;
+
+/** `lito.ramos@example.com` becomes `lito.r@...`: enough for Staff to tell two Customers apart, never the address. */
+export function emailHint(email: unknown): string {
+  const local = typeof email === "string" ? email.split("@")[0] : "";
+  return local ? `${local.slice(0, 6)}@...` : "";
+}
 
 function toVerification(row: Row): Verification {
   const submittedAt = row.submitted_at as Date;
   return {
     id: row.id as number, customerId: row.customer_id as string, customerName: row.full_name as string,
+    customerEmailHint: emailHint(row.email), orderId: (row.order_id as number | null) ?? null,
     idType: row.id_type as IdType, status: row.status as VerificationStatus, submittedAt,
     photoFileId: (row.photo_file_id as string | null) ?? null,
     photoBackFileId: (row.photo_back_file_id as string | null) ?? null,
     photoExpiresAt: new Date(submittedAt.getTime() + PHOTO_REVIEW_DAYS * DAY),
     decidedByName: (row.decided_by_name as string | null) ?? null, decidedAt: (row.decided_at as Date | null) ?? null,
     declineReason: (row.decline_reason as string | null) ?? null, expiresOn: (row.expires_on as string | null) ?? null,
+    sameIdAs: row.same_id == null ? null : {
+      verificationId: row.same_id as number, customerName: row.same_full_name as string,
+      customerEmailHint: emailHint(row.same_email), status: row.same_status as VerificationStatus,
+    },
   };
 }
 

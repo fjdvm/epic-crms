@@ -1,5 +1,6 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 
@@ -8,9 +9,15 @@ import { formatDate } from "@/features/customer-profiles/format";
 
 import type { ConnectLive, LiveConnection, LiveEvent } from "./live";
 import { connectLive } from "./live-socket";
+import { ImageViewer, type ViewerImage } from "./image-viewer";
 import { MessageAttachment } from "./message-attachment";
 import type { TicketMessage } from "./ticket";
+import { NoteBox, Sending, useMessagesWithNotes } from "./notes";
 import { Composer } from "./ticket-controls";
+import { reply as replyAction } from "./actions";
+import { refusalMessage } from "./refusals";
+import { toast } from "sonner";
+import { DraftPanel } from "./draft-panel";
 
 const TIME = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
@@ -34,31 +41,95 @@ function byline(message: TicketMessage, previous: TicketMessage | undefined): st
 }
 
 /** Messages as chat bubbles, Customer on the left and Staff on the right. */
-export function Bubbles({ messages }: { messages: TicketMessage[] }) {
+export function Bubbles({ messages: saved, chat = false }: { messages: TicketMessage[]; /** The Conversations look: our replies in solid purple, the Customer's in white. */ chat?: boolean }) {
+  const messages = useMessagesWithNotes(saved);
+  const [viewing, setViewing] = useState<number | null>(null);
+
+  // Every image in the chat, so the viewer can step through them.
+  const images: ViewerImage[] = messages.flatMap((m) =>
+    chat && m.attachmentUrl && !m.attachmentType?.startsWith("video/") && m.attachmentType !== "application/pdf"
+      ? [
+          {
+            id: m.id,
+            url: m.attachmentUrl,
+            name: m.attachmentName ?? null,
+            size: m.attachmentSize ?? null,
+            senderName: m.senderName,
+            sentAt: `${formatDate(m.createdAt)}, ${TIME.format(m.createdAt)}`,
+            caption: m.body,
+          },
+        ]
+      : [],
+  );
+
   return (
     <>
       {messages.map((message, i) => {
         const fromStaff = message.sender === "staff";
+
+        if (message.internal)
+          return (
+            <div key={message.id} className="flex justify-end">
+              <div
+                data-internal-note
+                className="flex w-[460px] max-w-full flex-col gap-1 rounded-xl border border-dashed border-[#e0c97a] bg-[#fff8e1] px-[14px] py-[10px]"
+              >
+                <p className="text-[13px] leading-[normal] font-semibold tracking-wide text-[#7a5b00] uppercase">
+                  Internal note · only Staff see this
+                </p>
+                <p className="text-base leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">{message.body}</p>
+                <p className="text-[13px] leading-[normal] text-[#7a5b00]">
+                  {message.sending ? (
+                    <>
+                      {message.senderName} · <Sending />
+                    </>
+                  ) : (
+                    byline(message, messages[i - 1])
+                  )}
+                </p>
+              </div>
+            </div>
+          );
 
         return (
           <div key={message.id} className={cn("flex", fromStaff && "justify-end")}>
             <div
               className={cn(
                 "flex w-[460px] max-w-full flex-col gap-1 rounded-xl px-[14px] py-[10px]",
-                fromStaff ? "bg-[#efe6f8]" : "bg-[#f3f1f6]",
+                chat
+                  ? fromStaff
+                    ? "bg-[#5b2a86] text-white"
+                    : "border border-[#e6e1ee] bg-white"
+                  : fromStaff
+                    ? "bg-[#efe6f8]"
+                    : "bg-[#f3f1f6]",
               )}
             >
               {message.body && (
-                <p className="text-sm leading-[normal] break-words whitespace-pre-wrap text-[#1f1a2e]">
+                <p className={cn("text-base leading-[normal] break-words whitespace-pre-wrap", chat && fromStaff ? "text-white" : "text-[#1f1a2e]")}>
                   {message.body}
                 </p>
               )}
-              <MessageAttachment message={message} imageClassName="max-h-64 max-w-full rounded-lg object-contain" />
-              <p className="text-[11px] leading-[normal] text-[#6e6680]">{byline(message, messages[i - 1])}</p>
+              <MessageAttachment
+                message={message}
+                imageClassName="max-h-64 max-w-full rounded-lg object-contain"
+                onOpenImage={
+                  chat
+                    ? () => {
+                        const at = images.findIndex((img) => img.id === message.id);
+                        if (at >= 0) setViewing(at);
+                      }
+                    : undefined
+                }
+              />
+              <p className={cn("text-[13px] leading-[normal]", chat && fromStaff ? "text-white/80" : "text-[#6e6680]")}>
+                {byline(message, messages[i - 1])}
+              </p>
             </div>
           </div>
         );
       })}
+      {viewing !== null && <ImageViewer images={images} start={viewing} onClose={() => setViewing(null)} />}
     </>
   );
 }
@@ -75,7 +146,10 @@ export function Conversation({
   customerName,
   note,
   canReply,
+  canNote = false,
+  draftDisabledReason,
   scrollable = false,
+  readOnly = false,
   connect = connectLive,
 }: {
   ticketId: number;
@@ -85,8 +159,14 @@ export function Conversation({
   /** Why the Staff member cannot reply, when they cannot. */
   note: string | null;
   canReply: boolean;
+  /** Any Staff member may add an Internal note, claimer or not; the page must hold a NotesProvider. */
+  canNote?: boolean;
+  /** Staff and Managers get the draft panel; undefined (Admin, CEO) shows none. Null means on, a string is why it is off. */
+  draftDisabledReason?: string | null;
   /** Fill the parent's height: the Messages scroll inside it and the reply box stays in view. */
   scrollable?: boolean;
+  /** Admin and CEO read the chat and never reply, write notes or run AI: the box gives way to a one-line reason. */
+  readOnly?: boolean;
   connect?: ConnectLive;
 }) {
   const router = useRouter();
@@ -182,12 +262,61 @@ export function Conversation({
     if (box) box.scrollTop = box.scrollHeight;
   }, [shown.length]);
 
-  const bubbles = <Bubbles messages={shown} />;
+  const [reply, setReply] = useState("");
+  const [draftId, setDraftId] = useState<number | null>(null);
 
-  const footer = canReply ? (
-    <Composer ticketId={ticketId} onSent={sent} />
-  ) : (
-    <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
+  const [mode, setMode] = useState<"reply" | "note" | "ai">("reply");
+
+  /** Send an AI suggestion as the reply. Saved first, then shown and relayed; a refusal says why. */
+  const sendDraft = async (text: string, id: number) => {
+    try {
+      const form = new FormData();
+      form.set("body", text);
+      form.set("draftId", String(id));
+      const result = await replyAction(ticketId, form);
+      if (!result.ok) {
+        toast.error(refusalMessage(result));
+        return;
+      }
+      if ("messageId" in result) sent({ id: result.messageId, body: text.trim() });
+      router.refresh();
+      setMode("reply");
+    } catch (error) {
+      console.error("Drafted reply could not be sent", error);
+      toast.error("Could not send the reply. Please try again.");
+    }
+  };
+
+  const draftPanel = draftDisabledReason !== undefined && (
+    <DraftPanel
+      ticketId={ticketId}
+      disabledReason={draftDisabledReason}
+      replyText={reply}
+      canSend={canReply}
+      onSend={sendDraft}
+      onUse={(text, id) => { setReply(text); setDraftId(id); setMode("reply"); }}
+    />
+  );
+  const bubbles = <Bubbles messages={shown} chat={scrollable} />;
+
+  const replyArea = (
+    <>
+      {!scrollable && draftPanel}
+      {canReply ? (
+        <Composer ticketId={ticketId} onSent={sent} value={reply} onValueChange={setReply} draftId={draftId} onDraftSent={() => setDraftId(null)} />
+      ) : (
+        <p className="text-sm leading-[normal] text-[#6e6680]">{note}</p>
+      )}
+    </>
+  );
+
+  const tabs = (["reply", ...(canNote ? ["note"] : []), ...(draftDisabledReason !== undefined ? ["ai"] : [])]) as ("reply" | "note" | "ai")[];
+
+  const footer = (
+    <>
+      {replyArea}
+      {canNote && <NoteBox />}
+    </>
   );
 
   if (!scrollable) {
@@ -200,11 +329,42 @@ export function Conversation({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-[#faf9fc] p-3">
         {bubbles}
       </div>
-      {footer}
+      {readOnly ? (
+        <p className="flex shrink-0 items-center gap-1.5 border-t border-[#e6e1ee] bg-white px-3 py-2 text-[13px] leading-[normal] text-[#6e6680]">
+          <Lock aria-hidden className="size-3" />
+          Read-only · Admin and CEO & VP can read chats but never reply or run AI.
+        </p>
+      ) : (
+      <div className="flex flex-col gap-3 border-t border-[#e6e1ee] bg-white px-3 pt-2 pb-3">
+        {tabs.length > 1 && (
+          <div role="tablist" aria-label="Reply, note or AI suggestion" className="flex gap-4 border-b border-[#e6e1ee]">
+            {tabs.map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  "-mb-px border-b-2 pb-2 text-[15px] font-medium leading-[normal]",
+                  mode === m ? "border-[#5b2a86] text-[#5b2a86]" : "border-transparent text-[#6e6680]",
+                )}
+              >
+                {m === "reply" ? "Reply" : m === "note" ? "Internal note" : "AI suggestion"}
+              </button>
+            ))}
+          </div>
+        )}
+        {mode === "note" && canNote ? <NoteBox inline /> : mode === "ai" && draftPanel ? draftPanel : replyArea}
+        <p className="text-[13px] leading-[normal] text-[#6e6680]">
+          Only the claimer can reply. Nothing sends until you press Send. Images: JPG or PNG up to 5 MB.
+        </p>
+      </div>
+      )}
     </div>
   );
 }

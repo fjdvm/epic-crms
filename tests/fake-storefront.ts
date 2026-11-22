@@ -13,6 +13,9 @@ export class FakeStorefront {
   packedEvents: { action: string; actor: { id: string; name: string }; at: string }[] = [];
   /** Courier bookings the fake storefront has recorded, by Order id. */
   couriers = new Map<number, Record<string, string>>();
+  resentEmails: { orderId: number; kind: string; occurrence: string | null; staffName: string }[] = [];
+  /** Emails (`kind` or `kind:occurrence`) Notification already accepted: a resend reconciles them and sends nothing. */
+  acceptedEmails = new Set<string>();
   /** Re-upload emails the fake storefront sent, one per rejection. */
   reuploadEmails: { orderId: number; reason: string; link: string }[] = [];
 
@@ -23,6 +26,12 @@ export class FakeStorefront {
   private static HASH_KEY = "fake-id-hash-key";
 
   constructor(private sql: postgres.Sql, private now: () => Date = () => new Date(), private files?: FakeFileStorage) {}
+
+  /** The storefront keeps the courier booking on the Order, the rider details with it. */
+  private async saveCourier(id: number, courier: { name: string; trackingUrl?: string; riderName?: string; riderPlate?: string; riderPhone?: string }) {
+    await this.sql`update orders set courier = ${courier.name}, courier_tracking_url = ${courier.trackingUrl ?? null},
+      rider_name = ${courier.riderName ?? null}, rider_plate = ${courier.riderPlate ?? null}, rider_phone = ${courier.riderPhone ?? null} where id = ${id}`;
+  }
 
   private async requestReturn(request: Request, orderId: number): Promise<Response> {
     const customerId = request.headers.get("X-Test-Customer");
@@ -168,6 +177,22 @@ export class FakeStorefront {
     });
   }
 
+  private async changeDestination(request: Request, id: number): Promise<Response> {
+    if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+    const input = await request.json();
+    if (!input.staffId || !input.staffName) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+    if (input.customerConfirmed !== true || typeof input.reason !== "string" || !input.reason.trim()) return Response.json({ error: "A reason and the Customer's confirmation are required." }, { status: 400 });
+    return this.sql.begin(async tx => {
+      const [ret] = await tx`select * from order_returns where id = ${id} for update`;
+      if (!ret) return Response.json({ error: "Return was not found." }, { status: 404 });
+      if (!["approved", "goods received"].includes(ret.status) || ret.final_resolution !== "refund") return Response.json({ error: "Money was already sent or the refund is not approved." }, { status: 409 });
+      const changedAt = this.now();
+      await tx`update order_returns set refund_method = ${input.method}, refund_account_name = ${input.accountName}, refund_account_number = ${input.accountNumber},
+        refund_bank_name = ${input.bankName}, refund_destination_confirmed_at = ${changedAt} where id = ${id}`;
+      return Response.json({ returnId: id, changedAt: changedAt.toISOString() });
+    });
+  }
+
   private async decideReturn(request: Request, id: number): Promise<Response> {
     if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
     const update = await request.json();
@@ -184,6 +209,11 @@ export class FakeStorefront {
     }
     if (update.status === "refunded" && (typeof update.refundProofFileId !== "string" || !update.refundProofFileId.trim())) {
       return Response.json({ error: "Refund proof is required." }, { status: 400 });
+    }
+    if (update.status === "refunded" && (!Number.isSafeInteger(update.refundAmountInCentavos) || update.refundAmountInCentavos < 0 ||
+      !["gcash", "maya", "bank-transfer"].includes(update.refundPaidMethod) || !/^\d{4}-\d{2}-\d{2}$/.test(update.refundedOn ?? "") ||
+      typeof update.refundReference !== "string" || update.refundReference.trim().length < 4)) {
+      return Response.json({ error: "Refund details are required." }, { status: 400 });
     }
     if (update.status === "declined" && (typeof update.declineReason !== "string" || !update.declineReason.trim())) {
       return Response.json({ error: "Enter a reason for declining the Return." }, { status: 400 });
@@ -206,19 +236,29 @@ export class FakeStorefront {
           current.final_resolution === (update.status === "refunded" ? "refund" : "replacement");
       if (!allowed) return Response.json({ error: "Return already changed." }, { status: 409 });
       const at = this.now();
+      const [order] = await tx`select delivery_fee_in_centavos from orders where id = ${current.order_id}`;
+      const fee = order?.delivery_fee_in_centavos ?? 0;
       const [changed] = await tx`update order_returns set status = ${update.status},
         final_resolution = ${update.status === "approved" ? update.finalResolution ?? current.preferred_resolution : current.final_resolution},
         refund_proof_file_id = ${update.status === "refunded" ? update.refundProofFileId : current.refund_proof_file_id},
         replaced_at = ${update.status === "replaced" ? at : current.replaced_at},
         goods_required = ${update.status === "approved" ? update.goodsRequired : current.goods_required},
         decline_reason = ${update.status === "declined" ? update.declineReason.trim() : current.decline_reason},
-        refunded_at = ${update.status === "refunded" ? at : current.refunded_at}
-        where id = ${id} returning *`;
+        refunded_at = ${update.status === "refunded" ? at : current.refunded_at},
+        refund_amount_in_centavos = ${update.status === "refunded" ? update.refundAmountInCentavos : current.refund_amount_in_centavos},
+        refund_paid_method = ${update.status === "refunded" ? update.refundPaidMethod : current.refund_paid_method},
+        refund_paid_on = ${update.status === "refunded" ? update.refundedOn : current.refund_paid_on},
+        refund_reference = ${update.status === "refunded" ? update.refundReference : current.refund_reference},
+        refund_delivery_fee_in_centavos = ${update.status === "refunded" && update.deliveryFeeReason ? fee : current.refund_delivery_fee_in_centavos},
+        refund_delivery_fee_reason = ${update.status === "refunded" && update.deliveryFeeReason ? update.deliveryFeeReason : current.refund_delivery_fee_reason}
+        where id = ${id} returning *, refund_paid_on::text as paid_on_text`;
       await tx`insert into order_return_history (return_id, status, actor_type, actor_id, actor_name, occurred_at, note)
         values (${id}, ${update.status}, 'staff', ${update.staffId}, ${update.staffName}, ${at}, ${changed.decline_reason})`;
       return Response.json({ id, status: changed.status, goodsRequired: changed.goods_required,
         finalResolution: changed.final_resolution, refundProofFileId: changed.refund_proof_file_id,
-        declineReason: changed.decline_reason, actedBy: { id: update.staffId, name: update.staffName, at: at.toISOString() } });
+        refundAmountInCentavos: changed.refund_amount_in_centavos, refundPaidMethod: changed.refund_paid_method,
+        refundedOn: changed.paid_on_text, refundReference: changed.refund_reference,
+        declineReason: changed.decline_reason, refundDeliveryFeeInCentavos: changed.refund_delivery_fee_in_centavos, actedBy: { id: update.staffId, name: update.staffName, at: at.toISOString() } });
     });
   }
 
@@ -262,8 +302,10 @@ export class FakeStorefront {
       const [taken] = await tx`select 1 from senior_pwd_verifications where id_hash = ${idHash} and customer_id <> ${customerId}
         and status in ('pending', 'approved') limit 1`;
       if (taken) return { error: "This ID is already used on another account." };
-      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at)
-        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}) returning id`;
+      // Like the storefront: an ID that was used on another account before (declined, revoked) is accepted but flagged.
+      const [before] = await tx`select id from senior_pwd_verifications where id_hash = ${idHash} and customer_id <> ${customerId} order by id desc limit 1`;
+      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at, same_id_as_verification_id)
+        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}, ${before?.id ?? null}) returning id`;
       return Number(row.id);
     });
   }
@@ -324,7 +366,7 @@ export class FakeStorefront {
     if (returnRequest && request.method === "POST") return this.requestReturn(request, Number(returnRequest[1]));
     const returnDecision = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/status$/);
     const verificationDecision = new URL(request.url).pathname.match(/^\/api\/internal\/senior-pwd\/(\d+)\/(approve|decline|revoke)$/);
-    const resource = returnDecision || /^\/api\/internal\/returns\/\d+\/(inspection|replacement-order)$/.test(new URL(request.url).pathname) || /^\/api\/internal\/orders\/\d+\/refund-window\/extend$/.test(new URL(request.url).pathname) ? "returns" : verificationDecision ? "senior-pwd" : "orders";
+    const resource = returnDecision || /^\/api\/internal\/returns\/\d+\/(inspection|replacement-order)$/.test(new URL(request.url).pathname) || /^\/api\/internal\/orders\/\d+\/refund-window\/extend$/.test(new URL(request.url).pathname) || /^\/api\/internal\/returns\/\d+\/refund-destination$/.test(new URL(request.url).pathname) ? "returns" : verificationDecision ? "senior-pwd" : "orders";
     const parts = request.headers.get("authorization")?.replace(/^Bearer /, "").split(".");
     if (!parts || parts.length !== 3) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const [header, payload, signature] = parts;
@@ -341,8 +383,26 @@ export class FakeStorefront {
     if (verificationDecision && request.method === "POST") return this.decideVerification(request, Number(verificationDecision[1]), verificationDecision[2]);
     const replacement = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/replacement-order$/);
     if (replacement && request.method === "POST") return this.createReplacementOrder(request, Number(replacement[1]));
+    const destination = new URL(request.url).pathname.match(/^\/api\/internal\/returns\/(\d+)\/refund-destination$/);
+    if (destination && request.method === "POST") return this.changeDestination(request, Number(destination[1]));
     const extension = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/refund-window\/extend$/);
     if (extension && request.method === "POST") return this.extendWindow(request, Number(extension[1]));
+    const cancelRequest = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/cancel-request$/);
+    if (cancelRequest && request.method === "POST") {
+      const id = Number(cancelRequest[1]), input = await request.json();
+      if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+      return this.sql.begin(async tx => {
+        const [r] = await tx`select * from order_cancel_requests where id = ${input.requestId} and order_id = ${id} for update`;
+        if (!r || r.status !== "waiting") return Response.json({ error: "This cancellation request was already decided or withdrawn. Refresh the Order." }, { status: 409 });
+        if (input.decision === "declined") {
+          await tx`update order_cancel_requests set status = 'declined', decline_reason = ${input.reason}, decided_by_id = ${input.staffId}, decided_by_name = ${input.staffName} where id = ${r.id}`;
+        } else {
+          await tx`update orders set status = 'cancelled' where id = ${id}`;
+          await tx`update order_cancel_requests set status = 'approved', decided_by_id = ${input.staffId}, decided_by_name = ${input.staffName} where id = ${r.id}`;
+        }
+        return Response.json({ id, requestId: r.id, status: input.decision });
+      });
+    }
     const cancellation = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/cancellation$/);
     if (cancellation && request.method === "POST") {
       const id = Number(cancellation[1]), input = await request.json();
@@ -416,6 +476,32 @@ export class FakeStorefront {
         return Response.json({ id, status: updated.status, deliveryFeeInCentavos: updated.delivery_fee_in_centavos });
       });
     }
+    const courierEdit = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/courier$/);
+    if (courierEdit && request.method === "POST") {
+      if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+      const id = Number(courierEdit[1]), { courier, staffId, staffName } = await request.json();
+      if (!staffId || !staffName) return Response.json({ error: "Staff attribution is required." }, { status: 400 });
+      if (!["Lalamove", "Grab"].includes(courier?.name) || (courier.trackingUrl !== undefined && !/^https:\/\/\S{1,2040}$/.test(courier.trackingUrl))) {
+        return Response.json({ error: "Choose Lalamove or Grab; a booking link must be https." }, { status: 400 });
+      }
+      const [order] = await this.sql`select status, fulfillment_method from orders where id = ${id}`;
+      if (!order || order.status !== "dispatched" || order.fulfillment_method !== "delivery") return Response.json({ error: "Order already changed." }, { status: 409 });
+      this.couriers.set(id, courier);
+      await this.saveCourier(id, courier);
+      return Response.json({ id, status: "dispatched", courier: { name: courier.name, trackingUrl: courier.trackingUrl ?? null }, deliveryFeeInCentavos: null });
+    }
+    const resend = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/email\/resend$/);
+    if (resend && request.method === "POST") {
+      if (this.refusal) return Response.json({ error: this.refusal }, { status: 409 });
+      const id = Number(resend[1]), body = await request.json();
+      const occurrence: string | null = body.occurrence ?? null;
+      const [outcome] = await this.sql`select status from order_email_outcomes where order_id = ${id} and kind = ${body.kind} and coalesce(occurrence, '') = ${occurrence ?? ""}`;
+      if (outcome?.status !== "failed") return Response.json({ error: "That email is not marked as failed." }, { status: 409 });
+      await this.sql`update order_email_outcomes set status = 'sent', reason = null, updated_at = now() where order_id = ${id} and kind = ${body.kind} and coalesce(occurrence, '') = ${occurrence ?? ""}`;
+      const accepted = this.acceptedEmails.has(occurrence ? `${body.kind}:${occurrence}` : body.kind);
+      if (!accepted) this.resentEmails.push({ orderId: id, kind: body.kind, occurrence, staffName: body.staffName });
+      return Response.json({ id, kind: body.kind, occurrence, status: accepted ? "reconciled" : "sent" });
+    }
     const reject = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/payment-proof\/reject$/);
     if (reject && request.method === "POST") return this.rejectProof(request, Number(reject[1]));
     const match = new URL(request.url).pathname.match(/^\/api\/internal\/orders\/(\d+)\/status$/);
@@ -430,21 +516,29 @@ export class FakeStorefront {
       ["placed", "confirmed", "awaiting payment", "paid", "preparing"].includes(order.status);
     const mayPrepare = update.status === "preparing" && (order.status === "paid" ||
       (order.status === "confirmed" && order.payment_method === "cash-on-delivery"));
-    const mayDispatch = update.status === "dispatched" && order.status === "preparing";
-    const mayDeliver = update.status === "delivered" && order.status === "dispatched";
+    const mayDispatch = update.status === "dispatched" && order.status === "preparing" && order.fulfillment_method === "delivery";
+    const mayDeliver = update.status === "delivered" && order.status === "dispatched" && order.fulfillment_method === "delivery";
     const mayMarkPaid = update.status === "paid" && order.status === "awaiting payment";
     if (mayDeliver && (!update.deliveryPhotoFileId || order.delivery_photo_file_id)) {
       return Response.json({ error: "Exactly one permanent Delivery photo is required." }, { status: 400 });
     }
-    if (mayDispatch && order.fulfillment_method === "delivery" &&
-      (!["Lalamove", "Grab"].includes(update.courier?.name) || !/^https:\/\//.test(update.courier?.trackingUrl ?? ""))) {
-      return Response.json({ error: "Dispatching a Delivery Order needs the courier and an https tracking link." }, { status: 400 });
+    if (mayDispatch && (!["Lalamove", "Grab"].includes(update.courier?.name) ||
+      (update.courier?.trackingUrl !== undefined && !/^https:\/\/\S{1,2040}$/.test(update.courier.trackingUrl)))) {
+      return Response.json({ error: "Dispatching a Delivery Order needs the courier, and any tracking link must be https." }, { status: 400 });
     }
     if (mayMarkPaid && order.payment_proof_rejections >= 3 && !update.approvedAnyway?.reason?.trim()) {
       return Response.json({ error: "After 3 rejected proofs a Manager must approve with a reason." }, { status: 400 });
     }
     if (mayMarkPaid && order.payment_proof_rejections < 3 && order.payment_proof_rejected_at !== null) {
       return Response.json({ error: "The proof was rejected. Wait for another." }, { status: 409 });
+    }
+    // COD completion saves the collection with the status; any other amount is refused and nothing is kept.
+    const cod = order.payment_method === "cash-on-delivery" && mayDeliver;
+    if (cod) {
+      const total = order.subtotal_in_centavos - (order.discount_in_centavos ?? 0) + (order.delivery_fee_in_centavos ?? 0);
+      if (!update.codCollection || update.codCollection.amountInCentavos !== total || !update.codCollection.staffId || !update.codCollection.staffName) {
+        return Response.json({ error: "The collected amount must equal the saved total." }, { status: 400 });
+      }
     }
     if ((mayMarkPaid || mayPrepare) && (!update.staffId || !update.staffName)) {
       return Response.json({ error: "Staff attribution is required." }, { status: 400 });
@@ -454,11 +548,24 @@ export class FakeStorefront {
       (!Number.isSafeInteger(update.deliveryFeeInCentavos) || update.deliveryFeeInCentavos < 0)) {
       return Response.json({ error: "A Delivery fee is required." }, { status: 400 });
     }
+    if (mayConfirm) {
+      // The real storefront takes these as flat fields; `amounts` is not accepted.
+      const fee = update.deliveryFeeInCentavos ?? 0;
+      if (update.amounts !== undefined || update.subtotalInCentavos !== order.subtotal_in_centavos ||
+        !Number.isSafeInteger(update.approvedDiscountInCentavos) || !Number.isSafeInteger(update.totalInCentavos) ||
+        update.totalInCentavos !== update.subtotalInCentavos - update.approvedDiscountInCentavos + fee || !update.staffId || !update.staffName) {
+        return Response.json({ error: "The amounts do not match the Order. Refresh it before confirming." }, { status: 409 });
+      }
+    }
     const [changed] = await this.sql`
       update orders set status = ${mayConfirm && order.status !== "placed" ? order.status : update.status},
         delivery_photo_file_id = ${mayDeliver ? update.deliveryPhotoFileId : order.delivery_photo_file_id},
         dispatched_at = ${mayDispatch ? new Date() : order.dispatched_at},
         delivered_at = ${mayDeliver ? new Date() : order.delivered_at},
+        cod_collected_amount_in_centavos = ${cod ? update.codCollection.amountInCentavos : order.cod_collected_amount_in_centavos},
+        cod_collected_at = ${cod ? new Date() : order.cod_collected_at},
+        cod_collected_by_id = ${cod ? update.codCollection.staffId : order.cod_collected_by_id},
+        cod_collected_by_name = ${cod ? update.codCollection.staffName : order.cod_collected_by_name},
         delivery_fee_in_centavos = ${update.deliveryFeeInCentavos ?? order.delivery_fee_in_centavos},
         paid_by_id = ${mayMarkPaid ? update.staffId : order.paid_by_id},
         paid_by_name = ${mayMarkPaid ? update.staffName : order.paid_by_name},
@@ -469,7 +576,10 @@ export class FakeStorefront {
       where id = ${id} and status = ${order.status} returning id, status, delivery_fee_in_centavos, delivery_photo_file_id, packed_by_id, packed_by_name, packed_at`;
     if (!changed) return Response.json({ error: "Order already changed." }, { status: 409 });
     if (mayPrepare) this.packedEvents.push({ action: "order.packed", actor: { id: changed.packed_by_id, name: changed.packed_by_name }, at: changed.packed_at.toISOString() });
-    if (mayDispatch && update.courier) this.couriers.set(id, update.courier);
+    if (mayDispatch && update.courier) {
+      this.couriers.set(id, update.courier);
+      await this.saveCourier(id, update.courier);
+    }
     return Response.json({ id: changed.id, status: changed.status, ...(changed.packed_at ? { packedBy: { id: changed.packed_by_id, name: changed.packed_by_name, at: changed.packed_at.toISOString() } } : {}), ...(this.couriers.has(id) ? { courier: this.couriers.get(id) } : {}), deliveryFeeInCentavos: changed.delivery_fee_in_centavos, deliveryPhotoFileId: changed.delivery_photo_file_id });
   };
 }

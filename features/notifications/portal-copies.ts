@@ -1,9 +1,10 @@
 import type postgres from "postgres";
+import { SENIOR_PWD_MODULE } from "@/lib/portal/config";
 import { describeNotification } from "./describe";
 import { DEFAULT_SCHEMA, schemaIdent, visibleTo, type Notification, type Viewer } from "./notifications";
 
 export interface PortalCopies {
-  recipients(): Promise<{ id: string; username?: string; role?: string; modules: string[] }[]>;
+  recipients(): Promise<{ id: string; username?: string; name?: string; role?: string; modules: string[] }[]>;
   send(copy: { key: string; userId: string; text: string; link: string }): Promise<{ id: string; read: boolean }>;
   find(userId: string, key: string): Promise<{ id: string; read: boolean } | null>;
   status(userId: string, id: string): Promise<{ id: string; read: boolean }>;
@@ -41,7 +42,7 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
 
   const copies = await writer<(Notification & { userId: string; remoteId: string | null })[]>`
     select n.id::text, n.kind, n.customer_id as "customerId", n.customer_name as "customerName",
-      n.ticket_id as "ticketId", n.order_id as "orderId", n.rating, n.return_id as "returnId",
+      n.ticket_id as "ticketId", n.order_id as "orderId", n.rating, n.return_id as "returnId", n.verification_id as "verificationId", n.detail,
       n.created_at as "createdAt", n.read_at is not null as read, c.user_id as "userId", c.remote_id as "remoteId"
     from ${s}.portal_copies c join ${s}.notifications n on n.id = c.notification_id
     where not c.read_synced order by c.last_attempt_at nulls first, n.id, c.user_id limit 100`;
@@ -95,11 +96,12 @@ export async function syncPortalCopies(writer: postgres.Sql, portal: PortalCopie
   }
 }
 
-function staffViewer({ username, modules }: { id: string; username?: string; role?: string; modules: string[] }): Viewer {
+function staffViewer({ username, modules }: { id: string; username?: string; name?: string; role?: string; modules: string[] }): Viewer {
   return { customerProfiles: modules.includes("Customer Profiles"),
     ticketsStaffId: modules.includes("Tickets") ? username ?? null : null,
     feedback: modules.includes("Feedback"), returns: modules.includes("Returns"),
-    orders: modules.includes("Orders"), payments: modules.includes("Payments") };
+    orders: modules.includes("Orders"), payments: modules.includes("Payments"),
+    seniorPwd: modules.includes(SENIOR_PWD_MODULE) };
 }
 
 /** Bound outage delays; unattempted work remains durable for the next poll or scheduler sync. */

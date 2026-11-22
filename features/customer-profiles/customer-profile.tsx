@@ -10,17 +10,17 @@ import { cn } from "@/lib/utils";
 
 import { ActivityTimeline } from "./activity-timeline";
 import { CartTab } from "./cart-tab";
-import { EmailsTab } from "./emails-tab";
 import { FeedbackTab } from "./feedback-tab";
 import { Field } from "./field";
 import { formatAgo, formatDate, formatMonthYear, formatPesos } from "./format";
 import { orderAnchor } from "./orders";
+import { NotesTab, type VisibleCustomerNote } from "./notes-tab";
+import { TasksTab, manilaToday, openFirst, type TaskViewer, type VisibleCustomerTask } from "./tasks-tab";
 import { OrdersTab } from "./orders-tab";
 import { ReturnsTab } from "./returns-tab";
 import type { CustomerProfile } from "./profile";
 import { StageBadge } from "./stage-badge";
 import { TabCard } from "./tab-card";
-import { WalkInDetails } from "./walk-in-details";
 
 function Stat({
   title,
@@ -50,14 +50,35 @@ export function CustomerProfileView({
   now = new Date(),
   canOpenOrder = false,
   canViewReturns = false,
+  noteAuthor,
+  taskViewer,
 }: {
   profile: CustomerProfile;
   now?: Date;
   canOpenOrder?: boolean;
   /** Staff with the Returns Module get the Returns tab. */
   canViewReturns?: boolean;
+  noteAuthor?: { id: string; name: string };
+  /** Staff and Managers only; Admin and CEO see Tasks without controls. */
+  taskViewer?: TaskViewer;
 }) {
   const p = profile;
+  const [addedNotes, setAddedNotes] = useState<VisibleCustomerNote[]>([]);
+  const notes = p.notes == null && addedNotes.length === 0 ? p.notes : [
+    ...(p.notes ?? []).filter(note => !addedNotes.some(added => added.id === note.id)), ...addedNotes,
+  ];
+  function changeNote(id: string, note: VisibleCustomerNote | null) {
+    setAddedNotes(old => [...old.filter(item => item.id !== id && item.id !== note?.id), ...(note ? [note] : [])]);
+  }
+  const [taskOverrides, setTaskOverrides] = useState<Map<string, VisibleCustomerTask | null>>(new Map());
+  const tasks: VisibleCustomerTask[] | null = p.tasks === null ? null : [
+    ...(p.tasks ?? []).filter(task => !taskOverrides.has(task.id)),
+    ...[...taskOverrides.values()].filter((task): task is VisibleCustomerTask => task !== null),
+  ];
+  function changeTask(id: string, task: VisibleCustomerTask | null) {
+    setTaskOverrides(old => new Map(old).set(id, task));
+  }
+  const openTasks = tasks ? openFirst(tasks.map(task => ({ ...task, overdue: !task.doneAt && task.dueDate < manilaToday(now) }))).filter(task => !task.doneAt) : [];
   const [tab, setTab] = useState("orders");
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
 
@@ -80,8 +101,10 @@ export function CustomerProfileView({
   }
 
   return (
-    <div className="space-y-5">
-      <BackButton fallbackHref="/customer-profiles" label="Customer Profiles" />
+    <div className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
+      <div className="shrink-0 self-start"><BackButton fallbackHref="/customer-profiles" label="Customer Profiles" /></div>
+
+      <div className="max-h-[35dvh] shrink-0 space-y-5 overflow-y-auto xl:max-h-none">
 
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2.5">
@@ -89,10 +112,9 @@ export function CustomerProfileView({
             {p.name}
           </h1>
           <StageBadge stage={p.stage} />
-          {p.walkIn && <Badge variant="secondary">Walk-in</Badge>}
         </div>
         <p className="text-sm text-muted-foreground">
-          {p.walkIn ? "Added" : "Customer since"} {formatMonthYear(p.customerSince)} · {p.email} ·{" "}
+          Customer since {formatMonthYear(p.customerSince)} · {p.email} ·{" "}
           {p.contactNumber} · {p.defaultCity ?? "No default city"}
         </p>
       </div>
@@ -127,8 +149,22 @@ export function CustomerProfileView({
         />
       </div>
 
-      <Tabs value={tab} onValueChange={setTab} className="space-y-5">
-        <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+      {openTasks.length > 0 && (
+        <section aria-label="Open Tasks" className="space-y-1.5 rounded-xl border border-border bg-card px-5 py-3">
+          <h2 className="text-[13px] font-medium text-muted-foreground">Open Tasks</h2>
+          <ul className="space-y-1">
+            {openTasks.map(task => <li key={task.id} className="flex flex-wrap gap-x-2 text-sm text-foreground">
+              <span>{task.description}</span>
+              <span className={task.overdue ? "font-semibold text-destructive" : "text-muted-foreground"}>{task.overdue ? "Overdue · " : ""}Due {task.dueDate} · {task.ownerName}</span>
+            </li>)}
+          </ul>
+        </section>
+      )}
+
+      </div>
+
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-5">
+        <TabsList className="h-auto shrink-0 flex-wrap justify-start gap-1 bg-transparent p-0">
           <TabsTrigger className={TAB_TRIGGER} value="orders">
             Orders ({p.orders})
           </TabsTrigger>
@@ -143,16 +179,16 @@ export function CustomerProfileView({
           <TabsTrigger className={TAB_TRIGGER} value="feedback">
             Feedback ({p.feedbackCount})
           </TabsTrigger>
-          <TabsTrigger className={TAB_TRIGGER} value="emails">
-            Emails
+          <TabsTrigger className={TAB_TRIGGER} value="notes">
+            Notes &amp; tasks
           </TabsTrigger>
           <TabsTrigger className={TAB_TRIGGER} value="details">
             Details
           </TabsTrigger>
         </TabsList>
 
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
-          <div className="min-w-0 w-full flex-1 [&>[role=tabpanel]>div]:h-full [&>[role=tabpanel]]:h-full">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto xl:flex-row xl:items-stretch xl:overflow-hidden">
+          <div className="h-[min(420px,60dvh)] min-h-[320px] min-w-0 w-full shrink-0 overflow-y-auto xl:h-auto xl:min-h-0 xl:flex-1 [&>[role=tabpanel]>div]:h-full [&>[role=tabpanel]]:h-full">
             <TabsContent value="orders" className="mt-0">
               <OrdersTab
                 orders={p.orderHistory}
@@ -176,51 +212,26 @@ export function CustomerProfileView({
               <FeedbackTab orders={p.orderHistory} onOpenOrder={openOrder} />
             </TabsContent>
 
-            <TabsContent value="emails" className="mt-0">
-              <EmailsTab marketingOptIn={p.marketingOptIn} emails={p.emailsReceived} />
+            <TabsContent forceMount value="notes" className="mt-0 space-y-4 data-[state=inactive]:hidden">
+              <TasksTab customerId={p.id} tasks={tasks} viewer={taskViewer} now={now} onTaskChange={changeTask} />
+              <NotesTab customerId={p.id} notes={notes} readFailed={p.notes === null} author={noteAuthor} onNoteChange={changeNote} />
             </TabsContent>
 
-            <TabsContent value="details" className="mt-0 space-y-5">
-              {p.walkIn ? (
-                <WalkInDetails walkIn={p.walkIn} />
-              ) : (
-              <>
-              <TabCard title="Details">
+            <TabsContent value="details" className="mt-0">
+              <TabCard title="Details" scroll>
                 <dl className="grid gap-md sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="First name">{p.firstName}</Field>
                   <Field label="Middle name">{p.middleName ?? "—"}</Field>
                   <Field label="Last name">{p.lastName}</Field>
                   <Field label="Email">{p.email}</Field>
                   <Field label="Contact number">{p.contactNumber}</Field>
-                  <Field label="Marketing emails">
-                    {p.marketingOptIn ? "Opted in" : "Not opted in"}
-                  </Field>
                   <Field label="Customer since">
                     {formatDate(p.customerSince)}
                   </Field>
-                  {p.mergedWalkIn && (
-                    <Field label="Tags">
-                      {p.mergedWalkIn.tags.length === 0 ? (
-                        "—"
-                      ) : (
-                        <span className="flex flex-wrap gap-1.5">
-                          {p.mergedWalkIn.tags.map((tag) => (
-                            <Badge key={tag} variant="purple">{tag}</Badge>
-                          ))}
-                        </span>
-                      )}
-                    </Field>
-                  )}
                 </dl>
-              </TabCard>
 
-              {p.mergedWalkIn && (
-                <TabCard title="Internal notes" note="Visible to Staff only">
-                  <p className="whitespace-pre-wrap text-sm text-foreground">{p.mergedWalkIn.notes ?? "No notes."}</p>
-                </TabCard>
-              )}
-
-              <TabCard title="Addresses">
+                <section aria-label="Addresses" className="space-y-[14px] border-t border-border pt-5">
+                <h3 className="text-sm font-semibold text-foreground">Addresses</h3>
                 {p.addresses.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No addresses saved.
@@ -248,14 +259,13 @@ export function CustomerProfileView({
                     ))}
                   </ul>
                 )}
+                </section>
               </TabCard>
-              </>
-              )}
             </TabsContent>
           </div>
 
-          <aside className="w-full shrink-0 xl:w-[380px] [&>div]:h-full">
-            <ActivityTimeline orders={p.orderHistory} onOpenOrder={openOrder} />
+          <aside className="min-h-0 w-full shrink-0 xl:w-[380px] xl:overflow-y-auto [&>div]:h-full">
+            <ActivityTimeline notes={notes ?? []} tasks={tasks ?? []} orders={p.orderHistory} onOpenOrder={openOrder} />
           </aside>
         </div>
       </Tabs>

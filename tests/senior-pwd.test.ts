@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { confirmPickup, quoteDeliveryFee } from "@/features/orders/actions";
-import { approveVerification, declineVerification, loadVerificationPhoto, loadVerifications, overrideVerification, revokeVerification } from "@/features/senior-pwd/actions";
+import { quoteDeliveryFee as realQuote } from "@/features/orders/actions";
+import { approveVerification, declineVerification, loadVerificationDetail, loadVerificationPhoto, loadVerifications, overrideVerification, revokeVerification } from "@/features/senior-pwd/actions";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 import { FakeFileStorage, PNG } from "./fake-file-storage";
@@ -19,6 +19,13 @@ vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }))
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
 let db: TestDatabase;
+
+/** The total Staff would have seen on screen: what the database holds for the Order. */
+async function shownTotal(id: number, fee: number) {
+  const [row] = Number.isSafeInteger(id) ? await db.sql`select subtotal_in_centavos as s, coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as d from orders o where id = ${id}` : [];
+  return row ? row.s - row.d + fee : 0;
+}
+const quoteDeliveryFee = async (id: number, fee: number, choice?: Parameters<typeof realQuote>[3]) => realQuote(id, fee, await shownTotal(id, fee), choice);
 let portal: FakePortal;
 let storefront: FakeStorefront;
 let oldDirectory = false;
@@ -138,6 +145,20 @@ it("refuses the same ID number on a second account, whatever its spacing or case
   expect(await storefront.submitVerification("c2", "senior", " sc-123-456-789 ", photo)).toEqual({ error: "This ID is already used on another account." });
 });
 
+it("flags an ID number the storefront saw on another account, naming who without exposing the number or hash", async () => {
+  await db.sql`insert into customers (id, full_name, email) values ('c2','Pedro Cruz','pedro.cruz@example.com')`;
+  const first = await upload("c1", NUMBER);
+  await signIn("ana");
+  await declineVerification(first.id, "Blurry photo");
+  // The first holder was declined, so the same number is accepted on a second account, but flagged.
+  const second = await upload("c2", NUMBER);
+  const list = await loadVerifications();
+  expect(list).toMatchObject({ ok: true, list: { pending: [{ id: second.id, sameIdAs: { verificationId: first.id, customerName: "Maria", customerEmailHint: "maria@...", status: "declined" } }] } });
+  expect(JSON.stringify(list)).not.toMatch(/hash|SC-123/i);
+  // The first account's own row is not flagged.
+  expect(await loadVerificationDetail(first.id)).toMatchObject({ ok: true, verification: { id: first.id, sameIdAs: null } });
+});
+
 it("removes a photo nobody reviewed in 7 days; Staff can no longer decide and the Customer must upload again", async () => {
   const { id } = await upload();
   await db.sql`update senior_pwd_verifications set submitted_at = now() - interval '8 days'`;
@@ -157,6 +178,35 @@ it("shows the photo only while it waits for review", async () => {
   expect(await loadVerificationPhoto(id)).toEqual({ ok: true, url: expect.stringContaining(photo), backUrl: null });
   await approveVerification(id, future(30));
   expect(await loadVerificationPhoto(id)).toMatchObject({ ok: false });
+});
+
+it("audits opening the photo, once per Staff member per ten minutes, never with the number", async () => {
+  const { id } = await upload();
+  await signIn("ana");
+  await loadVerificationPhoto(id);
+  await loadVerificationPhoto(id);
+  const viewed = audit.mock.calls.map(([e]) => e).filter(e => e.action === "pwd.photo_viewed");
+  expect(viewed).toHaveLength(2);
+  expect(viewed[0]).toMatchObject({ module: "Senior/PWD", outcome: "success", actor: { display_name: "ana Person" }, target: { type: "customer", id: "c1" } });
+  // Both openings carry one identity, so the audit trail keeps a single event.
+  expect(viewed[1].operationId).toBe(viewed[0].operationId);
+  expect(everything()).not.toContain(NUMBER);
+  audit.mockClear();
+  await approveVerification(id, future(30));
+  await loadVerificationPhoto(id); // refused: the photo is gone, and a refusal is not a view
+  expect(audit.mock.calls.filter(([e]) => e.action === "pwd.photo_viewed")).toHaveLength(0);
+});
+
+it("loads one verification with a masked email and the order it holds, and says when it is missing", async () => {
+  const { id } = await upload();
+  await db.sql`insert into orders (customer_id, senior_pwd_verification_id) values ('c1', ${id})`;
+  await signIn("ana");
+  const detail = await loadVerificationDetail(id);
+  expect(detail).toMatchObject({ ok: true, verification: { id, customerName: "Maria", customerEmailHint: "maria@...", orderId: 1, status: "pending" } });
+  expect(JSON.stringify(detail)).not.toContain("maria@example.com");
+  expect(await loadVerificationDetail(id + 99)).toMatchObject({ ok: false, missing: true });
+  expect(await loadVerificationDetail(Number.NaN)).toMatchObject({ ok: false, missing: true });
+  expect(await loadVerifications()).toMatchObject({ list: { pending: [{ id, customerEmailHint: "maria@...", orderId: 1 }] } });
 });
 
 it("lapses on the expiry date and the Customer verifies again", async () => {
@@ -202,27 +252,22 @@ it("keeps Admin and CEO read-only", async () => {
 
 it("does not confirm an Order while its Senior/PWD ID waits for review, and confirms after approval", async () => {
   const { id } = await upload();
-  const [pickup] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, senior_pwd_verification_id)
-    values ('c1','placed','pickup',100000,${id}) returning id`;
   const [delivery] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, senior_pwd_verification_id)
     values ('c1','placed','delivery',100000,${id}) returning id`;
   await signIn("ana");
   const held = { ok: false, reason: "Review the Customer's Senior/PWD ID before confirming this Order." };
-  expect(await confirmPickup(pickup.id)).toEqual(held);
   expect(await quoteDeliveryFee(delivery.id, 15000)).toEqual(held);
   await approveVerification(id, future(30));
-  expect(await confirmPickup(pickup.id)).toMatchObject({ ok: true, order: { status: "confirmed" } });
   expect(await quoteDeliveryFee(delivery.id, 15000)).toMatchObject({ ok: true });
 });
 
-it("checks free delivery against the subtotal before the discount", async () => {
+it("accepts a Delivery fee on a large subtotal once the ID is reviewed", async () => {
   const { id } = await upload();
   await signIn("ana");
   await approveVerification(id, future(30));
-  // ₱2,600 gross is ₱2,470 after 5% off; free delivery still applies, so no fee can be quoted.
   const [order] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, delivery_fee_in_centavos, senior_pwd_verification_id)
     values ('c1','placed','delivery',260000,null,${id}) returning id`;
-  expect(await quoteDeliveryFee(order.id, 15000)).toMatchObject({ ok: false, reason: expect.stringContaining("Free delivery") });
+  expect(await quoteDeliveryFee(order.id, 15000)).toMatchObject({ ok: true });
 });
 
 it("leaves the verification unchanged and the photo in place when the storefront refuses or is unreachable", async () => {

@@ -21,8 +21,8 @@ export interface OrderChoice {
 const escapeLike = (text: string) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /**
- * Customers Staff can open a Ticket for. Only real Customers (verified email) are found: Walk-in
- * Customers live in CREOMS's own database, never in this one, and Leads are not yet Customers.
+ * Customers Staff can open a Ticket for. Only real Customers (verified email) are found: Leads
+ * are not yet Customers.
  */
 export async function searchCustomers(sql: postgres.Sql, term: string): Promise<CustomerChoice[]> {
   const text = term.trim();
@@ -33,7 +33,7 @@ export async function searchCustomers(sql: postgres.Sql, term: string): Promise<
     select c.id, c.full_name, c.email
     from public.customers c
     join neon_auth."user" u on u.id::text = c.id and u."emailVerified"
-    where c.full_name ilike ${pattern} or c.email ilike ${pattern}
+    where to_jsonb(c)->>'deleted_at' is null and (c.full_name ilike ${pattern} or c.email ilike ${pattern})
     order by c.full_name, c.id
     limit ${SEARCH_LIMIT}`;
 
@@ -68,7 +68,7 @@ export type OpenTicketFailure =
   | "invalid-priority"
   | "empty-message"
   | "invalid-attachment"
-  /** Not a verified Customer: unknown, a Lead, or a Walk-in Customer. */
+  /** Not a verified Customer: unknown or a Lead. */
   | "unknown-customer"
   /** The Linked order is not one of that Customer's Orders. */
   | "order-not-theirs"

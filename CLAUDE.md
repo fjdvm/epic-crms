@@ -11,8 +11,8 @@ Always use [this Figma node](https://www.figma.com/design/76nS6Pw2TXA6fWfUvTmzJ1
 ## Roles and permissions (rule)
 
 Four roles: Staff / Employee, CREOMS Manager, Admin, CEO. The full rule is in AGENTS.md under "Roles and permissions"; follow it for every feature and ticket. In short:
-- **Staff** do daily work that is easy to undo; anything needing a Manager shows "Request approval" instead of the button. No Email campaigns, Segments, Reports or Portal.
-- **Manager** = Staff plus approvals (money, removing stock, overriding an AI warning, moving someone else's work), reports and marketing. Portal is view-settings only.
+- **Staff** do daily work that is easy to undo; anything needing a Manager shows "Request approval" instead of the button. No Reports or Portal.
+- **Manager** = Staff plus approvals (money, removing stock, overriding an AI warning, moving someone else's work), and reports. Portal is view-settings only.
 - **Admin** runs the system (Portal: users, settings, logs, health, full control). In CREOMS views everything, approves no business decision.
 - **CEO** read-only everywhere; only acts on final approval of refunds and write-offs over ₱5,000 (smaller amounts stop at the Manager).
 - **Read the Figma notes.** Every CRM prototype screen has a dark note card with who can open it and what each role may do, and the "Roles & access" section (node `577:10412`) has the full guide. Read the notes on a screen before building or changing it. Details in AGENTS.md.

@@ -20,7 +20,7 @@ describe("totalSpent", () => {
     expect(totalSpent([order("delivered", 50000, 15000)])).toBe(65000);
   });
 
-  it("treats a missing delivery fee (pickup) as zero", () => {
+  it("treats a missing delivery fee (not yet quoted) as zero", () => {
     expect(totalSpent([order("paid", 50000, null)])).toBe(50000);
   });
 

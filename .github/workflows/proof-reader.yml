@@ -1,0 +1,22 @@
+name: Proof reader
+
+# Backstop only: reads payment proofs that have no result yet. GitHub throttles this schedule (real runs can be hours apart).
+# The main trigger is CREOMS's /api/notifications/signal route, which starts a read right after the storefront saves a proof.
+# The Customer's submit never waits for this.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the proof reader route
+        env:
+          CREOMS_APP_URL: ${{ secrets.CREOMS_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$CREOMS_APP_URL/api/cron/proof-reader"

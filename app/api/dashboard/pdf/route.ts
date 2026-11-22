@@ -1,4 +1,8 @@
 import { loadDashboardFigures } from "@/features/dashboard/figures";
+import { currentPaymentReviewHours, currentUnconfirmedHours } from "@/features/settings/automatic-checks-server";
+import { shopRole } from "@/lib/portal/roles";
+import { readServiceLevels } from "@/features/tickets/service-level-store";
+import { crmsDatabase } from "@/lib/crms-db";
 import { PERIOD_PRESETS, resolvePeriod } from "@/features/dashboard/period";
 import { dashboardPdf } from "@/features/dashboard/pdf";
 import { DASHBOARD_DATA_MODULES, DASHBOARD_MODULE } from "@/lib/portal/config";
@@ -9,13 +13,14 @@ export const runtime = "nodejs";
 
 /** A read-only download; access is checked before any figures or assets are loaded. */
 export async function GET(request: Request) {
-  await requireModule(DASHBOARD_MODULE);
+  const staff = await requireModule(DASHBOARD_MODULE);
   const raw = new URL(request.url).searchParams.get("period");
   const preset = PERIOD_PRESETS.find((preset) => preset === raw) ?? "7-days";
   const now = new Date();
   const period = resolvePeriod(preset, now);
   const modules = await heldModules(DASHBOARD_DATA_MODULES);
-  const figures = await loadDashboardFigures(ticketsDatabase, { period, modules, now });
+  const targets = (await readServiceLevels(crmsDatabase))?.history ?? null;
+  const figures = await loadDashboardFigures(ticketsDatabase, { period, modules, now, targets, unconfirmedHours: await currentUnconfirmedHours(), reviewHours: await currentPaymentReviewHours(), manager: shopRole(staff.role) === "manager" });
   const pdf = await dashboardPdf(figures, { period, preset, now });
   const date = new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 

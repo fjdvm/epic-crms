@@ -2,15 +2,20 @@ import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { accessFor } from "./access";
+import { DEV_ROLE_COOKIE, isDevRole } from "./dev-bypass";
 import type { Staff } from "./client";
-import { LOGIN_PATH, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
+import { LOGIN_PATH, MANAGEMENT_MODULE, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
+import { SENIOR_PWD_PAGE } from "./pages";
 import { safeReturnTo } from "./return-to";
-import { shopRole } from "./roles";
+import { canManage, shopRole } from "./roles";
 
 /** One access checker per page load, so the Portal is asked once however many callers there are. */
-const requestAccess = cache(async () =>
-  accessFor((await cookies()).get(SESSION_COOKIE)?.value),
-);
+const requestAccess = cache(async () => {
+  const jar = await cookies();
+  const devRole = jar.get(DEV_ROLE_COOKIE)?.value;
+
+  return accessFor(jar.get(SESSION_COOKIE)?.value, { devRole: isDevRole(devRole) ? devRole : undefined });
+});
 
 /** Stops the request when the Portal can't answer or the session is gone; otherwise hands the answer back. */
 async function proceed<T extends { decision: string }>(
@@ -43,6 +48,18 @@ export async function requireModule(module: string): Promise<Staff> {
   }
 
   return result.staff;
+}
+
+/** The Management pages: the Module and a Manager or CEO Role, refused here and not only hidden. */
+export async function requireManagement(): Promise<Staff> {
+  const staff = await requireModule(MANAGEMENT_MODULE);
+
+  if (!canManage(staff)) {
+    await (await requestAccess()).recordDenial(MANAGEMENT_MODULE);
+    redirect(NO_ACCESS_PATH);
+  }
+
+  return staff;
 }
 
 /** Like requireModule, for a page that opens with any one of several Modules. */
@@ -82,9 +99,10 @@ export async function getShell(): Promise<{ staff: Staff; permittedPages: string
     redirect(NO_ACCESS_PATH);
   }
 
-  // Approvals is not a Module: it follows the Role, and sits beside Returns, whose requests it lists.
-  const approver = ["manager", "ceo", "admin"].includes(shopRole(result.staff.role) ?? "");
-  const pages = approver && result.pages.includes("/returns") ? [...result.pages, "/approvals"] : result.pages;
+  // Approvals is not a Module: every Role sees it when it holds a Module whose requests it lists (Returns, Payments,
+  // Fulfilment or Senior/PWD). Staff see the ID checks and their own requests; the Manager, CEO and Admin see them all.
+  const lists = ["/returns", "/payments", "/fulfilment", SENIOR_PWD_PAGE].some(page => result.pages.includes(page));
+  const pages = lists && shopRole(result.staff.role) ? [...result.pages, "/approvals"] : result.pages;
 
   return { staff: result.staff, permittedPages: pages };
 }

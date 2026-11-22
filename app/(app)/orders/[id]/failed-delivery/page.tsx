@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { BackButton } from "@/components/shared/back-button";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
 import { notFound } from "next/navigation";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -19,7 +20,7 @@ export default async function FailedDeliveryPage({ params }: { params: Promise<{
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
 
-  const [result, history] = await Promise.all([loadOrder(ticketsDatabase, Number(id)), loadFailedDeliveryHistory(Number(id))]);
+  const [result, history] = await Promise.all([loadOrder(ticketsDatabase, Number(id), await currentAutomaticChecks()), loadFailedDeliveryHistory(Number(id))]);
   if (result.ok && !result.order) notFound();
 
   if (!result.ok || !result.order || !history.ok) {
@@ -42,7 +43,7 @@ export default async function FailedDeliveryPage({ params }: { params: Promise<{
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
       <BackgroundRefresh />
       <div className="shrink-0 space-y-1">
-        <Link href={`/orders/${id}`} className="text-sm text-[#5b2a86]">← Order #{id}</Link>
+        <BackButton fallbackHref={`/orders/${id}`} label={`Order #${id}`} />
       </div>
       <FailedDeliveryView
         order={{ id: result.order.id, status: result.order.status, customerName: result.order.customer.name, paymentMethod: result.order.paymentMethod, total: result.order.total,

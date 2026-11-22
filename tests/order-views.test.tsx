@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
+import { proofOutcome } from "@/features/orders/proof-account";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cancelOrder, cancelPaymentOrder, confirmPickup, markPaid, quoteDeliveryFee, rejectPaymentProof } from "@/features/orders/actions";
+import { cancelOrder, cancelPaymentOrder, markPaid, quoteDeliveryFee, rejectOrder, rejectPaymentProof, resendStatusEmail } from "@/features/orders/actions";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import { OrderListView } from "@/features/orders/order-list";
 import type { OrderDetail, OrderList, OrderRow } from "@/features/orders/orders";
@@ -14,14 +15,20 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/orders/actions", () => ({
   loadPackingSlip: vi.fn(),
   quoteDeliveryFee: vi.fn(),
-  confirmPickup: vi.fn(),
   cancelOrder: vi.fn(),
+  rejectOrder: vi.fn(),
   cancelPaymentOrder: vi.fn(),
   markPaid: vi.fn(),
   rejectPaymentProof: vi.fn(),
+  resendStatusEmail: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
+
+/** Every button except the Back navigation, which is not an action. */
+const NAV = new Set(["Orders", "Returns", "Tickets"]);
+const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? ""));
+
 
 afterEach(() => {
   cleanup();
@@ -46,6 +53,7 @@ function list(rows: OrderRow[]) {
     rows,
     counts: {
       all: 12,
+      "cancel-requests": 0,
       placed: 3,
       confirmed: 2,
       "awaiting payment": 1,
@@ -138,7 +146,7 @@ describe("the Orders list", () => {
   it("has no action buttons", () => {
     list([row({})]);
 
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(actionButtons()).toHaveLength(0);
   });
 });
 
@@ -148,6 +156,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   deliveryPhotoFileId: null,
   deliveryPhotoRemovedAt: null,
   paidBy: null,
+  codCollection: null,
   packedBy: null,
   id: 1042,
   createdAt: new Date("2026-10-20T00:00:00Z"),
@@ -156,6 +165,7 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
   paymentMethod: "gcash",
   lines: [{ product: "Halaya", size: "500g", quantity: 2, price: 50_000 }],
   subtotal: 100_000,
+  discount: 0,
   deliveryFee: 15_000,
   total: 115_000,
   address: {
@@ -175,39 +185,51 @@ const detail = (overrides: Partial<OrderDetail>): OrderDetail => ({
 });
 
 describe("an Order's detail", () => {
-  it("shows Senior/PWD status, Not verified by default, and the pickup reminder", () => {
+  it("shows Senior/PWD status, and Verified once approved", () => {
     const { unmount } = render(<OrderDetailView role="staff" order={detail({})} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Not verified");
     unmount();
-    render(<OrderDetailView role="staff" order={detail({ fulfillmentMethod: "pickup", deliveryFee: 0, seniorPwd: { id: 1, idType: "pwd", status: "approved" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    render(<OrderDetailView role="staff" order={detail({ deliveryFee: 0, seniorPwd: { id: 1, idType: "pwd", status: "approved" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("PWD · Verified");
-    expect(screen.getByText(/original ID/)).toBeTruthy();
+  });
+
+  it("shows no discount section on an Order without a discount", () => {
+    render(<OrderDetailView role="staff" order={detail({})} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.queryByTestId("senior-pwd-discount")).toBeNull();
+    expect(screen.queryByTestId("approved-discount")).toBeNull();
+  });
+
+  it("shows the approved discount and allowance used, with no reduction note when uncapped", () => {
+    render(<OrderDetailView role="staff" order={detail({ discount: 5_000, total: 110_000, seniorPwd: { id: 1, idType: "senior", status: "approved" }, discountDetail: { allowanceUsed: 5_000, reductionReason: null } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.getByTestId("approved-discount").textContent).toBe("₱50.00");
+    expect(screen.getByTestId("allowance-used").textContent).toBe("₱50.00 of ₱125.00");
+    expect(screen.queryByRole("note", { name: "Discount reduced" })).toBeNull();
+  });
+
+  it("shows the reduction reason when the weekly cap reduced the discount, and never an ID number", () => {
+    const { container } = render(<OrderDetailView role="staff" order={detail({ discount: 2_500, total: 112_500, seniorPwd: { id: 1, idType: "pwd", status: "approved" }, discountDetail: { allowanceUsed: 12_500, reductionReason: "Only ₱25.00 of this ID's ₱125.00 weekly allowance was left." } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
+    expect(screen.getByTestId("allowance-used").textContent).toBe("₱125.00 of ₱125.00");
+    expect(screen.getByRole("note", { name: "Discount reduced" }).textContent).toContain("weekly allowance was left");
+    expect(container.textContent).not.toMatch(/id[_ ]?(number|hash)/i);
   });
 
   it("links to the review screen while the ID waits, and explains why Confirm and Quote are blocked", () => {
     render(<OrderDetailView role="staff" order={detail({ status: "placed", deliveryFee: null, seniorPwd: { id: 1, idType: "senior", status: "pending" } })} modules={["Orders"]} returns={[]} reservations={new Map()} />);
     expect(screen.getByTestId("senior-pwd-status").textContent).toBe("Senior Citizen · Waiting for review");
-    expect(screen.getByRole("link", { name: "Review the ID" }).getAttribute("href")).toBe("/orders/senior-pwd");
+    expect(screen.getByRole("link", { name: "Review the ID" }).getAttribute("href")).toBe("/approvals?type=id-check");
     expect(screen.getByRole("note", { name: "Senior/PWD review first" }).textContent).toContain("before confirming");
-    expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
   });
 
-  it("shows the Free delivery rule, the locked ₱0 fee and the quote-again note on a Free delivery Order", () => {
-    render(<OrderDetailView order={detail({ subtotal: 266_900, deliveryFee: 0, total: 266_900 })} />);
-
+  it("shows a ₱0 fee as free delivery on any subtotal, with no subtotal rule note", () => {
+    render(<OrderDetailView order={detail({ subtotal: 100_000, deliveryFee: 0, total: 100_000 })} />);
     expect(screen.getAllByText("Free delivery").length).toBeGreaterThan(0);
     expect(screen.getByText("Free · ₱0")).toBeTruthy();
-    expect(screen.getByRole("note", { name: "Free delivery rule" }).textContent).toContain("locked at ₱0");
-    expect(screen.getByRole("note", { name: "Quote again" }).textContent).toContain("quote a");
-  });
-
-  it("shows no Free delivery rule at exactly ₱2,500 or on a quoted fee", () => {
-    render(<OrderDetailView order={detail({ subtotal: 250_000, deliveryFee: 0, total: 250_000 })} />);
-    expect(screen.queryByRole("note", { name: "Free delivery rule" })).toBeNull();
-    cleanup();
-    render(<OrderDetailView order={detail({})} />);
     expect(screen.queryByRole("note", { name: "Free delivery rule" })).toBeNull();
     expect(screen.queryByRole("note", { name: "Quote again" })).toBeNull();
+    cleanup();
+    render(<OrderDetailView order={detail({})} />);
+    expect(screen.queryByText("Free · ₱0")).toBeNull();
   });
 
   it("shows the items, Delivery fee, total, address and a link to the Customer Profile", () => {
@@ -221,14 +243,20 @@ describe("an Order's detail", () => {
     expect(screen.getByRole("link", { name: "Maria Santos" }).getAttribute("href")).toBe("/customer-profiles/c1");
   });
 
-  it("shows no Delivery fee row and no address for a Pickup Order", () => {
-    render(
-      <OrderDetailView order={detail({ fulfillmentMethod: "pickup", deliveryFee: null, total: 100_000, address: null })} />,
-    );
+  it("shows Country, Region, Province, City, Barangay and Street for an Order with a Region", () => {
+    const base = detail({}).address!;
+    render(<OrderDetailView order={detail({ address: { ...base, region: "NCR" } })} />);
 
-    expect(screen.queryByText("Delivery fee")).toBeNull();
-    expect(screen.getByText("Pickup")).toBeTruthy();
-    expect(screen.queryByText(/Delivery address/)).toBeNull();
+    for (const [label, value] of [["Country", "Philippines"], ["Region", "NCR"], ["Province", "Metro Manila"], ["City", "Makati"], ["Barangay", "Poblacion"], ["Street", "1 Rizal St"]]) {
+      expect(screen.getByText(label).nextElementSibling?.textContent).toBe(value);
+    }
+  });
+
+  it("shows an older Order's address as the original plain text", () => {
+    render(<OrderDetailView order={detail({})} />);
+
+    expect(screen.queryByLabelText("Structured delivery address")).toBeNull();
+    expect(screen.getByText("1 Rizal St, Poblacion, Makati, Metro Manila 1210, Philippines")).toBeTruthy();
   });
 
   it("shows the fee as pending for a Delivery Order not yet quoted", () => {
@@ -273,6 +301,16 @@ describe("an Order's detail", () => {
     expect(screen.getByText("Verified by").nextElementSibling?.textContent).toContain("Bernice");
   });
 
+  it("shows Payment collected with the amount and time once a COD Order's cash was recorded", () => {
+    render(<OrderDetailView order={detail({ status: "delivered", paymentMethod: "cash-on-delivery", codCollection: { amountInCentavos: 115_000, at: new Date("2026-10-21T08:00:00Z"), byName: "Ana" } })} />);
+    expect(screen.getByText("Payment collected").nextElementSibling?.textContent).toContain("₱1,150.00");
+  });
+
+  it("shows no Payment collected row before the cash is recorded", () => {
+    render(<OrderDetailView order={detail({ status: "dispatched", paymentMethod: "cash-on-delivery" })} />);
+    expect(screen.queryByText("Payment collected")).toBeNull();
+  });
+
   it("shows no Verified by row before the payment is checked", () => {
     render(<OrderDetailView order={detail({ status: "awaiting payment" })} />);
 
@@ -297,7 +335,7 @@ describe("an Order's detail", () => {
     expect(within(steps).getByText("Preparing").closest("li")?.getAttribute("data-done")).toBe("false");
   });
 
-  it("leaves the payment steps out for Cash on Delivery and Pickup Orders", () => {
+  it("leaves the payment steps out for Cash on Delivery Orders", () => {
     render(<OrderDetailView order={detail({ paymentMethod: "cash-on-delivery", status: "confirmed" })} />);
 
     const names = within(screen.getByRole("list", { name: "Order progress" }))
@@ -318,7 +356,7 @@ describe("an Order's detail", () => {
     for (const status of ["placed", "confirmed", "awaiting payment", "preparing"]) {
       for (const modules of [[], ["Fulfilment"]]) {
         const { unmount } = render(<OrderDetailView order={detail({ status, deliveryFee: null })} modules={modules} />);
-        for (const name of ["Cancel order", "Quote delivery fee", "Confirm order"]) {
+        for (const name of ["Cancel order", "Confirm", "Confirm order"]) {
           expect(screen.queryByRole("button", { name })).toBeNull();
         }
         unmount();
@@ -340,30 +378,40 @@ const confirmed = (id: number, deliveryFeeInCentavos: number | null = null) =>
   ({ ok: true as const, order: { id, status: "confirmed", deliveryFeeInCentavos } });
 
 describe("the Orders Module's actions on an Order's detail", () => {
-  it("offers a placed Delivery Order a fee quote and cancel, but no plain confirm", () => {
+  it("offers a placed Delivery Order Confirm and Reject, but no plain cancel", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
 
-    expect(screen.getByRole("button", { name: "Quote delivery fee" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Cancel order" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Confirm order" })).toBeNull();
   });
 
-  it("offers a placed Pickup Order confirm with no fee", () => {
-    render(
-      <OrderDetailView
-        order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null })}
-        modules={ORDERS}
-      />,
-    );
+  it("Reject needs a reason and sends it", async () => {
+    vi.mocked(rejectOrder).mockResolvedValue({ ok: true, order: { id: 1042, status: "cancelled", deliveryFeeInCentavos: null } });
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
 
-    expect(screen.getByRole("button", { name: "Confirm order" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Quote delivery fee" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Reject Order #1042?" });
+    const submit = within(dialog).getByRole("button", { name: "Reject order" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "We cannot deliver there" } });
+    fireEvent.click(submit);
+    await waitFor(() => expect(rejectOrder).toHaveBeenCalledWith(1042, "We cannot deliver there"));
+  });
+
+  it("shows the Order's details in the Confirm dialog", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    expect(within(dialog).getByLabelText("Order details")).toBeTruthy();
+    expect(within(dialog).getByLabelText(/Delivery fee to charge/)).toBeTruthy();
   });
 
   it("offers cancel up to preparing, and nothing to confirm once past placed", () => {
     for (const status of ["confirmed", "awaiting payment", "paid", "preparing"]) {
       const { unmount } = render(<OrderDetailView order={detail({ status })} modules={ORDERS} />);
-      expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel order"]);
+      expect(actionButtons().map((b) => b.textContent)).toEqual(["Cancel order"]);
       unmount();
     }
   });
@@ -371,14 +419,14 @@ describe("the Orders Module's actions on an Order's detail", () => {
   it("never offers cancel once dispatched, and says so plainly", () => {
     render(<OrderDetailView order={detail({ status: "dispatched" })} modules={ORDERS} />);
 
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(actionButtons()).toHaveLength(0);
     expect(screen.getByText("A dispatched Order cannot be cancelled.")).toBeTruthy();
   });
 
   it("offers nothing on a delivered or cancelled Order", () => {
     for (const status of ["delivered", "cancelled"]) {
       const { unmount } = render(<OrderDetailView order={detail({ status })} modules={ORDERS} />);
-      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      expect(actionButtons()).toHaveLength(0);
       unmount();
     }
   });
@@ -441,38 +489,75 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("offers optional Lalamove and Grab estimates that are never sent; only the fee to charge is", async () => {
-    vi.mocked(quoteDeliveryFee).mockResolvedValue(confirmed(1042, 19_000));
+  it("locks the fee at ₱0 and shows Free delivery for a qualifying Order, with the total before confirming", async () => {
+    vi.mocked(quoteDeliveryFee).mockResolvedValue(confirmed(1042, 0));
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000, freeDelivery: { qualifies: true, thresholdInCentavos: 50_000 } })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm free delivery" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    const fee = within(dialog).getByLabelText(/Delivery fee to charge/) as HTMLInputElement;
+    expect(fee.value).toBe("0.00");
+    expect(fee.disabled).toBe(true);
+    expect(within(dialog).getByText(/Free delivery · the fee is locked/)).toBeTruthy();
+    const total = within(dialog).getByRole("group", { name: "Order total" });
+    expect(total.textContent).toContain("= Total₱1,000.00");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 100_000, undefined, undefined);
+  });
+
+  it("keeps the fee editable for a Delivery Order that does not qualify", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000, freeDelivery: { qualifies: false, thresholdInCentavos: 200_000 } })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    const fee = within(dialog).getByLabelText(/Delivery fee to charge/) as HTMLInputElement;
+    expect(fee.disabled).toBe(false);
+    fireEvent.change(fee, { target: { value: "150" } });
+    expect(within(dialog).getByRole("group", { name: "Order total" }).textContent).toContain("= Total₱1,150.00");
+  });
+
+  it("shows the Order page's loading state at once", async () => {
+    const { default: Loading } = await import("@/app/(app)/orders/[id]/loading");
+    render(<Loading />);
+    expect(screen.getByRole("status", { name: "Loading Order" })).toBeTruthy();
+  });
+
+  it("shows no courier estimate fields; only the fee to charge", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
-
-    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
-    fireEvent.change(within(dialog).getByLabelText("Lalamove estimate"), { target: { value: "₱186 · motorcycle" } });
-    fireEvent.change(within(dialog).getByLabelText("Grab estimate"), { target: { value: "₱204 · motorcycle" } });
-    const submit = within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true);
-
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    expect(within(dialog).queryByLabelText("Lalamove estimate")).toBeNull();
+    expect(within(dialog).queryByLabelText("Grab estimate")).toBeNull();
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee to charge/), { target: { value: "190" } });
-    fireEvent.click(submit);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000, 119_000, undefined, undefined);
+  });
 
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000);
+  it("lists only the Payment accounts for the Customer's method and sends the one chosen", () => {
+    const order = { ...detail({ status: "placed", deliveryFee: null, total: 100_000 }), paymentAccounts: [{ id: "acc-1", label: "Shop GCash", accountName: "Bren R.", maskedNumber: "•••••••4321" }] };
+    render(<OrderDetailView order={order} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    expect(within(dialog).getByRole("combobox", { name: "Payment account" })).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee to charge/), { target: { value: "190" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 19_000, 119_000, undefined, "acc-1");
   });
 
   it("quotes a Delivery fee in pesos, sends centavos, and confirms once the server does", async () => {
     const pending = deferred<Awaited<ReturnType<typeof quoteDeliveryFee>>>();
     vi.mocked(quoteDeliveryFee).mockReturnValue(pending.promise);
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, total: 100_000 })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
-    const dialog = screen.getByRole("alertdialog", { name: "Quote a Delivery fee for Order #1042?" });
-    const submit = within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement;
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
+    const submit = within(dialog).getByRole("button", { name: "Confirm order" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150.50" } });
-    expect(within(dialog).getByText("New total").nextElementSibling?.textContent).toBe("₱1,150.50");
+    expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱1,150.50");
     fireEvent.click(submit);
 
-    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050);
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 15_050, 115_050, undefined, undefined);
     expect(within(dialog).getByRole("button", { name: "Confirming…" }).getAttribute("aria-busy")).toBe("true");
     expect(toast.success).not.toHaveBeenCalled();
 
@@ -482,49 +567,45 @@ describe("the Orders Module's actions on an Order's detail", () => {
     expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed with a ₱150.50 Delivery fee.");
   });
 
+  it("sends the discounted total when quoting a Delivery fee", () => {
+    render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null, discount: 5_000, total: 95_000 })} modules={ORDERS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "0" } });
+    expect(within(dialog).getByText("= Total").nextElementSibling?.textContent).toBe("₱950.00");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
+    expect(quoteDeliveryFee).toHaveBeenCalledWith(1042, 0, 95_000, undefined, undefined);
+  });
+
   it("will not send a fee that is not an amount in pesos", () => {
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const dialog = screen.getByRole("alertdialog");
 
-    for (const value of ["", "-5", "abc", "1.234", "1e3"]) {
+    // Letters and symbols never get into the field, so what is left is empty or a lone dot.
+    for (const value of ["", ".", "abc", "-", "e"]) {
       fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value } });
-      expect((within(dialog).getByRole("button", { name: "Quote and confirm" }) as HTMLButtonElement).disabled).toBe(true);
+      expect((within(dialog).getByLabelText(/Delivery fee/) as HTMLInputElement).value).toBe(value === "." ? "." : "");
+      expect((within(dialog).getByRole("button", { name: "Confirm order" }) as HTMLButtonElement).disabled).toBe(true);
     }
+    fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "1.234e3" } });
+    expect((within(dialog).getByLabelText(/Delivery fee/) as HTMLInputElement).value).toBe("1.23");
     expect(quoteDeliveryFee).not.toHaveBeenCalled();
   });
 
   it("shows a refused quote's reason and keeps the fee pending", async () => {
     vi.mocked(quoteDeliveryFee).mockResolvedValue({ ok: false, reason: "Storefront refused the change." });
     render(<OrderDetailView order={detail({ status: "placed", deliveryFee: null })} modules={ORDERS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quote delivery fee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const dialog = screen.getByRole("alertdialog");
     fireEvent.change(within(dialog).getByLabelText(/Delivery fee/), { target: { value: "150" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Quote and confirm" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Storefront refused the change."));
     expect(screen.getAllByText("Delivery fee")[0].nextElementSibling?.textContent).toBe("Pending");
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("asks before confirming a Pickup Order, then confirms once the server does", async () => {
-    vi.mocked(confirmPickup).mockResolvedValue(confirmed(1042));
-    render(
-      <OrderDetailView
-        order={detail({ status: "placed", fulfillmentMethod: "pickup", deliveryFee: null, address: null })}
-        modules={ORDERS}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Confirm order" }));
-
-    const dialog = screen.getByRole("alertdialog", { name: "Confirm Order #1042?" });
-    expect(within(dialog).queryByLabelText(/Delivery fee/)).toBeNull();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm order" }));
-
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Order #1042 confirmed."));
-    expect(confirmPickup).toHaveBeenCalledWith(1042);
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-  });
 });
 
 const PAYMENTS = ["Payments"];
@@ -565,9 +646,17 @@ describe("the Payments page", () => {
     expect(within(row).getByText("5012334812")).toBeTruthy();
     expect(within(row).getByText("₱1,197.00")).toBeTruthy();
     expect(within(row).getByText("10 min ago")).toBeTruthy();
+    // The receipt is not in the row: it appears only after the dropdown is opened.
+    expect(screen.queryByRole("img", { name: "Receipt for Order #1046" })).toBeNull();
+    const toggle = within(row).getByRole("button", { name: "Show details for Order #1046" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(within(row).getByRole("img", { name: "Receipt for Order #1046" }).getAttribute("src")).toBe(
       "https://files.test/receipt.png",
     );
+    fireEvent.click(within(row).getByRole("button", { name: "Hide details for Order #1046" }));
+    expect(screen.queryByRole("img", { name: "Receipt for Order #1046" })).toBeNull();
   });
 
   it("lists proofs oldest first", () => {
@@ -581,6 +670,8 @@ describe("the Payments page", () => {
     renderPayments([queued({ proof: { reference: null, screenshot: null, submittedAt: new Date("2026-10-19T12:52:00Z") } })]);
 
     expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.queryByText("No receipt")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Show details for Order/ }));
     expect(screen.getByText("No receipt")).toBeTruthy();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
@@ -620,14 +711,27 @@ describe("the Payments page", () => {
     expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
   });
 
+  it("tints a queued row pastel red when the proof reader found a mismatch, and leaves clean rows plain", () => {
+    const read = { status: "read" as const, flags: { reusedReferenceOrderIds: [], reusedImageProofIds: [] }, corrections: [],
+      findings: { amount: { finding: "Mismatch" as const, read: "90.00", expected: "₱900.00" } } as never };
+    const { container } = renderPayments([queued({ id: 1, proofRead: read }), queued({ id: 2 })]);
+    const [bad, ok] = Array.from(container.querySelectorAll("[data-payment-row]"));
+    expect(bad.getAttribute("data-anomaly")).toBe("true");
+    expect(ok.getAttribute("data-anomaly")).toBeNull();
+  });
+
   it("opens the verify dialog with the proof beside the amount due, offering Mark paid and Cancel order", () => {
     renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
 
     const dialog = screen.getByRole("dialog", { name: "Verify payment · Order #1046" });
-    expect(within(dialog).getByText("Amount due").nextElementSibling?.textContent).toBe("₱1,197.00");
-    expect(within(dialog).getByText("Reference no.").nextElementSibling?.textContent).toBe("5012334812");
+    expect(within(dialog).getByText(/order total ₱1,197.00/)).toBeTruthy();
     expect(within(dialog).getByRole("img", { name: "Receipt for Order #1046" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Zoom Receipt for Order #1046" }));
+    expect(within(dialog).queryByRole("button", { name: "View image" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(within(dialog).getByText(/Reading the screenshot never marks an Order paid/)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Mark paid" })).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Cancel order" })).toBeTruthy();
     expect(markPaid).not.toHaveBeenCalled();
@@ -638,6 +742,7 @@ describe("the Payments page", () => {
     vi.mocked(markPaid).mockReturnValue(pending.promise);
     renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark paid" }));
 
     const confirm = screen.getByRole("alertdialog", { name: "Mark Order #1046 as paid?" });
@@ -660,6 +765,7 @@ describe("the Payments page", () => {
     vi.mocked(markPaid).mockResolvedValue({ ok: false, reason: "Order already changed; refresh it before trying again." });
     renderPayments([queued()]);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark paid" }));
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark paid" }));
 
@@ -685,6 +791,65 @@ describe("the Payments page", () => {
   });
 });
 
+const reused = (checks: Partial<PaymentRow["proofChecks"] & object> = {}): PaymentRow["proofChecks"] => ({
+  confirmed: { amountInCentavos: 119_700, paidAt: new Date("2026-10-19T12:50:00Z"), recipient: "09171234567" },
+  expected: { amountInCentavos: 119_700, placedAt: new Date("2026-10-19T12:40:00Z"), recipient: "09171234567" },
+  checks: {
+    amount: { pass: true, reason: "Amount matches the Order total." },
+    date: { pass: true, reason: "Payment date is after the Order was placed." },
+    recipient: { pass: true, reason: "Recipient matches the shop account." },
+    reference: { pass: false, reason: "Reference also used on Order #42.", otherOrderIds: [42] },
+  },
+  ...checks,
+});
+
+describe("the proof check dialog by Role", () => {
+  const open = () => fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+  it("shows a reused reference with both Orders and no Mark paid", () => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role="staff" />);
+    open();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("alert").textContent).toContain("Order #42");
+    expect(within(dialog).getAllByRole("link", { name: "Order #42" }).length).toBeGreaterThan(0);
+    expect(within(dialog).queryByRole("button", { name: "Mark paid" })).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Request approval…" })).toHaveProperty("disabled", true);
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    expect(within(dialog).getByRole("button", { name: "Request approval…" })).toHaveProperty("disabled", false);
+  });
+
+  it("gives a Manager Approve anyway instead", () => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role="manager" />);
+    open();
+    fireEvent.click(screen.getByRole("checkbox"));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Approve anyway" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Request approval…" })).toBeNull();
+  });
+
+  it("keeps Mark paid disabled until the GCash history is ticked, and never calls the server from reading alone", () => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused({ checks: { ...reused()!.checks, reference: { pass: true, reason: "Reference is not used on another Order.", otherOrderIds: [] } } }) })]} now={NOW} role="staff" />);
+    open();
+    expect(screen.getByRole("button", { name: "Mark paid" })).toHaveProperty("disabled", true);
+    expect(markPaid).not.toHaveBeenCalled();
+  });
+
+  it.each(["admin", "ceo"] as const)("is view only for %s", (role) => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role={role} />);
+    open();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("button", { name: /Mark paid|Approve anyway|Request approval|Reject receipt|Cancel order/ })).toBeNull();
+    expect(within(dialog).getByRole("checkbox")).toHaveProperty("disabled", true);
+  });
+
+  it("shows Waiting for approval to Staff whose request is pending", () => {
+    render(<PaymentsView rows={[queued({ proofChecks: reused() })]} now={NOW} role="staff" approvals={{ 1046: { waiting: true } }} />);
+    open();
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(within(screen.getByRole("dialog")).getByText("Waiting for approval")).toBeTruthy();
+  });
+});
+
 describe("the Payments Module's actions on an Order's detail", () => {
   const awaiting = (overrides: Partial<OrderDetail> = {}) =>
     detail({
@@ -696,7 +861,7 @@ describe("the Payments Module's actions on an Order's detail", () => {
   it("offers Mark paid and Cancel order for a GCash Order awaiting payment, and nothing from the Orders Module", () => {
     render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
 
-    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel order", "Reject receipt", "Ask for a new proof", "Mark paid"]);
+    expect(actionButtons().map((b) => b.textContent)).toEqual(["Cancel order", "Reject receipt", "Mark paid"]);
   });
 
   it("marks paid through the dialog, and cancels through the Payments action", async () => {
@@ -721,7 +886,7 @@ describe("the Payments Module's actions on an Order's detail", () => {
 
     for (const status of ["confirmed", "paid", "preparing", "dispatched", "delivered", "cancelled"]) {
       const view = render(<OrderDetailView order={awaiting({ status })} modules={PAYMENTS} />);
-      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      expect(actionButtons()).toHaveLength(0);
       view.unmount();
     }
   });
@@ -756,8 +921,8 @@ describe("Returns-only Order detail access", () => {
     for (const status of ["placed", "confirmed", "awaiting payment", "paid", "preparing", "dispatched", "delivered"]) {
       const view = render(<OrderDetailView order={detail({ status })} modules={["Returns"]} />);
       expect(screen.getByRole("heading", { name: "Order #1042" })).toBeTruthy();
-      expect(screen.getByRole("link", { name: /← Returns/ }).getAttribute("href")).toBe("/returns");
-      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      expect(screen.getByRole("button", { name: "Returns" })).toBeTruthy();
+      expect(actionButtons()).toHaveLength(0);
       view.unmount();
     }
   });
@@ -770,11 +935,11 @@ describe("received Orders", () => {
     const progress = screen.getByRole("list", { name: "Order progress" });
     const current = within(progress).getAllByRole("listitem").find(item => item.getAttribute("aria-current") === "step");
     expect(current?.textContent).toBe("Received");
-    expect(screen.queryAllByRole("button").map(b => b.textContent)).toEqual(["Print packing slip"]);
+    expect(actionButtons().map(b => b.textContent)).toEqual(["Print packing slip"]);
   });
 });
 
-describe("payment proof history, reject, ask for a new proof and approve anyway", () => {
+describe("payment proof history, reject and approve anyway", () => {
   const proof = (id: number, rejection: OrderDetail["paymentProofs"][number]["rejection"] = null) =>
     ({ id, reference: `REF${id}`, screenshot: null, submittedAt: new Date("2026-10-20T01:00:00Z"), rejection });
   const awaiting = (overrides: Partial<OrderDetail> = {}) =>
@@ -786,6 +951,37 @@ describe("payment proof history, reject, ask for a new proof and approve anyway"
   const capped = () => awaiting({
     proofRejections: 3,
     paymentProofs: [1, 2, 3].map((n) => proof(n, { at: new Date("2026-10-21T01:00:00Z"), by: { id: "a", name: "Ana" }, reason: `Blurry ${n}` })),
+  });
+
+  const reused = () => awaiting({
+    paymentProofs: [{ ...proof(1, null), checks: { reference: { pass: false, reason: "Reference also used on Order #7.", otherOrderIds: [7] } } } as never],
+  });
+
+  it("a reused reference swaps Mark paid for Request approval (Staff) or Approve anyway (Manager)", () => {
+    const staff = render(<OrderDetailView order={reused()} modules={PAYMENTS} role="staff" />);
+    expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Request approval…" })).toBeTruthy();
+    staff.unmount();
+    const manager = render(<OrderDetailView order={reused()} modules={PAYMENTS} role="manager" />);
+    expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Approve anyway" })).toBeTruthy();
+    manager.unmount();
+    render(<OrderDetailView order={reused()} modules={PAYMENTS} role="ceo" />);
+    expect(screen.queryByRole("button", { name: "Approve anyway" })).toBeNull();
+  });
+
+  it("a Manager on a reused reference names which Order the transfer pays", async () => {
+    vi.mocked(markPaid).mockResolvedValue({ ok: false, reason: "Transfer allocated to Order #7. It does not pay this Order: reject the proof or ask for a new one." });
+    render(<OrderDetailView order={reused()} modules={PAYMENTS} role="manager" />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve anyway" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByLabelText("Order #1042 (this Order)")).toHaveProperty("checked", true);
+    fireEvent.click(within(dialog).getByLabelText("Order #7"));
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "It belongs to the first order" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve anyway" }));
+
+    await waitFor(() => expect(markPaid).toHaveBeenCalledWith(1042, { reason: "It belongs to the first order", approvalId: undefined, allocateToOrderId: 7 }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Transfer allocated to Order #7")));
   });
 
   it("lists every proof with who rejected it and why", () => {
@@ -814,16 +1010,9 @@ describe("payment proof history, reject, ask for a new proof and approve anyway"
     expect(toast.error).toHaveBeenCalledWith("Order already changed; refresh it before trying again.");
   });
 
-  it("asks for a new proof with the chosen reason and the note", async () => {
-    vi.mocked(rejectPaymentProof).mockResolvedValue({ ok: true, order: { id: 1042, status: "awaiting payment", deliveryFeeInCentavos: null } });
+  it("has no separate Ask for a new proof button; Reject receipt already asks", () => {
     render(<OrderDetailView order={awaiting()} modules={PAYMENTS} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ask for a new proof" }));
-    const dialog = screen.getByRole("alertdialog");
-    fireEvent.click(within(dialog).getByLabelText("The amount does not match the Order"));
-    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Should be 1,197" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Ask for a new proof" }));
-
-    await waitFor(() => expect(rejectPaymentProof).toHaveBeenCalledWith(1042, "The amount does not match the Order. Should be 1,197"));
+    expect(screen.queryByRole("button", { name: "Ask for a new proof" })).toBeNull();
   });
 
   it("after 3 rejections a Manager approves anyway with a reason, and nothing else offers Mark paid", async () => {
@@ -863,5 +1052,101 @@ describe("payment proof history, reject, ask for a new proof and approve anyway"
   it("gives Admin and the CEO no payment buttons", () => {
     render(<OrderDetailView order={awaiting()} modules={PAYMENTS} role="ceo" />);
     expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull();
+  });
+});
+
+describe("Email not sent notice", () => {
+  const failed = (...extra: { kind: string; occurrence?: string | null; reason: string }[]) =>
+    detail({ emailFailures: [{ kind: "confirmation", occurrence: null, reason: "mailbox full" }, ...extra.map((e) => ({ occurrence: null, ...e }))] as never });
+  const ORDERS = ["Orders"];
+
+  it("shows only on a failed outcome, with the reason", () => {
+    render(<OrderDetailView order={detail({})} modules={ORDERS} role="staff" />);
+    expect(screen.queryByTestId("email-not-sent")).toBeNull();
+    cleanup();
+    render(<OrderDetailView order={failed()} modules={ORDERS} role="staff" />);
+    expect(within(screen.getByTestId("email-not-sent")).getByText(/mailbox full/)).toBeTruthy();
+  });
+
+  it("confirms first, then resends and reports success", async () => {
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: true });
+    render(<OrderDetailView order={failed()} modules={ORDERS} role="manager" />);
+    fireEvent.click(screen.getByRole("button", { name: "Resend confirmation email" }));
+    expect(resendStatusEmail).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(resendStatusEmail).toHaveBeenCalledWith(1042, "confirmation", null));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Confirmation email sent."));
+  });
+
+  it("says why when the server refuses", async () => {
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: false, reason: "Resend is not available right now." });
+    render(<OrderDetailView order={failed()} modules={ORDERS} role="staff" />);
+    fireEvent.click(screen.getByRole("button", { name: "Resend confirmation email" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Resend is not available right now."));
+  });
+
+  it("shows each failed email with its own Resend, passing the occurrence", async () => {
+    vi.mocked(resendStatusEmail).mockResolvedValue({ ok: true });
+    const order = detail({ emailFailures: [
+      { kind: "payment-rejected", occurrence: "1", reason: "first bounce" }, { kind: "payment-rejected", occurrence: "2", reason: "second bounce" },
+    ] as never });
+    render(<OrderDetailView order={order} modules={["Payments"]} role="staff" />);
+    expect(screen.getByText(/first bounce/)).toBeTruthy();
+    expect(screen.getByText(/second bounce/)).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Resend payment rejected email" })[1]);
+    fireEvent.click(await screen.findByRole("button", { name: "Resend email" }));
+    await waitFor(() => expect(resendStatusEmail).toHaveBeenCalledWith(1042, "payment-rejected", "2"));
+  });
+
+  it("shows an email only to people holding its owning Module", () => {
+    render(<OrderDetailView order={failed({ kind: "dispatched", reason: "bounced" })} modules={ORDERS} role="staff" />);
+    expect(screen.getByRole("button", { name: "Resend confirmation email" })).toBeTruthy();
+    expect(screen.queryByText(/bounced/)).toBeNull();
+    cleanup();
+    render(<OrderDetailView order={failed({ kind: "dispatched", reason: "bounced" })} modules={["Orders", "Fulfilment"]} role="staff" />);
+    expect(screen.getByRole("button", { name: "Resend Out for delivery email" })).toBeTruthy();
+  });
+
+  it("is read-only for Admin and the CEO", () => {
+    render(<OrderDetailView order={failed()} modules={ORDERS} role="admin" />);
+    expect(screen.getByTestId("email-not-sent")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resend confirmation email" })).toBeNull();
+  });
+});
+
+describe("the proof review panel", () => {
+  const account = { method: "gcash", label: "Shop GCash", bankName: null, name: "Bren Raphael", number: "09171234567" };
+  const review = (overrides: Partial<PaymentRow> = {}, role: "staff" | "manager" = "staff") => {
+    render(<PaymentsView rows={[queued(overrides)]} now={NOW} role={role} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    return screen.getByRole("dialog");
+  };
+
+  it("shows the saved account snapshot beside the proof", () => {
+    const dialog = review({ proof: { ...queued().proof!, account } });
+    const panel = within(dialog).getByRole("region", { name: "Account paid" });
+    expect(within(panel).getByText("Shop GCash")).toBeTruthy();
+    expect(within(panel).getByText("Bren Raphael")).toBeTruthy();
+    expect(within(panel).getByText("09171234567")).toBeTruthy();
+  });
+
+  it("says so when the proof has no account", () => {
+    const dialog = review();
+    expect(within(dialog).getByText("The Customer did not pick an account with this proof.")).toBeTruthy();
+  });
+
+  it("badges a waiting proof Pending and reminds Staff to verify the real transfer", () => {
+    const dialog = review();
+    expect(dialog.querySelector("[data-proof-badge]")?.textContent).toBe("Pending");
+    expect(within(dialog).getByRole("note").textContent).toContain("Verify the real transfer with the payment provider");
+  });
+});
+
+describe("the proof badge", () => {
+  it("is Verified once the Order is past awaiting payment, Rejected when turned down, Pending otherwise", () => {
+    expect(proofOutcome({ rejected: false }, "paid")).toBe("Verified");
+    expect(proofOutcome({ rejected: true }, "awaiting payment")).toBe("Rejected");
+    expect(proofOutcome({ rejected: false }, "awaiting payment")).toBe("Pending");
   });
 });

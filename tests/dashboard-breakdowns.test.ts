@@ -19,7 +19,7 @@ beforeEach(async () => {
   vi.spyOn(Date, "now").mockImplementation(() => clock);
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values
-    ('c1', 'Maria', 'maria@example.com'), ('c2', 'Jose', 'jose@example.com'), ('walk', 'Walk-in', 'walk@example.com')`;
+    ('c1', 'Maria', 'maria@example.com'), ('c2', 'Jose', 'jose@example.com'), ('walk', 'Unverified', 'walk@example.com')`;
   connect = () => db.sql;
 });
 
@@ -70,22 +70,18 @@ describe("Dashboard breakdowns", () => {
     expect(result.sales).toMatchObject({ current: 75000 });
   });
 
-  it("returns counts and net money from the stored payment and receiving methods", async () => {
+  it("returns counts and net money from the stored payment methods", async () => {
     const a = await order({ subtotal: 20000, fee: 3000 });
     const l = await line(a, "A", 10000, 2);
     await returned(a, l, "refunded", 10000);
-    await order({ subtotal: 5000, receiving: "pickup" });
-    await order({ subtotal: 7000, payment: "cash-on-delivery", receiving: "pickup", status: "received" });
+    await order({ subtotal: 5000 });
+    await order({ subtotal: 7000, payment: "cash-on-delivery", status: "received" });
     await order({ subtotal: 9000, payment: "cash-on-delivery", status: "placed" });
 
     expect((await figures()).paymentAndReceiving).toEqual({ ok: true,
       payment: [
         { method: "cash-on-delivery", orders: 1, sales: 7000 },
         { method: "gcash", orders: 2, sales: 18000 },
-      ],
-      receiving: [
-        { method: "delivery", orders: 1, sales: 13000 },
-        { method: "pickup", orders: 2, sales: 12000 },
       ],
     });
   });
@@ -111,7 +107,7 @@ describe("Dashboard breakdowns", () => {
   it("returns empty breakdowns for an empty storefront", async () => {
     const result = await figures();
     expect(result.bestSellers).toEqual({ ok: true, products: [], remainder: { sales: 0, share: null } });
-    expect(result.paymentAndReceiving).toEqual({ ok: true, payment: [], receiving: [] });
+    expect(result.paymentAndReceiving).toEqual({ ok: true, payment: [] });
     expect(result.monthlyBuyers).toEqual({ ok: true, months: [] });
   });
 

@@ -17,6 +17,7 @@ const order = (over: Partial<CustomerOrder>): CustomerOrder => ({
   paymentMethod: "cash-on-delivery",
   lines: [],
   subtotal: 0,
+  discount: 0,
   deliveryFee: null,
   total: 0,
   address: null,
@@ -75,4 +76,15 @@ describe("ActivityTimeline", () => {
 
     expect(screen.getByText(/no activity yet/i)).toBeTruthy();
   });
+});
+
+it("interleaves Customer notes with Orders newest first and names each author", () => {
+  render(<ActivityTimeline orders={[order({ id: 9, createdAt: new Date("2026-03-05T00:00:00Z") })]} notes={[
+    { id: "older", customerId: "c", authorId: "r", authorName: "Rhea", text: "Prefers pickup", createdAt: "2026-03-01T00:00:00.000Z" },
+    { id: "newer", customerId: "c", authorId: "b", authorName: "Bernice", text: "New preference", createdAt: "2026-03-10T00:00:00.000Z" },
+  ]} onOpenOrder={() => {}} />);
+  const entries = screen.getAllByRole("listitem");
+  expect(entries[0].textContent).toContain("Bernice added a Customer noteNew preference");
+  expect(entries[1].textContent).toContain("Placed Order #9");
+  expect(entries[2].textContent).toContain("Rhea added a Customer notePrefers pickup");
 });

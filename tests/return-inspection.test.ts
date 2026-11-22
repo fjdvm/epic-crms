@@ -1,3 +1,4 @@
+import { withRefundDetails } from "./refund-details";
 import { randomUUID, createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -6,6 +7,7 @@ import { decideApproval } from "@/features/approvals/actions";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
 import { FakeFileStorage, PNG } from "./fake-file-storage";
+import { refundVia, REFUND_PROOF_SQL, REFUND_PROOF_TABLES } from "./refund-via";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 const session = vi.hoisted(() => ({ handle: "" }));
@@ -15,6 +17,7 @@ vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStora
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: (id: string) => storage.view(id) } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }), headers: async () => new Headers() }));
 vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));
+vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => db.sql }));
@@ -26,14 +29,15 @@ const notices: { userIds: string[]; body: string }[] = [];
 beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create schema crms`;
-  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); for (const file of REFUND_PROOF_SQL) await db.sql.unsafe(readFileSync(file, "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
+  await db.sql.unsafe(`truncate ${REFUND_PROOF_TABLES}`);
   await db.sql`truncate crms.approval_requests, crms.approval_events, order_returns, orders, customers restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
-  await db.sql`insert into orders (customer_id, status, payment_method) values ('c1','delivered','gcash')`;
+  await db.sql`insert into orders (customer_id, status, payment_method, subtotal_in_centavos) values ('c1','delivered','gcash', 10000000)`;
   portal = new FakePortal(); storefront = new FakeStorefront(db.sql, undefined, storage); storage.reset(); notices.length = 0; oldDirectory = false; audit.mockClear();
   for (const [id, role] of Object.entries({ ana: "Staff/Employee", mario: "CRMS Manager", ada: "Super Admin", owner: "CEO" })) {
     portal.addStaff(id, { id, username: id, name: `${id} Person`, email: `${id}@example.com`, role }, ["Returns", "Fulfilment"]);
@@ -80,7 +84,7 @@ async function returned(amount: number) {
     values (${r.id},${line.id},'Cake','',1,${amount})`;
   return Number(r.id);
 }
-function proof(staff = "ana") { const f = new FormData(); f.set("proof", storage.readyEvidence("Returns", PNG, staff)); return f; }
+function proof(staff = "ana") { const f = new FormData(); f.set("proof", storage.readyEvidence("Returns", PNG, staff)); return withRefundDetails(f, { amount: "0.01" }); }
 
 /** Two whole line items, goods received: a 3,000 tub and a damaged-prone jar of the given price. */
 async function received(jarPrice = 2000_00) {
@@ -125,9 +129,9 @@ it("refuses inspection before goods are received and from read-only Roles", asyn
 it("holds a refund until the items are inspected, then refunds the way the Customer paid with proof", async () => {
   const { id, lines } = await received();
   await signIn("mario");
-  expect(await markReturnRefunded(id, proof("mario"))).toMatchObject({ ok: false, reason: "Inspect the returned items first." });
+  expect(await refundVia(db.sql, id, proof("mario"))).toMatchObject({ ok: false, reason: "Inspect the returned items first." });
   await inspectReturn(id, randomUUID(), [{ orderLineId: lines[0], condition: "sellable" }, { orderLineId: lines[1], condition: "sellable" }]);
-  expect(await markReturnRefunded(id, proof("mario"))).toMatchObject({ ok: true });
+  expect(await refundVia(db.sql, id, proof("mario"))).toMatchObject({ ok: true });
   expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: "refunded", refundProofFileId: expect.any(String) } });
   expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "return.refund_approved", operationId: `return:${id}:return.refund_approved` })]);
 });

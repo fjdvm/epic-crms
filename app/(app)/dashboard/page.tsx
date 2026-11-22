@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { readServiceLevels } from "@/features/tickets/service-level-store";
+import { crmsDatabase } from "@/lib/crms-db";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CustomersByStageCard, CustomersByStageSkeleton, NewCustomersCard, NewCustomersSkeleton } from "@/features/dashboard/customer-cards";
 import {
@@ -14,9 +16,11 @@ import { SalesChart, SalesChartSkeleton } from "@/features/dashboard/sales-chart
 import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
 import { DASHBOARD_DATA_MODULES, DASHBOARD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireModule } from "@/lib/portal/staff";
+import { UnusualActivityCards } from "@/features/dashboard/unusual-activity-cards";
 import { RoleStrip } from "@/features/dashboard/role-strip";
 import { approvals } from "@/features/approvals/server";
 import { toView } from "@/features/approvals/view";
+import { currentUnconfirmedHours, currentPaymentReviewHours } from "@/features/settings/automatic-checks-server";
 import { shopRole } from "@/lib/portal/roles";
 import { RETURNS_MODULE } from "@/lib/portal/config";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -119,9 +123,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const now = new Date();
   const period = resolvePeriod(preset, now);
   const modules = await heldModules(DASHBOARD_DATA_MODULES);
-  const figures = loadDashboardFigures(ticketsDatabase, { period, modules, now, stream: true });
+  const targets = (await readServiceLevels(crmsDatabase))?.history ?? null;
+  const unconfirmedHours = await currentUnconfirmedHours();
+  const reviewHours = await currentPaymentReviewHours();
+  const figures = loadDashboardFigures(ticketsDatabase, { period, modules, now, stream: true, targets, unconfirmedHours, reviewHours, manager: role === "manager" });
   const show = visibleWidgets(modules);
-  const attention = hasAttentionQueue(modules);
+  const attention = hasAttentionQueue(modules, role === "manager");
 
   return (
     <PeriodNavigation preset={preset}>
@@ -134,6 +141,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <PeriodPicker />
       </div>
       <RoleStrip role={role} requests={requests} now={now.getTime()} />
+      {role !== null && role !== "staff" && <UnusualActivityCards canDismiss={role === "manager"} />}
       {Object.values(show).some(Boolean) || attention ? (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { inboxTime, listConversations, loadConversations } from "@/features/tickets/conversations";
+import { allowedScope, inboxTime, scopesFor, listConversations, loadConversations } from "@/features/tickets/conversations";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -43,6 +43,75 @@ async function chat(
   return row.id;
 }
 
+describe("the inbox tabs", () => {
+  it("shows the viewer's chats on Mine, nobody's on Unclaimed and all but other people's on All", async () => {
+    const mine = await chat("c1", "Leak", [{ body: "hi", minutes: 5 }]);
+    const open = await chat("c2", "Receipt", [{ body: "hi", minutes: 6 }], 1_000, null);
+    const theirs = await chat("c2", "Late", [{ body: "hi", minutes: 7 }], 1_000, "staff-2");
+    const ids = async (scope: "mine" | "unclaimed" | "all") =>
+      (await listConversations(db.sql, ME, undefined, scope)).map((r) => r.ticketId);
+
+    expect(await ids("mine")).toEqual([mine]);
+    expect(await ids("unclaimed")).toEqual([open]);
+    // All never lists a chat someone else Claimed.
+    expect(await ids("all")).toEqual([mine, open]);
+    expect(await ids("all")).not.toContain(theirs);
+  });
+});
+
+describe("who may open which tab", () => {
+  it("gives Staff Mine and Unclaimed, Managers all three, Admin and CEO Unclaimed and All", () => {
+    expect(scopesFor("staff")).toEqual(["mine", "unclaimed"]);
+    expect(scopesFor("manager")).toEqual(["mine", "unclaimed", "all"]);
+    expect(scopesFor("admin")).toEqual(["unclaimed", "all"]);
+    expect(scopesFor("ceo")).toEqual(["unclaimed", "all"]);
+    expect(scopesFor(null)).toEqual(["unclaimed"]);
+  });
+
+  it("never lets an address open a tab the Role has no access to", () => {
+    expect(allowedScope("staff", "all")).toBe("mine");
+    expect(allowedScope("admin", "mine")).toBe("unclaimed");
+    expect(allowedScope("admin", undefined)).toBe("unclaimed");
+    expect(allowedScope("manager", "all")).toBe("all");
+    expect(allowedScope("staff", "nonsense")).toBe("mine");
+  });
+});
+
+describe("searching Conversations", () => {
+  it("narrows the viewer's chats by Ticket number, Customer name or email, or Linked order", async () => {
+    const [order] = await db.sql<{ id: number }[]>`insert into orders (customer_id) values ('c2') returning id`;
+    const maria = await chat("c1", "Leak", [{ body: "hi", minutes: 5 }]);
+    const ana = await chat("c2", "Receipt", [{ body: "hi", minutes: 6 }]);
+    await db.sql`update tickets set order_id = ${order.id} where id = ${ana}`;
+
+    const ids = async (q: string) => (await listConversations(db.sql, ME, q)).map((r) => r.ticketId);
+
+    expect(await ids("maria")).toEqual([maria]);
+    expect(await ids("ana@example")).toEqual([ana]);
+    expect(await ids(`TKT-${maria}`)).toEqual([maria]);
+    expect(await ids(`#${order.id}`)).toEqual([ana]);
+    expect(await ids("")).toEqual([maria, ana]);
+    expect(await ids("nobody")).toEqual([]);
+  });
+
+  it("still shows only the viewer's own Claimed Tickets", async () => {
+    const mine = await chat("c1", "Mine", [{ body: "hi", minutes: 5 }]);
+    await chat("c1", "Hers", [{ body: "hi", minutes: 6 }], 1_000, "staff-2");
+    await chat("c1", "Unclaimed", [{ body: "hi", minutes: 7 }], 1_000, null);
+
+    expect((await listConversations(db.sql, ME, "maria")).map((r) => r.ticketId)).toEqual([mine]);
+  });
+
+  it("opens the first match when the open chat does not match", async () => {
+    const maria = await chat("c1", "Leak", [{ body: "hi", minutes: 5 }]);
+    const ana = await chat("c2", "Receipt", [{ body: "hi", minutes: 6 }]);
+
+    const result = await loadConversations(() => db.sql, ME, maria, undefined, "ana");
+
+    expect(result.ok && result.conversations.selected?.id).toBe(ana);
+  });
+});
+
 describe("the Conversations list", () => {
   it("lists every chat with Customer name, last Message preview, time and Ticket number, newest activity first", async () => {
     const older = await chat("c2", "Receipt", [{ body: "first", minutes: 300 }, { body: "My receipt was rejected", minutes: 180 }]);
@@ -65,11 +134,18 @@ describe("the Conversations list", () => {
     expect((await listConversations(db.sql, ME)).map((r) => r.ticketId)).toEqual([mine]);
   });
 
-  it("includes Resolved and Completed Tickets' chats", async () => {
-    const id = await chat("c1", "Done", [{ body: "thanks", minutes: 5 }]);
-    await db.sql`update tickets set status = 'completed' where id = ${id}`;
+  it("keeps Resolved and Completed Tickets' chats off Mine and Unclaimed, and on All only", async () => {
+    const live = await chat("c1", "Live", [{ body: "hi", minutes: 5 }]);
+    const done = await chat("c1", "Done", [{ body: "thanks", minutes: 6 }]);
+    const resolved = await chat("c2", "Fixed", [{ body: "ok", minutes: 7 }], 1_000, null);
+    await db.sql`update tickets set status = 'completed' where id = ${done}`;
+    await db.sql`update tickets set status = 'resolved' where id = ${resolved}`;
+    const ids = async (scope: "mine" | "unclaimed" | "all") =>
+      (await listConversations(db.sql, ME, undefined, scope)).map((r) => r.ticketId);
 
-    expect((await listConversations(db.sql, ME)).map((r) => r.ticketId)).toEqual([id]);
+    expect(await ids("mine")).toEqual([live]);
+    expect(await ids("unclaimed")).toEqual([]);
+    expect(await ids("all")).toEqual([live, done, resolved]);
   });
 
   it("previews an image alone as a photo, and a Ticket with no Message by its subject", async () => {

@@ -138,7 +138,7 @@ describe("Needs attention", () => {
   it("withholds each queue from Staff without its Module", async () => {
     expect(await attention([])).toEqual({});
     expect(Object.keys((await attention(["Payments"]))!)).toEqual(["paymentProofs"]);
-    expect(Object.keys((await attention(["Orders"]))!)).toEqual(["deliveryFees"]);
+    expect(Object.keys((await attention(["Orders"]))!)).toEqual(["deliveryFees", "cancelRequests", "overdueOrders"]);
     expect(Object.keys((await attention(["Fulfilment"]))!).sort()).toEqual(["codToCollect", "ordersToPack"]);
     expect(Object.keys((await attention(["Tickets"]))!)).toEqual(["openTickets"]);
     expect(Object.keys((await attention(["Returns"]))!)).toEqual(["returns"]);
@@ -162,5 +162,83 @@ describe("Needs attention", () => {
 
     expect(result.returns).toMatchObject({ ok: true });
     expect(result.lowFeedback).toEqual({ ok: false });
+  });
+});
+
+describe("Orders Overdue to confirm", () => {
+  // `now` is 2026-10-25T07:00Z, so the default 48 hour limit falls at 2026-10-23T07:00Z.
+  const overdue = async (hours?: number | null) =>
+    (await loadDashboardFigures(connect, { period, modules: ALL, now, unconfirmedHours: hours })).attention?.overdueOrders;
+
+  it("counts Orders still placed past the limit, whatever the payment method or fulfilment", async () => {
+    await order({ status: "placed", at: "2026-10-23T06:59:00Z", payment: "gcash" });
+    await order({ status: "placed", at: "2026-10-20T00:00:00Z", method: "pickup" });
+    await order({ status: "placed", at: "2026-10-23T07:00:00Z" });
+
+    expect(await overdue()).toEqual({ ok: true, count: 3, oldest: new Date("2026-10-20T00:00:00Z") });
+  });
+
+  it("leaves out Orders inside the limit and Orders that are confirmed or cancelled", async () => {
+    await order({ status: "placed", at: "2026-10-23T07:01:00Z" });
+    await order({ status: "confirmed", at: "2026-10-20T00:00:00Z" });
+    await order({ status: "awaiting payment", at: "2026-10-20T00:00:00Z", payment: "gcash" });
+    await order({ status: "cancelled", at: "2026-10-20T00:00:00Z" });
+
+    expect(await overdue()).toEqual({ ok: true, count: 0, oldest: null });
+  });
+
+  it("clears when the Order is confirmed", async () => {
+    const id = await order({ status: "placed", at: "2026-10-20T00:00:00Z" });
+    expect((await overdue() as { count: number }).count).toBe(1);
+    await db.sql`update orders set status = 'confirmed' where id = ${id}`;
+    expect((await overdue() as { count: number }).count).toBe(0);
+  });
+
+  it("follows the Admin's limit and shows nothing when the rule is off", async () => {
+    await order({ status: "placed", at: "2026-10-24T00:00:00Z" });
+
+    expect((await overdue() as { count: number }).count).toBe(0);
+    expect((await overdue(24) as { count: number }).count).toBe(1);
+    expect((await overdue(null) as { count: number }).count).toBe(0);
+  });
+
+  it("never cancels anything", async () => {
+    const id = await order({ status: "placed", at: "2026-10-01T00:00:00Z" });
+    await overdue();
+    const [row] = await db.sql<{ status: string }[]>`select status from orders where id = ${id}`;
+    expect(row.status).toBe("placed");
+  });
+
+  it("is hidden from Staff without the Orders Module", async () => {
+    await order({ status: "placed", at: "2026-10-20T00:00:00Z" });
+    const result = (await loadDashboardFigures(connect, { period, modules: ["Returns"], now })).attention;
+    expect(result?.overdueOrders).toBeUndefined();
+  });
+});
+
+describe("Payment reviews for a Manager", () => {
+  // `now` is 2026-10-25T07:00Z, so the default 48 hour target falls at 2026-10-23T07:00Z.
+  const reviews = async (opts: { manager?: boolean; hours?: number | null } = {}) =>
+    (await loadAttention(connect, { modules: ["Payments"], now, targets: undefined, manager: opts.manager ?? true, reviewHours: opts.hours === undefined ? 48 : opts.hours })).paymentReviews;
+  const inReview = async (rejectedAt: string, rejections = 3, status = "awaiting payment") => {
+    const id = await order({ status, payment: "gcash", proofAt: "2026-10-20T00:00:00Z" });
+    await db.sql`update orders set payment_proof_rejections = ${rejections}, payment_proof_rejected_at = ${new Date(rejectedAt)} where id = ${id}`;
+  };
+
+  it("lists Orders after the third rejection and counts the Overdue ones; the others are left out", async () => {
+    await inReview("2026-10-23T06:00:00Z");
+    await inReview("2026-10-24T06:00:00Z");
+    await inReview("2026-10-20T00:00:00Z", 2);
+    await inReview("2026-10-20T00:00:00Z", 3, "cancelled");
+    await inReview("2026-10-20T00:00:00Z", 3, "paid");
+
+    expect(await reviews()).toEqual({ ok: true, count: 2, oldest: new Date("2026-10-23T06:00:00Z"), overdue: 1 });
+  });
+
+  it("stays listed without an Overdue count when the rule is off, and is hidden from non-Managers", async () => {
+    await inReview("2026-10-20T00:00:00Z");
+
+    expect(await reviews({ hours: null })).toMatchObject({ count: 1, overdue: 0 });
+    expect(await reviews({ manager: false })).toBeUndefined();
   });
 });

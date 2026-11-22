@@ -109,9 +109,9 @@ describe("opening a Ticket as Staff", () => {
     expect(await db.sql`select 1 from tickets`).toHaveLength(1);
   });
 
-  it("refuses someone who is not a verified Customer, such as a Lead or a Walk-in", async () => {
+  it("refuses someone who is not a verified Customer, such as a Lead", async () => {
     expect(await open({ customerId: "lead" })).toEqual({ ok: false, reason: "unknown-customer" });
-    expect(await open({ customerId: "walk-in-1" })).toEqual({ ok: false, reason: "unknown-customer" });
+    expect(await open({ customerId: "unknown-1" })).toEqual({ ok: false, reason: "unknown-customer" });
     expect(await db.sql`select 1 from tickets`).toHaveLength(0);
   });
 

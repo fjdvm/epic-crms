@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, Image as ImageIcon } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useOptimistic, useState } from "react";
 
@@ -8,11 +8,21 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Button } from "@/components/ui/button";
 import { formatDate, formatPesos, formatWholePesos } from "@/features/customer-profiles/format";
 
+import { ProofAccountView, ProofBadge, proofOutcome } from "./proof-account";
+import { PaymentProofChecksView } from "./payment-proof-checks-view";
+import { hasPaymentAnomaly } from "./payment-anomaly";
+import { ProofReadFindings } from "./proof-read-view";
 import { CELL, COLUMNS, GRID, HEAD, STEPS, TABS } from "./payments-layout";
-import { AskNewProofDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
+import type { ShopRole } from "@/lib/portal/roles";
+import { ApproveAnywayDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 import { isViewableScreenshot } from "./payment-screenshot";
+import { OrderActionDialog } from "./action-dialog";
+import { claimPaymentReview } from "./payment-review-actions";
 import { PAYMENTS_WINDOW_DAYS, summarize, type PaymentRow, type PaymentTab } from "./payments";
+import { ZoomableImage } from "@/components/zoomable-image";
+import type { RefundRow } from "./refunds";
+import { RefundsTable } from "./refunds-table";
 
 const METHOD: Record<PaymentRow["method"], string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on delivery" };
 
@@ -26,27 +36,40 @@ function ago(date: Date, now: Date): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-function Receipt({ order, size }: { order: PaymentRow; size: "thumb" | "full" }) {
+function Receipt({ order }: { order: PaymentRow }) {
   const screenshot = order.proof?.screenshot ?? null;
-  const frame = size === "thumb" ? "h-10 w-8 rounded-sm" : "w-full rounded-lg p-6";
 
   return isViewableScreenshot(screenshot) ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <ZoomableImage
       src={screenshot}
       alt={`Receipt for Order #${order.id}`}
-      className={size === "thumb" ? "h-10 w-8 rounded-sm border border-[#e4ddee] object-cover" : "max-h-72 w-full rounded-lg border border-[#e4ddee] object-contain"}
+      className="block h-auto w-full rounded-lg border border-[#e4ddee] object-cover"
     />
   ) : (
-    <div className={`flex flex-col items-center justify-center gap-2 border border-[#e4ddee] bg-[#f1edf6] text-xs text-[#5a5368] ${frame}`}>
-      <ImageIcon aria-hidden className={size === "thumb" ? "size-4" : "size-7"} />
-      <span className={size === "thumb" ? "sr-only" : undefined}>{screenshot ? `Screenshot: ${screenshot}` : "No receipt"}</span>
+    <div className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-[#e4ddee] bg-[#f1edf6] p-6 text-xs text-[#5a5368]">
+      <ImageIcon aria-hidden className="size-7" />
+      <span>{screenshot ? `Screenshot: ${screenshot}` : "No receipt"}</span>
     </div>
   );
 }
 
-function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: () => void }) {
+export type ProofApproval = { approvalId?: string; waiting?: boolean };
+
+/** A money step that stays disabled until Staff have found the payment in the shop's GCash history. */
+function GatedButton({ label, open, children }: { label: string; open: boolean; children: React.ReactNode }) {
+  return open ? <>{children}</> : (
+    <Button type="button" disabled title="Tick the payment history check first" className="h-auto rounded-lg px-3 py-1.5 text-[13px] leading-[normal] shadow-none">{label}</Button>
+  );
+}
+
+function VerifyDialog({ order, role, approval, onMarkPaid }: { order: PaymentRow; role: ShopRole | null; approval?: ProofApproval; onMarkPaid: () => void }) {
   const { reference, submittedAt } = order.proof!;
+  const reusedOn = order.proofChecks?.checks.reference.otherOrderIds ?? [];
+  const [found, setFound] = useState(false);
+  // Admin and the CEO only look; nobody's reading of the screenshot ever marks an Order paid.
+  const canWork = role === "staff" || role === "manager";
+  const needsManager = order.rejections >= MANAGER_AFTER_REJECTIONS || reusedOn.length > 0;
+  const last4 = reference ? reference.replace(/\s/g, "").slice(-4) : "";
 
   return (
     <Dialog>
@@ -55,42 +78,66 @@ function VerifyDialog({ order, onMarkPaid }: { order: PaymentRow; onMarkPaid: ()
           Review
         </Button>
       </DialogTrigger>
-      <DialogContent className="flex w-[calc(100%-2rem)] max-w-[820px] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0! leading-[normal] shadow-[0_20px_48px_rgb(0_0_0/0.2)] sm:rounded-2xl md:max-w-[820px] lg:max-w-[820px]">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[1040px] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0! leading-[normal] shadow-[0_20px_48px_rgb(0_0_0/0.2)] sm:rounded-2xl md:max-w-[1040px] lg:max-w-[1040px]">
         <div className="space-y-1 border-b border-[#f0f0f2] pt-5 pr-12 pb-4 pl-6">
           <DialogTitle className="text-lg font-semibold leading-[normal] text-foreground">
             Verify payment · Order #{order.id}
           </DialogTitle>
           <DialogDescription className="text-[13px] leading-[normal] text-[#71717a]">
-            {order.customer.name} · {METHOD[order.method]} · uploaded {formatDate(submittedAt)}
+            {order.customer.name} · {METHOD[order.method]} · uploaded {formatDate(submittedAt)} · order total {formatPesos(order.total)}
+            {" "}<ProofBadge outcome={proofOutcome({ rejected: order.proofRejectedAt !== null }, order.status)} />
           </DialogDescription>
         </div>
-        <div className="grid gap-6 px-6 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <Receipt order={order} size="full" />
-          <dl className="space-y-3 text-sm text-[#1f1a2e]">
-            <div className="rounded-lg bg-[#fafafa] px-3.5 py-3">
-              <dt className="text-xs text-[#71717a]">Amount due</dt>
-              <dd className="text-[22px] font-bold">{formatPesos(order.total)}</dd>
+        <div className="grid min-h-0 gap-6 overflow-y-auto px-6 py-5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <div className="space-y-4 text-sm text-[#1f1a2e]">
+            <ProofAccountView account={order.proof?.account ?? null} method={order.method} />
+            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} reference={reference} read={order.proofRead} />}
+            <ProofReadFindings read={order.proofRead} role={role} />
+            {reusedOn.length > 0 && (
+              <p role="alert" className="rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
+                Reference already used on {reusedOn.map((n, i) => <span key={n}>{i > 0 && ", "}<Link href={`/orders/${n}`} className="font-medium underline">Order #{n}</Link></span>)}.
+                {" "}{role === "manager" ? "You can approve it anyway with a reason." : canWork ? "Only a Manager can mark this paid: request approval." : "Only a Manager can mark this paid."}
+              </p>
+            )}
+            <section className="space-y-2 rounded-lg border border-[#e4e4e7] px-4 py-3">
+              <h3 className="font-semibold">Before you mark it paid</h3>
+              <p role="note" className="rounded-md bg-[#fdf1d8] px-2.5 py-2 text-[13px] text-[#8a5a00]">Verify the real transfer with the payment provider first. A matching screenshot is not proof of payment.</p>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={found} disabled={!canWork} onChange={(e) => setFound(e.target.checked)} className="mt-1" />
+                <span>
+                  I found {formatPesos(order.total)}{last4 && <> with reference …{last4}</>} in the shop&apos;s {METHOD[order.method]} history
+                  <span className="block text-xs text-[#71717a]">Required · a screenshot can be edited</span>
+                </span>
+              </label>
+              <p className="text-xs text-[#71717a]">Reading the screenshot never marks an Order paid. Only a person who ticks this and confirms does.</p>
+            </section>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm font-semibold">
+              <h3>Screenshot</h3>
             </div>
-            <div className="space-y-1">
-              <dt className="text-[13px] font-medium text-[#27272a]">Reference no.</dt>
-              <dd className="rounded-lg border border-[#e4e4e7] px-3 py-2.5">{reference ?? "—"}</dd>
-            </div>
-            <p className="rounded-lg bg-[#eff6ff] px-3 py-2.5 text-[13px] text-[#1d4ed8]">
-              Marking paid tells the Customer their payment was received. Reject the receipt or ask for a new proof
-              and the Customer is emailed a link to upload again; cancelling cancels the Order.
+            <Receipt order={order} />
+            <p className="flex items-start gap-2 rounded-lg bg-[#fdf1d8] px-3 py-2.5 text-[13px] text-[#8a5a00]">
+              <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
+              <span><b>Duplicate reference rule.</b> If the same reference number was used on another Order, Mark paid is stopped for Staff and both Orders are shown. A Manager can approve it anyway with a reason.</span>
             </p>
-          </dl>
+          </div>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-[#f0f0f2] bg-[#fafafa] px-6 py-3.5">
-          <CancelPaymentDialog id={order.id} />
-          <RejectProofDialog id={order.id} />
-          <AskNewProofDialog id={order.id} />
-          {order.rejections >= MANAGER_AFTER_REJECTIONS ? (
-            <Link href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">Open the Order to approve anyway</Link>
-          ) : (
-            <MarkPaidDialog id={order.id} onMarkPaid={onMarkPaid} />
-          )}
-        </div>
+        {canWork && (
+          <div className="flex items-center justify-end gap-2 border-t border-[#f0f0f2] bg-[#fafafa] px-6 py-3.5">
+            <CancelPaymentDialog id={order.id} />
+            {order.rejections < MANAGER_AFTER_REJECTIONS && <RejectProofDialog id={order.id} />}
+            {needsManager ? (
+              <GatedButton label={role === "manager" || approval?.approvalId ? "Approve anyway" : approval?.waiting ? "Waiting for approval" : "Request approval…"} open={found}>
+                <ApproveAnywayDialog id={order.id} role={role} approvalId={approval?.approvalId} waiting={approval?.waiting} reusedOn={reusedOn} />
+              </GatedButton>
+            ) : (
+              <GatedButton label="Mark paid" open={found}>
+                <MarkPaidDialog id={order.id} onMarkPaid={onMarkPaid} />
+              </GatedButton>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -106,11 +153,30 @@ function Stat({ label, value, note, noteClassName }: { label: string; value: str
   );
 }
 
-function Row({ order, tab, now, onMarkPaid }: { order: PaymentRow; tab: PaymentTab; now: Date; onMarkPaid: () => void }) {
+function Row({ order, tab, now, role, approval, onMarkPaid }: { order: PaymentRow; tab: PaymentTab; now: Date; role: ShopRole | null; approval?: ProofApproval; onMarkPaid: () => void }) {
+  const [open, setOpen] = useState(false);
+  const anomaly = (tab === "verify" || tab === "anomalies") && hasPaymentAnomaly(order);
   const cells = [
-    order.proof ? <Receipt order={order} size="thumb" /> : <span className="text-[#a1a1aa]">—</span>,
+    order.proof ? (
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`payment-details-${order.id}`}
+        aria-label={`${open ? "Hide" : "Show"} details for Order #${order.id}`}
+        onClick={() => setOpen((v) => !v)}
+        className="flex size-7 items-center justify-center rounded-md text-[#5b2a86] hover:bg-[#efe6f8]"
+      >
+        <ChevronDown aria-hidden className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+    ) : <span aria-hidden />,
     <Link key="o" href={`/orders/${order.id}`} className="font-medium text-[#5b2a86]">#{order.id}</Link>,
-    <span key="c" className="truncate pr-3">{order.customer.name}</span>,
+    <span key="c" className="flex min-w-0 flex-col items-start pr-3">
+      <span className="max-w-full truncate">{order.customer.name}</span>
+      {anomaly && <span className="mt-0.5 rounded-full bg-[#fee2e2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">Anomaly</span>}
+      {tab === "review" && order.review && (
+        <span className="truncate text-xs text-[#71717a]">{order.review.owner ? `Owner: ${order.review.owner.name}` : "Not claimed"}</span>
+      )}
+    </span>,
     METHOD[order.method],
     <span key="r" className="truncate pr-3">{order.proof ? (order.proof.reference ?? "—") : "—"}</span>,
     <span key="a" className="flex items-center gap-1.5">
@@ -118,21 +184,57 @@ function Row({ order, tab, now, onMarkPaid }: { order: PaymentRow; tab: PaymentT
       {tab === "paid" && <Check aria-label="Paid" className="size-3.5 text-[#16a34a]" />}
       {tab === "rejected" && <AlertTriangle aria-label="Cancelled" className="size-3.5 text-[#dc2626]" />}
     </span>,
-    <span key="u" className="text-[13px] text-[#71717a]">{order.proof ? ago(order.proof.submittedAt, now) : "—"}</span>,
-    tab === "verify" ? (
-      <VerifyDialog order={order} onMarkPaid={onMarkPaid} />
+    tab === "review" && order.review ? (
+      <span key="u" className="flex flex-col items-start gap-0.5 text-[13px] text-[#71717a]">
+        {order.review.overdue && <span className="rounded-full bg-[#fee2e2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">Overdue</span>}
+        <span>Rejected {ago(order.review.startedAt, now)}</span>
+      </span>
+    ) : (
+      <span key="u" className="text-[13px] text-[#71717a]">{order.proof ? ago(order.proof.submittedAt, now) : "—"}</span>
+    ),
+    tab === "verify" || tab === "anomalies" ? (
+      <VerifyDialog order={order} role={role} approval={approval} onMarkPaid={onMarkPaid} />
+    ) : tab === "review" ? (
+      <span key="v" className="flex flex-col items-end gap-1">
+        {role === "manager" && order.review && !order.review.owner && (
+          <OrderActionDialog
+            trigger="Claim review"
+            triggerClassName="h-auto px-2.5 py-1 text-xs"
+            title={`Claim the payment review on Order #${order.id}?`}
+            description="You become its owner. Opening an Order never claims it."
+            confirm="Claim review"
+            busy="Claiming…"
+            run={() => claimPaymentReview(order.id)}
+            successMessage="You now own this payment review."
+          />
+        )}
+        <Link href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">Open</Link>
+      </span>
     ) : (
       <Link key="v" href={`/orders/${order.id}`} className="text-[13px] font-medium text-[#5b2a86]">View</Link>
     ),
   ];
 
   return (
-    <div data-payment-row className={`${GRID} items-center border-b border-[#efebf4] py-2.5`}>
-      {cells.map((cell, i) => (
-        <div key={COLUMNS[i].header || "action"} className={`${CELL} ${COLUMNS[i].className}`}>
-          {cell}
+    <div data-payment-row data-anomaly={anomaly || undefined} className="mb-2 rounded-xl border border-[#e6e1ee] bg-white px-2">
+      <div className={`${GRID} items-center py-2.5`}>
+        {cells.map((cell, i) => (
+          <div key={i} className={`${CELL} ${COLUMNS[i].className}`}>
+            {cell}
+          </div>
+        ))}
+      </div>
+      {open && order.proof && (
+        <div id={`payment-details-${order.id}`} className="grid gap-5 border-t border-[#efebf4] px-2 py-4 md:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+          <Receipt order={order} />
+          <div className="space-y-3 text-sm text-[#1f1a2e]">
+            <p className="text-[13px] text-[#71717a]">Uploaded {formatDate(order.proof.submittedAt)} · order total {formatPesos(order.total)}</p>
+            <ProofAccountView account={order.proof.account ?? null} method={order.method} />
+            {order.proofChecks && <PaymentProofChecksView {...order.proofChecks} reference={order.proof.reference} read={order.proofRead} />}
+            <ProofReadFindings read={order.proofRead} role={role} />
+          </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -142,14 +244,19 @@ function Row({ order, tab, now, onMarkPaid }: { order: PaymentRow; tab: PaymentT
  * list of Orders. Mark paid moves its Order to Paid and adjusts the counts at once, and rolls back
  * with the reason if the storefront refuses (the Customer is only emailed once it accepts).
  */
-export function PaymentsView({ rows: served, now }: { rows: PaymentRow[]; now: Date }) {
+export function PaymentsView({ rows: served, now, role = "staff", approvals = {}, refunds = [], canOpenReturns = false }: {
+  rows: PaymentRow[]; now: Date; role?: ShopRole | null; approvals?: Record<number, ProofApproval>;
+  /** Refunds settled on Returns in the last 30 days; null when they could not be read. */
+  refunds?: RefundRow[] | null;
+  canOpenReturns?: boolean;
+}) {
   const [rows, markPaid] = useOptimistic(served, (current, id: number) =>
     current.map((r) => (r.id === id ? { ...r, status: "paid" } : r)),
   );
-  const [tab, setTab] = useState<PaymentTab>("verify");
+  const [tab, setTab] = useState<PaymentTab | "refunds">("verify");
   const summary = summarize(rows, now);
-  const shown = summary.tabs[tab];
-  const empty = TABS.find((t) => t.key === tab)!.empty;
+  const shown = tab === "refunds" ? [] : summary.tabs[tab];
+  const empty = TABS.find((t) => t.key === tab)?.empty ?? "";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
@@ -193,24 +300,39 @@ export function PaymentsView({ rows: served, now }: { rows: PaymentRow[]; now: D
             {label} {summary.tabs[key].length}
           </button>
         ))}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "refunds"}
+          onClick={() => setTab("refunds")}
+          className={`rounded-lg px-3.5 py-2 text-sm font-medium leading-[normal] ${tab === "refunds" ? "bg-[#efe6f8] text-[#5b2a86]" : "text-[#71717a] hover:bg-[#f6f2fa]"}`}
+        >
+          Refunds {refunds?.length ?? "–"}
+        </button>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">
+        {/* No padding on the scroller, so the sticky header sits flush at its top edge; the content carries the padding. */}
         <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[#e6e1ee] bg-white">
-          {shown.length === 0 ? (
+          {tab === "refunds" ? (
+            <div className="p-5"><RefundsTable refunds={refunds} canOpenReturns={canOpenReturns} /></div>
+          ) : shown.length === 0 ? (
             <p className="p-8 text-center text-sm text-[#6e6680]">{empty}</p>
           ) : (
-            <div className="min-w-[860px] px-5 pb-5">
-              <div className={`${GRID} sticky top-0 z-20 items-center border-b border-[#efebf4] bg-white pt-6 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]`}>
-                {COLUMNS.map((col) => (
-                  <div key={col.header || "action"} className={`${HEAD} ${col.className}`}>
+            <div className="min-w-[860px] pb-5">
+              {/* Lined up with the row cards: the page padding, the card border and the card's own inset. */}
+              <div className={`${GRID} sticky top-0 z-30 mb-2 items-center border-b border-[#efebf4] bg-white px-[29px] pt-6 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]`}>
+                {COLUMNS.map((col, i) => (
+                  <div key={i} className={`${HEAD} ${col.className}`}>
                     {col.header}
                   </div>
                 ))}
               </div>
-              {shown.map((order) => (
-                <Row key={order.id} order={order} tab={tab} now={now} onMarkPaid={() => markPaid(order.id)} />
-              ))}
+              <div className="px-5">
+                {shown.map((order) => (
+                  <Row key={order.id} order={order} tab={tab as PaymentTab} now={now} role={role} approval={approvals[order.id]} onMarkPaid={() => markPaid(order.id)} />
+                ))}
+              </div>
             </div>
           )}
         </div>

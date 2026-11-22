@@ -2,17 +2,97 @@
 
 import { useState } from "react";
 import { uploadFile } from "@/features/files/client";
+import { importDeliveryPhotoLink } from "@/features/files/actions";
+
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 
 import { OrderActionDialog } from "./action-dialog";
 import { deliverOrder, dispatchOrder, startPreparing } from "./actions";
+import { CourierFields, useCourierForm } from "./courier-fields";
 import { DeliveryPhotoPicker } from "./delivery-photo-picker";
+import { LINK_MAX, linkProblem } from "./dispatch-record";
+import { formatPesos } from "@/features/customer-profiles/format";
 import { readyToPrepare } from "./fulfilment";
 
-/** Marking delivered needs the Delivery photo, so this keeps the chosen file for the dialog. */
-function MarkDelivered({ id, triggerClassName }: { id: number; triggerClassName?: string }) {
+/** The status an Order shows at once after Staff confirm a move. */
+export type MoveStatus = "preparing" | "dispatched" | "delivered";
+
+/** What Staff typed as pesos, in centavos; NaN when it is not an amount. */
+function centavosOf(text: string): number {
+  const clean = text.replace(/[₱,\s]/g, "");
+  return /^\d+(\.\d{1,2})?$/.test(clean) ? Math.round(Number(clean) * 100) : Number.NaN;
+}
+
+/**
+ * A Cash on Delivery Order's completion records the cash collected in the same save. It is pre-filled with the saved
+ * total; any other amount is refused by the server with the reason.
+ */
+function CollectedAmount({ move, total, value, onChange }: { move: string; total: number; value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[13px] font-medium text-foreground">{move}</p>
+      <Label htmlFor="collected-amount" className="text-[13px] font-medium text-foreground">Payment collected (₱)</Label>
+      <NumericInput id="collected-amount" kind="peso" autoComplete="off" value={value} onChange={e => onChange(e.target.value)} />
+      <p className="text-xs text-[#71717a]">Order total {formatPesos(total)}. Recorded as Payment collected with your name and the time.</p>
+    </div>
+  );
+}
+
+const totalText = (total: number) => (total / 100).toFixed(2);
+
+type ProofSource = "upload" | "link";
+const PROOF_SOURCES: { value: ProofSource; label: string }[] = [{ value: "upload", label: "Upload photo" }, { value: "link", label: "Paste image link" }];
+
+/** Proof of delivery is required: an uploaded photo, or the image link copied from the Lalamove or Grab booking. */
+function ProofOfDelivery({ source, onSource, photo, onPhoto, link, onLink, linkError }: {
+  source: ProofSource; onSource: (source: ProofSource) => void; photo: File | null; onPhoto: (photo: File | null) => void;
+  link: string; onLink: (link: string) => void; linkError: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <p id="proof-of-delivery" className="text-[13px] font-medium text-foreground">Proof of delivery (required)</p>
+        <p className="text-xs text-[#71717a]">Upload the photo, or paste the image link from Lalamove or Grab.</p>
+        <div role="radiogroup" aria-labelledby="proof-of-delivery" className="flex gap-2">
+          {PROOF_SOURCES.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={source === option.value}
+              onClick={() => onSource(option.value)}
+              className={`h-9 flex-1 rounded-lg border text-[13px] ${source === option.value ? "border-[#5b2a86] bg-[#f4effa] font-medium text-[#5b2a86]" : "border-[#e6e1ee]"}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {source === "upload" ? <DeliveryPhotoPicker photo={photo} onChange={onPhoto} /> : (
+        <div className="space-y-1.5">
+          <Label htmlFor="delivery-photo-link" className="text-[13px] font-medium text-foreground">Delivery photo link</Label>
+          <Input id="delivery-photo-link" type="url" autoComplete="off" placeholder="https://…" maxLength={LINK_MAX + 1} value={link}
+            onChange={e => onLink(e.target.value)} aria-invalid={linkError ? true : undefined} />
+          {linkError ? <p role="alert" className="text-xs text-[#dc2626]">{linkError}</p>
+            : <p className="text-xs text-[#71717a]">We download the image and keep it as the Delivery photo. JPG or PNG, up to 5 MB.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PHOTO_LINK_REASON = "Paste the image link as a web address starting with https://.";
+
+/** Marking delivered needs the proof of delivery, so this keeps the chosen file or pasted link for the dialog. */
+function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: number; cod: boolean; total: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
+  const [source, setSource] = useState<ProofSource>("upload");
   const [photo, setPhoto] = useState<File | null>(null);
+  const [link, setLink] = useState("");
+  const [collected, setCollected] = useState(totalText(total));
+  const linkError = link.trim() && linkProblem(link) ? PHOTO_LINK_REASON : null;
+  const proofReady = source === "upload" ? photo !== null : link.trim() !== "" && !linkError;
 
   return (
     <OrderActionDialog
@@ -22,18 +102,21 @@ function MarkDelivered({ id, triggerClassName }: { id: number; triggerClassName?
       description="The store records the delivery time now and emails the Customer."
       confirm="Mark as delivered"
       busy="Marking delivered…"
-      disabled={photo === null}
+      disabled={!proofReady || (cod && Number.isNaN(centavosOf(collected)))}
       run={async () => {
-        const uploaded = await uploadFile("Fulfilment", photo as File);
+        const uploaded = source === "upload" ? await uploadFile("Fulfilment", photo as File) : await importDeliveryPhotoLink(link.trim());
         if (!uploaded.ok) return uploaded;
         const form = new FormData();
         form.set("photo", uploaded.reference);
+        if (source === "link") form.set("photoLink", link.trim());
 
-        return deliverOrder(id, form);
+        return deliverOrder(id, form, cod ? centavosOf(collected) : undefined);
       }}
+      onOptimistic={onMove && (() => onMove("delivered"))}
       successMessage={`Order #${id} delivered.`}
     >
-      <DeliveryPhotoPicker photo={photo} onChange={setPhoto} />
+      <ProofOfDelivery source={source} onSource={setSource} photo={photo} onPhoto={setPhoto} link={link} onLink={setLink} linkError={linkError} />
+      {cod && <CollectedAmount move="Out for delivery → Delivered" total={total} value={collected} onChange={setCollected} />}
       {/* The Figma dialog's Feedback request row; the storefront always schedules it, so there is no toggle. */}
       <div className="space-y-1">
         <p className="font-medium text-foreground">Send Feedback request in 2 days</p>
@@ -43,85 +126,45 @@ function MarkDelivered({ id, triggerClassName }: { id: number; triggerClassName?
   );
 }
 
-const COURIERS = ["Lalamove", "Grab"] as const;
-
 /**
- * A Delivery Order needs the courier and the booking's https share link, so Staff fill them in here. It emails the
- * Customer and sends the link outside the app, so it waits for the server instead of updating the screen first.
+ * A Delivery Order needs the courier; the booking's https share link and rider details are optional and can be added later.
+ * Dispatching shows the move at once and rolls back with the reason if the server refuses.
  */
-function DispatchDelivery({ id, triggerClassName }: { id: number; triggerClassName?: string }) {
-  const [courier, setCourier] = useState<string>("");
-  const [link, setLink] = useState("");
-  const [riderName, setRiderName] = useState("");
-  const [riderPhone, setRiderPhone] = useState("");
-  const [riderPlate, setRiderPlate] = useState("");
-  const linkOk = /^https:\/\/\S+$/i.test(link.trim());
+function DispatchDelivery({ id, triggerClassName, onMove }: { id: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
+  const form = useCourierForm();
 
   return (
     <OrderActionDialog
       trigger="Mark as dispatched"
       triggerClassName={triggerClassName}
       title={`Mark Order #${id} as dispatched?`}
-      description="Record the courier booking. The Customer is emailed once with the tracking link. A dispatched Order can no longer be cancelled."
+      description="Record the courier booking. The Customer is emailed once, with the tracking link if you add one. A dispatched Order can no longer be cancelled."
       confirm="Mark as dispatched"
       busy="Dispatching…"
-      disabled={!COURIERS.some(name => name === courier) || !linkOk}
-      run={() => dispatchOrder(id, { courier, trackingUrl: link, riderName, riderPlate, riderPhone })}
+      disabled={!form.valid}
+      run={() => dispatchOrder(id, form.input)}
+      onOptimistic={onMove && (() => onMove("dispatched"))}
       successMessage={`Order #${id} dispatched.`}
     >
-      <div className="space-y-1.5">
-        <Label htmlFor="courier" className="text-[13px] font-medium text-foreground">Courier</Label>
-        <div id="courier" role="radiogroup" aria-label="Courier" className="flex gap-2">
-          {COURIERS.map(name => (
-            <button
-              key={name}
-              type="button"
-              role="radio"
-              aria-checked={courier === name}
-              onClick={() => setCourier(name)}
-              className={`h-9 flex-1 rounded-lg border text-[13px] ${courier === name ? "border-[#5b2a86] bg-[#f4effa] font-medium text-[#5b2a86]" : "border-[#e6e1ee]"}`}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="tracking-link" className="text-[13px] font-medium text-foreground">Booking share link</Label>
-        <Input id="tracking-link" type="url" autoComplete="off" placeholder="https://…" value={link} onChange={e => setLink(e.target.value)} />
-        {link.trim() && !linkOk ? <p className="text-xs text-[#dc2626]">The link must start with https://</p> : null}
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="rider-name" className="text-[13px] font-medium text-foreground">Rider name (optional)</Label>
-        <Input id="rider-name" autoComplete="off" value={riderName} onChange={e => setRiderName(e.target.value)} />
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="rider-contact" className="text-[13px] font-medium text-foreground">Rider contact (optional)</Label>
-          <Input id="rider-contact" type="tel" autoComplete="off" value={riderPhone} onChange={e => setRiderPhone(e.target.value)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="rider-plate" className="text-[13px] font-medium text-foreground">Plate no. (optional)</Label>
-          <Input id="rider-plate" autoComplete="off" value={riderPlate} onChange={e => setRiderPlate(e.target.value)} />
-        </div>
-      </div>
+      <CourierFields form={form} />
     </OrderActionDialog>
   );
 }
 
 /**
- * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. Dispatching a
- * Delivery Order asks for the courier booking; Pickup needs none.
+ * The Fulfilment Module's one next move for an Order, from a board card or the Order detail. An Order is
+ * dispatched with its courier booking and then delivered.
+ * Every move shows at once and rolls back with the reason if the server refuses.
  */
 export function FulfilmentMove({
   order,
   triggerClassName,
   onMove,
 }: {
-  order: { id: number; status: string; paymentMethod: string; fulfillmentMethod: string };
+  order: { id: number; status: string; paymentMethod: string; total: number };
   triggerClassName?: string;
-  /** Shows the Order in its next status at once; the moves without an outside effect call it. */
-  onMove?: (status: "preparing" | "dispatched") => void;
+  /** Shows the Order in its next status at once; every move calls it, and a refusal rolls it back. */
+  onMove?: (status: MoveStatus) => void;
 }) {
   const { id } = order;
 
@@ -135,30 +178,16 @@ export function FulfilmentMove({
         confirm="Pack order"
         busy="Packing…"
         run={() => startPreparing(id)}
+        onOptimistic={onMove && (() => onMove("preparing"))}
         successMessage={`Order #${id} packed.`}
       />
     );
   }
-  if (order.status === "preparing" && order.fulfillmentMethod === "delivery") {
-    return <DispatchDelivery id={id} triggerClassName={triggerClassName} />;
-  }
   if (order.status === "preparing") {
-    return (
-      <OrderActionDialog
-        trigger="Mark as dispatched"
-        triggerClassName={triggerClassName}
-        title={`Mark Order #${id} as dispatched?`}
-        description="Pickup needs no courier or tracking link. A dispatched Order can no longer be cancelled."
-        confirm="Mark as dispatched"
-        busy="Dispatching…"
-        run={() => dispatchOrder(id)}
-        onOptimistic={onMove && (() => onMove("dispatched"))}
-        successMessage={`Order #${id} dispatched.`}
-      />
-    );
+    return <DispatchDelivery id={id} triggerClassName={triggerClassName} onMove={onMove} />;
   }
   if (order.status === "dispatched") {
-    return <MarkDelivered id={id} triggerClassName={triggerClassName} />;
+    return <MarkDelivered id={id} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />;
   }
   return null;
 }

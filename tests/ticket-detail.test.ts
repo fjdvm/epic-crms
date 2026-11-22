@@ -142,6 +142,7 @@ describe("the Ticket page data", () => {
     expect(t?.customer).toEqual({
       id: "c1",
       name: "Maria Santos",
+      deleted: false,
       stage: "repeat",
       orders: 4,
       totalSpent: 155_000,

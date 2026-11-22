@@ -1,4 +1,10 @@
 import type postgres from "postgres";
+import { customerNameSql } from "@/lib/deleted-customer";
+import { failedEmails } from "@/features/orders/orders";
+import { RETURN_REFUNDED_EMAIL, type FailedEmail } from "@/features/orders/status-emails";
+import { DELIVERY_FEE_REASONS } from "./refund-rules";
+import { REPLACEMENT_COLUMNS, replacementRef, type ReplacementRef } from "./outcome";
+import { DESTINATION_LOCKED_STATUSES, maskDestination, readDestination, type MaskedRefundDestination } from "./refund-destination";
 
 export const RETURN_STATUSES = ["requested", "approved", "goods received", "refunded", "replaced", "declined", "cancelled"] as const;
 export type ReturnResolution = "refund" | "replacement";
@@ -21,14 +27,19 @@ export interface ReturnRow {
   id: number;
   number: string;
   orderId: number;
-  customer: { id: string; name: string };
+  /** `deleted` is true once the storefront has soft-deleted the Customer: no profile link, no contact details. */
+  customer: { id: string; name: string; deleted?: boolean };
   status: ReturnStatus;
   preferredResolution: ReturnResolution;
   finalResolution: ReturnResolution | null;
+  /** Whether the goods must come back; null until a Manager or Staff decides. Picks the on-screen label of an approved Return. */
+  goodsRequired?: boolean | null;
   requestedAt: Date;
   /** Centavos, captured by the storefront when the Customer requests the Return. */
   amount: number;
   items: ReturnItem[];
+  /** The ₱0 Replacement Order this Return sent, and its status; decides whether a Replaced Return is Completed. */
+  replacement?: ReplacementRef | null;
 }
 export interface ReturnList {
   rows: ReturnRow[];
@@ -41,16 +52,18 @@ export interface ReturnList {
 export type ReturnListResult = { ok: true; list: ReturnList } | { ok: false };
 
 type Row = {
-  id: number; order_id: number; customer_id: string; full_name: string;
+  id: number; order_id: number; customer_id: string; full_name: string; deleted: boolean;
   preferred_resolution: ReturnResolution; final_resolution: ReturnResolution | null;
-  status: ReturnStatus; requested_at: Date; amount_in_centavos: number;
+  status: ReturnStatus; requested_at: Date; amount_in_centavos: number; goods_required: boolean | null;
+  replacement_order_id?: number | null; replacement_status?: string | null;
 };
 function returnRow(row: Row, items: ReturnItem[]): ReturnRow {
   return {
     id: row.id, number: `RMA-${row.id}`, orderId: row.order_id,
-    customer: { id: row.customer_id, name: row.full_name }, status: row.status,
-    preferredResolution: row.preferred_resolution, finalResolution: row.final_resolution,
+    customer: { id: row.customer_id, name: row.full_name, deleted: row.deleted }, status: row.status,
+    preferredResolution: row.preferred_resolution, finalResolution: row.final_resolution, goodsRequired: row.goods_required ?? null,
     requestedAt: row.requested_at, amount: row.amount_in_centavos, items,
+    replacement: replacementRef({ replacement_order_id: row.replacement_order_id ?? null, replacement_status: row.replacement_status ?? null }),
   };
 }
 async function itemsFor(sql: postgres.Sql, ids: number[]): Promise<Map<number, ReturnItem[]>> {
@@ -94,7 +107,8 @@ export async function loadReturns(connect: () => postgres.Sql, query: ReturnQuer
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const page = Math.min(totalPages, positiveInteger(query.page, 1));
     const rows = await sql<Row[]>`
-      select r.id, r.order_id, o.customer_id, c.full_name, r.status, r.preferred_resolution, r.final_resolution, r.requested_at, r.amount_in_centavos
+      select r.id, r.order_id, o.customer_id, ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted, r.status, r.preferred_resolution, r.final_resolution, r.goods_required, r.requested_at, r.amount_in_centavos,
+        ${sql.unsafe(REPLACEMENT_COLUMNS("r"))}
       from public.order_returns r join public.orders o on o.id = r.order_id
       join public.customers c on c.id = o.customer_id
       where true ${scope}
@@ -147,7 +161,7 @@ export async function loadReturnStats(connect: () => postgres.Sql, now = new Dat
     const [totals] = await sql<{ open: number; requested: number; refunded: number; replaced: number }[]>`
       select count(*) filter (where status in ('requested','approved','goods received'))::int as open,
         count(*) filter (where requested_at >= ${start} and requested_at < ${end})::int as requested,
-        coalesce(sum(amount_in_centavos) filter (where status = 'refunded' and refunded_at >= ${start} and refunded_at < ${end}), 0)::bigint as refunded,
+        coalesce(sum(amount_in_centavos + coalesce((to_jsonb(order_returns)->>'refund_delivery_fee_in_centavos')::int, 0)) filter (where status = 'refunded' and refunded_at >= ${start} and refunded_at < ${end}), 0)::bigint as refunded,
         count(*) filter (where status = 'replaced' and replaced_at >= ${start} and replaced_at < ${end})::int as replaced
       from public.order_returns`;
     const [delivered] = await sql<{ count: number }[]>`select count(*)::int as count from public.orders
@@ -180,6 +194,19 @@ export interface ReturnDetail extends ReturnRow {
   refundWindowExtendedAt: Date | null;
   /** The ₱0 Replacement Order sent for this Return, once a Manager approved the replacement. */
   replacementOrderId: number | null;
+  /** Where the Customer asked the refund to go, number masked; null on a Return that has none. Locked once a Manager approves. */
+  refundDestination: MaskedRefundDestination | null;
+  refundDestinationLocked: boolean;
+  /** What Staff recorded when they marked it Refunded (#613); null before that, and on a refund made before these details existed. */
+  refundRecord?: { amountInCentavos: number; method: string; refundedOn: string; reference: string } | null;
+  /** What the Order charged for delivery; ₱0 for free delivery. */
+  orderDeliveryFee: number;
+  /** The Delivery fee included in this Return's refund (₱0 when only the items were refunded). */
+  deliveryFeeRefunded: number;
+  /** A Manager may include the Delivery fee: a wrong or defective item, a fee was charged, and none was refunded on the Order yet. */
+  deliveryFeeRefundable: boolean;
+  /** The Refunded email, when it failed after retries. A failed email never reverses the refund (#617). */
+  emailFailures?: FailedEmail[];
   images: { fileId: string; position: number }[];
   history: { status: ReturnStatus; actor: { type: "staff" | "customer"; id: string; name: string }; at: Date; note: string | null }[];
 }
@@ -193,13 +220,23 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       reason: ReturnDetail["reason"]; note: string; goods_required: boolean | null; decline_reason: string | null;
       refunded_at: Date | null; replaced_at: Date | null; video_file_id: string | null; refund_proof_file_id: string | null; order_status: string; payment_method: string;
       delivered_at: Date | null; delivery_photo_file_id: string | null; delivery_photo_removed_at: string | null;
-      window_extended_at: string | null; replacement_order_id: number | null;
-    })[]>`select r.*, o.customer_id, o.status as order_status, o.payment_method, o.delivered_at,
+      window_extended_at: string | null; replacement_order_id: number | null; replacement_status: string | null;
+      dest_method: string | null; dest_name: string | null; dest_number: string | null; dest_bank: string | null;
+      paid_amount: string | null; paid_method: string | null; paid_on: string | null; paid_reference: string | null;
+      fulfillment_method: string; order_delivery_fee: number | null; fee_refunded: string | null; fee_refunded_elsewhere: boolean;
+    })[]>`select r.*, o.fulfillment_method, o.delivery_fee_in_centavos as order_delivery_fee,
+      to_jsonb(r)->>'refund_delivery_fee_in_centavos' as fee_refunded,
+      to_jsonb(r)->>'refund_amount_in_centavos' as paid_amount, to_jsonb(r)->>'refund_paid_method' as paid_method,
+      to_jsonb(r)->>'refund_paid_on' as paid_on, to_jsonb(r)->>'refund_reference' as paid_reference,
+      exists (select 1 from public.order_returns x where x.order_id = r.order_id and x.id <> r.id and x.status = 'refunded'
+        and coalesce((to_jsonb(x)->>'refund_delivery_fee_in_centavos')::int, 0) > 0) as fee_refunded_elsewhere,
+      to_jsonb(r)->>'refund_method' as dest_method, to_jsonb(r)->>'refund_account_name' as dest_name,
+      to_jsonb(r)->>'refund_account_number' as dest_number, to_jsonb(r)->>'refund_bank_name' as dest_bank, o.customer_id, o.status as order_status, o.payment_method, o.delivered_at,
       to_jsonb(o)->>'delivery_photo_file_id' as delivery_photo_file_id,
       to_jsonb(o)->>'delivery_photo_removed_at' as delivery_photo_removed_at,
       to_jsonb(o)->>'refund_window_extended_at' as window_extended_at,
-      (select ro.id from public.orders ro where to_jsonb(ro)->>'replacement_for_return_id' = r.id::text limit 1) as replacement_order_id,
-      c.full_name from public.order_returns r
+      ${sql.unsafe(REPLACEMENT_COLUMNS("r"))},
+      ${sql.unsafe(customerNameSql('c'))} as full_name, (to_jsonb(c)->>'deleted_at' is not null) as deleted from public.order_returns r
       join public.orders o on o.id = r.order_id join public.customers c on c.id = o.customer_id
       where r.id = ${id}`;
     if (!row) return { ok: true, detail: null };
@@ -209,8 +246,10 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
     const history = await sql<{
       status: ReturnStatus; actor_type: "staff" | "customer"; actor_id: string; actor_name: string; occurred_at: Date; note: string | null;
     }[]>`select * from public.order_return_history where return_id = ${id} order by occurred_at, id`;
+    const emailFailures = row.status === "refunded"
+      ? (await failedEmails(sql, row.order_id)).filter((email) => email.kind === RETURN_REFUNDED_EMAIL && email.occurrence === String(id)) : [];
     return { ok: true, detail: {
-      ...returnRow(row, items.get(id) ?? []), reason: row.reason, note: row.note,
+      ...returnRow(row, items.get(id) ?? []), emailFailures, reason: row.reason, note: row.note,
       videoFileId: row.video_file_id, refundProofFileId: row.refund_proof_file_id, replacedAt: row.replaced_at,
       goodsRequired: row.goods_required, declineReason: row.decline_reason, refundedAt: row.refunded_at,
       orderStatus: row.order_status, paymentMethod: row.payment_method, deliveredAt: row.delivered_at,
@@ -219,6 +258,15 @@ export async function loadReturnDetail(connect: () => postgres.Sql, id: number):
       refundWindowEndsAt: row.delivered_at ? new Date(row.delivered_at.getTime() + (row.window_extended_at ? 48 : 24) * 60 * 60 * 1000) : null,
       refundWindowExtendedAt: row.window_extended_at ? new Date(row.window_extended_at) : null,
       replacementOrderId: row.replacement_order_id,
+      // Masked here, so the full number never reaches a page or a browser from this read.
+      refundDestination: (() => { const full = readDestination({ refund_method: row.dest_method, refund_account_name: row.dest_name, refund_account_number: row.dest_number, refund_bank_name: row.dest_bank }); return full ? maskDestination(full) : null; })(),
+      refundDestinationLocked: (DESTINATION_LOCKED_STATUSES as readonly string[]).includes(row.status),
+      refundRecord: row.paid_amount !== null && row.paid_method && row.paid_on && row.paid_reference
+        ? { amountInCentavos: Number(row.paid_amount), method: row.paid_method, refundedOn: row.paid_on.slice(0, 10), reference: row.paid_reference } : null,
+      orderDeliveryFee: row.fulfillment_method === "delivery" ? row.order_delivery_fee ?? 0 : 0,
+      deliveryFeeRefunded: Number(row.fee_refunded ?? 0),
+      deliveryFeeRefundable: row.fulfillment_method === "delivery" && (row.order_delivery_fee ?? 0) > 0 && !row.fee_refunded_elsewhere &&
+        (DELIVERY_FEE_REASONS as readonly string[]).includes(row.reason) && row.status !== "refunded",
       images: images.map(image => ({ fileId: image.file_id, position: image.position })),
       history: history.map(step => ({ status: step.status, actor: { type: step.actor_type, id: step.actor_id, name: step.actor_name },
         at: step.occurred_at, note: step.note })),

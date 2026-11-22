@@ -1,3 +1,4 @@
+import { withRefundDetails } from "./refund-details";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import { ORDER_DETAIL_MODULES } from "@/lib/portal/config";
 import { FakePortal, FAKE_CALLBACK, FAKE_PORTAL_URL, FAKE_SYSTEM, FAKE_SECRET, portalFetch } from "./fake-portal";
 import { revalidatePath } from "next/cache";
 import { FakeStorefront, FAKE_SERVICE_SECRET, FAKE_STOREFRONT_URL, storefrontFetch } from "./fake-storefront";
+import { refundVia, REFUND_PROOF_SQL, REFUND_PROOF_TABLES } from "./refund-via";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 import { FakeFileStorage, PNG } from "./fake-file-storage";
@@ -15,7 +17,7 @@ vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn(async () => {}), get 
 function proof() {
   const form = new FormData();
   form.set("proof", storage.readyEvidence("Returns", PNG, "ana"));
-  return form;
+  return withRefundDetails(form);
 }
 vi.mock("@/features/files/storage", () => ({
   storageUrl: (url: string) => url,
@@ -26,14 +28,16 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: session.handle }) }),
   headers: async () => new Headers(),
 }));
+vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 let db: TestDatabase;
 let portal: FakePortal;
 let storefront: FakeStorefront;
-beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8")); }, 60_000);
+beforeAll(async () => { db = await startTestDatabase(); await db.sql`create schema if not exists crms`; await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); for (const file of REFUND_PROOF_SQL) await db.sql.unsafe(readFileSync(file, "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8")); }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
+  await db.sql.unsafe(`truncate ${REFUND_PROOF_TABLES}`);
   portal = new FakePortal();
   storefront = new FakeStorefront(db.sql, undefined, storage);
   storage.reset();
@@ -52,7 +56,7 @@ beforeEach(async () => {
   vi.stubEnv("CREOMS_DEV_BYPASS", "false");
   await db.sql`truncate order_returns, orders, customers restart identity cascade`;
   await db.sql`insert into customers (id, full_name, email) values ('c1', 'Maria Santos', 'maria@example.com')`;
-  await db.sql`insert into orders (customer_id) values ('c1')`;
+  await db.sql`insert into orders (customer_id, payment_method, subtotal_in_centavos) values ('c1', 'gcash', 10000000)`;
   await db.sql`insert into order_returns (order_id, reason, amount_in_centavos) values (1, 'damaged', 10000)`;
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -84,7 +88,7 @@ describe('Returns server access', () => {
     expect(storage.files.size).toBe(0);
     expect(storefront.requests).toBe(2);
     portal.grant('ana', 'Returns');
-    expect(await markReturnRefunded(1, proof())).toMatchObject({ ok: true });
+    expect(await refundVia(db.sql, 1, proof())).toMatchObject({ ok: true });
     expect(await getReturnDetail(1)).toMatchObject({ ok: true, detail: {
       history: [
         { status: 'approved', actor: { id: 'ana', name: 'Ana Reyes' } },

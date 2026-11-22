@@ -82,20 +82,11 @@ Tickets. Messages remain solely in the Conversation. The Portal User id is used
 for the Audit Actor; Ticket ownership continues to use the Portal username.
 The Priority endpoint rejects unknown priorities and changes to Completed Tickets.
 
-Walk-in creation and editing record `walk_in_customer.created` and
-`walk_in_customer.updated` under Customer Profiles. Editing validates the same
-fields and duplicate contacts as creation, excludes the current Walk-in from the
-duplicate lookup, and preserves its id and creation time. Unchanged submissions,
-refused writes and missing Targets emit no event. The new Priority and Walk-in
-editing endpoints are backend actions; this ticket adds no editing controls.
-
 Mutation events retain a submission token in serialized Server Action arguments,
 matching Announcements. Event identities include the Actor and token; the gateway
 also hashes the action and Target. Interleaved replays therefore keep the same
 key even when another action changed the row in between. Conditional updates
-suppress unchanged retries. Walk-in creation derives its UUID from the Actor and
-submission token and inserts at most once, preserving its Target even if contact
-details were subsequently edited. Each later submission gets a fresh token.
+suppress unchanged retries. Each later submission gets a fresh token.
 There is no outbox or replay after an uncertain database result.
 
 Customer Profile access is recorded as `customer_profile.viewed` when its client
@@ -154,6 +145,68 @@ branch as that role. The temporary database branch was removed afterward.
 `lib/error-monitor.ts` records every server error as a `system.error` Audit Event and emails the owner
 (`OWNER_ALERT_EMAIL`, through the notifications App email) at most once per kind per hour; the throttle is the
 `crms.error_alerts` table (`docs/db/crms-error-alerts.sql`), claimed by one atomic upsert. Sources: `onRequestError`
-in `instrumentation.ts` (kind = error name + route) and the two cron routes (`cron:feedback-analysis`,
-`cron:scheduled-announcements`). The stock auto-release job runs in the storefront, not CREOMS, so it reports from
+in `instrumentation.ts` (kind = error name + route) and the cron route (`cron:feedback-analysis`). The stock auto-release job runs in the storefront, not CREOMS, so it reports from
 there. `/api/ready` checks both databases; `/api/health` stays liveness-only.
+
+## Customer Tasks (#420)
+
+`customer_task.created`, `customer_task.done`, `customer_task.reopened`,
+`customer_task.due_date_changed` and `customer_task.reassigned` target the Customer
+Profile and include the Task id. Due-date and reassignment metadata retain old and
+new values. The actor id and display name come from Module validation.
+
+Task changes commit their operation receipt and audit payload atomically. Unlike
+the best-effort callers, Tasks use `deliverGatewayAuditEvent`, which acknowledges
+delivery or throws. A failure leaves delivery pending; retrying the same action
+sends its original event with the same gateway idempotency key, without applying
+the change again. Concurrent delivery locks the receipt. No background polling is
+introduced.
+
+## Order placement and email outcomes (#572)
+
+The storefront places Orders and sends the confirmation email, so CREOMS records what it finds. This
+runs inside the existing storefront-signal sync (`/api/notifications/signal`, and the Staff-requested
+sync): no timer and no polling (ADR-0005). `syncOrderAudit` reads Orders and `order_email_outcomes`,
+and delivers `order.placed`, `order.email_sent` and `order.email_failed` under a `process` Actor
+through the acknowledged gateway delivery. Operation ids are `order:<id>:order.placed` and
+`order:<id>:email:<kind>:<status>`; delivered ids go in `crms.seen_order_audit_events`
+(`docs/db/crms-order-audit-ledger.sql`, applied as creoms_writer), and the gateway's own idempotency key
+backs it up. A refused delivery is not marked and is retried at the next signal. Pending and retrying
+emails write nothing; failed then sent is two entries. Entries carry no ID number or Customer email
+address; addresses are stripped from the failure reason. A refused Order action writes nothing here.
+An email outcome change appears in the log at the next signal, so the storefront must signal CREOMS
+when it saves one.
+
+## Resent Status emails (#573, #605)
+
+Order Details shows "Email not sent" with the reason for every `order_email_outcomes` row whose status is
+`failed`, for any of the nine Status emails (`confirmation`, `payment-verified`, `payment-rejected`, `payment-expired`, `manager-review-started`,
+`preparing`, `dispatched`, `completed`; `features/orders/status-emails.ts`). A row is one event
+occurrence: the storefront adds a nullable `occurrence` text column (for example the rejection number) so two
+rejections are two rows (`""` for an event that happens once; storefront migration 0053, applied to production and
+granted to the read-only role by the storefront's `docs/sql/creoms-email-outcomes-grant.sql`), so no CREOMS migration is
+needed. Staff and Managers holding the email's owning Module (confirmation: Orders; payment verified, rejected, expired,
+Manager review: Payments; Preparing, dispatched, completed: Fulfilment) can resend it after a
+confirm dialog; Admin and the CEO only read.
+`resendStatusEmail` asks the storefront (`POST /api/internal/orders/:id/email/resend`, body `{kind, occurrence,
+staffId, staffName}`). The storefront resends under the email's stable id, so a repeat never sends twice; when
+Notification already accepted the email it reconciles the delivery status first, sends nothing and answers
+`status: "reconciled"` (otherwise `"sent"`), echoing `kind` and `occurrence`. Either answer records the outcome as
+`sent`, which clears the notice. A Resend reaches a Customer, so it waits for the server and is never optimistic.
+The Refunded email (`return-refunded`, #616/#617) is owned by Returns: its occurrence is the Return's id, it is shown on the Return page as well as the Order, and a failed send never reverses the refund. That endpoint is the storefront's to provide. Each success writes `order.email_resent` (module = the owning
+Module) with the person's name, the kind, the occurrence, whether it was reconciled, and a fresh operation id
+(a second Resend of a different event is a second entry). A refusal changes and audits nothing, and a failed
+email never reverses the saved update. The #572 sync records the failed-to-sent change as a system
+`order.email_sent` (operation id includes the occurrence), so one resend can show two entries: who asked, and what
+the storefront then recorded.
+
+## Automatic Reservation expiry (#675)
+
+When the storefront cancels an unpaid Online-payment Order because its payment window passed, it saves a
+`customer_notifications` row keyed `order.expired:<id>` in the same transaction as the cancellation, and for
+no other cancellation. `syncOrderAudit` reads those rows and delivers one `order.expired` event per Order,
+linked to the Order, under the `process` Actor "Unpaid Order expiry". The operation id is
+`order:<id>:order.expired`, so a retry or repeated signal adds nothing. A Staff or Manager cancellation saves
+no such row and is audited only as `order.cancelled`. Apply `docs/db/creoms-expiry-audit-readonly.sql` as the
+storefront table owner (grants `creoms_readonly` SELECT on `customer_notifications`); deploy the storefront's
+expiry first.

@@ -9,8 +9,8 @@ export function PageHeader({ count }: { count?: number }) {
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Orders</h1>
         <div className="flex gap-2">
-        <Link href="/orders/senior-pwd" prefetch className="rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
-          Senior/PWD
+        <Link href="/approvals?type=id-check" prefetch className="rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
+          ID checks
         </Link>
         <Link href="/orders/stock" prefetch className="rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[9px] text-sm font-medium text-[#18181b]">
           Products &amp; stock

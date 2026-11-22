@@ -9,6 +9,10 @@ Apply `docs/db/crms-approvals.sql` as `creoms_writer` before deploying CREOMS. T
 Portal companion migration seeds Role templates only; it never changes a person's
 Module grants. Fresh Portal seeds install the same defaults.
 
+A `return.decide` request (Staff asking a Manager to decide a Return, see
+[Decide return](return-decisions.md#decide-return-staff-check-manager-decides)) is never approved on its own: the Manager
+picks the decision on the Return, and `closeRequests` marks the request completed and tells the requester.
+
 `approveReturn`, `declineReturn`, `markReturnRefunded` and `markReturnReplaced`
 accept an optional final `{reason, approvalId}` argument. A Staff call with a reason
 returns `{ok:false, reason:"Waiting for approval", status, approvalId}` without
@@ -31,13 +35,8 @@ items' selling prices; it never removes stock. Ticket #348 owns inspection and I
 execution. Ticket #329 owns Role picker, request forms, waiting badges and approval
 screens. No UI is introduced here.
 
-The Portal Settings backend is `POST /api/creoms/approval-limit`: `{}` reads,
-`{amountInCentavos}` changes (Admin only). It issues a 60-second, centrally bound
-CREOMS handle, calls `POST /api/approvals/limit`, then revokes the handle. The
-CREOMS endpoint validates the Portal-owned `Portal Settings` capability against the live Portal. This capability admits only Admin, CEO and CREOMS Manager identities and does not depend on shop Module grants; no CREOMS page uses it. No extra shared
-secret or database credential is required. `setApprovalLimit` is the corresponding
-CREOMS action. The initial limit is 500000 centavos; every change is recorded with
-the Admin's identity and previous amount in an atomic local audit record and sent
+A Manager or the CEO changes the Approval limit in Commerce Settings (Management) through the `changeApprovalLimit` action; Staff and Admin are refused. The initial limit is 500000 centavos; every change is recorded with
+the changer's identity and previous amount in an atomic local audit record and sent
 to the shared Audit service.
 
 Approval notifications are durable outbox entries delivered through the existing
@@ -50,3 +49,17 @@ the Portal's backend-only recipient directory.
 acceptance in the durable audit log and shared Audit service. It never sends or
 applies a suggestion; the existing human-confirmed mutation endpoint remains
 mandatory. There is no autonomous suggestion execution path.
+
+## The Approvals page, by type
+
+`/approvals` lists everything waiting for a person, grouped by type: ID checks, Refunds, Payments (approve anyway), Cancellations, Write-offs and Returns
+(`kindOf` in `features/approvals/view.ts`). Status tabs (Waiting, Approved, Declined, All) combine with a type filter that shows a count for each type;
+`?type=id-check` opens on one type. `loadApprovalRows` (`features/approvals/overview.ts`) reads the requests of every Module the person holds (Returns,
+Payments, Fulfilment) plus the Senior/PWD ID checks; one unreadable Module shows a notice and never hides the rest. Each row links to its Return, its Order
+or its ID check's review page, and Approve/Decline use the row's own Module. Staff see the ID checks and the requests they raised; a Manager sees and decides
+all; the CEO takes the final step; Admin views. Money decisions are never optimistic.
+
+## Number fields
+
+A field that holds a number uses `NumericInput` (`components/ui/numeric-input.tsx`, mask in `lib/numeric-mask.ts`): `peso` takes digits, commas and one dot
+with two decimals; `whole` takes digits only (hours, counts, account numbers). Letters never get in, typed or pasted. The server parsers stay the authority.

@@ -1,4 +1,5 @@
 import { gatewayFileStorage } from "@/lib/gateway";
+import { canManage } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { checkFileInfo, filePolicy, type UploadModule } from "./policy";
@@ -7,7 +8,8 @@ import { directFileStorage, storageUrl } from "./storage";
 
 /** Server-only record readers supply the owning Module and a File id obtained from that record. */
 export async function viewStoredFile(module: UploadModule, fileId: string) {
-  await requireModule(module);
+  const staff = await requireModule(module);
+  if (module === "Management" && !canManage(staff)) throw new Error("Attachment is unavailable");
   const file = await directFileStorage.view(fileId);
   if (file.id !== fileId || file.status !== "active") throw new Error("Attachment is unavailable");
   return { url: storageUrl(file.url), filename: file.filename, contentType: file.contentType, size: file.size };
@@ -15,7 +17,8 @@ export async function viewStoredFile(module: UploadModule, fileId: string) {
 
 /** Only a ready reference issued to this Staff member and owning Module can become record evidence. */
 export async function recordUpload(module: UploadModule, reference: unknown, staffId: string) {
-  await requireModule(module);
+  const staff = await requireModule(module);
+  if (module === "Management" && !canManage(staff)) return null;
   const upload = openUpload(reference);
   if (!upload || upload.phase !== "ready" || upload.module !== module || upload.staffId !== staffId || checkFileInfo(module, upload)) return null;
   const file = await directFileStorage.view(upload.fileId);
@@ -37,7 +40,7 @@ export const ticketFileStorage = {
   remove: (fileId: string) => gatewayFileStorage.remove(fileId),
   viewUrl: async (fileId: string) => (await viewStoredFile("Tickets", fileId)).url,
   viewFile: async (fileId: string) => {
-    const { url, filename, contentType } = await viewStoredFile("Tickets", fileId);
-    return { url, filename, contentType };
+    const { url, filename, contentType, size } = await viewStoredFile("Tickets", fileId);
+    return { url, filename, contentType, size };
   },
 };

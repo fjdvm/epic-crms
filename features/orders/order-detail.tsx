@@ -1,3 +1,8 @@
+import { BackButton } from "@/components/shared/back-button";
+import { ProofAccountView, ProofBadge, proofOutcome } from "./proof-account";
+import { PaymentProofChecksView } from "./payment-proof-checks-view";
+import { ProofReadFindings } from "./proof-read-view";
+import type { ProofReadView } from "./proof-read";
 import Link from "next/link";
 import { FULFILMENT_MODULE, ORDERS_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 
@@ -6,22 +11,29 @@ import type { ShopRole } from "@/lib/portal/roles";
 import { orderLabel } from "@/features/customer-profiles/rules";
 import type { ReturnRow } from "@/features/returns/returns";
 import { ReturnsTable } from "@/features/returns/returns-table";
+import type { OrderReturnSummary } from "@/features/returns/outcome";
 import { CARD, CARD_TITLE } from "@/features/tickets/ticket-detail";
 
-import type { OrderDetail } from "./orders";
+import { SENIOR_PWD_WEEKLY_CAP, type OrderDetail } from "./orders";
 import type { LineReservation } from "./stock";
 import { LiveActions, LiveProgress, LiveStatus, OrderLiveProvider } from "./order-live";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
+import { PaymentReviewPanel } from "./payment-review-panel";
+import type { PaymentReview } from "./payment-review";
 import { isViewableScreenshot } from "./payment-screenshot";
 import { PaymentPill } from "./status-pill";
+import { EmailNotSent } from "./email-not-sent";
 import { CancelDispatched, CancellationNote } from "./cancel-dispatched";
 import type { CancellationState } from "./cancellation-state";
+import { CancelRequestAction, CancelRequestNote } from "./cancel-request";
+import type { CancelRequestState } from "./cancel-request-state";
+import { DispatchRecordCard } from "./dispatch-record-card";
+import type { DispatchRecord } from "./dispatch-record";
+import { ZoomableImage } from "@/components/zoomable-image";
 
-/** A Delivery Order whose subtotal is strictly over ₱2,500 (250,000 centavos) ships free. */
-export const FREE_DELIVERY_THRESHOLD = 250_000;
-
+/** A Delivery Order whose entered Delivery fee is ₱0 ships free, whatever the subtotal. */
 export function hasFreeDelivery(order: OrderDetail): boolean {
-  return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0 && order.subtotal > FREE_DELIVERY_THRESHOLD;
+  return order.fulfillmentMethod === "delivery" && order.deliveryFee === 0;
 }
 
 const SENIOR_PWD_STATUS: Record<string, string> = {
@@ -33,6 +45,25 @@ export function seniorPwdLabel(order: OrderDetail): string {
   if (!order.seniorPwd) return "Not verified";
   const kind = order.seniorPwd.idType === "senior" ? "Senior Citizen" : "PWD";
   return `${kind} · ${SENIOR_PWD_STATUS[order.seniorPwd.status]}`;
+}
+
+/** The approved Senior/PWD discount, how much of the ID's weekly allowance is used and why it was reduced. Never shows an ID number. */
+function SeniorPwdDiscount({ order }: { order: OrderDetail }) {
+  const used = order.discountDetail?.allowanceUsed ?? null;
+  const reason = order.discountDetail?.reductionReason ?? null;
+  return (
+    <section data-testid="senior-pwd-discount" className={CARD}>
+      <h2 className={CARD_TITLE}>Senior/PWD discount</h2>
+      <dl className="space-y-1 text-sm text-[#1f1a2e]">
+        <div className="flex justify-between"><dt className="text-[#6e6680]">Approved discount</dt><dd>{formatPesos(order.discount)}</dd></div>
+        <div className="flex justify-between">
+          <dt className="text-[#6e6680]">Weekly allowance used</dt>
+          <dd data-testid="allowance-used">{used === null ? "Not reported yet" : `${formatPesos(used)} of ${formatPesos(SENIOR_PWD_WEEKLY_CAP)}`}</dd>
+        </div>
+      </dl>
+      {reason && <p role="note" aria-label="Discount reduced" className="mt-2 text-xs text-[#6e6680]">Discount reduced: {reason}</p>}
+    </section>
+  );
 }
 
 /** "Reserved 4 · 18 left": what this line set aside, and what is still available online. */
@@ -47,8 +78,6 @@ function LineStock({ reservation }: { reservation: LineReservation | undefined }
 }
 
 function DeliveryFee({ order }: { order: OrderDetail }) {
-  if (order.fulfillmentMethod === "pickup") return null;
-
   const text = hasFreeDelivery(order)
     ? "Free · ₱0"
     : order.deliveryFee !== null
@@ -65,42 +94,13 @@ function DeliveryFee({ order }: { order: OrderDetail }) {
   );
 }
 
-function FreeDeliveryRule({ order }: { order: OrderDetail }) {
-  if (!hasFreeDelivery(order)) return null;
-
-  return (
-    <div role="note" aria-label="Free delivery rule" className="flex gap-2.5 rounded-[10px] bg-[#e3f4e8] p-3 text-[#1e6b3a]">
-      <span aria-hidden className="text-sm leading-none">✓</span>
-      <div className="space-y-0.5">
-        <p className="text-[13px] font-semibold">Free delivery rule</p>
-        <p className="text-xs">
-          Subtotal is over {formatPesos(FREE_DELIVERY_THRESHOLD)}, so delivery is free and the order was confirmed at
-          placement. The delivery fee is locked at ₱0 — saving any other amount is refused.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function QuoteAgainNote({ order }: { order: OrderDetail }) {
-  if (!hasFreeDelivery(order)) return null;
-
-  return (
-    <p role="note" aria-label="Quote again" className="rounded-[10px] bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">
-      If items are cancelled and the subtotal drops to {formatPesos(FREE_DELIVERY_THRESHOLD)} or less, staff must quote a
-      delivery fee again.
-    </p>
-  );
-}
-
 function Screenshot({ source, alt }: { source: string | null; alt: string }) {
   if (!source) return null;
-  // eslint-disable-next-line @next/next/no-img-element
-  return isViewableScreenshot(source) ? <img src={source} alt={alt} className="max-h-64 rounded-md border border-[#e6e1ee]" /> : <p className="text-xs text-[#6e6680]">Screenshot: {source}</p>;
+  return isViewableScreenshot(source) ? <ZoomableImage src={source} alt={alt} className="max-h-64 rounded-md border border-[#e6e1ee]" /> : <p className="text-xs text-[#6e6680]">Screenshot: {source}</p>;
 }
 
 /** Every proof the Customer sent, oldest first, with who rejected each and why. */
-function PaymentProof({ order }: { order: OrderDetail }) {
+function PaymentProof({ order, reads, role }: { order: OrderDetail; reads: Record<number, ProofReadView>; role: ShopRole | null }) {
   const method = orderLabel(order.paymentMethod);
   if (!isPrepaid(order.paymentMethod)) return <p className="text-sm text-[#6e6680]">Cash on delivery: no proof needed.</p>;
   const history = order.paymentProofs;
@@ -113,9 +113,12 @@ function PaymentProof({ order }: { order: OrderDetail }) {
           <p className="flex flex-wrap items-center gap-2">
             <span className="font-medium">Proof {index + 1}</span>
             <span>{method} reference: {proof.reference ?? "—"} · submitted {formatDate(proof.submittedAt)}</span>
-            {proof.rejection && <span className="rounded-full bg-[#fee2e2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">Rejected</span>}
+            <ProofBadge outcome={proofOutcome({ rejected: proof.rejection !== null }, order.status)} />
           </p>
+          {proof.account && <ProofAccountView account={proof.account} method={order.paymentMethod} />}
+          {proof.confirmed && proof.expected && proof.checks && <PaymentProofChecksView confirmed={proof.confirmed} expected={proof.expected} checks={proof.checks} />}
           <Screenshot source={proof.screenshot} alt={`Payment proof ${index + 1} for order ${order.id}`} />
+          <ProofReadFindings read={reads[proof.id]} role={role} proofId={proof.id} />
           {proof.rejection && (
             <p className="text-xs text-[#6e6680]">
               Rejected by {proof.rejection.by.name || "Staff"} on {formatDate(proof.rejection.at)}: {proof.rejection.reason}
@@ -136,8 +139,7 @@ function DeliveryPhoto({ order, url }: { order: OrderDetail; url: string | null 
     <section className={CARD}>
       <h2 className={CARD_TITLE}>Delivery photo</h2>
       {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={`Delivery photo for Order #${order.id}`} className="max-h-64 rounded-md border border-[#e6e1ee]" />
+        <ZoomableImage src={url} alt={`Delivery photo for Order #${order.id}`} className="max-h-64 rounded-md border border-[#e6e1ee]" />
       ) : order.deliveryPhotoFileId ? (
         <p className="text-sm text-[#6e6680]">The Delivery photo could not be loaded. Reload to try again.</p>
       ) : order.deliveryPhotoRemovedAt ? (
@@ -160,8 +162,15 @@ export function OrderDetailView({
   approvalId,
   waitingApproval,
   cancellation = null,
+  cancelRequest = null,
   codFlags = [],
+  paymentReview = null,
+  proofReads = {},
+  dispatch = null,
+  returnSummary = null,
 }: {
+  /** How this Order's Returns ended and what it replaces, for anyone who can open the Order; null when unread. */
+  returnSummary?: OrderReturnSummary | null;
   /** The viewer's role; omitted means Staff, so the buttons that need a Manager read "Request approval". */
   role?: ShopRole | null;
   /** An approved "approve anyway" request Staff can now carry out. */
@@ -170,6 +179,8 @@ export function OrderDetailView({
   waitingApproval?: boolean;
   /** The cancel-after-dispatch request on this Order, if any. */
   cancellation?: CancellationState | null;
+  /** A Customer's cancellation request on this Order; while it waits, every other action is paused. */
+  cancelRequest?: CancelRequestState | null;
   /** Which Cash on Delivery rules fired, for Staff to double-check; empty for everyone else. Never shown to the Customer. */
   codFlags?: readonly { rule: string; label: string; reason: string }[];
   order: OrderDetail;
@@ -180,6 +191,12 @@ export function OrderDetailView({
   deliveryPhotoUrl?: string | null;
   /** This Order's Returns, shown read-only to Staff with the Returns Module; null when CREOMS could not read them. */
   returns?: ReturnRow[] | null;
+  /** The Manager payment review when the Order has one (3 rejected proofs, still awaiting payment). */
+  paymentReview?: PaymentReview | null;
+  /** The Proof reader's stored findings by proof id (#596); read-only. */
+  proofReads?: Record<number, ProofReadView>;
+  /** The courier booking of a Delivery Order; its rider details are present only for Staff and Managers. */
+  dispatch?: DispatchRecord | null;
 }) {
   const address = order.address;
   const backToReturns = modules.includes(RETURNS_MODULE) && !modules.includes(ORDERS_MODULE);
@@ -188,9 +205,7 @@ export function OrderDetailView({
     <OrderLiveProvider status={order.status}>
     <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="shrink-0 space-y-2">
-        <Link href={backToReturns ? "/returns" : "/orders"} className="text-sm font-medium text-[#5b2a86]">
-          {backToReturns ? "← Returns" : "← Orders"}
-        </Link>
+        <div className="self-start"><BackButton fallbackHref={backToReturns ? "/returns" : "/orders"} label={backToReturns ? "Returns" : "Orders"} /></div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
@@ -202,6 +217,17 @@ export function OrderDetailView({
                 <span className="rounded-full bg-[#e3f4e8] px-2.5 py-0.5 text-xs font-medium text-[#1e6b3a]">Free delivery</span>
               )}
             </div>
+            {returnSummary?.replacementFor && (
+              <p className="text-sm font-medium text-[#5b2a86]" data-testid="replacement-for">
+                Replacement for{" "}
+                <Link href={`/orders/${returnSummary.replacementFor.orderId}`} className="underline">Order #{returnSummary.replacementFor.orderId}</Link>
+                {" "}·{" "}
+                {modules.includes(RETURNS_MODULE)
+                  ? <Link href={`/returns/${returnSummary.replacementFor.returnId}`} className="underline">RMA-{returnSummary.replacementFor.returnId}</Link>
+                  : `RMA-${returnSummary.replacementFor.returnId}`}
+                {" "}· ₱0
+              </p>
+            )}
             <p className="text-sm leading-[normal] text-[#6e6680]">
               Placed {formatDate(order.createdAt)} ·{" "}
               {orderLabel(order.fulfillmentMethod)} ·{" "}
@@ -217,10 +243,16 @@ export function OrderDetailView({
             {order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) && (
               <CancelDispatched id={order.id} total={order.total} paymentMethod={order.paymentMethod} role={role} state={cancellation} />
             )}
-            <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} codFlags={codFlags} />
+            {cancelRequest?.status === "waiting" ? (
+              <CancelRequestAction id={order.id} state={cancelRequest} role={role} canDecide={modules.includes(ORDERS_MODULE)} />
+            ) : (
+              <LiveActions order={order} modules={modules} role={role} approvalId={approvalId} waiting={waitingApproval} codFlags={codFlags} />
+            )}
           </div>
         </div>
         <CancellationNote state={cancellation} />
+        <CancelRequestNote state={cancelRequest} />
+        {order.emailFailures && order.emailFailures.length > 0 && <EmailNotSent orderId={order.id} failures={order.emailFailures} modules={modules} role={role} />}
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
@@ -267,15 +299,35 @@ export function OrderDetailView({
                 <dt className="text-[#6e6680]">Subtotal</dt>
                 <dd>{formatPesos(order.subtotal)}</dd>
               </div>
+              {order.discount > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-[#6e6680]">− Approved discount</dt>
+                  <dd data-testid="approved-discount">{formatPesos(order.discount)}</dd>
+                </div>
+              )}
               <DeliveryFee order={order} />
               <div className="flex justify-between font-medium">
                 <dt>Total</dt>
                 <dd>{formatPesos(order.total)}</dd>
               </div>
             </dl>
-            <FreeDeliveryRule order={order} />
           </section>
 
+          {order.discount > 0 && <SeniorPwdDiscount order={order} />}
+
+          {/* Staff without the Returns Module still see how this Order's Returns ended, but not the Returns themselves. */}
+          {!modules.includes(RETURNS_MODULE) && returnSummary && returnSummary.returns.length > 0 && (
+            <section className={CARD} aria-label="Return outcome">
+              <h2 className={CARD_TITLE}>Return outcome</h2>
+              <ul className="space-y-1.5 text-sm text-[#1f1a2e]">
+                {returnSummary.returns.map((r) => (
+                  <li key={r.id}>
+                    <span className="font-medium">{r.number}</span> · {r.label}{r.detail ? ` · ${r.detail}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {modules.includes(RETURNS_MODULE) && (
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Returns</h2>
@@ -284,14 +336,32 @@ export function OrderDetailView({
           )}
 
           <section className={CARD}>
-            <h2 className={CARD_TITLE}>
-              {address ? "Delivery address" : "Pickup"}
-            </h2>
-            <p className="text-sm text-[#1f1a2e]">
-              {address
-                ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
-                : "The Customer collects this Order; there is nothing to deliver."}
-            </p>
+            <h2 className={CARD_TITLE}>Delivery address</h2>
+            {address?.region ? (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-[#1f1a2e]" aria-label="Structured delivery address">
+                {(
+                  [
+                    ["Country", address.country],
+                    ["Region", address.region],
+                    ["Province", address.province],
+                    ["City", address.city],
+                    ["Barangay", address.barangay],
+                    ["Street", address.street],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-[#6b6580]">{label}</dt>
+                    <dd>{value || "—"}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-[#1f1a2e]">
+                {address
+                  ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
+                  : "No delivery address is saved on this Order."}
+              </p>
+            )}
           </section>
         </div>
 
@@ -310,6 +380,14 @@ export function OrderDetailView({
                 <dt className="text-[#6e6680]">Amount</dt>
                 <dd>{formatPesos(order.total)}</dd>
               </div>
+              {order.codCollection && (
+                <div data-testid="payment-collected" className="flex justify-between">
+                  <dt className="text-[#6e6680]">Payment collected</dt>
+                  <dd>
+                    {formatPesos(order.codCollection.amountInCentavos)} · {formatDate(order.codCollection.at)}
+                  </dd>
+                </div>
+              )}
               {order.paidBy && (
                 <div className="flex justify-between">
                   <dt className="text-[#6e6680]">Verified by</dt>
@@ -319,7 +397,8 @@ export function OrderDetailView({
                 </div>
               )}
             </dl>
-            <PaymentProof order={order} />
+            {paymentReview && <PaymentReviewPanel id={order.id} review={paymentReview} role={role ?? null} />}
+            <PaymentProof order={order} reads={proofReads} role={role ?? "staff"} />
             {codFlags.length > 0 && (
               <div data-testid="cod-flags" className="space-y-1 rounded-lg bg-[#fdf1d8] p-3 text-xs text-[#8a5a00]">
                 <p className="font-medium">Double-check before confirming</p>
@@ -332,6 +411,14 @@ export function OrderDetailView({
             <DeliveryPhoto order={order} url={deliveryPhotoUrl} />
           )}
 
+          {dispatch && order.fulfillmentMethod === "delivery" && (
+            <DispatchRecordCard
+              orderId={order.id}
+              record={dispatch}
+              editable={order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) && (role === undefined || role === "staff" || role === "manager")}
+            />
+          )}
+
           {order.packedBy && (
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Packing</h2>
@@ -341,23 +428,22 @@ export function OrderDetailView({
             </section>
           )}
 
-          <QuoteAgainNote order={order} />
-
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>
-            <Link
-              href={`/customer-profiles/${order.customer.id}`}
-              className="text-sm font-medium text-[#5b2a86]"
-            >
-              {order.customer.name}
-            </Link>
+            {order.customer.deleted ? (
+              <p data-testid="deleted-customer-tag" className="text-sm font-medium text-[#6e6680]">{order.customer.name}</p>
+            ) : (
+              <Link
+                href={`/customer-profiles/${order.customer.id}`}
+                className="text-sm font-medium text-[#5b2a86]"
+              >
+                {order.customer.name}
+              </Link>
+            )}
             <p className="mt-2 text-xs text-[#6e6680]">Senior/PWD</p>
             <p data-testid="senior-pwd-status" className="text-sm text-[#1f1a2e]">{seniorPwdLabel(order)}</p>
             {order.seniorPwd?.status === "pending" && (
-              <Link href="/orders/senior-pwd" className="text-xs font-medium text-[#5b2a86]">Review this ID</Link>
-            )}
-            {order.fulfillmentMethod === "pickup" && order.seniorPwd?.status === "approved" && (
-              <p className="mt-1 text-xs text-[#6e6680]">Ask to see the original ID when the Customer collects.</p>
+              <Link href="/approvals?type=id-check" className="text-xs font-medium text-[#5b2a86]">Review this ID</Link>
             )}
           </section>
         </div>

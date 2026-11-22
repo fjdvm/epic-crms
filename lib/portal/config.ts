@@ -10,12 +10,15 @@ export const DASHBOARD_MODULE = "Dashboard";
 export const CUSTOMER_PROFILES_MODULE = "Customer Profiles";
 export const TICKETS_MODULE = "Tickets";
 export const FEEDBACK_MODULE = "Feedback";
-export const MARKETING_MODULE = "Marketing";
 export const ORDERS_MODULE = "Orders";
 export const SENIOR_PWD_MODULE = "Senior/PWD";
 export const PAYMENTS_MODULE = "Payments";
 export const FULFILMENT_MODULE = "Fulfilment";
 export const RETURNS_MODULE = "Returns";
+/** Commerce Settings (Payment accounts and the Free delivery threshold). Only a Manager or the CEO can hold it; the Portal grants it to no one else. */
+export const MANAGEMENT_MODULE = "Management";
+/** The Ticket reports page. Manager, Admin and CEO; the Portal seeds no Staff default. */
+export const REPORTS_MODULE = "Reports";
 /** The Order detail page opens for Staff with any of these. */
 export const ORDER_DETAIL_MODULES = [ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, RETURNS_MODULE];
 /** Data Modules checked by both the Dashboard page and its PDF export. */

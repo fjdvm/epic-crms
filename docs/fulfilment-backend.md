@@ -3,7 +3,8 @@
 The Fulfilment Module's backend lives at the Order actions boundary:
 
 - `getFulfilmentBoard()` returns `{ ok: true, board }` or `{ ok: false }` when reads are unavailable.
-- `startPreparing(id)`, `dispatchOrder(id)` and `deliverOrder(id, form)` return the existing Order change result.
+- `startPreparing(id)`, `dispatchOrder(id, courier)` and `deliverOrder(id, form)` return the existing Order change result.
+- `dispatchOrder` needs the courier (Lalamove or Grab); the booking link (https only, up to 2048 characters) and rider details are optional. `updateDispatchRecord(id, courier)` adds or fixes them while the Order is `dispatched`; both audit the old and new courier and link, and never the rider details, which only Staff and Managers can read (`loadDispatchRecord`). The rider details live in the storefront's `orders.rider_name`, `rider_plate` and `rider_phone` (no migration was needed) and are never part of an Order the Customer receives. The storefront validates them with the rules in `features/orders/dispatch-record.ts`. Storefront contract: `POST /api/internal/orders/:id/status` takes the courier with an optional `trackingUrl`; `POST /api/internal/orders/:id/courier` replaces the whole booking while the Order is dispatched, without emailing the Customer.
 
 Every entry point checks the Fulfilment Module, including direct calls and calls after a
 Module is revoked. Holding Orders or Payments alone is insufficient. The Fulfilment page
@@ -11,7 +12,7 @@ Module is revoked. Holding Orders or Payments alone is insufficient. The Fulfilm
 cards and the Order detail call the three moves through the shared Order action dialog.
 
 The board has `ready`, `preparing`, `dispatched` and `delivered` arrays. Ready to prepare
-contains paid Orders or confirmed Cash on Delivery Orders (including Pickup). Placed
+contains paid Orders or confirmed Cash on Delivery Orders. Placed
 Orders and unpaid GCash Orders never appear there. The other columns follow the actual
 Order status. Active Orders are oldest first, with the Order number breaking ties.
 
@@ -45,7 +46,7 @@ email delivery and Feedback scheduling remain covered by the storefront's own te
 `deliverOrder(id, form)` requires a `FormData` containing exactly one `photo` File.
 Missing, duplicate, empty, non-JPG/PNG and over-5-MB photos are refused before any
 storefront request. The real bytes determine the content type; the filename and browser
-MIME claim are ignored for validation. Exactly 5 MB is accepted. Pickup uses the same rule.
+MIME claim are ignored for validation. Exactly 5 MB is accepted.
 Every call checks the Fulfilment Module before reading the Order or storing a photo.
 
 The existing Ticket Message file-storage boundary uploads the photo through the gateway:
@@ -76,6 +77,25 @@ storefront implementation, excluded by parent spec #168.
 The photo picker (#176) lives in the Mark as delivered dialog. The Order detail page shows
 the photo through the file-storage view URL, or "No photo" when `deliveryPhotoFileId` is null.
 
+### Proof by courier image link
+
+Proof of delivery is required, and Staff choose **Upload photo** or **Paste image link**
+(the proof image copied from the Lalamove or Grab booking). For a link, the
+`importDeliveryPhotoLink(link)` Server Action (Fulfilment Module, Staff or Manager only)
+downloads the image on the server (`features/files/link-download.ts`) and stores it through
+the same request → PUT → confirm steps as a browser upload. The result is an ordinary ready
+Fulfilment reference, so `deliverOrder`, the storefront contract, promotion and retention
+are unchanged; the customer sees the stored copy, which keeps working after the courier's
+link expires. `deliverOrder` also takes an optional `photoLink` field, used only for the
+`order.delivery_photo_attached` audit (`source: "courier link"`).
+
+Download rules, because the link is typed by Staff: https only, no credentials in the URL;
+every resolved address must be public (private, loopback, link-local, CGNAT and metadata
+ranges are refused) and the socket is pinned to the checked address, so DNS rebinding
+cannot reach an internal host; at most 3 redirects, each re-checked; 10 s per request;
+the body is capped at 5 MB; the real bytes must be JPG or PNG. A link that returns a page
+instead of an image is refused with "Save the image and upload it instead."
+
 ## Packing (#338)
 
 `startPreparing(id)` is the existing Pack order move. It checks Fulfilment and a
@@ -92,7 +112,7 @@ dialog waits with a spinner because deduction is an outside effect.
 
 `loadPackingSlip(id)` is an authorized Fulfilment read, including for Admin and
 CEO. It returns the Order number/date, Customer, whole snapshotted items and
-Sizes/quantities, Pickup or Delivery, the checkout address (null for Pickup), and
+Sizes/quantities, the checkout address, and
 packing attribution when present. It exposes no Payment proof. This backend ticket
 does not add a printable screen, packing checklist, photo or batch selector.
 

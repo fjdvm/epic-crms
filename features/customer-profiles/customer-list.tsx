@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -64,11 +63,6 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
           <input type="hidden" name="sort" value={params.sort} />
           <input type="hidden" name="dir" value={params.direction} />
         </form>
-        <Button asChild>
-          <Link href="/customer-profiles/new">
-            <Plus className="size-4" /> Add customer
-          </Link>
-        </Button>
       </div>
 
       <StageNavigation
@@ -130,7 +124,6 @@ export function CustomerListView({ list, params }: { list: CustomerList; params:
                     <Link href={`/customer-profiles/${encodeURIComponent(row.id)}`} className="truncate after:absolute after:inset-0">
                       {row.name}
                     </Link>
-                    {row.walkIn && <Badge variant="secondary">Walk-in</Badge>}
                   </div>
                   <div className={cn(CELL, COLUMNS[1].className, "truncate")}>
                     {row.email ? `${row.email} · ${row.contactNumber}` : row.contactNumber}

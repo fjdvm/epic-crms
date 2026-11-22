@@ -1,9 +1,14 @@
 import type { ApprovalAction } from "./workflow";
 
+/** Senior/PWD ID checks sit in the same list but are decided on their own review page, not by a Manager step. */
+export type ApprovalListAction = ApprovalAction | "id-check";
+
 /** A request as the browser sees it: plain strings, no Dates. */
 export type ApprovalView = {
   id: string;
-  action: ApprovalAction;
+  action: ApprovalListAction;
+  /** The Module the request was raised under; a Return unless said otherwise. */
+  module?: string;
   targetId: string;
   amountInCentavos: number;
   limitInCentavos: number;
@@ -15,11 +20,13 @@ export type ApprovalView = {
   managerName: string | null;
   ceoName: string | null;
   declineReason: string | null;
+  /** What Staff checked when they asked a Manager to decide a Return; only on `return.decide`. */
+  check?: { inWindow: boolean; photoSupportsReason: boolean };
 };
 
 export type ApprovalTab = "waiting" | "approved" | "declined" | "all";
 
-export const WAITING = ["waiting-manager", "waiting-ceo"];
+export const WAITING = ["waiting-manager", "waiting-ceo", "waiting-id"];
 export const APPROVED = ["approved", "executing", "completed"];
 
 export function inTab(status: string, tab: ApprovalTab): boolean {
@@ -27,6 +34,41 @@ export function inTab(status: string, tab: ApprovalTab): boolean {
   if (tab === "waiting") return WAITING.includes(status);
   if (tab === "approved") return APPROVED.includes(status);
   return status === "declined";
+}
+
+/** What kind of approval a request is, so the list can be grouped and filtered by it. */
+export type ApprovalKind = "id-check" | "refund" | "payment" | "cancellation" | "write-off" | "return";
+export type KindFilter = "all" | ApprovalKind;
+
+export const KIND_LABELS: Record<ApprovalKind, string> = {
+  "id-check": "ID checks", refund: "Refunds", payment: "Payments", cancellation: "Cancellations", "write-off": "Write-offs", return: "Returns",
+};
+export const KINDS = Object.keys(KIND_LABELS) as ApprovalKind[];
+
+export function kindOf(action: ApprovalListAction): ApprovalKind {
+  if (action === "id-check") return "id-check";
+  if (action === "return.refund") return "refund";
+  if (action === "payment.approve-anyway") return "payment";
+  if (action === "order.cancel-after-dispatch" || action === "order.cancel-settle") return "cancellation";
+  if (action === "write-off") return "write-off";
+  return "return";
+}
+
+export function isKindFilter(value: string | undefined): value is KindFilter {
+  return value === "all" || KINDS.includes(value as ApprovalKind);
+}
+
+/** What the request is about and where to open it: a Return, an Order, or an ID check's review page. */
+export function targetOf(r: Pick<ApprovalView, "action" | "targetId" | "module">): { label: string; href: string } {
+  if (r.action === "id-check") return { label: `ID check #${r.targetId}`, href: `/customer-profiles/senior-pwd/${r.targetId}` };
+  const aboutOrder = r.action.startsWith("order.") || r.action.startsWith("payment.") || (r.action === "write-off" && r.module === "Fulfilment");
+  return aboutOrder
+    ? { label: `BR-${r.targetId}`, href: `/orders/${r.targetId}` }
+    : { label: `RMA-${r.targetId}`, href: `/returns/${r.targetId}` };
+}
+
+export function actionLabel(action: ApprovalListAction): string {
+  return action === "id-check" ? "Senior/PWD ID check" : ACTION_LABELS[action];
 }
 
 export const ACTION_LABELS: Record<ApprovalAction, string> = {
@@ -38,11 +80,13 @@ export const ACTION_LABELS: Record<ApprovalAction, string> = {
   "return.refund": "Refund",
   "return.replace": "Replacement",
   "return.extend-window": "Extend return window",
+  "return.change-destination": "Change refund destination",
+  "return.decide": "Decide return",
   "write-off": "Write-off",
 };
 
 /** Refunds and write-offs move money or stock, so their approval waits for the server. */
-export function isMoneyDecision(action: ApprovalAction): boolean {
+export function isMoneyDecision(action: ApprovalListAction): boolean {
   return action === "return.refund" || action === "write-off" || action === "order.cancel-after-dispatch" || action === "order.cancel-settle";
 }
 
@@ -50,6 +94,7 @@ export const pesos = (centavos: number) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: centavos % 100 === 0 ? 0 : 2 }).format(centavos / 100);
 
 export function waitingLabel(status: string): string {
+  if (status === "waiting-id") return "Waiting for review";
   return status === "waiting-ceo" ? "Waiting for the CEO's final approval" : "Waiting for approval";
 }
 
@@ -84,11 +129,33 @@ export function stepFor(role: string | null, status: string): "manager" | "ceo" 
 
 export function toView(row: Record<string, unknown>): ApprovalView {
   return {
-    id: String(row.id), action: row.action as ApprovalAction, targetId: String(row.target_id),
+    id: String(row.id), action: row.action as ApprovalAction, module: row.module ? String(row.module) : undefined, targetId: String(row.target_id),
     amountInCentavos: Number(row.amount_in_centavos), limitInCentavos: Number(row.limit_in_centavos),
     reason: String(row.reason ?? ""), requesterId: String(row.requester_id), requesterName: String(row.requester_name),
     status: String(row.status), requestedAt: new Date(row.requested_at as string | Date).toISOString(),
     managerName: (row.manager_name as string | null) ?? null, ceoName: (row.ceo_name as string | null) ?? null,
     declineReason: (row.decline_reason as string | null) ?? null,
+    ...(row.action === "return.decide" ? { check: checkOf(row.payload) } : {}),
+  };
+}
+
+function checkOf(payload: unknown): ApprovalView["check"] {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  return { inWindow: p.inWindow === true, photoSupportsReason: p.photoSupportsReason === true };
+}
+
+/** An ID check as a row of the list: waiting until reviewed, then approved or declined (revoked and expired count as declined). */
+export function idCheckToView(v: {
+  id: number; customerName: string; idType: "senior" | "pwd"; status: string; submittedAt: Date;
+  decidedByName: string | null; declineReason: string | null;
+}): ApprovalView {
+  const kind = v.idType === "senior" ? "Senior citizen" : "PWD";
+  const status = v.status === "pending" ? "waiting-id" : v.status === "approved" ? "approved" : "declined";
+
+  return {
+    id: `id-${v.id}`, action: "id-check", module: "Senior/PWD", targetId: String(v.id), amountInCentavos: 0, limitInCentavos: 0,
+    reason: `${kind} ID uploaded for review`, requesterId: "", requesterName: v.customerName, status,
+    requestedAt: v.submittedAt.toISOString(), managerName: v.decidedByName, ceoName: null,
+    declineReason: status === "declined" ? v.declineReason ?? `${v.status[0].toUpperCase()}${v.status.slice(1)}` : null,
   };
 }

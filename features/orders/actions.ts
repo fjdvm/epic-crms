@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { database } from "@/lib/db";
@@ -13,11 +14,19 @@ import { canWork, shopRole, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalResult } from "@/features/approvals/workflow";
-import { cancelStorefrontItems, changeOrderStatus, rejectStorefrontProof, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { isOccurrence, isStatusEmailKind, RETURN_REFUNDED_EMAIL, STATUS_EMAILS } from "./status-emails";
+import { cancelStorefrontItems, decideCancelRequest, changeOrderCourier, changeOrderStatus, resendOrderEmail, type ConfirmedAmounts, rejectStorefrontProof, type CodCollection, type CourierBooking, type OrderChangeResult } from "@/lib/storefront";
+import { checkBooking, linkProblem, type CourierInput, type DispatchRecord } from "./dispatch-record";
+import { loadDispatchRecord } from "./dispatch-record-read";
 import { COD_CHOICES, COD_CHOICE_LABELS, type CodChoice } from "./cod-flags";
+import { accountFitsMethod } from "./payment-account-options";
 import { isPrepaid, MANAGER_AFTER_REJECTIONS } from "./payment-methods";
 
-import { CANCELLABLE_STATUSES, loadOrder } from "./orders";
+import { CANCELLABLE_STATUSES, failedEmails, loadOrder } from "./orders";
+import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
+import { feeRefusal, freeDeliveryRule, type FreeDeliveryRule } from "./free-delivery";
+import { reusedReferenceOrderIds } from "./payment-proof-checks";
+import { alreadyFundedOrderIds, allocateReference, latestProofReference, releaseReference } from "./payment-allocations";
 import { paymentQueue, paymentRows, type PaymentQueueResult, type PaymentsResult } from "./payments";
 import { loadFulfilmentBoard, type FulfilmentBoardResult, readyToPrepare } from "./fulfilment";
 
@@ -27,6 +36,11 @@ interface CurrentOrder {
   payment_method: string;
   subtotal_in_centavos: number;
   delivery_fee_in_centavos: number | null;
+  /** The free-delivery rule saved on the Order when it was placed; a null threshold means it was not judged yet. */
+  free_delivery: boolean;
+  free_delivery_threshold_in_centavos: number | null;
+  /** The approved Senior/PWD discount saved on the Order; absent or 0 when it has none. */
+  discount_in_centavos?: number | null;
   payment_proof_submitted_at: Date | null;
   payment_proof_rejected_at: Date | null;
   payment_proof_rejections: number;
@@ -53,6 +67,9 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
   try {
     const [order] = await database()<CurrentOrder[]>`
       select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at,
+        coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as discount_in_centavos,
+        coalesce((to_jsonb(o) ->> 'free_delivery')::boolean, false) as free_delivery,
+        (to_jsonb(o) ->> 'free_delivery_threshold_in_centavos')::bigint::float8 as free_delivery_threshold_in_centavos,
         payment_proof_rejected_at, payment_proof_rejections,
         exists (select 1 from public.senior_pwd_verifications v where v.id = o.senior_pwd_verification_id and v.status = 'pending') as senior_pwd_pending
       from public.orders o where o.id = ${id}`;
@@ -90,9 +107,32 @@ function choiceNote(choice?: CodChoice): string {
   return choice && COD_CHOICES.includes(choice) ? ` after choosing "${COD_CHOICE_LABELS[choice]}"` : "";
 }
 
-/** Quote in integer centavos; the storefront confirms the Delivery Order in the same write. */
-export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
-  return act(id, async (order) => {
+const pesos = (centavos: number) => `₱${(centavos / 100).toFixed(2)}`;
+
+/**
+ * The final amounts for a confirmation, worked out from what the server holds. Staff confirm the total
+ * they saw; if it no longer matches, nothing is sent or saved.
+ */
+function finalAmounts(order: CurrentOrder, staff: Staff, deliveryFeeInCentavos: number, expectedTotalInCentavos: number):
+  { ok: true; amounts: ConfirmedAmounts } | { ok: false; reason: string } {
+  const discountInCentavos = order.discount_in_centavos ?? 0;
+  const totalInCentavos = order.subtotal_in_centavos - discountInCentavos + deliveryFeeInCentavos;
+  if (expectedTotalInCentavos !== totalInCentavos) {
+    return { ok: false, reason: `The total is now ${pesos(totalInCentavos)}, not ${pesos(Number.isFinite(expectedTotalInCentavos) ? expectedTotalInCentavos : 0)}. Refresh the Order before confirming.` };
+  }
+  return { ok: true, amounts: { subtotalInCentavos: order.subtotal_in_centavos, discountInCentavos, deliveryFeeInCentavos, totalInCentavos, staffId: staff.id, staffName: staff.name } };
+}
+
+const amountsMetadata = (a: { subtotalInCentavos: number; discountInCentavos: number; deliveryFeeInCentavos: number; totalInCentavos: number }) => ({
+  subtotal_in_centavos: a.subtotalInCentavos, discount_in_centavos: a.discountInCentavos,
+  delivery_fee_in_centavos: a.deliveryFeeInCentavos, total_in_centavos: a.totalInCentavos,
+});
+
+/** Quote in integer centavos; the storefront confirms the Delivery Order in the same write, after checking the final amounts. */
+export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number, expectedTotalInCentavos: number, codChoice?: CodChoice, paymentAccountId?: string): Promise<OrderChangeResult> {
+  let confirmed: ConfirmedAmounts | undefined;
+  let freeDelivery: FreeDeliveryRule | undefined;
+  return act(id, async (order, staff) => {
     if (!Number.isSafeInteger(deliveryFeeInCentavos) || deliveryFeeInCentavos < 0) {
       return { ok: false, reason: "Enter a nonnegative whole number of centavos." };
     }
@@ -100,27 +140,29 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
       return { ok: false, reason: "Only a placed Delivery Order can be quoted." };
     }
     if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
-    if (order.subtotal_in_centavos > 250_000) {
-      return { ok: false, reason: "Free delivery applies to this Order. No Delivery fee quote is needed." };
-    }
     if (!CANCELLABLE_STATUSES.includes(order.status) || order.delivery_fee_in_centavos !== null) return { ok: false, reason: ALREADY_CHANGED };
-    return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos }, order.status === "placed" ? "confirmed" : order.status);
-  }, ORDERS_MODULE, {
-    action: "order.delivery_fee_quoted",
-    description: staff => `${staff.name} quoted a Delivery fee of ₱${(deliveryFeeInCentavos / 100).toFixed(2)} and confirmed Order #${id}${choiceNote(codChoice)}.`,
-  });
-}
-
-export async function confirmPickup(id: number, codChoice?: CodChoice): Promise<OrderChangeResult> {
-  return act(id, async (order) => {
-    if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
-    if (order.senior_pwd_pending) return { ok: false, reason: SENIOR_PWD_FIRST };
-    if (order.fulfillment_method !== "pickup") {
-      return { ok: false, reason: "A Delivery Order needs a Delivery fee." };
+    if (paymentAccountId !== undefined && !(await accountFitsMethod(paymentAccountId, order.payment_method))) {
+      return { ok: false, reason: "That Payment account does not match how the Customer chose to pay. Pick another." };
     }
-    return changeOrderStatus(id, { status: "confirmed" });
+    const rule = await freeDeliveryRule(database(), { freeDelivery: order.free_delivery, thresholdInCentavos: order.free_delivery_threshold_in_centavos },
+      order.subtotal_in_centavos - (order.discount_in_centavos ?? 0));
+    const refusal = feeRefusal(rule, deliveryFeeInCentavos);
+    if (refusal) return { ok: false, reason: refusal };
+    freeDelivery = rule.qualifies ? rule : undefined;
+    const final = finalAmounts(order, staff, deliveryFeeInCentavos, expectedTotalInCentavos);
+    if (!final.ok) return final;
+    confirmed = final.amounts;
+    return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos, amounts: final.amounts, ...(paymentAccountId ? { paymentAccountId } : {}) }, order.status === "placed" ? "confirmed" : order.status);
   }, ORDERS_MODULE, {
-    action: "order.confirmed", description: staff => `${staff.name} confirmed Order #${id}${choiceNote(codChoice)}.`,
+    action: "order.confirmed",
+    description: staff => `${staff.name} ${deliveryFeeInCentavos === 0 ? "quoted free delivery (₱0.00)" : `quoted a Delivery fee of ${pesos(deliveryFeeInCentavos)}`} and confirmed Order #${id}${choiceNote(codChoice)}.`,
+    get metadata() {
+      if (!confirmed) return undefined;
+      const account = paymentAccountId ? { payment_account_id: paymentAccountId } : {};
+      return freeDelivery
+        ? { ...amountsMetadata(confirmed), ...account, free_delivery_applied: true, free_delivery_threshold_in_centavos: freeDelivery.thresholdInCentavos }
+        : { ...amountsMetadata(confirmed), ...account };
+    },
   });
 }
 
@@ -174,6 +216,53 @@ export async function cancelOrderItems(id: number, lineIds: number[]): Promise<O
   });
 }
 
+/** Staff turn a placed Order down. It is a cancellation with a required reason the Customer is shown; only a placed Order can be rejected. */
+export async function rejectOrder(id: number, reason: string): Promise<OrderChangeResult> {
+  const text = typeof reason === "string" ? reason.trim() : "";
+  if (!text) return { ok: false, reason: "Say why you are rejecting this Order." };
+  if (text.length > 500) return { ok: false, reason: "Keep the reason under 500 characters." };
+  return act(id, async (order) => {
+    if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
+    return changeOrderStatus(id, { status: "cancelled", reason: text });
+  }, ORDERS_MODULE, {
+    action: "order.rejected", description: staff => `${staff.name} rejected Order #${id}: ${text}`, metadata: { reason: text },
+  });
+}
+
+/** What the storefront holds for one waiting request on this Order, read fresh so a stale page cannot decide twice. */
+async function waitingRequest(id: number, requestId: string): Promise<boolean> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) return false;
+  const [row] = await database()`select 1 from public.order_cancel_requests where id = ${requestId} and order_id = ${id} and status = 'waiting'`;
+  return Boolean(row);
+}
+
+/**
+ * Staff or a Manager approves a Customer's request to cancel before payment or preparing. The storefront cancels the Order, releases
+ * its stock and emails the Customer, so this waits for the server and is never optimistic. Admin and CEO only view.
+ */
+export async function approveCancelRequest(id: number, requestId: string): Promise<OrderChangeResult> {
+  return act(id, async (order, staff) => {
+    if (!CANCELLABLE_STATUSES.includes(order.status) || ["paid", "preparing"].includes(order.status)) return { ok: false, reason: ALREADY_CHANGED };
+    if (!(await waitingRequest(id, requestId))) return { ok: false, reason: "This request was already decided or withdrawn. Refresh the Order." };
+    return decideCancelRequest(id, { requestId, decision: "approved" }, { id: staff.username, name: staff.name });
+  }, ORDERS_MODULE, {
+    action: "order.cancel_request_approved", description: staff => `${staff.name} approved the Customer's request to cancel Order #${id}.`, metadata: { request_id: requestId },
+  });
+}
+
+/** Declining keeps the Order as it is and tells the Customer why, so the reason is required. */
+export async function declineCancelRequest(id: number, requestId: string, reason: string): Promise<OrderChangeResult> {
+  const text = typeof reason === "string" ? reason.trim() : "";
+  if (!text) return { ok: false, reason: "Say why you are declining this request." };
+  if (text.length > 500 || /[<>\p{Cc}]/u.test(text)) return { ok: false, reason: "Keep the reason under 500 characters, in plain text." };
+  return act(id, async (_order, staff) => {
+    if (!(await waitingRequest(id, requestId))) return { ok: false, reason: "This request was already decided or withdrawn. Refresh the Order." };
+    return decideCancelRequest(id, { requestId, decision: "declined", reason: text }, { id: staff.username, name: staff.name });
+  }, ORDERS_MODULE, {
+    action: "order.cancel_request_declined", description: staff => `${staff.name} declined the Customer's request to cancel Order #${id}: ${text}`, metadata: { request_id: requestId, reason: text },
+  });
+}
+
 export async function cancelOrder(id: number): Promise<OrderChangeResult> {
   return cancel(id, ORDERS_MODULE);
 }
@@ -197,7 +286,7 @@ export async function loadPayments(): Promise<PaymentsResult> {
   await requireModule(PAYMENTS_MODULE);
   try {
     const now = new Date();
-    return { ok: true, rows: await paymentRows(database(), now), now };
+    return { ok: true, rows: await paymentRows(database(), now, await currentAutomaticChecks(), crmsDatabase()), now };
   } catch {
     return { ok: false, reason: "Payments are temporarily unavailable." };
   }
@@ -210,23 +299,34 @@ const clean = (text: string | undefined) => (typeof text === "string" ? text.tri
  * Marks a prepaid Order paid. Only the Portal may supply the identity; the storefront records the time.
  * After 3 rejected proofs this is "approve anyway": a Manager gives a reason, and Staff can only request approval.
  */
-export async function markPaid(id: number, options: { reason?: string; approvalId?: string } = {}): Promise<OrderChangeResult | ApprovalResult> {
+export async function markPaid(id: number, options: { reason?: string; approvalId?: string; allocateToOrderId?: number } = {}): Promise<OrderChangeResult | ApprovalResult> {
   let approvedAnyway: string | null = null;
+  let reusedOn: number[] = [];
+  let allocatedTo: number | null = null;
+  let allocatedBy: { id: string; name: string } | null = null;
   return act<OrderChangeResult | ApprovalResult>(id, async (order, staff) => {
     if (order.status !== "awaiting payment") return { ok: false, reason: ALREADY_CHANGED };
     if (!isPrepaid(order.payment_method) || !order.payment_proof_submitted_at) {
       return { ok: false, reason: "Only an Order paid by GCash, Maya or bank transfer with submitted Payment proof can be marked paid." };
     }
     const rejections = Number(order.payment_proof_rejections ?? 0);
-    if (rejections < MANAGER_AFTER_REJECTIONS) {
+    // A reference already used on another Order stops Mark paid for everyone but a Manager, read on the server each time.
+    reusedOn = await reusedReferenceOrderIds(database(), id, await currentAutomaticChecks());
+    if (rejections < MANAGER_AFTER_REJECTIONS && reusedOn.length === 0) {
       if (order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
       return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
     }
+    if (rejections < MANAGER_AFTER_REJECTIONS && order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
     const reason = clean(options.reason);
     // The reason is needed to request, to approve anyway, and is checked again against the approved request.
     if (!options.approvalId && !reason) return { ok: false, reason: "Enter a reason to approve this payment anyway." };
+    // A reused reference must say which Order the transfer pays: this one or one that already used it.
+    const chosen = options.allocateToOrderId;
+    if (reusedOn.length > 0 && (chosen === undefined || ![id, ...reusedOn].includes(chosen))) {
+      return { ok: false, reason: "Choose which Order this transfer pays." };
+    }
     return approvals().run(staff, { module: PAYMENTS_MODULE, action: "payment.approve-anyway", targetId: String(id),
-      payload: { rejections }, amountInCentavos: 0 },
+      payload: { rejections, reusedReferenceOrderIds: reusedOn, ...(reusedOn.length ? { allocateToOrderId: chosen } : {}) }, amountInCentavos: 0 },
     { reason, approvalId: options.approvalId }, async () => {
       // A Staff retry names only the approval; the reason is the one they gave when they asked.
       if (!reason && options.approvalId) {
@@ -234,14 +334,43 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
         approvedAnyway = asked?.reason ?? "";
       } else approvedAnyway = reason;
       if (!approvedAnyway) return { ok: false, reason: "Enter a reason to approve this payment anyway." };
-      return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name, approvedAnyway: { reason: approvedAnyway } });
+      let claimed: string | null = null;
+      if (reusedOn.length > 0 && chosen !== undefined) {
+        // The Manager who approved names the Order; a Staff retry carries the request's approver.
+        allocatedBy = { id: staff.username, name: staff.name };
+        if (options.approvalId) {
+          const [approver] = await crmsDatabase()<{ manager_id: string | null; manager_name: string | null }[]>`select manager_id, manager_name from crms.approval_requests where id = ${options.approvalId}`;
+          if (approver?.manager_id && approver.manager_name) allocatedBy = { id: approver.manager_id, name: approver.manager_name };
+        }
+        const reference = await latestProofReference(database(), id);
+        if (!reference) return { ok: false, reason: "This proof has no reference to allocate." };
+        // One transfer funds one Order: an Order that already moved past payment on it cannot be joined by another.
+        const funded = (await alreadyFundedOrderIds(database(), reusedOn)).filter(n => n !== chosen);
+        if (chosen === id && funded.length > 0) return { ok: false, reason: `This transfer already paid Order #${funded[0]}. It cannot fund a second Order.` };
+        const holder = await allocateReference(crmsDatabase(), reference, { orderId: chosen, reason: approvedAnyway, by: allocatedBy });
+        if (holder !== null) return { ok: false, reason: `This transfer was already allocated to Order #${holder}. It cannot fund a second Order.` };
+        allocatedTo = chosen;
+        if (chosen !== id) {
+          await auditOrder(id, staff, PAYMENTS_MODULE, "payment.reference_allocated",
+            `${allocatedBy.name} allocated the transfer on Order #${id} to Order #${chosen}: ${approvedAnyway}`,
+            { reason: approvedAnyway, allocatedToOrderId: chosen, allocatedBy: allocatedBy.name, reusedReferenceOrderIds: reusedOn });
+          return { ok: false, reason: `Transfer allocated to Order #${chosen}. It does not pay this Order: reject the proof or ask for a new one.` };
+        }
+        claimed = reference;
+      }
+      const paid = await changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name, approvedAnyway: { reason: approvedAnyway } });
+      if (!paid.ok && claimed) await releaseReference(crmsDatabase(), claimed, id);
+      return paid;
     });
   }, PAYMENTS_MODULE, {
     get action() { return approvedAnyway ? "payment.approved_anyway" : "payment.marked_paid"; },
     description: staff => approvedAnyway
       ? `${staff.name} approved Order #${id} anyway: ${approvedAnyway}`
       : `${staff.name} marked Order #${id} paid.`,
-    get metadata() { return approvedAnyway ? { reason: approvedAnyway } : undefined; },
+    get metadata() {
+      return approvedAnyway ? { reason: approvedAnyway, ...(reusedOn.length ? { reusedReferenceOrderIds: reusedOn } : {}),
+        ...(allocatedTo !== null && allocatedBy ? { allocatedToOrderId: allocatedTo, allocatedBy: allocatedBy.name } : {}) } : undefined;
+    },
   });
 }
 
@@ -274,46 +403,78 @@ export async function startPreparing(id: number): Promise<OrderChangeResult> {
   }, FULFILMENT_MODULE);
 }
 
-/** What Staff typed in the dispatch dialog; only the Courier and https link are required, and only for Delivery. */
-export interface CourierInput { courier: string; trackingUrl: string; riderName?: string; riderPlate?: string; riderPhone?: string }
+/** A booking's audit values: the courier and link, never the rider's name, phone or plate. */
+const bookingAudit = (booking: CourierBooking | undefined) => ({ courier: booking?.name ?? null, tracking_url: booking?.trackingUrl ?? null });
 
-function courierBooking(input: CourierInput | undefined): { ok: true; booking: CourierBooking } | { ok: false; reason: string } {
-  const name = input?.courier;
-  if (name !== "Lalamove" && name !== "Grab") return { ok: false, reason: "Choose Lalamove or Grab to dispatch a Delivery Order." };
-  let url: URL;
-  try { url = new URL(String(input?.trackingUrl ?? "").trim()); } catch { return { ok: false, reason: "Enter the booking's share link, starting with https://." }; }
-  if (url.protocol !== "https:") return { ok: false, reason: "Enter the booking's share link, starting with https://." };
-  const optional = (value: string | undefined) => value?.trim() || undefined;
-  return { ok: true, booking: {
-    name, trackingUrl: url.href,
-    ...(optional(input?.riderName) && { riderName: optional(input?.riderName) }),
-    ...(optional(input?.riderPlate) && { riderPlate: optional(input?.riderPlate) }),
-    ...(optional(input?.riderPhone) && { riderPhone: optional(input?.riderPhone) }),
-  } };
-}
-
-/** A Delivery Order needs its courier booking; Pickup needs none. The storefront stores it and emails the link once. */
+/** A Delivery Order needs its courier; the https link and rider details are optional and its storefront emails the link once. */
 export async function dispatchOrder(id: number, courier?: CourierInput): Promise<OrderChangeResult> {
   let booking: CourierBooking | undefined;
   return act(id, async (order) => {
     if (order.status !== "preparing") {
       return { ok: false, reason: "Only a preparing Order can be dispatched; it may have already changed. Refresh it before trying again." };
     }
-    if (order.fulfillment_method === "delivery") {
-      const checked = courierBooking(courier);
-      if (!checked.ok) return checked;
-      booking = checked.booking;
-    }
-    return changeOrderStatus(id, booking ? { status: "dispatched", courier: booking } : { status: "dispatched" });
+    const checked = checkBooking(courier);
+    if (!checked.ok) return checked;
+    booking = checked.booking;
+    return changeOrderStatus(id, { status: "dispatched", courier: booking });
   }, FULFILMENT_MODULE, {
     action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}${booking ? ` with ${booking.name}` : ""}.`,
-    // The courier's name only; never the rider's phone or plate.
-    get metadata() { return booking ? { courier: booking.name } : undefined; },
+    get metadata() { return { old: bookingAudit(undefined), new: bookingAudit(booking) }; },
   });
 }
 
+/** Staff add or fix the courier, link or rider details while the Order is still dispatched. Audited with the old and new values. */
+export async function updateDispatchRecord(id: number, courier?: CourierInput): Promise<OrderChangeResult> {
+  let before: DispatchRecord | null = null;
+  let booking: CourierBooking | undefined;
+  let riderChanged = false;
+  return act(id, async (order, staff) => {
+    if (order.status !== "dispatched") {
+      return { ok: false, reason: "The booking can only be changed while the Order is dispatched; it may have already changed. Refresh it before trying again." };
+    }
+    const checked = checkBooking(courier);
+    if (!checked.ok) return checked;
+    // Staff and Managers do this work, so they may read the rider details to compare them.
+    before = await loadDispatchRecord(database(), id, true);
+    const next = checked.booking;
+    const rider = (b: { riderName?: string; riderPlate?: string; riderPhone?: string } | null) => [b?.riderName, b?.riderPlate, b?.riderPhone].map(value => value ?? null);
+    const old = before ? [before.rider?.name, before.rider?.plate, before.rider?.phone].map(value => value ?? null) : [null, null, null];
+    riderChanged = JSON.stringify(old) !== JSON.stringify(rider(next));
+    if (before && before.courier === next.name && (before.trackingUrl ?? undefined) === next.trackingUrl && !riderChanged) {
+      return { ok: false, reason: "Nothing changed. Edit the courier, link or rider details first." };
+    }
+    booking = next;
+    return changeOrderCourier(id, { courier: next, staffId: staff.username, staffName: staff.name });
+  }, FULFILMENT_MODULE, {
+    action: "order.dispatch_updated", description: staff => `${staff.name} changed the dispatch details of Order #${id}.`,
+    get metadata() {
+      return { old: bookingAudit(before ? { name: before.courier, trackingUrl: before.trackingUrl ?? undefined } : undefined), new: bookingAudit(booking), rider_details_changed: riderChanged };
+    },
+  });
+}
+
+const COD_AMOUNT_REASON = (total: number) => `The collected amount must equal the Order total of ${pesos(total)}. Enter that amount to record the payment.`;
+
+/** A COD Order's completion carries the cash collected, and only the saved total is accepted; any other kind of Order records none. */
+function codCollection(order: CurrentOrder, staff: Staff, collectedInCentavos: number | undefined): { ok: true; collection?: CodCollection } | { ok: false; reason: string } {
+  if (order.payment_method !== "cash-on-delivery") return { ok: true };
+  const total = order.subtotal_in_centavos - (order.discount_in_centavos ?? 0) + (order.delivery_fee_in_centavos ?? 0);
+  if (collectedInCentavos !== total) return { ok: false, reason: COD_AMOUNT_REASON(total) };
+  return { ok: true, collection: { amountInCentavos: total, staffId: staff.username, staffName: staff.name } };
+}
+
+/** The one audit event holds the transition, the amount, the time and the responsible Staff member. */
+const collectionAudit = (collection: CodCollection | undefined, from: string, to: string) =>
+  collection ? { cod_collected_in_centavos: collection.amountInCentavos, cod_collected_by: collection.staffName, cod_collected_at: new Date().toISOString(), from_status: from, to_status: to } : undefined;
+
+/** The courier image link the Delivery photo was downloaded from, for the audit only; anything else is ignored. */
+function photoLinkOf(form: FormData): string | null {
+  const value = form.get("photoLink");
+  return typeof value === "string" && value.trim() && !linkProblem(value) ? value.trim() : null;
+}
+
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
-export async function deliverOrder(id: number, form?: FormData): Promise<OrderChangeResult> {
+export async function deliverOrder(id: number, form?: FormData, collectedInCentavos?: number): Promise<OrderChangeResult> {
   return act(id, async (order, staff) => {
     if (order.status !== "dispatched") {
       return { ok: false, reason: "Only a dispatched Order can be delivered; it may have already changed. Refresh it before trying again." };
@@ -321,6 +482,9 @@ export async function deliverOrder(id: number, form?: FormData): Promise<OrderCh
     if (!(form instanceof FormData) || form.getAll("photo").length !== 1) {
       return { ok: false, reason: "Choose exactly one Delivery photo." };
     }
+    const checked = codCollection(order, staff, collectedInCentavos);
+    if (!checked.ok) return checked;
+    const collection = checked.collection;
     let deliveryPhotoFileId: string;
     try {
       const upload = await recordUpload(FULFILMENT_MODULE, form.get("photo"), staff.username);
@@ -330,10 +494,13 @@ export async function deliverOrder(id: number, form?: FormData): Promise<OrderCh
       return { ok: false, reason: "Delivery photo could not be stored. The Order was not marked delivered." };
     }
     // Refused or uncertain writes leave Temporary evidence for file-storage's seven-day cleanup.
-    const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId });
+    const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId, ...(collection && { codCollection: collection }) });
     if (result.ok) {
-      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered", `${staff.name} marked Order #${id} delivered.`);
-      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivery_photo_attached", `${staff.name} attached a Delivery photo to Order #${id}.`);
+      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered",
+        `${staff.name} marked Order #${id} delivered${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`, collectionAudit(collection, "dispatched", "delivered"));
+      const link = photoLinkOf(form);
+      await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivery_photo_attached",
+        `${staff.name} attached a Delivery photo to Order #${id}${link ? " from a courier image link" : ""}.`, link ? { source: "courier link", photo_link: link } : undefined);
       try {
         await gatewayFileStorage.promote(deliveryPhotoFileId);
       } catch {
@@ -372,7 +539,7 @@ export async function reconcileDeliveryPhoto(id: number): Promise<{ ok: true } |
 export async function loadPackingSlip(id: number) {
   await requireModule(FULFILMENT_MODULE);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false as const, reason: "Invalid Order number." };
-  const result = await loadOrder(database, id);
+  const result = await loadOrder(database, id, await currentAutomaticChecks());
   if (!result.ok) return { ok: false as const, reason: "Packing slip is temporarily unavailable." };
   if (!result.order) return { ok: false as const, reason: "Order was not found." };
   const { id: orderId, createdAt, customer, fulfillmentMethod, lines, address } = result.order;
@@ -381,8 +548,40 @@ export async function loadPackingSlip(id: number) {
       select to_jsonb(o)->>'packed_by_id' as staff_id, to_jsonb(o)->>'packed_by_name' as staff_name,
         to_jsonb(o)->>'packed_at' as at from public.orders o where id = ${id}`;
     return { ok: true as const, slip: { id: orderId, createdAt, customer, fulfillmentMethod, lines,
-      address: fulfillmentMethod === "pickup" ? null : address,
+      address,
       packedBy: row?.staff_id && row.staff_name && row.at ? { id: row.staff_id, name: row.staff_name, at: new Date(row.at) } : null,
     } };
   } catch { return { ok: false as const, reason: "Packing slip is temporarily unavailable." }; }
+}
+
+/**
+ * Staff and Managers with the email's owning Module resend a Status email that failed after retries. It reaches
+ * a Customer, so it waits for the server and is never optimistic. The storefront resends under the email's
+ * stable id (reconciling first if Notification already accepted it), so a repeat never sends twice. Each Resend
+ * is its own Audit Event (a fresh operation id) with the person's name; a refusal changes and audits nothing.
+ */
+export async function resendStatusEmail(id: number, kind: string, occurrence: string | null = null): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
+  if (!isStatusEmailKind(kind) || !isOccurrence(occurrence)) return { ok: false, reason: "Unknown email." };
+  // The refund email is one per Return, so its occurrence must name that Return.
+  if (kind === RETURN_REFUNDED_EMAIL && !(occurrence && /^[1-9]\d*$/.test(occurrence))) return { ok: false, reason: "Unknown email." };
+  const staff = await requireModule(STATUS_EMAILS[kind].module);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  try {
+    const failed = await failedEmails(database(), id);
+    if (!failed.some((email) => email.kind === kind && email.occurrence === occurrence)) return { ok: false, reason: "That email is not marked as failed. Refresh the Order." };
+  } catch {
+    return { ok: false, reason: "Order is temporarily unavailable." };
+  }
+  const result = await resendOrderEmail(id, { kind, occurrence }, { id: staff.id, name: staff.name });
+  if (!result.ok) return result;
+  await recordAudit(gatewayAuditTrail, {
+    action: "order.email_resent", module: STATUS_EMAILS[kind].module, outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "order", id: String(id), display_name: `Order #${id}` },
+    description: `${staff.name} resent the ${STATUS_EMAILS[kind].label} email for ${kind === RETURN_REFUNDED_EMAIL ? `Return #${occurrence} on ` : ""}Order #${id}.`,
+    metadata: { kind, ...(occurrence ? { occurrence } : {}), reconciled: result.reconciled }, occurred_at: new Date().toISOString(), operationId: `order:${id}:email-resend:${randomUUID()}`,
+  });
+  revalidatePath(`/orders/${id}`);
+  if (kind === RETURN_REFUNDED_EMAIL) revalidatePath(`/returns/${occurrence}`);
+  return { ok: true };
 }

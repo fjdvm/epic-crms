@@ -2,29 +2,23 @@
 
 import { FileText, Loader2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 
 import { useOptimisticAction } from "@/hooks/use-optimistic-action";
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { uploadFile } from "@/features/files/client";
 import { checkFileInfo, FILE_TYPES, type FileContentType } from "@/features/files/policy";
 
-import { claim, reply, resolve, type ReplyOutcome, type TicketActionOutcome } from "./actions";
+import { claim, reply, type ReplyOutcome, type TicketActionOutcome } from "./actions";
 import { useClaim } from "./claim";
 import { refusalMessage } from "./refusals";
-import type { TicketStatus } from "./tickets";
+import { HoldDialog } from "./hold-dialog";
+import { EscalateDialog, EscalationManagerButtons } from "./escalate-ui";
+import { ReassignTicketDialog } from "./reassign-dialog";
+import { useHold } from "./hold";
 
 const OUTLINE =
   "rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium leading-[normal] whitespace-nowrap text-[#1f1a2e] disabled:opacity-50";
@@ -76,19 +70,23 @@ export function ClaimButton({ ticketId }: { ticketId: number }) {
 
 export function TicketActions({
   ticketId,
-  status,
   withReply = true,
+  canReassign = false,
+  canEscalate = false,
   className,
 }: {
   ticketId: number;
-  status: TicketStatus;
+  /** A CREOMS Manager sees Reassign, Take ticket and Send back; everyone else sees no button. */
+  canReassign?: boolean;
+  /** The Ticket page knows the escalation; the Conversations page does not offer Escalate. */
+  canEscalate?: boolean;
   /** Offer the Reply link to the composer; off where the composer sits beside the actions. */
   withReply?: boolean;
   className?: string;
 }) {
-  const { pending, run } = useTicketAction();
-  const { claimer, isClaimer, pending: claiming, claim: claimTicket, release: releaseTicket } = useClaim();
+  const { claimer, isClaimer, escalation, pending: claiming, claim: claimTicket, release: releaseTicket } = useClaim();
   const claimed = claimer !== null;
+  const { status, pending: holding, takeOffHold } = useHold();
 
   return (
     <div className={cn("flex shrink-0 items-center gap-2", className)}>
@@ -102,7 +100,7 @@ export function TicketActions({
           Claim
         </button>
       )}
-      {status !== "completed" && isClaimer && (
+      {status !== "completed" && isClaimer && !escalation && (
         <button
           type="button"
           className={OUTLINE}
@@ -112,29 +110,13 @@ export function TicketActions({
           Release
         </button>
       )}
-      {status === "open" && (
-        <button
-          type="button"
-          className={OUTLINE}
-          disabled={pending}
-          onClick={() =>
-            run(
-              () => resolve(ticketId, crypto.randomUUID()),
-              (r) => {
-                if (!r.ok) return;
-                if ("emailed" in r && r.emailed === false)
-                  toast.warning(
-                    "Marked resolved, but the confirmation email could not be sent to the Customer.",
-                  );
-                else
-                  toast.success(
-                    "Marked resolved. The Customer has been asked to confirm.",
-                  );
-              },
-            )
-          }
-        >
-          Mark resolved
+      {status !== "completed" && canEscalate && isClaimer && !escalation && <EscalateDialog ticketId={ticketId} />}
+      {status !== "completed" && canReassign && <EscalationManagerButtons ticketId={ticketId} />}
+      {status !== "completed" && claimed && canReassign && <ReassignTicketDialog ticketId={ticketId} />}
+      {status === "open" && isClaimer && <HoldDialog ticketId={ticketId} />}
+      {status === "on_hold" && isClaimer && (
+        <button type="button" className={OUTLINE} disabled={holding} onClick={takeOffHold}>
+          Take off hold
         </button>
       )}
       {withReply && status !== "completed" && (!claimed || isClaimer) && (
@@ -151,15 +133,39 @@ const ACCEPT = FILE_TYPES.join(",");
 export function Composer({
   ticketId,
   onSent,
+  value,
+  onValueChange,
+  draftId = null,
+  onDraftSent,
 }: {
   ticketId: number;
   /** Called once the reply is saved, so it can be relayed live. */
   onSent?: (message: { id: number; body: string }) => void;
+  /** Optional controlled reply text, so a Drafted reply can be put in the box. */
+  value?: string;
+  onValueChange?: (text: string) => void;
+  /** The saved Drafted reply this text came from, so the send is recorded as drafted or edited. */
+  draftId?: number | null;
+  onDraftSent?: () => void;
 }) {
-  const [text, setText] = useState("");
+  const [ownText, setOwnText] = useState("");
+  const text = value ?? ownText;
+  const setText = (next: string | ((current: string) => string)) => {
+    const resolved = typeof next === "function" ? next(text) : next;
+    setOwnText(resolved);
+    onValueChange?.(resolved);
+  };
   const picker = useRef<HTMLInputElement>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
   const { pending, run } = useTicketAction();
-  const [confirming, setConfirming] = useState(false);
+
+  // The box grows with what is typed (up to its max height, then scrolls) and shrinks back when text is removed or sent.
+  useLayoutEffect(() => {
+    const box = area.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${box.scrollHeight}px`;
+  }, [text]);
   const [picked, setPicked] = useState<{ file: File; url?: string } | null>(
     null,
   );
@@ -203,7 +209,6 @@ export function Composer({
   const uploaded = useRef<{ file: File; reference: string } | null>(null);
 
   const send = () => {
-    setConfirming(false);
     if (sending.current || pending || (!text.trim() && !file)) return;
     sending.current = true;
 
@@ -218,6 +223,7 @@ export function Composer({
         try {
           const form = new FormData();
           form.set("body", sentText);
+          if (draftId !== null) form.set("draftId", String(draftId));
 
           if (sentFile) {
             if (uploaded.current?.file !== sentFile) {
@@ -247,11 +253,13 @@ export function Composer({
           return;
         }
 
-        if ("messageId" in r)
+        if ("messageId" in r) {
+          onDraftSent?.();
           onSent?.({
             id: r.messageId,
             body: sentText.trim() || "Sent a file",
           });
+        }
       },
     );
   };
@@ -285,21 +293,22 @@ export function Composer({
       )}
       <div
         className={cn(
-          "flex items-center gap-2 rounded-[10px] border border-[#e6e1ee] bg-white py-1.5 pr-1.5 pl-[14px]",
+          "flex items-end gap-2 rounded-[10px] border border-[#e6e1ee] bg-white py-1.5 pr-1.5 pl-[14px]",
         )}
       >
         <textarea
           id="reply"
           rows={1}
+          ref={area}
           aria-label="Write a reply"
           placeholder="Write a reply…"
           value={text}
           readOnly={pending}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !pending && (text.trim() || file)) setConfirming(true);
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !pending && (text.trim() || file)) send();
           }}
-          className="max-h-40 min-w-0 flex-1 resize-none bg-transparent text-sm leading-[normal] text-[#1f1a2e] outline-none placeholder:text-[#9a93a8]"
+          className="my-1 max-h-40 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-sm leading-[normal] text-[#1f1a2e] outline-none placeholder:text-[#9a93a8]"
         />
         <input
           ref={picker}
@@ -323,31 +332,12 @@ export function Composer({
           className={cn(PRIMARY, "inline-flex items-center gap-1.5")}
           disabled={pending || (!text.trim() && !file)}
           aria-busy={pending}
-          onClick={() => setConfirming(true)}
+          onClick={send}
         >
           {pending && <Loader2 aria-hidden className="size-4 animate-spin" />}
           {pending ? "Sending…" : "Send"}
         </button>
       </div>
-      <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Send this reply?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {file
-                ? `The Customer will see your reply with ${file.name} attached.`
-                : "The Customer will see your reply."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            {/* A plain button, not AlertDialogAction: send() closes the dialog itself. */}
-            <button type="button" className={PRIMARY} onClick={send}>
-              Send reply
-            </button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

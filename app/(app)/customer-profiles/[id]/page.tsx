@@ -1,3 +1,4 @@
+import { canWork, shopRole } from "@/lib/portal/roles";
 import { notFound } from "next/navigation";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -9,7 +10,7 @@ import { CUSTOMER_PROFILES_MODULE, RETURNS_MODULE } from "@/lib/portal/config";
 import { canOpenOrders, heldModules, requireModule } from "@/lib/portal/staff";
 
 export default async function CustomerProfilePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireModule(CUSTOMER_PROFILES_MODULE);
+  const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
 
   const { id } = await params;
   const canViewReturns = (await heldModules([RETURNS_MODULE])).includes(RETURNS_MODULE);
@@ -32,9 +33,9 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
   if (!result.profile) notFound();
 
   return (
-    <div className="px-xl py-7">
+    <div className="h-[calc(100dvh-4rem)] min-h-0 overflow-hidden px-xl py-7">
       <ProfileViewAudit id={id} />
-      <CustomerProfileView profile={result.profile} canOpenOrder={await canOpenOrders()} canViewReturns={canViewReturns} />
+      <CustomerProfileView key={id} noteAuthor={canWork(staff) ? { id: staff.id, name: staff.name } : undefined} taskViewer={canWork(staff) ? { id: staff.id, name: staff.name, role: shopRole(staff.role) === "manager" ? "manager" : "staff" } : undefined} profile={result.profile} canOpenOrder={await canOpenOrders()} canViewReturns={canViewReturns} />
     </div>
   );
 }

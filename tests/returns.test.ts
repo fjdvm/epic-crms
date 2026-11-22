@@ -22,6 +22,22 @@ async function list(query: Parameters<typeof loadReturns>[1] = {}) {
   if (!result.ok) throw new Error("Expected Returns to load");
   return result.list;
 }
+describe("Returns of a Deleted Customer", () => {
+  it("stay visible under the Deleted customer tag, and Return decisions still work", async () => {
+    const id = await request("requested", "2026-10-20T01:00:00Z");
+    await db.sql`alter table customers add column if not exists deleted_at timestamptz`;
+    await db.sql`update customers set deleted_at = now() where id = 'c1'`;
+    try {
+      expect((await list()).rows).toMatchObject([{ id, customer: { name: "Deleted customer", deleted: true } }]);
+      expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { customer: { name: "Deleted customer", deleted: true } } });
+      await db.sql`update order_returns set status = 'approved' where id = ${id}`;
+      expect((await list({ status: "approved" })).total).toBe(1);
+    } finally {
+      await db.sql`update customers set deleted_at = null where id = 'c1'`;
+    }
+  });
+});
+
 describe("Returns read model", () => {
   it("reads preferred/final Resolution, video, refund proof and Replaced history", async () => {
     const id = await request('replaced', '2026-10-20T01:00:00Z');
@@ -39,6 +55,16 @@ describe("Returns read model", () => {
       stats: { openReturns: 0, refundedThisMonth: 0 } });
     await db.sql`update order_returns set status = 'refunded', final_resolution = 'refund', refund_proof_file_id = 'proof' where id = ${id}`;
     expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { refundProofFileId: 'proof' } });
+  });
+
+  it("lists a failed Refunded email on its own Return only, and never changes the refund", async () => {
+    const id = await request('refunded', '2026-10-20T01:00:00Z');
+    const other = await request('refunded', '2026-10-21T01:00:00Z');
+    await db.sql`delete from order_email_outcomes`;
+    await db.sql`insert into order_email_outcomes (order_id, kind, occurrence, status, reason) values
+      (1, 'return-refunded', ${String(id)}, 'failed', 'mailbox full'), (1, 'return-refunded', ${String(other)}, 'sent', null), (1, 'confirmation', '', 'failed', 'x')`;
+    expect(await loadReturnDetail(() => db.sql, id)).toMatchObject({ ok: true, detail: { status: 'refunded', emailFailures: [{ kind: 'return-refunded', occurrence: String(id), reason: 'mailbox full' }] } });
+    expect(await loadReturnDetail(() => db.sql, other)).toMatchObject({ ok: true, detail: { emailFailures: [] } });
   });
 
   it("reads legacy Order context even before the Delivery photo column is deployed", async () => {

@@ -5,7 +5,8 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { StaffProvider } from "@/components/layout/staff-context";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+const path = vi.hoisted(() => ({ current: "/" }));
+vi.mock("next/navigation", () => ({ usePathname: () => path.current }));
 
 beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({
@@ -16,6 +17,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  path.current = "/";
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -44,6 +46,12 @@ describe("the sidebar", () => {
     await screen.findByText("Ada Okafor");
 
     expect(screen.queryByRole("link", { name: "Customer Profiles" })).toBeNull();
+  });
+
+  it("no longer lists Senior/PWD checks in the sidebar, even with the Senior/PWD page", async () => {
+    renderSidebar(["/customer-profiles", "/customer-profiles/senior-pwd"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+    expect(screen.queryByRole("link", { name: "Senior/PWD checks" })).toBeNull();
   });
 
   it("groups Customer Profiles under CUSTOMERS and shows the system name", async () => {
@@ -76,11 +84,11 @@ describe("the sidebar", () => {
     expect(screen.queryByRole("link", { name: "Conversations" })).toBeNull();
   });
 
-  it("puts Tickets and Conversations under their own SERVICE label, after CUSTOMERS", async () => {
+  it("puts Tickets and Conversations under their own CUSTOMER SUPPORT label, after CUSTOMERS", async () => {
     renderSidebar(["/customer-profiles", "/tickets", "/conversations"]);
 
     const customers = await screen.findByText("CUSTOMERS");
-    const service = screen.getByText("SERVICE");
+    const service = screen.getByText("CUSTOMER SUPPORT");
 
     expect(customers.compareDocumentPosition(service) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
@@ -90,11 +98,41 @@ describe("the sidebar", () => {
     ]);
   });
 
-  it("shows only the SERVICE label with just the Tickets Module", async () => {
+  it("shows only the CUSTOMER SUPPORT label with just the Tickets Module", async () => {
     renderSidebar(["/tickets", "/conversations"]);
 
-    expect(await screen.findByText("SERVICE")).toBeTruthy();
+    expect(await screen.findByText("CUSTOMER SUPPORT")).toBeTruthy();
     expect(screen.queryByText("CUSTOMERS")).toBeNull();
+  });
+
+  it("lists the groups in order, with Products & Stocks beside Orders and Approvals under Management", async () => {
+    renderSidebar(["/dashboard", "/customer-profiles", "/orders", "/orders/stock", "/payments", "/tickets", "/approvals"]);
+
+    await screen.findByText("OVERVIEW");
+    const text = document.body.textContent ?? "";
+    const order = ["OVERVIEW", "Dashboard", "CUSTOMERS", "Customer Profiles", "COMMERCE", "Orders", "Products & Stocks", "Payments", "CUSTOMER SUPPORT", "Tickets", "MANAGEMENT", "Approvals"];
+    const at = order.map((t) => text.indexOf(t));
+
+    expect(at.every((n) => n >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(screen.getByRole("link", { name: "Products & Stocks" }).getAttribute("href")).toBe("/orders/stock");
+  });
+
+  it("highlights only Products & Stocks on its own page, not Orders", async () => {
+    path.current = "/orders/stock";
+    renderSidebar(["/orders", "/orders/stock"]);
+
+    const stock = await screen.findByRole("link", { name: "Products & Stocks" });
+    expect(stock.closest("[data-active=true]")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Orders" }).closest("[data-active=true]")).toBeNull();
+  });
+
+  it("hides Products & Stocks when no Commerce page is permitted", async () => {
+    renderSidebar(["/customer-profiles"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
+
+    expect(screen.queryByText("Products & Stocks")).toBeNull();
+    expect(screen.queryByText("COMMERCE")).toBeNull();
   });
 
   it("links the Dashboard only for Staff who hold its Module", async () => {
@@ -148,16 +186,27 @@ describe("the sidebar", () => {
     expect(screen.queryByText("Feedback")).toBeNull();
   });
 
-  it("links Email Campaigns with the Marketing page permitted", async () => {
+  it("never shows Email Campaigns, even when a stale Marketing page is permitted", async () => {
     renderSidebar(["/customer-profiles", "/email-campaigns"]);
-
-    expect((await screen.findByRole("link", { name: "Email Campaigns" })).getAttribute("href")).toBe("/email-campaigns");
-  });
-
-  it("hides Email Campaigns entirely, not even dimmed, without the Marketing Module", async () => {
-    renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
     expect(screen.queryByText("Email Campaigns")).toBeNull();
+  });
+});
+
+describe("the Management label", () => {
+  it("shows Commerce Settings under Management when the Staff member may open it", async () => {
+    renderSidebar(["/management/commerce-settings"]);
+
+    expect(await screen.findByText("MANAGEMENT")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Commerce Settings" })).toBeTruthy();
+  });
+
+  it("hides the label and page from everyone else", async () => {
+    renderSidebar(["/orders"]);
+    await screen.findByText("Ada Okafor");
+
+    expect(screen.queryByText("MANAGEMENT")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Commerce Settings" })).toBeNull();
   });
 });

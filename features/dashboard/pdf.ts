@@ -1,7 +1,4 @@
-import path from "node:path";
-
-import PDFDocument from "pdfkit";
-import sharp from "sharp";
+import { createBrandedPdf, manilaDate as date, manilaTimestamp as timestamp, BRAND } from "@/lib/export/pdf-template";
 
 import type { DashboardFigures, Widget } from "./figures";
 import type { Attention } from "./attention";
@@ -9,51 +6,23 @@ import { PERIOD_LABELS, type Period, type PeriodPreset } from "./period";
 
 const pesos = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 const money = (centavos: number) => pesos.format(centavos / 100);
-const date = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" });
-const timestamp = new Intl.DateTimeFormat("en-PH", {
-  timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short", hour12: false,
-});
 
 /** The PDF renders only the permitted figures returned by the shared loader; it never queries data. */
 export async function dashboardPdf(
   figures: DashboardFigures,
   { period, preset, now }: { period: Period; preset: PeriodPreset; now: Date },
 ): Promise<Buffer> {
-  const logo = await sharp(path.join(process.cwd(), "public/images/brand/logo-tile.png"))
-    .resize(180, 180, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } }).png().toBuffer();
-  const doc = new PDFDocument({
-    size: "A4", margin: 44,
-    font: path.join(process.cwd(), "features/dashboard/assets/DejaVuSans.ttf"),
-    info: { Title: "Bren Raphael's Dashboard", CreationDate: now },
-  });
-  const chunks: Buffer[] = [];
-  const completed = new Promise<Buffer>((resolve, reject) => {
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-  });
-  doc.image(logo, 44, 40, { width: 64 });
-  doc.fillColor("#5b2a86").fontSize(22).text("Dashboard", 122, 46);
-  doc.fillColor("#52525b").fontSize(10).text("Bren Raphael's", 122, 78);
-  doc.fontSize(10).text(`${PERIOD_LABELS[preset]}: ${date.format(period.start)} - ${date.format(new Date(period.end.getTime() - 1))}`, 44, 120);
+  const pdf = await createBrandedPdf({ title: "Dashboard", now });
+  const { doc, width, room, line } = pdf;
+  doc.fillColor(BRAND.muted).fontSize(10).text(`${PERIOD_LABELS[preset]}: ${date.format(period.start)} - ${date.format(new Date(period.end.getTime() - 1))}`, 44, doc.y);
   doc.text("Philippine Time (UTC+8)");
   doc.text(`Generated: ${timestamp.format(now)}`);
   doc.moveDown();
-  const width = doc.page.width - 88;
-  const room = (height: number) => {
-    if (doc.y + height > doc.page.height - 48) doc.addPage();
-  };
-  const line = (text: string, muted = false) => {
-    doc.fontSize(10);
-    room(doc.heightOfString(text, { width }) + 8);
-    doc.fillColor(muted ? "#71717a" : "#18181b").text(text, 44, doc.y, { width });
-    doc.moveDown(0.35);
-  };
   const section = (title: string, widget: { ok: boolean } | undefined) => {
     if (!widget) return false;
     room(84);
     doc.moveDown(0.6);
-    doc.fillColor("#5b2a86").fontSize(13).text(title, 44, doc.y, { width });
+    doc.fillColor(BRAND.purple).fontSize(13).text(title, 44, doc.y, { width });
     doc.moveDown(0.35);
     if (!widget.ok) line("Couldn't load - this widget is unavailable in this export.", true);
     return widget.ok;
@@ -69,8 +38,8 @@ export async function dashboardPdf(
     line(label);
     room(15);
     const y = doc.y;
-    doc.rect(44, y, width, 5).fill("#eee8f3");
-    if (maximum > 0 && value > 0) doc.rect(44, y, width * Math.min(value / maximum, 1), 5).fill("#5b2a86");
+    doc.rect(44, y, width, 5).fill(BRAND.tint);
+    if (maximum > 0 && value > 0) doc.rect(44, y, width * Math.min(value / maximum, 1), 5).fill(BRAND.purple);
     doc.y = y + 15;
   };
 
@@ -90,7 +59,7 @@ export async function dashboardPdf(
   }
 
   const queueLabels: Record<keyof Attention, string> = {
-    paymentProofs: "Payment proofs to check", deliveryFees: "Delivery fees to quote",
+    paymentProofs: "Payment proofs to check", deliveryFees: "Delivery fees to quote", overdueOrders: "Orders Overdue to confirm", cancelRequests: "Cancel requests to decide", paymentReviews: "Payment reviews for a Manager",
     ordersToPack: "Orders to pack", codToCollect: "COD to collect", openTickets: "Open Tickets",
     returns: "Returns to decide", lowFeedback: "Low Feedback to review",
   };
@@ -132,13 +101,12 @@ export async function dashboardPdf(
   }
 
   const payment = figures.paymentAndReceiving;
-  if (section("How customers pay and receive Orders", payment) && payment?.ok) {
-    const labels: Record<string, string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on Delivery", pickup: "Pickup", delivery: "Delivery" };
-    for (const rows of [payment.payment, payment.receiving]) {
-      if (rows.length === 0) { line("No Orders in this period", true); continue; }
-      const maximum = Math.max(0, ...rows.map((row) => row.orders));
-      for (const row of rows) bar(`${labels[row.method] ?? row.method}: ${row.orders} Orders - ${money(row.sales)}`, row.orders, maximum);
-    }
+  if (section("How customers pay", payment) && payment?.ok) {
+    const labels: Record<string, string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on Delivery" };
+    const rows = payment.payment;
+    if (rows.length === 0) line("No Orders in this period", true);
+    const maximum = Math.max(0, ...rows.map((row) => row.orders));
+    for (const row of rows) bar(`${labels[row.method] ?? row.method}: ${row.orders} Orders - ${money(row.sales)}`, row.orders, maximum);
   }
 
   const stages = figures.customersByStage;
@@ -158,6 +126,5 @@ export async function dashboardPdf(
   if (!Object.values(figures).some((widget) => widget && Object.keys(widget).length > 0)) {
     line("Your Modules do not include any data the Dashboard summarises.", true);
   }
-  doc.end();
-  return completed;
+  return pdf.finish();
 }

@@ -2,9 +2,9 @@
 
 import { approvals } from "@/features/approvals/server";
 import type { ApprovalOptions, ApprovalResult } from "@/features/approvals/workflow";
-import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
+import { canWork, READ_ONLY_REASON, shopRole } from "@/lib/portal/roles";
 import { revalidatePath } from "next/cache";
-import { changeReturnStatus, createStorefrontReplacementOrder, extendStorefrontRefundWindow, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
+import { changeReturnStatus, changeStorefrontRefundDestination, createStorefrontReplacementOrder, extendStorefrontRefundWindow, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
@@ -12,6 +12,18 @@ import type { ReturnResolution } from "./returns";
 import { database } from "@/lib/db";
 import { RETURNS_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
+import { checkDestination, describeMasked, destinationDigest, maskDestination, mayChangeDestination, readDestination, sameDestination, type DestinationInput, type MaskedRefundDestination, type RefundDestination } from "./refund-destination";
+import { formatPesos } from "@/features/customer-profiles/format";
+import { checkRefund } from "./refund-rules";
+import { crmsDatabase } from "@/lib/crms-db";
+import { loadRefundCorrections, loadRefundDraft } from "./refund-draft";
+import { refundProofRow } from "./refund-proof-reader";
+import { reviewRefundProof, type RefundDraft } from "./refund-review";
+import { refundMethodLabel, TRANSFER_VERIFIED } from "./refund-record";
+import type { ProofCorrection } from "@/features/orders/proof-read";
+import { refundFacts } from "./refund-facts";
+import { randomUUID } from "node:crypto";
+import { loadReplacementStock, shortStockReason } from "./replacement-stock";
 import { loadReturns, loadReturnDetail, loadReturnStats, type ReturnQuery } from "./returns";
 
 /** Each endpoint proves Returns access itself, before opening a database connection. */
@@ -63,23 +75,51 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       const [lines] = await database()`select count(*)::int as count from public.order_return_items where return_id = ${id}`;
       if (lines.count > 0 && pending.count > 0) return { ok: false, reason: "Inspect the returned items first." };
     }
+    // Staff never type a destination at refund time: the money goes where the Customer confirmed, and only a Manager changes that.
+    if (decision.status === "refunded" && form instanceof FormData && [...form.keys()].some(key => /destination|account|bank|number|method/i.test(key))) {
+      return { ok: false, reason: "The refund goes to the destination the Customer confirmed. It cannot be changed here; a Manager changes it first." };
+    }
+    let deliveryFeeReason: string | undefined;
+    let refundItems = 0;
+    let refundFee = 0;
+    let draft: RefundDraft | null = null;
+    let corrections: ProofCorrection[] = [];
+    if (decision.status === "refunded") {
+      const facts = await refundFacts(id, orderId);
+      if (!facts) return { ok: false, reason: "Return was not found." };
+      // The proof and details were saved first (#615), so the Proof reader's findings could be checked before this step.
+      // Asking for approval needs none of it; carrying the refund out needs all of it (checked in `execute`).
+      draft = await loadRefundDraft(crmsDatabase(), id);
+      deliveryFeeReason = draft?.deliveryFeeReason ?? undefined;
+      const checked = checkRefund({ ...facts, deliveryFeeReason });
+      if (!checked.ok) return { ok: false, reason: checked.error };
+      refundItems = facts.itemsInCentavos;
+      refundFee = checked.deliveryFeeInCentavos;
+    }
     if (decision.status === "approved") decision = { ...decision, finalResolution: decision.finalResolution ?? current.preferred_resolution };
+    // A replacement is only offered when the IMS has every item. Stock that could not be read is left to the storefront,
+    // which checks and reserves it when the Replacement Order is made.
+    if ((decision.status === "approved" && decision.finalResolution === "replacement") || decision.status === "replaced") {
+      const stock = await loadReplacementStock(database, id);
+      if (stock.state === "short") return { ok: false, reason: shortStockReason(stock) };
+    }
     const execute = async (): Promise<ReturnChangeResult> => {
     if (decision.status === "refunded") {
-      if (!(form instanceof FormData) || form.getAll("proof").length !== 1) {
-        return { ok: false, reason: "Choose exactly one refund proof screenshot." };
+      if (!draft) return { ok: false, reason: "Save the refund proof and details first, then check the Proof reader's findings." };
+      if (draft.expectedInCentavos !== refundItems + refundFee || draft.amountInCentavos !== draft.expectedInCentavos) {
+        return { ok: false, reason: "The refund amount changed after the proof was saved. Save the refund proof again." };
       }
-      try {
-        const upload = await recordUpload(RETURNS_MODULE, form.get("proof"), staff.username);
-        if (!upload) return { ok: false, reason: "Choose exactly one refund proof screenshot." };
-        const fileId = upload.fileId;
-        await gatewayFileStorage.linkRefundProof(fileId, id);
-        const [paid] = await database()<{ payment_method: string }[]>`select payment_method from public.orders where id = ${orderId}`;
-        // The refund goes back the way the Customer paid; the storefront checks this against the Order.
-        decision = { status: "refunded", refundProofFileId: fileId, refundMethod: paid?.payment_method };
-      } catch {
-        return { ok: false, reason: "Refund proof could not be stored. The Return was not marked refunded." };
+      if (!(form instanceof FormData) || form.get(TRANSFER_VERIFIED) !== "true") {
+        return { ok: false, reason: "Verify the real transfer with the payment provider, then confirm that you did." };
       }
+      const row = await refundProofRow(crmsDatabase(), draft.fileId);
+      corrections = await loadRefundCorrections(crmsDatabase(), draft.fileId);
+      const review = reviewRefundProof(row ? { status: row.status === "none" ? "pending" : row.status, findings: row.findings } : null, corrections, draft.savedAt);
+      if (review.reading) return { ok: false, reason: "The Proof reader is still checking the refund proof. Wait for its findings." };
+      if (review.unresolved.length > 0) return { ok: false, reason: `Correct or proceed past the flagged details first: ${review.unresolved.join(", ")}.` };
+      // The proof is already stored and linked to this Return; the details are the ones Staff saved and the findings were checked against.
+      decision = { status: "refunded", refundProofFileId: draft.fileId, ...(deliveryFeeReason ? { deliveryFeeReason } : {}),
+        refundAmountInCentavos: draft.amountInCentavos, refundPaidMethod: draft.method, refundedOn: draft.refundedOn, refundReference: draft.reference };
     }
     if (decision.status === "replaced") {
       // Approving the replacement sends it as a linked ₱0 Order with its own Reservation. The Return id keeps this safe to repeat.
@@ -100,7 +140,8 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       : decision.status === "declined"
         ? { ...actor, status: "declined", declineReason: decision.declineReason.trim() }
         : decision.status === "refunded"
-          ? { ...actor, status: "refunded", refundProofFileId: decision.refundProofFileId, refundMethod: decision.refundMethod }
+          ? { ...actor, status: "refunded", refundProofFileId: decision.refundProofFileId, ...(decision.deliveryFeeReason ? { deliveryFeeReason: decision.deliveryFeeReason } : {}),
+            refundAmountInCentavos: decision.refundAmountInCentavos, refundPaidMethod: decision.refundPaidMethod, refundedOn: decision.refundedOn, refundReference: decision.refundReference }
           : { ...actor, status: decision.status };
     result = await changeReturnStatus(id, update);
     if (result.ok) {
@@ -109,8 +150,12 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       await recordAudit(gatewayAuditTrail, {
         action, module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
         target: { type: "return", id: String(id), display_name: `RMA-${id}` },
-        description: `${staff.name} marked Return RMA-${id} (Order #${orderId}) ${update.status}.`,
+        description: update.status === "refunded"
+          ? `${staff.name} marked Return RMA-${id} (Order #${orderId}) refunded: items ${formatPesos(refundItems)}, Delivery fee ${update.deliveryFeeReason ? `${formatPesos(refundFee)} (${update.deliveryFeeReason})` : "not included"}; ${formatPesos(update.refundAmountInCentavos)} sent by ${refundMethodLabel(update.refundPaidMethod)} on ${update.refundedOn}, reference ${update.refundReference}.`
+          : `${staff.name} marked Return RMA-${id} (Order #${orderId}) ${update.status}.`,
         occurred_at: new Date().toISOString(), operationId: `return:${id}:${action}`,
+        ...(update.status === "refunded" ? { metadata: { amountInCentavos: update.refundAmountInCentavos, method: update.refundPaidMethod, refundedOn: update.refundedOn, reference: update.refundReference, itemsInCentavos: refundItems, deliveryFeeIncluded: Boolean(update.deliveryFeeReason), deliveryFeeInCentavos: refundFee, transferVerified: true, ...(update.deliveryFeeReason ? { deliveryFeeReason: update.deliveryFeeReason } : {}),
+          proofChanges: corrections.map(c => ({ kind: c.kind, field: c.field, reason: c.reason, by: c.by, originalValue: c.originalValue, originalFinding: c.originalFinding, ...(c.kind === "correction" ? { correctedValue: c.value } : {}) })) } } : {}),
       });
     }
     if (result.ok && update.status === "refunded") {
@@ -125,18 +170,24 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
     if (decision.status === "goods received") {
       result = await execute();
     } else {
-      // Selling price alone determines the Approval limit; delivery fees are excluded.
+      // The items alone determine the Approval limit; the Delivery fee never counts toward it.
       const [amount] = await database()`select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text as selling
         from public.order_return_items where return_id = ${id}`;
       const action = decision.status === "approved" ? "return.approve" : decision.status === "declined" ? "return.decline"
         : decision.status === "refunded" ? "return.refund" : "return.replace";
       const approved = await approvals().run(staff, { module: RETURNS_MODULE, action, targetId: String(id),
-        payload: decision.status === "refunded" ? { status: "refunded" } : { ...decision }, amountInCentavos: Number(amount.selling) }, options, execute);
+        payload: decision.status === "refunded" ? { status: "refunded", ...(deliveryFeeReason ? { deliveryFee: true } : {}) } : { ...decision }, amountInCentavos: Number(amount.selling) }, options, execute);
       if (!approved.ok) return approved;
       result = approved;
     }
   } catch {
     return { ok: false, reason: "Return is temporarily unavailable." };
+  }
+  if (result.ok && (decision.status === "approved" || decision.status === "declined")) {
+    // The Manager picked the outcome, so the Staff request asking them to decide this Return is done.
+    const outcome = decision.status === "declined" ? "Rejected" : decision.finalResolution === "replacement" ? "Replacement" : "Refund";
+    await approvals().closeRequests(staff, RETURNS_MODULE, "return.decide", String(id), `${outcome} for RMA-${id}`)
+      .catch((error) => console.error(`The decide request for RMA-${id} could not be closed`, error));
   }
   if (result.ok) {
     revalidatePath("/(app)/returns", "layout");
@@ -154,13 +205,71 @@ export async function declineReturn(id: number, reason: string, options: Approva
   return decide(id, { status: "declined", declineReason: reason }, undefined, options);
 }
 
+export type ReturnOutcome = "reject" | "refund" | "replacement";
+
+/**
+ * A Manager picks one outcome for a Requested Return: reject it with a reason the Customer sees, refund it to the way the
+ * Customer paid, or send a replacement (only when in stock). When the goods need not come back, a replacement is made at
+ * once as a linked ₱0 Order; a refund then goes on to the refund steps. Staff cannot decide; they use `requestReturnDecision`.
+ */
+export async function decideReturn(id: number, choice: { outcome: ReturnOutcome; goodsRequired?: boolean; reason?: string }): Promise<ReturnChangeResult | ApprovalResult> {
+  const staff = await requireModule(RETURNS_MODULE);
+  const role = shopRole(staff.role);
+  if (role === "staff") return { ok: false, reason: "A Manager decides Returns. Use Request approval · decide return." };
+  if (role !== "manager") return { ok: false, reason: READ_ONLY_REASON };
+  const outcome = choice?.outcome;
+  if (outcome === "reject") return declineReturn(id, typeof choice.reason === "string" ? choice.reason : "");
+  if (outcome !== "refund" && outcome !== "replacement") return { ok: false, reason: "Choose reject, refund or replacement." };
+  if (typeof choice.goodsRequired !== "boolean") return { ok: false, reason: "Say whether the goods must come back." };
+  const approved = await approveReturn(id, choice.goodsRequired, outcome);
+  if (!approved.ok || outcome === "refund" || choice.goodsRequired) return approved;
+  const replaced = await markReturnReplaced(id);
+  return replaced.ok ? replaced : { ok: false, reason: `${replaced.reason} The Return is approved for a replacement; send it from the Return when it can be made.` };
+}
+
+/**
+ * Staff check a Requested Return (made inside the window, and whether the photo supports the reason) and ask a Manager to
+ * decide it. The window is worked out here from the storefront's times, never taken from the browser. Never optimistic.
+ */
+export async function requestReturnDecision(id: number, check: { photoSupportsReason: boolean; note: string }): Promise<{ ok: true; approvalId: string } | { ok: false; reason: string }> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (shopRole(staff.role) !== "staff") return { ok: false, reason: shopRole(staff.role) === "manager" ? "Managers decide the Return directly." : READ_ONLY_REASON };
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
+  if (typeof check?.photoSupportsReason !== "boolean") return { ok: false, reason: "Say whether the photo supports the reason." };
+  const note = typeof check.note === "string" ? check.note.trim() : "";
+  if (!note) return { ok: false, reason: "Enter a note for the Manager." };
+  if (note.length > 1000) return { ok: false, reason: "Keep the note to 1,000 characters." };
+  try {
+    const [current] = await database()<{ status: string; in_window: boolean | null }[]>`
+      select r.status, r.requested_at < o.delivered_at + (case when to_jsonb(o)->>'refund_window_extended_at' is null then 24 else 48 end) * interval '1 hour' as in_window
+      from public.order_returns r join public.orders o on o.id = r.order_id where r.id = ${id}`;
+    if (!current) return { ok: false, reason: "Return was not found." };
+    if (current.status !== "requested") return { ok: false, reason: "Return already changed; refresh it before trying again." };
+    const requests = await approvals().list(staff, RETURNS_MODULE);
+    if (requests.some((r) => r.action === "return.decide" && r.target_id === String(id) && r.status === "waiting-manager")) {
+      return { ok: false, reason: "A Manager was already asked to decide this Return." };
+    }
+    const [amount] = await database()`select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text as selling
+      from public.order_return_items where return_id = ${id}`;
+    const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "return.decide", targetId: String(id),
+      payload: { inWindow: current.in_window === true, photoSupportsReason: check.photoSupportsReason }, amountInCentavos: Number(amount.selling) },
+      { reason: note }, async () => ({ ok: false as const, reason: "A Manager decides Returns." }));
+    if (result.ok || !("approvalId" in result) || !result.approvalId) return { ok: false, reason: result.reason };
+    revalidatePath("/(app)/returns", "layout");
+    revalidatePath("/approvals");
+    return { ok: true, approvalId: result.approvalId };
+  } catch {
+    return { ok: false, reason: "Return is temporarily unavailable." };
+  }
+}
+
 export async function markReturnGoodsReceived(id: number): Promise<ReturnChangeResult | ApprovalResult> {
   return decide(id, { status: "goods received" });
 }
 
 export async function markReturnRefunded(id: number, form?: FormData, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
   // Only a confirmed, signed upload reference may supply the proof File id.
-  return decide(id, { status: "refunded", refundProofFileId: "" }, form, options);
+  return decide(id, { status: "refunded", refundProofFileId: "", refundAmountInCentavos: 0, refundPaidMethod: "", refundedOn: "", refundReference: "" }, form, options);
 }
 
 export async function markReturnReplaced(id: number, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
@@ -295,4 +404,90 @@ export async function extendRefundWindow(orderId: number, reason: string, option
     }
     return result;
   } catch { return { ok: false, reason: "The Refund window is temporarily unavailable. Refresh the Return before retrying." }; }
+}
+
+const DESTINATION_ROW = `to_jsonb(r)->>'refund_method' as refund_method, to_jsonb(r)->>'refund_account_name' as refund_account_name,
+  to_jsonb(r)->>'refund_account_number' as refund_account_number, to_jsonb(r)->>'refund_bank_name' as refund_bank_name`;
+type DestinationRow = { status: string; order_id: number; goods_required: boolean | null; final_resolution: ReturnResolution | null;
+  refund_method: string | null; refund_account_name: string | null; refund_account_number: string | null; refund_bank_name: string | null };
+async function destinationRow(id: number): Promise<DestinationRow | undefined> {
+  const sql = database();
+  const [row] = await sql<DestinationRow[]>`select r.status, r.order_id, r.goods_required, r.final_resolution, ${sql.unsafe(DESTINATION_ROW)} from public.order_returns r where r.id = ${id}`;
+
+  return row;
+}
+
+/**
+ * The full account number, only where refund processing needs it: an approved refund whose goods are back (or not required) and
+ * that is not yet Refunded. Staff and Managers only (Admin and CEO view it masked). Every look is audited, with the number masked.
+ */
+export async function revealRefundDestination(id: number): Promise<{ ok: true; destination: RefundDestination } | { ok: false; reason: string }> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
+  try {
+    const row = await destinationRow(id);
+    if (!row) return { ok: false, reason: "Return was not found." };
+    const ready = row.final_resolution === "refund" && (row.status === "goods received" || (row.status === "approved" && row.goods_required === false));
+    if (!ready) return { ok: false, reason: "The full number is shown only when the refund is ready to be sent." };
+    const destination = readDestination(row);
+    if (!destination) return { ok: false, reason: "This Return has no confirmed refund destination." };
+    await recordAudit(gatewayAuditTrail, {
+      action: "return.refund_destination_viewed", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+      target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+      description: `${staff.name} opened the full Refund destination on Return RMA-${id} (Order #${row.order_id}): ${describeMasked(maskDestination(destination))}.`,
+      occurred_at: new Date().toISOString(), operationId: `return:${id}:refund_destination_viewed:${randomUUID()}`,
+    });
+
+    return { ok: true, destination };
+  } catch { return { ok: false, reason: "The refund destination is temporarily unavailable. Try again." }; }
+}
+
+/**
+ * A Manager changes a locked Refund destination, with a reason and the Customer's confirmation, before money is sent. Staff see
+ * "Request approval". Never optimistic: it decides where money goes. The approval request holds only the masked form and a digest,
+ * never the full number, and the Audit Event records the number masked.
+ */
+export async function changeRefundDestination(
+  id: number,
+  input: DestinationInput & { reason: string; customerConfirmed: boolean },
+  options: ApprovalOptions = {},
+): Promise<{ ok: true; destination: MaskedRefundDestination } | { ok: false; reason: string } | ApprovalResult> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
+  const checked = checkDestination(input);
+  if (!checked.ok) return checked;
+  const why = typeof input.reason === "string" ? input.reason.trim() : "";
+  if (!why) return { ok: false, reason: "Enter a reason for changing the destination." };
+  if (input.customerConfirmed !== true) return { ok: false, reason: "The Customer must confirm the new destination before it can change." };
+  const next = checked.destination;
+  try {
+    const row = await destinationRow(id);
+    if (!row) return { ok: false, reason: "Return was not found." };
+    if (!mayChangeDestination(row.status, row.final_resolution)) return { ok: false, reason: "The destination can change only on an approved refund that has not been sent yet." };
+    const current = readDestination(row);
+    if (current && sameDestination(current, next)) return { ok: false, reason: "That is already the confirmed destination." };
+    const from = current ? describeMasked(maskDestination(current)) : "none";
+    const to = describeMasked(maskDestination(next));
+    const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "return.change-destination", targetId: String(id),
+      payload: { to, digest: destinationDigest(next) }, amountInCentavos: 0 }, { ...options, reason: options.reason ?? why }, async () => {
+      const done = await changeStorefrontRefundDestination(id, { ...next, reason: why, customerConfirmed: true }, { id: staff.username, name: staff.name });
+      if (done.ok) {
+        await recordAudit(gatewayAuditTrail, {
+          action: "return.refund_destination_changed", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
+          target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+          description: `${staff.name} changed the Refund destination on Return RMA-${id} (Order #${row.order_id}) from ${from} to ${to}, with the Customer's confirmation: ${why}`,
+          occurred_at: new Date().toISOString(), operationId: `return:${id}:refund_destination_changed:${done.changedAt.getTime()}`,
+          metadata: { from, to, reason: why, customerConfirmed: true },
+        });
+      }
+      return done.ok ? { ok: true as const, destination: maskDestination(next) } : done;
+    });
+    if (result.ok) {
+      revalidatePath("/(app)/returns", "layout");
+      revalidatePath("/approvals");
+    }
+    return result;
+  } catch { return { ok: false, reason: "The refund destination is temporarily unavailable. Refresh the Return before retrying." }; }
 }

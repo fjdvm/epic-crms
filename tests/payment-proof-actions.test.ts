@@ -28,10 +28,11 @@ beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create schema crms`;
   await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-payment-allocations.sql", "utf8"));
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.sql`truncate crms.approval_requests, crms.approval_events, order_payment_proofs, order_returns, orders, customers restart identity cascade`;
+  await db.sql`truncate crms.payment_reference_allocations, crms.approval_requests, crms.approval_events, order_payment_proofs, order_returns, orders, customers restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
     portal = new FakePortal(); storefront = new FakeStorefront(db.sql, undefined, storage); storage.reset(); notices.length = 0; oldDirectory = false; audit.mockClear();
@@ -74,16 +75,16 @@ async function signIn(id: string) {
   session.handle = (await exchanged.json()).handle;
 }
 
-async function proofOrder(method = "gcash") {
+async function proofOrder(method = "gcash", reference?: string) {
   const [o] = await db.sql`insert into orders (customer_id, status, payment_method) values ('c1','awaiting payment',${method}) returning id`;
-  await storefront.submitProof(o.id, "REF-1");
+  await storefront.submitProof(o.id, reference ?? `REF-${o.id}-1`);
   return Number(o.id);
 }
 /** Staff reject the current proof and the Customer sends another. */
 async function rejectAndResubmit(id: number, n: number) {
   for (let i = 1; i <= n; i++) {
     expect(await rejectPaymentProof(id, `Blurry ${i}`)).toMatchObject({ ok: true });
-    await storefront.submitProof(id, `REF-${i + 1}`);
+    await storefront.submitProof(id, `REF-${id}-${i + 1}`);
   }
 }
 
@@ -120,7 +121,7 @@ it("keeps every proof and rejection, oldest first", async () => {
   const result = await loadOrder(() => db.sql, id);
   if (!result.ok || !result.order) throw new Error("Order missing");
   expect(result.order.paymentProofs.map(p => [p.reference, p.rejection?.reason ?? null, p.rejection?.by.name ?? null])).toEqual([
-    ["REF-1", "Blurry 1", "ana Person"], ["REF-2", "Blurry 2", "ana Person"], ["REF-3", null, null],
+    [`REF-${id}-1`, "Blurry 1", "ana Person"], [`REF-${id}-2`, "Blurry 2", "ana Person"], [`REF-${id}-3`, null, null],
   ]);
   expect(result.order.proofRejections).toBe(2);
 });
@@ -139,6 +140,25 @@ it("refuses rejection and payment for Cash on Delivery and non-Staff roles, and 
   await signIn("ana");
   expect(await rejectPaymentProof(id, "No")).toEqual({ ok: false, reason: storefront.refusal });
   expect(storefront.reuploadEmails).toEqual([]);
+});
+
+it("reports an uncertain storefront outcome once, never retries it, and audits nothing", async () => {
+  const id = await proofOrder();
+  await signIn("ana");
+  const working = globalThis.fetch;
+  let storefrontCalls = 0;
+  const failWith = (respond: () => Response | never) => vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (new Request(input, init).url.startsWith(FAKE_STOREFRONT_URL)) { storefrontCalls++; return respond(); }
+    return working(input, init);
+  });
+  audit.mockClear();
+  failWith(() => { throw new Error("socket closed"); });
+  expect(await markPaid(id)).toEqual({ ok: false, reason: "Storefront could not confirm the change. Refresh the Order before trying again." });
+  expect(await rejectPaymentProof(id, "Blurry")).toEqual({ ok: false, reason: "Storefront could not confirm the change. Refresh the Order before trying again." });
+  failWith(() => Response.json({ id: 999, status: "paid", deliveryFeeInCentavos: null }));
+  expect(await markPaid(id)).toEqual({ ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." });
+  expect(storefrontCalls).toBe(3);
+  expect(audit.mock.calls.filter(([event]) => event.action.startsWith("payment"))).toEqual([]);
 });
 
 describe("after 3 rejections", () => {
@@ -188,7 +208,103 @@ describe("after 3 rejections", () => {
   });
 });
 
+describe("a reference already used on another Order", () => {
+  async function reusedPair() {
+    const first = await proofOrder("gcash", "REF-SHARED");
+    const second = await proofOrder("gcash", "REF-SHARED");
+    return { first, second };
+  }
+
+  it("stops Mark paid for Staff, names the other Order, and lets a Manager approve anyway with a reason, audited", async () => {
+    const { first, second } = await reusedPair();
+    await signIn("ana");
+    expect(await markPaid(second)).toEqual({ ok: false, reason: "Enter a reason to approve this payment anyway." });
+    const pending = await markPaid(second, { reason: "Same customer paid both in one transfer", allocateToOrderId: second });
+    expect(pending).toMatchObject({ ok: false, status: "waiting-manager" });
+    expect(await loadOrder(() => db.sql, second)).toMatchObject({ order: { status: "awaiting payment", paymentProofs: [{ checks: { reference: { pass: false, otherOrderIds: [first], reason: `Reference also used on Order #${first}.` } } }] } });
+    await signIn("mario");
+    expect(await markPaid(second, { reason: "Checked" })).toEqual({ ok: false, reason: "Choose which Order this transfer pays." });
+    expect(await markPaid(second, { allocateToOrderId: second })).toEqual({ ok: false, reason: "Enter a reason to approve this payment anyway." });
+    expect(await markPaid(second, { reason: "  ", allocateToOrderId: second })).toMatchObject({ ok: false });
+    expect(await markPaid(second, { reason: "Checked both in the GCash history", allocateToOrderId: 9999 })).toEqual({ ok: false, reason: "Choose which Order this transfer pays." });
+    expect(await markPaid(second, { reason: "Checked both in the GCash history", allocateToOrderId: second })).toMatchObject({ ok: true, order: { status: "paid" } });
+    expect(audit.mock.calls).toContainEqual([expect.objectContaining({
+      action: "payment.approved_anyway", actor: expect.objectContaining({ id: "mario" }),
+      metadata: { reason: "Checked both in the GCash history", reusedReferenceOrderIds: [first], allocatedToOrderId: second, allocatedBy: "mario Person" },
+    })]);
+    expect(audit.mock.calls.map(([e]) => e.action)).not.toContain("payment.marked_paid");
+  });
+
+  it("lets the Manager name the other Order, which then cannot be funded twice", async () => {
+    const { first, second } = await reusedPair();
+    await signIn("mario");
+    const result = await markPaid(second, { reason: "The transfer belongs to the first order", allocateToOrderId: first });
+    expect(result).toEqual({ ok: false, reason: `Transfer allocated to Order #${first}. It does not pay this Order: reject the proof or ask for a new one.` });
+    expect(await loadOrder(() => db.sql, second)).toMatchObject({ order: { status: "awaiting payment" } });
+    expect(audit.mock.calls).toContainEqual([expect.objectContaining({
+      action: "payment.reference_allocated", description: expect.stringContaining(`to Order #${first}`),
+      metadata: expect.objectContaining({ allocatedToOrderId: first, allocatedBy: "mario Person", reason: "The transfer belongs to the first order" }),
+    })]);
+    expect(await markPaid(second, { reason: "Try again for this one", allocateToOrderId: second })).toEqual({ ok: false, reason: `This transfer was already allocated to Order #${first}. It cannot fund a second Order.` });
+    expect(await loadOrder(() => db.sql, second)).toMatchObject({ order: { status: "awaiting payment" } });
+  });
+
+  it("refuses a second Order when the transfer already paid one", async () => {
+    const { first, second } = await reusedPair();
+    await db.sql`update orders set status = 'paid' where id = ${first}`;
+    await signIn("mario");
+    expect(await markPaid(second, { reason: "Both look fine", allocateToOrderId: second })).toEqual({ ok: false, reason: `This transfer already paid Order #${first}. It cannot fund a second Order.` });
+    expect(await db.sql`select 1 from crms.payment_reference_allocations`).toHaveLength(0);
+  });
+
+  it("never lets Admin or the CEO approve", async () => {
+    const { second } = await reusedPair();
+    for (const who of ["ada", "owner"]) {
+      await signIn(who);
+      expect(await markPaid(second, { reason: "Looks fine" })).toMatchObject({ ok: false });
+    }
+    expect(await loadOrder(() => db.sql, second)).toMatchObject({ order: { status: "awaiting payment" } });
+  });
+
+  it("behaves as today when the reference is not reused", async () => {
+    const id = await proofOrder();
+    await signIn("ana");
+    expect(await markPaid(id)).toMatchObject({ ok: true, order: { status: "paid" } });
+    expect(audit.mock.calls).toContainEqual([expect.objectContaining({ action: "payment.marked_paid" })]);
+  });
+});
+
 it("sends a refund back the way the Customer paid, and none for Cash on Delivery", async () => {
   const { refundDestination } = await import("@/features/orders/payment-methods");
   expect(["gcash", "maya", "bank-transfer", "cash-on-delivery"].map(refundDestination)).toEqual(["GCash", "Maya", "bank transfer", null]);
+});
+
+it("reads confirmed proof values and returns advisory pass/fail checks with other Orders", async () => {
+  await signIn("ana");
+  const id = await proofOrder("gcash", "REF-DUP");
+  await db.sql`update orders set subtotal_in_centavos = 10000, created_at = '2026-01-01T00:00:00Z' where id = ${id}`;
+  await db.sql`update order_payment_proofs set confirmed_amount_in_centavos = 10000, confirmed_paid_at = '2026-01-02T00:00:00Z', confirmed_recipient = '0917 123 4567', expected_recipient = '09171234567' where order_id = ${id}`;
+  const result = await loadOrder(() => db.sql, id);
+  expect(result).toMatchObject({ ok: true, order: { status: "awaiting payment", paymentProofs: [{ confirmed: { amountInCentavos: 10000, recipient: "0917 123 4567" }, checks: { amount: { pass: true }, date: { pass: true }, recipient: { pass: true }, reference: { pass: true, otherOrderIds: [] } } }] } });
+  const other = await proofOrder("gcash", "REF-DUP");
+  const duplicate = await loadOrder(() => db.sql, id);
+  expect(duplicate).toMatchObject({ ok: true, order: { status: "awaiting payment", paymentProofs: [{ rejection: null, checks: { reference: { pass: false, otherOrderIds: [other], reason: expect.stringContaining(`#${other}`) } } }] } });
+});
+
+it("explains missing legacy values and failed comparisons without changing the proof", async () => {
+  await signIn("ana");
+  const id = await proofOrder();
+  const legacy = await loadOrder(() => db.sql, id);
+  expect(legacy).toMatchObject({ ok: true, order: { paymentProofs: [{ checks: {
+    amount: { pass: false, reason: "Customer-confirmed amount is missing." },
+    date: { pass: false, reason: "Customer-confirmed payment date is missing." },
+    recipient: { pass: false, reason: "Customer-confirmed recipient is missing." },
+  } }] } });
+  await db.sql`update orders set created_at = '2026-01-02T00:00:00Z', subtotal_in_centavos = 10000, delivery_fee_in_centavos = 5000 where id = ${id}`;
+  await db.sql`update order_payment_proofs set confirmed_amount_in_centavos = 10000, confirmed_paid_at = '2026-01-02T00:00:00Z', confirmed_recipient = 'wrong account', expected_recipient = '09171234567' where order_id = ${id}`;
+  expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "awaiting payment", proofRejections: 0, paymentProofs: [{ rejection: null, checks: {
+    amount: { pass: false, reason: "Amount does not match the Order total." },
+    date: { pass: false, reason: "Payment date is not after the Order was placed." },
+    recipient: { pass: false, reason: "Recipient does not match the shop account." },
+  } }] } });
 });
