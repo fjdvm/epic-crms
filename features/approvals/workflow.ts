@@ -4,7 +4,7 @@ import type { Staff } from "@/lib/portal/client";
 import { canManage, shopRole } from "@/lib/portal/roles";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 
-export type ApprovalAction = "order.cancel-after-dispatch" | "order.cancel-settle" | "payment.approve-anyway" | "return.approve" | "return.decline" | "return.refund" | "return.replace" | "return.extend-window" | "return.change-destination" | "write-off";
+export type ApprovalAction = "order.cancel-after-dispatch" | "order.cancel-settle" | "payment.approve-anyway" | "return.approve" | "return.decline" | "return.refund" | "return.replace" | "return.extend-window" | "return.change-destination" | "return.decide" | "write-off";
 export type ApprovalInput = { module: string; action: ApprovalAction; targetId: string; payload: Record<string, unknown>; amountInCentavos: number };
 export type ApprovalOptions = { reason?: string; approvalId?: string };
 export type ApprovalResult = { ok: false; reason: string; approvalId?: string; status?: string };
@@ -80,6 +80,7 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
       const manager = request.status === "waiting-manager" && role === "manager";
       const ceo = request.status === "waiting-ceo" && role === "ceo" && needsCEO(request);
       if (!manager && !ceo) return { error: failure("Your Role cannot decide this approval step.") };
+      if (request.action === "return.decide") return { error: failure("Open the Return and pick its outcome there.") };
       if (request.action === "order.cancel-after-dispatch" && decision === "decline" &&
           (typeof reason !== "string" || !reason.trim() || reason.length > 1000 || /[<>\p{C}\u034f\u17b4\u17b5\u3164\uffa0]/u.test(reason))) return { error: failure("Enter a single plain-text decline reason of up to 1,000 characters.") };
       if (decision === "decline" && !reason.trim()) return { error: failure("Enter a reason for declining.") };
@@ -145,5 +146,24 @@ export function approvalWorkflow(sql: postgres.Sql, audit: AuditTrail, notify: A
     await defer(() => publish(e));
     return { ok: true };
   }
-  return { setLimit, list, decide, run, acceptAI, deliverNotices };
+  /**
+   * A Manager carried out a decision on the target themselves (for example picked a Return's outcome), so the Staff
+   * requests asking them to decide it are done. Each is marked completed under the Manager's name and its requester is told.
+   */
+  async function closeRequests(staff: Staff, module: string, action: ApprovalAction, targetId: string, outcome: string) {
+    const result = await sql.begin(async tx => {
+      const closed = await tx<ApprovalRequest[]>`update crms.approval_requests set status = 'completed', manager_id = ${staff.id},
+        manager_name = ${staff.name}, manager_at = now(), completed_at = now()
+        where module = ${module} and action = ${action} and target_id = ${targetId} and status = 'waiting-manager' returning *`;
+      const events = [];
+      for (const request of closed) {
+        await queueNotice(tx, request, "requester", `${staff.name} decided your request: ${outcome}.`);
+        events.push(await event(tx, staff, "approval.granted", request.id, { step: "manager", outcome }));
+      }
+      return events;
+    });
+    if (result.length) await defer(async () => { for (const e of result) await publish(e); await deliverNotices(); });
+    return result.length;
+  }
+  return { setLimit, list, decide, run, acceptAI, deliverNotices, closeRequests };
 }

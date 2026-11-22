@@ -9,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { ReturnDetailView } from "@/features/returns/return-detail";
 import { loadReturnDetail } from "@/features/returns/returns";
+import { loadReplacementStock } from "@/features/returns/replacement-stock";
 import { fetchReturnPhoto } from "@/features/returns/photo-bytes";
 import { keptFlagExplanation } from "@/features/returns/return-flag-explain";
 import { currentAutomaticChecks } from "@/features/settings/automatic-checks-server";
@@ -91,6 +92,17 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
     ? { amountInCentavos: draft.amountInCentavos, method: draft.method, refundedOn: draft.refundedOn, reference: draft.reference, reading: review.reading, unresolved: review.unresolved }
     : null;
 
+  // Stock is read only while a replacement may still be chosen or sent; the CEO step depends on the items' selling price.
+  const mayReplace = detail.status === "requested" || ((detail.status === "approved" || detail.status === "goods received") && detail.finalResolution === "replacement");
+  const selling = detail.items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+  const [stock, limit] = await Promise.all([
+    mayReplace ? loadReplacementStock(ticketsDatabase, detail.id) : undefined,
+    crmsDatabase()<{ limit_in_centavos: string }[]>`select limit_in_centavos from crms.approval_settings where singleton`
+      .then(([row]) => (row ? Number(row.limit_in_centavos) : null)).catch(() => null),
+  ]);
+  // An unreadable limit errs toward asking the CEO; the server decides either way.
+  const needsCeo = limit === null || selling > limit;
+
   // Photos not yet fingerprinted are done now; a failure here only means no flag, never an error page.
   const flags = await (async () => {
     await fingerprintReturnPhotos(ticketsDatabase(), crmsDatabase(), fetchReturnPhoto, [detail.id]);
@@ -128,6 +140,8 @@ export default async function ReturnPage({ params }: { params: Promise<{ id: str
         requests={returnRequests}
         windowRequest={windowRequest}
         destinationRequest={destinationRequest}
+        stock={stock}
+        needsCeo={needsCeo}
       />
     </>
   );

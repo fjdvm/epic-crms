@@ -8,7 +8,7 @@ vi.mock("sonner", () => ({ toast }));
 vi.mock("@/features/files/client", () => ({ uploadFile: vi.fn() }));
 vi.mock("@/features/approvals/actions", () => ({ decideApproval: vi.fn() }));
 vi.mock("@/features/returns/actions", () => ({
-  approveReturn: vi.fn(), declineReturn: vi.fn(), markReturnGoodsReceived: vi.fn(), markReturnRefunded: vi.fn(), markReturnReplaced: vi.fn(),
+  approveReturn: vi.fn(), declineReturn: vi.fn(), decideReturn: vi.fn(), requestReturnDecision: vi.fn(), markReturnGoodsReceived: vi.fn(), markReturnRefunded: vi.fn(), markReturnReplaced: vi.fn(),
 }));
 
 import { ApprovalsList } from "@/features/approvals/approvals-list";
@@ -16,7 +16,7 @@ import { decideApproval } from "@/features/approvals/actions";
 import { idCheckToView, kindOf, type ApprovalView } from "@/features/approvals/view";
 import { ReturnActions } from "@/features/returns/return-actions";
 import { RoleStrip } from "@/features/dashboard/role-strip";
-import { approveReturn, markReturnRefunded } from "@/features/returns/actions";
+import { approveReturn, markReturnRefunded, requestReturnDecision } from "@/features/returns/actions";
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
@@ -32,31 +32,57 @@ describe("Staff Request approval", () => {
   const actions = (requests: ApprovalView[] = []) => render(
     <ReturnActions id={15} number="RMA-15" status="requested" goodsRequired={null} preferredResolution="refund" finalResolution={null} role="staff" requests={requests} />);
 
-  it("shows Request approval instead of Manager-only buttons, and sends the reason", async () => {
-    vi.mocked(approveReturn).mockResolvedValue({ ok: false, reason: "Waiting for approval" } as never);
-    actions();
+  it("shows Request approval · decide return instead of the outcome buttons, with the window and photo check", async () => {
+    vi.mocked(requestReturnDecision).mockResolvedValue({ ok: true, approvalId: "r1" });
+    render(<ReturnActions id={15} number="RMA-15" status="requested" goodsRequired={null} preferredResolution="refund" finalResolution={null} role="staff" inWindow reasonLabel="Damaged" />);
+    expect(screen.queryByRole("button", { name: "Decide return" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Request approval…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Request approval · decide return" }));
     const dialog = screen.getByRole("alertdialog");
-    fireEvent.click(within(dialog).getByLabelText(/Approve the return/));
-    fireEvent.click(within(dialog).getByLabelText("Yes"));
+    expect(within(dialog).getByText("Requested within the Refund window")).toBeTruthy();
+    fireEvent.click(within(dialog).getByLabelText("Yes, the photo shows it"));
     fireEvent.change(within(dialog).getByLabelText(/Note for the Manager/), { target: { value: "Photos match" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send request" }));
-    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, true, "refund", { reason: "Photos match" }));
+    await waitFor(() => expect(requestReturnDecision).toHaveBeenCalledWith(15, { photoSupportsReason: true, note: "Photos match" }));
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(approveReturn).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("cannot send without a reason", () => {
+  it("says when the request came after the window", () => {
+    render(<ReturnActions id={15} number="RMA-15" status="requested" goodsRequired={null} preferredResolution="refund" finalResolution={null} role="staff" inWindow={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Request approval · decide return" }));
+    expect(within(screen.getByRole("alertdialog")).getByText("Requested after the Refund window closed")).toBeTruthy();
+  });
+
+  it("cannot send without the photo check and a note", () => {
     actions();
-    fireEvent.click(screen.getByRole("button", { name: "Request approval…" }));
-    expect((within(screen.getByRole("alertdialog")).getByRole("button", { name: "Send request" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Request approval · decide return" }));
+    const dialog = screen.getByRole("alertdialog");
+    const send = within(dialog).getByRole("button", { name: "Send request" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Note for the Manager/), { target: { value: "Photos match" } });
+    expect(send.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByLabelText("No, or it is unclear"));
+    expect(send.disabled).toBe(false);
+  });
+
+  it("says why when the request is refused", async () => {
+    vi.mocked(requestReturnDecision).mockResolvedValue({ ok: false, reason: "A Manager was already asked to decide this Return." });
+    actions();
+    fireEvent.click(screen.getByRole("button", { name: "Request approval · decide return" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.click(within(dialog).getByLabelText("Yes, the photo shows it"));
+    fireEvent.change(within(dialog).getByLabelText(/Note for the Manager/), { target: { value: "Photos match" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("shows Waiting for approval, not the button, once requested", () => {
     actions([request()]);
     expect(screen.getByText("Waiting for approval")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Request approval…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Request approval · decide return" })).toBeNull();
   });
 
   it("lets Staff finish an approved refund with that approval", async () => {
@@ -192,5 +218,14 @@ describe("Approvals by type", () => {
     list([idCheck], "admin");
     expect(screen.getByRole("link", { name: "View" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Review" })).toBeNull();
+  });
+});
+
+describe("a decide-return request on the Approvals list", () => {
+  it("sends the Manager to the Return to pick the outcome, with no Approve button", () => {
+    render(<ApprovalsList requests={[request({ action: "return.decide", reason: "Photos match" })]} role="manager" now={NOW} />);
+    expect(screen.getByText(/Decide return/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Return to decide" }).getAttribute("href")).toBe("/returns/15");
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
   });
 });

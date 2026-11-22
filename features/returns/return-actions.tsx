@@ -18,8 +18,9 @@ import { useShownStatus, type SavedProof } from "./optimistic-status";
 import { REFUND_FIELDS, REFUND_METHODS, refundMethodLabel, TRANSFER_VERIFIED, todayInManila } from "./refund-record";
 import { saveRefundProof } from "./refund-proof-actions";
 import type { ShopRole } from "@/lib/portal/roles";
-import { approveReturn, declineReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "./actions";
-import { RequestApproval } from "./request-approval";
+import { approveReturn, declineReturn, decideReturn, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced, type ReturnOutcome } from "./actions";
+import type { ReplacementStock } from "./replacement-stock";
+import { RequestApproval, RequestDecision } from "./request-approval";
 import type { ReturnResolution, ReturnStatus } from "./returns";
 
 type Step = "approve" | "decline" | "receive" | "refund" | "replace";
@@ -315,6 +316,115 @@ function RefundSteps({ id, number, approvalId, context, canIncludeFee, showRefun
   );
 }
 
+/** Where Staff's check of a Requested Return stands, for the Manager deciding it. */
+function StaffCheck({ request }: { request: ApprovalView }) {
+  const check = request.check;
+  return (
+    <div className="space-y-1 rounded-lg border border-[#e4e4e7] px-3 py-2.5 text-sm text-[#18181b]">
+      <p className="text-[13px] font-medium text-[#27272a]">Checked by {request.requesterName}</p>
+      {check && (
+        <>
+          <p>{check.inWindow ? "✓ Requested within the Refund window" : "✗ Requested after the Refund window closed"}</p>
+          <p>{check.photoSupportsReason ? "✓ The photo supports the reason" : "✗ The photo does not clearly support the reason"}</p>
+        </>
+      )}
+      {request.reason && <p className="text-[#52525b]">“{request.reason}”</p>}
+    </div>
+  );
+}
+
+const OUTCOMES: [ReturnOutcome, string][] = [["reject", "Reject"], ["refund", "Refund"], ["replacement", "Replacement"]];
+
+/**
+ * Figma "Decide return": the Manager picks one outcome. Reject shows the reason to the Customer; Refund goes back the way the
+ * Customer paid; Replacement is offered only when the items are in stock. Never optimistic: a Manager's decision waits for the server.
+ */
+function DecideReturn({ id, number, preferred, paymentMethod, stock, request }: {
+  id: number; number: string; preferred: ReturnResolution; paymentMethod?: string; stock?: ReplacementStock; request?: ApprovalView;
+}) {
+  const short = stock?.state === "short";
+  const [outcome, setOutcome] = useState<ReturnOutcome | null>(preferred === "replacement" && short ? null : preferred);
+  const [goodsRequired, setGoodsRequired] = useState<boolean | null>(null);
+  const [reason, setReason] = useState("");
+  const destination = paymentMethod ? refundDestination(paymentMethod) : null;
+  const ready = outcome === "reject" ? reason.trim().length > 0 : outcome !== null && goodsRequired !== null;
+
+  return (
+    <OrderActionDialog
+      trigger="Decide return"
+      title={`Decide ${number}`}
+      description="Reject, refund or replace. The store tells the Customer."
+      confirm={outcome === "reject" ? "Reject Return" : outcome === "replacement" ? "Approve replacement" : "Approve refund"}
+      busy="Saving…"
+      tone={outcome === "reject" ? "destructive" : "primary"}
+      disabled={!ready}
+      run={() => decideReturn(id, outcome === "reject" ? { outcome, reason } : { outcome: outcome as ReturnOutcome, goodsRequired: goodsRequired as boolean })}
+      successMessage={outcome === "reject" ? `${number} rejected.` : outcome === "replacement" && goodsRequired === false ? `${number}: Replacement Order created.` : `${number} approved.`}
+    >
+      {request && <StaffCheck request={request} />}
+      <fieldset className="space-y-2">
+        <legend className="text-[13px] font-medium text-foreground">Decision <span className="text-[#dc2626]">*</span></legend>
+        {OUTCOMES.map(([value, label]) => {
+          const blocked = value === "replacement" && short;
+          const hint = value === "reject" ? "The reason is shown to the Customer."
+            : value === "refund" ? `Paid back${destination ? ` by ${destination}` : " the way the Customer paid"}.`
+            : short ? `Out of stock: ${stock.items.map((item) => item.size ? `${item.product} (${item.size})` : item.product).join(", ")}.`
+            : stock?.state === "unknown" ? "Stock could not be checked now; the store checks it when you confirm." : "A ₱0 Order linked to this one, packed and dispatched like any Order.";
+          return (
+            <label key={value} className={`flex items-start gap-2 ${blocked ? "text-[#a1a1aa]" : "text-[#1f1a2e]"}`}>
+              <input type="radio" className="mt-1" name={`outcome-${id}`} disabled={blocked} checked={outcome === value} onChange={() => setOutcome(value)} />
+              <span>
+                <span className="block font-medium">{label}{value === preferred && <span className="ml-1 text-xs font-normal text-[#6e6680]">(Customer&apos;s preference)</span>}</span>
+                <span className="block text-xs text-[#6e6680]">{hint}</span>
+              </span>
+            </label>
+          );
+        })}
+      </fieldset>
+      {outcome === "reject" && (
+        <div className="space-y-1.5">
+          <Label htmlFor={`reject-reason-${id}`} className="text-[13px] font-medium text-foreground">Reason, shown to the Customer <span className="text-[#dc2626]">*</span></Label>
+          <Textarea id={`reject-reason-${id}`} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why this Return is rejected" />
+        </div>
+      )}
+      {(outcome === "refund" || outcome === "replacement") && (
+        <fieldset className="space-y-2">
+          <legend className="text-[13px] font-medium text-foreground">Must the goods come back? <span className="text-[#dc2626]">*</span></legend>
+          {([[true, "Yes, inspect them before finishing"], [false, outcome === "refund" ? "No, refund without the goods" : "No, send the replacement now"]] as const).map(([value, label]) => (
+            <label key={String(value)} className="flex items-center gap-2 text-[#1f1a2e]">
+              <input type="radio" name={`decide-goods-${id}`} checked={goodsRequired === value} onChange={() => setGoodsRequired(value)} />{label}
+            </label>
+          ))}
+        </fieldset>
+      )}
+    </OrderActionDialog>
+  );
+}
+
+/** Above the Approval limit the CEO gives final approval before any money is sent, so this asks first and needs no proof. */
+function AskCeo({ id, number, amount }: { id: number; number: string; amount: number }) {
+  const [note, setNote] = useState("");
+  return (
+    <OrderActionDialog
+      trigger="Ask the CEO for final approval"
+      title={`Final approval for ${number}`}
+      description={`This refund is ${formatPesos(amount)}, over the Approval limit. Send nothing to the Customer until the CEO approves.`}
+      confirm="Send to the CEO" busy="Sending…"
+      disabled={!note.trim()}
+      run={async () => {
+        const result = await markReturnRefunded(id, undefined, { reason: note });
+        return !result.ok && result.reason === "Waiting for approval" ? { ok: true as const } : result;
+      }}
+      successMessage="Sent to the CEO. Refund once they approve."
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor={`ceo-note-${id}`} className="text-[13px] font-medium text-foreground">Note for the CEO <span className="text-[#dc2626]">*</span></Label>
+        <Textarea id={`ceo-note-${id}`} value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+    </OrderActionDialog>
+  );
+}
+
 /** The Return's next steps, each behind a confirm dialog; refusals and uncertain answers surface as an error toast. */
 export function ReturnActions({
   id,
@@ -326,6 +436,10 @@ export function ReturnActions({
   role = "manager",
   requests = [],
   refund,
+  inWindow = true,
+  stock,
+  needsCeo = false,
+  reasonLabel = "",
 }: {
   id: number;
   number: string;
@@ -338,6 +452,14 @@ export function ReturnActions({
   requests?: ApprovalView[];
   /** What the Issue refund dialog shows; without it the dialog is the plain confirmation. */
   refund?: RefundContext;
+  /** Whether the Customer asked inside the Refund window, worked out on the server. */
+  inWindow?: boolean;
+  /** Whether a replacement can be sent from stock; undefined when not read. */
+  stock?: ReplacementStock;
+  /** The refund is over the Approval limit, so the CEO approves before any money is sent. */
+  needsCeo?: boolean;
+  /** The Customer's reason, as Staff read it. */
+  reasonLabel?: string;
 }) {
   const { show } = useShownStatus(status);
   // Only a refund whose approval is already decided shows at once. A Manager's or the CEO's own decision waits for the server.
@@ -347,6 +469,21 @@ export function ReturnActions({
   const waiting = requests.find((r) => WAITING.includes(r.status));
   const ready = (action: string) => requests.find((r) => r.status === "approved" && r.action === action)?.id;
   const gated = steps.filter((s) => s !== "receive");
+  const decideRequest = requests.find((r) => r.action === "return.decide" && WAITING.includes(r.status));
+  if (role === "staff" && status === "requested") {
+    // Staff never pick the outcome. An older approved step request can still be carried out.
+    const finishable = gated.filter((s) => ready(`return.${s}`));
+    return (
+      <div className="flex flex-col items-end gap-2">
+        {waiting && <span className="rounded-full bg-[#fdf1d8] px-3 py-1 text-xs font-medium text-[#8a5a00]">{waitingLabel(waiting.status)}</span>}
+        <div className="flex items-center gap-2">
+          {finishable.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} approvalId={ready("return.approve")} />}
+          {finishable.includes("decline") && <Decline id={id} number={number} approvalId={ready("return.decline")} />}
+          {!waiting && finishable.length === 0 && <RequestDecision id={id} number={number} inWindow={inWindow} reason={reasonLabel} />}
+        </div>
+      </div>
+    );
+  }
   if (role === "staff") {
     const finishable = gated.filter((s) => ready(`return.${s}`));
     return (
@@ -370,10 +507,14 @@ export function ReturnActions({
     );
   }
 
+  const ceoApproved = ready("return.refund");
+  const ceoWaiting = requests.find((r) => r.action === "return.refund" && WAITING.includes(r.status));
+  const askCeo = steps.includes("refund") && needsCeo && !ceoApproved;
   return (
-    <div className="flex items-center gap-2">
-      {steps.includes("decline") && <Decline id={id} number={number} approvalId={ready("return.decline")} />}
-      {steps.includes("approve") && <Approve id={id} number={number} preferred={preferredResolution} approvalId={ready("return.approve")} />}
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {decideRequest && <span className="rounded-full bg-[#fdf1d8] px-3 py-1 text-xs font-medium text-[#8a5a00]">{decideRequest.requesterName} asked you to decide</span>}
+      {askCeo && ceoWaiting && <span className="rounded-full bg-[#fdf1d8] px-3 py-1 text-xs font-medium text-[#8a5a00]">{waitingLabel(ceoWaiting.status)}</span>}
+      {status === "requested" && <DecideReturn id={id} number={number} preferred={preferredResolution} paymentMethod={refund?.paymentMethod} stock={stock} request={decideRequest} />}
       {steps.includes("receive") && (
         <OrderActionDialog
           trigger="Mark goods received"
@@ -385,16 +526,17 @@ export function ReturnActions({
           successMessage={`${number} marked goods received.`}
         />
       )}
-      {steps.includes("refund") && <RefundSteps id={id} number={number} approvalId={ready("return.refund")} context={refund} canIncludeFee showRefunded={ready("return.refund") ? showRefunded : undefined} />}
+      {askCeo && !ceoWaiting && <AskCeo id={id} number={number} amount={refund?.amount ?? 0} />}
+      {steps.includes("refund") && !askCeo && <RefundSteps id={id} number={number} approvalId={ceoApproved} context={refund} canIncludeFee showRefunded={ceoApproved ? showRefunded : undefined} />}
       {steps.includes("replace") && (
         <OrderActionDialog
-          trigger="Mark replaced"
-          title={`Mark ${number} replaced?`}
-          description="Only confirm once the replacement has been sent to the Customer."
-          confirm="Mark replaced"
+          trigger="Send replacement"
+          title={`Send a replacement for ${number}?`}
+          description={stock?.state === "short" ? "Not enough stock right now; the store refuses until it is back." : "Creates a ₱0 Order linked to this one. It reserves stock and goes through Fulfilment like any Order."}
+          confirm="Create Replacement Order"
           busy="Saving…"
           run={() => markReturnReplaced(id, ...withApproval(ready("return.replace")))}
-          successMessage={`${number} marked replaced.`}
+          successMessage={`${number}: Replacement Order created.`}
         />
       )}
     </div>

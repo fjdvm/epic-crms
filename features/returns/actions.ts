@@ -23,6 +23,7 @@ import { refundMethodLabel, TRANSFER_VERIFIED } from "./refund-record";
 import type { ProofCorrection } from "@/features/orders/proof-read";
 import { refundFacts } from "./refund-facts";
 import { randomUUID } from "node:crypto";
+import { loadReplacementStock, shortStockReason } from "./replacement-stock";
 import { loadReturns, loadReturnDetail, loadReturnStats, type ReturnQuery } from "./returns";
 
 /** Each endpoint proves Returns access itself, before opening a database connection. */
@@ -96,6 +97,12 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       refundFee = checked.deliveryFeeInCentavos;
     }
     if (decision.status === "approved") decision = { ...decision, finalResolution: decision.finalResolution ?? current.preferred_resolution };
+    // A replacement is only offered when the IMS has every item. Stock that could not be read is left to the storefront,
+    // which checks and reserves it when the Replacement Order is made.
+    if ((decision.status === "approved" && decision.finalResolution === "replacement") || decision.status === "replaced") {
+      const stock = await loadReplacementStock(database, id);
+      if (stock.state === "short") return { ok: false, reason: shortStockReason(stock) };
+    }
     const execute = async (): Promise<ReturnChangeResult> => {
     if (decision.status === "refunded") {
       if (!draft) return { ok: false, reason: "Save the refund proof and details first, then check the Proof reader's findings." };
@@ -176,6 +183,12 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
   } catch {
     return { ok: false, reason: "Return is temporarily unavailable." };
   }
+  if (result.ok && (decision.status === "approved" || decision.status === "declined")) {
+    // The Manager picked the outcome, so the Staff request asking them to decide this Return is done.
+    const outcome = decision.status === "declined" ? "Rejected" : decision.finalResolution === "replacement" ? "Replacement" : "Refund";
+    await approvals().closeRequests(staff, RETURNS_MODULE, "return.decide", String(id), `${outcome} for RMA-${id}`)
+      .catch((error) => console.error(`The decide request for RMA-${id} could not be closed`, error));
+  }
   if (result.ok) {
     revalidatePath("/(app)/returns", "layout");
     revalidatePath(`/orders/${orderId}`);
@@ -190,6 +203,64 @@ export async function approveReturn(id: number, goodsRequired = false, finalReso
 
 export async function declineReturn(id: number, reason: string, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
   return decide(id, { status: "declined", declineReason: reason }, undefined, options);
+}
+
+export type ReturnOutcome = "reject" | "refund" | "replacement";
+
+/**
+ * A Manager picks one outcome for a Requested Return: reject it with a reason the Customer sees, refund it to the way the
+ * Customer paid, or send a replacement (only when in stock). When the goods need not come back, a replacement is made at
+ * once as a linked ₱0 Order; a refund then goes on to the refund steps. Staff cannot decide; they use `requestReturnDecision`.
+ */
+export async function decideReturn(id: number, choice: { outcome: ReturnOutcome; goodsRequired?: boolean; reason?: string }): Promise<ReturnChangeResult | ApprovalResult> {
+  const staff = await requireModule(RETURNS_MODULE);
+  const role = shopRole(staff.role);
+  if (role === "staff") return { ok: false, reason: "A Manager decides Returns. Use Request approval · decide return." };
+  if (role !== "manager") return { ok: false, reason: READ_ONLY_REASON };
+  const outcome = choice?.outcome;
+  if (outcome === "reject") return declineReturn(id, typeof choice.reason === "string" ? choice.reason : "");
+  if (outcome !== "refund" && outcome !== "replacement") return { ok: false, reason: "Choose reject, refund or replacement." };
+  if (typeof choice.goodsRequired !== "boolean") return { ok: false, reason: "Say whether the goods must come back." };
+  const approved = await approveReturn(id, choice.goodsRequired, outcome);
+  if (!approved.ok || outcome === "refund" || choice.goodsRequired) return approved;
+  const replaced = await markReturnReplaced(id);
+  return replaced.ok ? replaced : { ok: false, reason: `${replaced.reason} The Return is approved for a replacement; send it from the Return when it can be made.` };
+}
+
+/**
+ * Staff check a Requested Return (made inside the window, and whether the photo supports the reason) and ask a Manager to
+ * decide it. The window is worked out here from the storefront's times, never taken from the browser. Never optimistic.
+ */
+export async function requestReturnDecision(id: number, check: { photoSupportsReason: boolean; note: string }): Promise<{ ok: true; approvalId: string } | { ok: false; reason: string }> {
+  const staff = await requireModule(RETURNS_MODULE);
+  if (shopRole(staff.role) !== "staff") return { ok: false, reason: shopRole(staff.role) === "manager" ? "Managers decide the Return directly." : READ_ONLY_REASON };
+  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
+  if (typeof check?.photoSupportsReason !== "boolean") return { ok: false, reason: "Say whether the photo supports the reason." };
+  const note = typeof check.note === "string" ? check.note.trim() : "";
+  if (!note) return { ok: false, reason: "Enter a note for the Manager." };
+  if (note.length > 1000) return { ok: false, reason: "Keep the note to 1,000 characters." };
+  try {
+    const [current] = await database()<{ status: string; in_window: boolean | null }[]>`
+      select r.status, r.requested_at < o.delivered_at + (case when to_jsonb(o)->>'refund_window_extended_at' is null then 24 else 48 end) * interval '1 hour' as in_window
+      from public.order_returns r join public.orders o on o.id = r.order_id where r.id = ${id}`;
+    if (!current) return { ok: false, reason: "Return was not found." };
+    if (current.status !== "requested") return { ok: false, reason: "Return already changed; refresh it before trying again." };
+    const requests = await approvals().list(staff, RETURNS_MODULE);
+    if (requests.some((r) => r.action === "return.decide" && r.target_id === String(id) && r.status === "waiting-manager")) {
+      return { ok: false, reason: "A Manager was already asked to decide this Return." };
+    }
+    const [amount] = await database()`select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text as selling
+      from public.order_return_items where return_id = ${id}`;
+    const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "return.decide", targetId: String(id),
+      payload: { inWindow: current.in_window === true, photoSupportsReason: check.photoSupportsReason }, amountInCentavos: Number(amount.selling) },
+      { reason: note }, async () => ({ ok: false as const, reason: "A Manager decides Returns." }));
+    if (result.ok || !("approvalId" in result) || !result.approvalId) return { ok: false, reason: result.reason };
+    revalidatePath("/(app)/returns", "layout");
+    revalidatePath("/approvals");
+    return { ok: true, approvalId: result.approvalId };
+  } catch {
+    return { ok: false, reason: "Return is temporarily unavailable." };
+  }
 }
 
 export async function markReturnGoodsReceived(id: number): Promise<ReturnChangeResult | ApprovalResult> {

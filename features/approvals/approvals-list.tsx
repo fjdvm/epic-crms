@@ -118,11 +118,13 @@ export function ApprovalsList({ requests, role, now, initialKind = "all" }: { re
                   </div>
                   <div className="flex items-center gap-2">
                     <p className="min-w-0 flex-1 text-xs text-[#71717a]">{idCheck ? request.reason : `“${request.reason}”`}</p>
-                    {step && request.requesterId && <Decide request={request} role={step} onOptimistic={status => setStatus({ id: request.id, status })} />}
+                    {step && request.requesterId && request.action !== "return.decide" && <Decide request={request} role={step} onOptimistic={status => setStatus({ id: request.id, status })} />}
+                    {/* The Manager picks a Return's outcome on the Return itself, where the evidence is. */}
+                    {step && request.action === "return.decide" && <Link href={target.href} prefetch className="shrink-0 rounded-lg bg-[#5b2a86] px-3.5 py-[7px] text-sm font-medium text-white">Open Return to decide</Link>}
                     {idCheck && <Link href={target.href} prefetch className="shrink-0 rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-[7px] text-sm font-medium text-[#18181b]">{request.status === "waiting-id" && mayReview ? "Review" : "View"}</Link>}
                     {!step && !idCheck && WAITING.includes(request.status) && <span className="text-xs font-medium text-[#b45309]">{waitingLabel(request.status)}</span>}
                     {request.status === "declined" && <span className="text-xs text-[#9a3412]">Declined{request.declineReason ? `: ${request.declineReason}` : ""}</span>}
-                    {!WAITING.includes(request.status) && request.status !== "declined" && <span className="text-xs text-[#1e6b3a]">Approved{request.ceoName ? ` by ${request.ceoName}` : request.managerName ? ` by ${request.managerName}` : ""}</span>}
+                    {!WAITING.includes(request.status) && request.status !== "declined" && <span className="text-xs text-[#1e6b3a]">{request.action === "return.decide" ? "Decided" : "Approved"}{request.ceoName ? ` by ${request.ceoName}` : request.managerName ? ` by ${request.managerName}` : ""}</span>}
                   </div>
                 </li>
               );

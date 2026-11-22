@@ -102,3 +102,30 @@ Validation covers the approval default/override, legal and illegal moves for bot
 Resolutions, Replaced finality, proof validation and upload/Link failures, the real gateway
 protocol, missing/mismatched confirmations, Temporary proof retention after refusal/lost
 acknowledgement, Portal access revocation, read fields and unchanged Total spent.
+
+## Decide return: Staff check, Manager decides
+
+Staff never pick a Return's decision. On a Requested Return they use **Request approval · decide return**
+(`requestReturnDecision(id, { photoSupportsReason, note })`). CREOMS works out whether the request came inside the Refund
+window from the storefront's `requested_at` and `delivered_at` (48 hours once extended), never from the browser, and stores
+`{ inWindow, photoSupportsReason }` on a `return.decide` approval request with the note as its reason. One waiting request
+per Return; only Staff send it.
+
+A Manager decides on the Return itself with `decideReturn(id, { outcome, goodsRequired?, reason? })`:
+
+| Decision | What happens |
+| --- | --- |
+| `reject` | `declineReturn` with the reason, which the Customer sees. |
+| `refund` | `approveReturn(id, goodsRequired, "refund")`. The refund steps follow; over the Approval limit the Manager first asks the CEO (`markReturnRefunded(id, undefined, { reason })`) and uploads no proof until the CEO approves. |
+| `replacement` | `approveReturn(id, goodsRequired, "replacement")`. With no goods to come back, `markReturnReplaced` then creates the ₱0 Replacement Order at once. |
+
+The `return.decide` request is closed (`completed`, under the Manager's name) by any successful Manager approve or decline,
+and the requester is notified through the approval outbox. `decideApproval` refuses a `return.decide` request: the
+Approvals list links to the Return instead.
+
+**Stock.** `loadReplacementStock` (`features/returns/replacement-stock.ts`) maps each Return line to its Size through the
+original Order's `stock_reservations` lines, the same way the storefront does, and reads the IMS through `readStock`. A
+known shortage refuses approving or sending a replacement with the items named. Stock that cannot be read (IMS down, no
+Reservation) is left to the storefront, which checks and reserves when the Replacement Order is made.
+
+Tests: `tests/return-decide.test.ts`, `tests/role-approvals-ui.test.tsx`, `tests/return-detail-views.test.tsx`.

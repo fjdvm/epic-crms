@@ -16,6 +16,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/features/returns/actions", () => ({
   approveReturn: vi.fn(),
   declineReturn: vi.fn(),
+  decideReturn: vi.fn(),
+  requestReturnDecision: vi.fn(),
   markReturnGoodsReceived: vi.fn(),
   markReturnRefunded: vi.fn(),
   markReturnReplaced: vi.fn(),
@@ -29,7 +31,7 @@ vi.mock("sonner", () => ({ toast }));
 
 import { resendStatusEmail } from "@/features/orders/actions";
 import { saveRefundProof } from "@/features/returns/refund-proof-actions";
-import { approveReturn, changeRefundDestination, declineReturn, extendRefundWindow, revealRefundDestination, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
+import { approveReturn, changeRefundDestination, declineReturn, decideReturn, extendRefundWindow, revealRefundDestination, markReturnGoodsReceived, markReturnRefunded, markReturnReplaced } from "@/features/returns/actions";
 
 /** Every button except the Back navigation, which is not an action. */
 const NAV = new Set(["Orders", "Returns", "Tickets"]);
@@ -129,7 +131,7 @@ describe("the Return detail", () => {
   });
 
   it.each([
-    ["requested", null, ["Decline", "Approve"]],
+    ["requested", null, ["Decide return"]],
     ["approved", true, ["Mark goods received"]],
     ["approved", false, ["Save refund proof"]],
     ["goods received", true, ["Save refund proof", "Save inspection"]],
@@ -145,11 +147,11 @@ describe("the Return detail", () => {
 
   it("offers Mark replaced, not Mark refunded, once Staff chose a replacement", () => {
     view(detail({ status: "approved", goodsRequired: false, finalResolution: "replacement" }));
-    expect(buttons()).toEqual(["Mark replaced"]);
+    expect(buttons()).toEqual(["Send replacement"]);
     cleanup();
 
     view(detail({ status: "goods received", goodsRequired: true, finalResolution: "replacement" }));
-    expect(buttons()).toEqual(["Mark replaced", "Save inspection"]);
+    expect(buttons()).toEqual(["Send replacement", "Save inspection"]);
   });
 
   it("shows the preferred and final Resolution", () => {
@@ -201,85 +203,116 @@ describe("the Return detail", () => {
   });
 });
 
-describe("approving", () => {
-  const open = () => {
-    view(detail());
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+describe("deciding a Return", () => {
+  const open = (overrides: Partial<ReturnDetail> = {}, stock?: import("@/features/returns/replacement-stock").ReplacementStock) => {
+    render(<ReturnDetailView detail={detail(overrides)} imageUrls={[]} stock={stock} />);
+    fireEvent.click(screen.getByRole("button", { name: "Decide return" }));
 
     return screen.getByRole("alertdialog");
   };
+  const confirm = (dialog: HTMLElement, name: RegExp) => within(dialog).getByRole("button", { name }) as HTMLButtonElement;
 
-  it("cannot be confirmed until Staff say whether the goods must come back", () => {
+  it("cannot be confirmed until the Manager says whether the goods must come back", () => {
     const dialog = open();
 
-    expect((within(dialog).getByRole("button", { name: "Approve Return" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(approveReturn).not.toHaveBeenCalled();
+    expect(confirm(dialog, /Approve refund/).disabled).toBe(true);
+    expect(decideReturn).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["Yes, the Customer returns the goods", true],
+    ["Yes, inspect them before finishing", true],
     ["No, refund without the goods", false],
-  ])("sends the choice %s", async (label, goodsRequired) => {
-    vi.mocked(approveReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
+  ])("sends a refund with the choice %s", async (label, goodsRequired) => {
+    vi.mocked(decideReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
     const dialog = open();
 
     fireEvent.click(within(dialog).getByLabelText(label));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
+    fireEvent.click(confirm(dialog, /Approve refund/));
 
-    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, goodsRequired, "refund"));
+    await waitFor(() => expect(decideReturn).toHaveBeenCalledWith(15, { outcome: "refund", goodsRequired }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15 approved."));
   });
 
-  it.each(["refund", "replacement"] as const)("defaults the Resolution to the Customer's preference (%s)", async (preferred) => {
-    vi.mocked(approveReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
-    view(detail({ preferredResolution: preferred }));
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    const dialog = screen.getByRole("alertdialog");
+  it.each(["refund", "replacement"] as const)("starts on the Customer's preference (%s)", (preferred) => {
+    const dialog = open({ preferredResolution: preferred });
 
     expect((within(dialog).getByLabelText(new RegExp(`^${preferred}`, "i")) as HTMLInputElement).checked).toBe(true);
-    fireEvent.click(within(dialog).getByLabelText("No, refund without the goods"));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
-
-    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, false, preferred));
   });
 
-  it("sends a Resolution that differs from the preference", async () => {
-    vi.mocked(approveReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "approved" } });
-    const dialog = open();
+  it("sends a replacement now when the goods need not come back", async () => {
+    vi.mocked(decideReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "replaced" } });
+    const dialog = open({}, { state: "available" });
 
     fireEvent.click(within(dialog).getByLabelText(/^replacement/i));
-    fireEvent.click(within(dialog).getByLabelText("Yes, the Customer returns the goods"));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Approve Return" }));
+    fireEvent.click(within(dialog).getByLabelText("No, send the replacement now"));
+    fireEvent.click(confirm(dialog, /Approve replacement/));
 
-    await waitFor(() => expect(approveReturn).toHaveBeenCalledWith(15, true, "replacement"));
+    await waitFor(() => expect(decideReturn).toHaveBeenCalledWith(15, { outcome: "replacement", goodsRequired: false }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15: Replacement Order created."));
+  });
+
+  it("does not offer a replacement when an item is out of stock, and says which", () => {
+    const dialog = open({ preferredResolution: "replacement" }, { state: "short", items: [{ product: "Halaya tub", size: "L" }] });
+    const replacement = within(dialog).getByLabelText(/^replacement/i) as HTMLInputElement;
+
+    expect(replacement.disabled).toBe(true);
+    expect(replacement.checked).toBe(false);
+    expect(within(dialog).getByText("Out of stock: Halaya tub (L).")).toBeTruthy();
+  });
+
+  it("rejects only with a reason, which is shown to the Customer", async () => {
+    vi.mocked(decideReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "declined" } });
+    const dialog = open();
+
+    fireEvent.click(within(dialog).getByLabelText(/^reject/i));
+    const reject = confirm(dialog, /Reject Return/);
+    expect(reject.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Reason, shown to the Customer/), { target: { value: "   " } });
+    expect(reject.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Reason, shown to the Customer/), { target: { value: "Normal wear" } });
+    fireEvent.click(reject);
+
+    await waitFor(() => expect(decideReturn).toHaveBeenCalledWith(15, { outcome: "reject", reason: "Normal wear" }));
+    expect(approveReturn).not.toHaveBeenCalled();
+    expect(declineReturn).not.toHaveBeenCalled();
+  });
+
+  it("shows what Staff checked when they asked", () => {
+    render(<ReturnDetailView detail={detail()} imageUrls={[]} requests={[{ id: "r1", action: "return.decide", targetId: "15", amountInCentavos: 0, limitInCentavos: 0,
+      reason: "Seal is broken in the photo", requesterId: "ana", requesterName: "Ana Reyes", status: "waiting-manager", requestedAt: new Date().toISOString(),
+      managerName: null, ceoName: null, declineReason: null, check: { inWindow: true, photoSupportsReason: true } }]} />);
+    expect(screen.getByText("Ana Reyes asked you to decide")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Decide return" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("✓ Requested within the Refund window")).toBeTruthy();
+    expect(within(dialog).getByText("✓ The photo supports the reason")).toBeTruthy();
+    expect(within(dialog).getByText("“Seal is broken in the photo”")).toBeTruthy();
   });
 });
 
-describe("declining", () => {
-  const open = () => {
-    view(detail());
-    fireEvent.click(screen.getByRole("button", { name: "Decline" }));
+describe("a refund over the Approval limit", () => {
+  it("asks the CEO first, with no proof, and only then offers the refund steps", async () => {
+    vi.mocked(markReturnRefunded).mockResolvedValue({ ok: false, reason: "Waiting for approval", status: "waiting-ceo", approvalId: "a1" });
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo />);
+    expect(buttons()).toEqual(["Ask the CEO for final approval"]);
+    fireEvent.click(screen.getByRole("button", { name: "Ask the CEO for final approval" }));
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/Note for the CEO/), { target: { value: "Whole order spoiled" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send to the CEO" }));
 
-    return screen.getByRole("alertdialog");
-  };
+    await waitFor(() => expect(markReturnRefunded).toHaveBeenCalledWith(15, undefined, { reason: "Whole order spoiled" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Sent to the CEO. Refund once they approve."));
+    cleanup();
 
-  it("cannot be confirmed without a reason, even a blank one", () => {
-    const dialog = open();
-    const confirm = within(dialog).getByRole("button", { name: "Decline Return" }) as HTMLButtonElement;
+    const approved = { id: "a1", action: "return.refund" as const, targetId: "15", amountInCentavos: 600000, limitInCentavos: 500000, reason: "Whole order spoiled",
+      requesterId: "mario", requesterName: "Mario", status: "approved", requestedAt: new Date().toISOString(), managerName: "Mario", ceoName: "Owner", declineReason: null };
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo requests={[{ ...approved, status: "waiting-ceo" }]} />);
+    expect(screen.getByText("Waiting for the CEO's final approval")).toBeTruthy();
+    expect(buttons()).toEqual([]);
+    cleanup();
 
-    expect(confirm.disabled).toBe(true);
-    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "   " } });
-    expect(confirm.disabled).toBe(true);
-  });
-
-  it("sends the reason", async () => {
-    vi.mocked(declineReturn).mockResolvedValue({ ok: true, return: { id: 15, status: "declined" } });
-    const dialog = open();
-
-    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Normal wear" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Decline Return" }));
-
-    await waitFor(() => expect(declineReturn).toHaveBeenCalledWith(15, "Normal wear"));
+    render(<ReturnDetailView detail={detail({ status: "approved", goodsRequired: false, finalResolution: "refund" })} imageUrls={[]} needsCeo requests={[approved]} />);
+    expect(buttons()).toEqual(["Save refund proof"]);
   });
 });
 
@@ -383,12 +416,12 @@ describe("goods received and refunded", () => {
     vi.mocked(markReturnReplaced).mockResolvedValue({ ok: true, return: { id: 15, status: "replaced" } });
     view(detail({ status: "approved", goodsRequired: false, finalResolution: "replacement" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark replaced" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send replacement" }));
     expect(markReturnReplaced).not.toHaveBeenCalled();
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark replaced" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Create Replacement Order" }));
 
     await waitFor(() => expect(markReturnReplaced).toHaveBeenCalledWith(15));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15 marked replaced."));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("RMA-15: Replacement Order created."));
   });
 
   it("shows a refusal as an error and never as success", async () => {
@@ -477,7 +510,7 @@ describe("Return detail for a Deleted Customer", () => {
     render(<ReturnDetailView detail={detail({ customer: { id: "c1", name: "Deleted customer", deleted: true } })} imageUrls={[]} />);
     expect(screen.getByTestId("deleted-customer-tag").textContent).toBe("Deleted customer");
     expect(screen.queryByRole("link", { name: "Deleted customer" })).toBeNull();
-    expect(screen.getByRole("button", { name: /approve/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Decide return" })).toBeTruthy();
   });
 });
 
