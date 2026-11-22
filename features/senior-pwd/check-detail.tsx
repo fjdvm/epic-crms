@@ -2,7 +2,7 @@
 
 import { BackButton } from "@/components/shared/back-button";
 
-import { Check, IdCard, Lock, Sparkles } from "lucide-react";
+import { Check, IdCard, Lock, ScanSearch, Sparkles, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ImageViewer } from "@/components/image-viewer";
@@ -13,6 +13,7 @@ import { APPROVALS_ID_CHECKS } from "@/lib/portal/pages";
 import type { ShopRole } from "@/lib/portal/roles";
 
 import { approveVerification, loadVerificationPhoto } from "./actions";
+import { ID_FLAG_TEXT, type IdReadState } from "./id-read-types";
 import { nameMatches, parseIdText } from "./id-reading";
 import { readIdPhoto } from "./read-id-photo";
 import { DecidedActions, DeclineDialog, ID_KIND, ReadOnlyBadge, STATUS_LABEL, SameIdWarning, StatusPill, formatUploadedFull } from "./shared";
@@ -76,7 +77,7 @@ function Hint({ children, tone = "muted" }: { children: React.ReactNode; tone?: 
  * confirm each field; they can type over any of them, and a failed reading leaves them empty. The image never leaves
  * the browser, and the ID number is never read into a field: Staff read it off the photo, and it is not stored.
  */
-function CheckFields({ v, photos, readOnly }: { v: Verification; photos: Photos | { error: string } | null; readOnly: boolean }) {
+function CheckFields({ v, photos, readOnly, canDecide }: { v: Verification; photos: Photos | { error: string } | null; readOnly: boolean; canDecide: boolean }) {
   const [reading, setReading] = useState<"idle" | "reading" | "failed" | "done">("idle");
   const [name, setName] = useState("");
   const [expiresOn, setExpiresOn] = useState("");
@@ -158,7 +159,10 @@ function CheckFields({ v, photos, readOnly }: { v: Verification; photos: Photos 
       {mismatch && <p role="alert" className="text-[13px] text-[#b91c1c]">The name on the ID does not match the account. Decline it, or correct the name.</p>}
       <p className="text-xs text-[#71717a]">The reading only fills in fields. It does not judge if the ID is genuine: you do. The image never leaves your browser.</p>
 
-      {!readOnly && (
+      {!readOnly && !canDecide && (
+        <p className="pt-1 text-[13px] font-medium text-[#5b2a86]">Request approval · a Manager approves or declines this ID.</p>
+      )}
+      {!readOnly && canDecide && (
         <div className="flex gap-2 pt-1">
           <OrderActionDialog
             trigger="Approve"
@@ -177,6 +181,55 @@ function CheckFields({ v, photos, readOnly }: { v: Verification; photos: Photos 
   );
 }
 
+/**
+ * The ID reader's findings: what it read off the photo in the background and what it flagged. They are hints for the
+ * person checking, never a decision; the ID number is never read or shown.
+ */
+export function IdReadFindings({ idRead, v }: { idRead: IdReadState; v: Verification }) {
+  const box = "space-y-2 rounded-xl border p-4 text-[13px]";
+  if (idRead === null || idRead.status === "reading") {
+    return (
+      <section aria-label="ID reader" className={`${box} border-[#e6e1ee] bg-white`}>
+        <p className="inline-flex items-center gap-1.5 font-semibold text-[#5b2a86]"><ScanSearch aria-hidden className="size-4" /> ID reader</p>
+        <p role="status" className="text-[#6e6680]">
+          {idRead === null && v.status !== "pending"
+            ? "This ID was not read before it was decided."
+            : "Reading the photo… The findings appear here when it finishes. You can check the ID meanwhile."}
+        </p>
+      </section>
+    );
+  }
+  const { findings, flags } = idRead;
+  const flagged = flags.length > 0;
+  return (
+    <section aria-label="ID reader" className={`${box} ${flagged ? "border-[#f5d38b] bg-[#fef9e7]" : "border-[#bfe5ca] bg-[#f0fbf3]"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="inline-flex items-center gap-1.5 font-semibold text-[#1f1a2e]"><ScanSearch aria-hidden className="size-4" /> ID reader</p>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${flagged ? "bg-[#fde68a] text-[#92400e]" : "bg-[#dcfce7] text-[#166534]"}`}>
+          {idRead.status === "needs-review" ? "Needs review" : flagged ? `${flags.length} to check` : "Nothing flagged"}
+        </span>
+      </div>
+      {flagged && (
+        <ul className="space-y-1 text-[#92400e]">
+          {flags.map((flag) => (
+            <li key={flag} className="flex gap-1.5"><TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />{ID_FLAG_TEXT[flag]}</li>
+          ))}
+        </ul>
+      )}
+      {findings.editNote && <p className="text-[#92400e]">Reader&apos;s note: {findings.editNote}</p>}
+      {idRead.status === "read" && (
+        <dl className="grid grid-cols-[7rem_1fr] gap-y-1 text-[#3f3a4d]">
+          <dt className="text-[#71717a]">Name read</dt><dd>{findings.name ?? "—"}</dd>
+          <dt className="text-[#71717a]">Valid until</dt><dd>{findings.expiresOn ?? "—"}</dd>
+          <dt className="text-[#71717a]">Looks like</dt>
+          <dd>{findings.idKind === "senior" || findings.idKind === "pwd" ? `${ID_KIND[findings.idKind]} ID` : findings.idKind === "other" ? "Another kind of card" : "—"}</dd>
+        </dl>
+      )}
+      <p className="text-xs text-[#71717a]">The reader only points things out. It does not approve or decline; a Manager decides.</p>
+    </section>
+  );
+}
+
 function ConfirmButton({ label, done, disabled, onClick }: { label: string; done: boolean; disabled: boolean; onClick: () => void }) {
   return (
     <button type="button" aria-label={label} disabled={disabled || done} onClick={onClick}
@@ -191,6 +244,7 @@ function Decision({ v, role }: { v: Verification; role: ShopRole | null }) {
   const rows: [string, string][] = [
     ["Decision", STATUS_LABEL[v.status]],
     ["Decided by", v.decidedByName ?? "—"],
+    ...(v.verifiedName ? [["Verified as", v.verifiedName] as [string, string]] : []),
     ["Decided on", v.decidedAt ? formatUploadedFull(v.decidedAt) : "—"],
     ...(v.status === "declined" && v.declineReason ? [["Reason", v.declineReason] as [string, string]] : []),
     ...(v.expiresOn ? [["ID valid until", v.expiresOn] as [string, string]] : []),
@@ -207,7 +261,9 @@ function Decision({ v, role }: { v: Verification; role: ShopRole | null }) {
 }
 
 /** One ID: the private photo beside the fields Staff check. Built from the Figma "Review ID" frame. */
-export function SeniorPwdCheckDetail({ verification: v, readOnly, role }: { verification: Verification; now: string; readOnly: boolean; role: ShopRole | null }) {
+export function SeniorPwdCheckDetail({ verification: v, idRead = null, readOnly, role }: {
+  verification: Verification; idRead?: IdReadState; now: string; readOnly: boolean; role: ShopRole | null;
+}) {
   const [photos, setPhotos] = useState<Photos | { error: string } | null>(v.status === "pending" ? null : { error: "The ID photo was deleted." });
   const waiting = v.status === "pending";
 
@@ -236,6 +292,7 @@ export function SeniorPwdCheckDetail({ verification: v, readOnly, role }: { veri
         </p>
       </div>
       {v.sameIdAs && <SameIdWarning holder={v.sameIdAs} />}
+      <IdReadFindings idRead={idRead} v={v} />
       <div className="grid items-start gap-5 md:grid-cols-[1.35fr_1fr]">
         {/* The photo is not shown at all once the ID is decided: it has been deleted. */}
         {waiting ? <PhotoCard v={v} photos={photos} /> : (
@@ -246,7 +303,7 @@ export function SeniorPwdCheckDetail({ verification: v, readOnly, role }: { veri
         )}
         <section aria-label="Check each field" className="min-w-0 space-y-4 rounded-xl border border-[#e6e1ee] bg-white p-5">
           <h2 className="text-[15px] font-semibold text-[#18181b]">{waiting ? "Check each field" : "Decision"}</h2>
-          {waiting ? <CheckFields v={v} photos={photos} readOnly={readOnly} /> : <Decision v={v} role={role} />}
+          {waiting ? <CheckFields v={v} photos={photos} readOnly={readOnly} canDecide={role === "manager"} /> : <Decision v={v} role={role} />}
         </section>
       </div>
     </div>

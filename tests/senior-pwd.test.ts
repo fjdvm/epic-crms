@@ -34,6 +34,7 @@ beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create schema crms`;
   await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-senior-pwd-id-reads.sql", "utf8"));
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -100,17 +101,17 @@ const everything = () => JSON.stringify({ audit: audit.mock.calls, emails: store
 
 it("approves with the ID's expiry date, deletes the photo, audits once and emails once, never with the number", async () => {
   const { id, photo } = await upload();
-  await signIn("ana");
+  await signIn("mario");
   expect(await loadVerifications()).toMatchObject({ ok: true, list: { pending: [{ id, customerName: "Maria", idType: "senior" }] } });
   const result = await approveVerification(id, future(400));
   expect(result).toEqual({ ok: true, status: "approved", photoRemoved: true });
   expect(storage.files.has(photo)).toBe(false);
   const list = await loadVerifications();
-  expect(list).toMatchObject({ ok: true, list: { pending: [], decided: [{ id, status: "approved", decidedByName: "ana Person", expiresOn: future(400), photoFileId: null }] } });
+  expect(list).toMatchObject({ ok: true, list: { pending: [], decided: [{ id, status: "approved", decidedByName: "mario Person", expiresOn: future(400), photoFileId: null }] } });
   // Only the verified mark, approver, expiry and a hash are kept; CREOMS can read no hash.
   expect(JSON.stringify(list)).not.toMatch(/hash/i);
   expect(audit.mock.calls.filter(([e]) => e.action === "pwd.approved")).toHaveLength(1);
-  expect(audit.mock.calls[0][0]).toMatchObject({ actor: { display_name: "ana Person" }, target: { type: "customer", id: "c1" } });
+  expect(audit.mock.calls[0][0]).toMatchObject({ actor: { display_name: "mario Person" }, target: { type: "customer", id: "c1" } });
   expect(storefront.verificationEmails).toHaveLength(1);
   expect(everything()).not.toContain(NUMBER);
   expect(everything()).not.toContain("123-456");
@@ -118,7 +119,7 @@ it("approves with the ID's expiry date, deletes the photo, audits once and email
 
 it("declines only with a reason, tells the Customer, and deletes the photo", async () => {
   const { id, photo } = await upload();
-  await signIn("ana");
+  await signIn("mario");
   expect(await declineVerification(id, "  ")).toEqual({ ok: false, reason: "Enter a reason for declining." });
   expect(storage.files.has(photo)).toBe(true);
   expect(await declineVerification(id, "Name does not match")).toMatchObject({ ok: true, status: "declined", photoRemoved: true });
@@ -131,7 +132,7 @@ it("declines only with a reason, tells the Customer, and deletes the photo", asy
 
 it("refuses a missing, malformed or already-past expiry date", async () => {
   const { id } = await upload();
-  await signIn("ana");
+  await signIn("mario");
   for (const bad of ["", "soon", "2026-02-30", future(-1)]) {
     expect(await approveVerification(id, bad)).toMatchObject({ ok: false });
   }
@@ -142,13 +143,13 @@ it("refuses the same ID number on a second account, whatever its spacing or case
   await db.sql`insert into customers (id, full_name, email) values ('c2','Pedro','pedro@example.com')`;
   await upload("c1", NUMBER);
   const photo = await storage.upload({ filename: "id.png", contentType: "image/png", bytes: PNG, retentionType: "temporary" });
-  expect(await storefront.submitVerification("c2", "senior", " sc-123-456-789 ", photo)).toEqual({ error: "This ID is already used on another account." });
+  expect(await storefront.submitVerification("c2", "senior", " sc-123-456-789 ", photo)).toEqual({ error: "This ID is already used by another account." });
 });
 
 it("flags an ID number the storefront saw on another account, naming who without exposing the number or hash", async () => {
   await db.sql`insert into customers (id, full_name, email) values ('c2','Pedro Cruz','pedro.cruz@example.com')`;
   const first = await upload("c1", NUMBER);
-  await signIn("ana");
+  await signIn("mario");
   await declineVerification(first.id, "Blurry photo");
   // The first holder was declined, so the same number is accepted on a second account, but flagged.
   const second = await upload("c2", NUMBER);
@@ -162,7 +163,7 @@ it("flags an ID number the storefront saw on another account, naming who without
 it("removes a photo nobody reviewed in 7 days; Staff can no longer decide and the Customer must upload again", async () => {
   const { id } = await upload();
   await db.sql`update senior_pwd_verifications set submitted_at = now() - interval '8 days'`;
-  await signIn("ana");
+  await signIn("mario");
   // Even before the storefront sweeps, a lapsed one is no longer work for Staff.
   expect(await loadVerifications()).toMatchObject({ list: { pending: [], decided: [{ id, status: "expired" }] } });
   expect(await approveVerification(id, future(30))).toMatchObject({ ok: false });
@@ -174,7 +175,7 @@ it("removes a photo nobody reviewed in 7 days; Staff can no longer decide and th
 
 it("shows the photo only while it waits for review", async () => {
   const { id, photo } = await upload();
-  await signIn("ana");
+  await signIn("mario");
   expect(await loadVerificationPhoto(id)).toEqual({ ok: true, url: expect.stringContaining(photo), backUrl: null });
   await approveVerification(id, future(30));
   expect(await loadVerificationPhoto(id)).toMatchObject({ ok: false });
@@ -192,7 +193,9 @@ it("audits opening the photo, once per Staff member per ten minutes, never with 
   expect(viewed[1].operationId).toBe(viewed[0].operationId);
   expect(everything()).not.toContain(NUMBER);
   audit.mockClear();
+  await signIn("mario");
   await approveVerification(id, future(30));
+  await signIn("ana");
   await loadVerificationPhoto(id); // refused: the photo is gone, and a refusal is not a view
   expect(audit.mock.calls.filter(([e]) => e.action === "pwd.photo_viewed")).toHaveLength(0);
 });
@@ -211,7 +214,7 @@ it("loads one verification with a masked email and the order it holds, and says 
 
 it("lapses on the expiry date and the Customer verifies again", async () => {
   const { id } = await upload();
-  await signIn("ana");
+  await signIn("mario");
   await approveVerification(id, future(30));
   await db.sql`update senior_pwd_verifications set expires_on = (now() at time zone 'Asia/Manila')::date`;
   expect(await loadVerifications()).toMatchObject({ list: { decided: [{ id, status: "expired" }] } });
@@ -219,9 +222,10 @@ it("lapses on the expiry date and the Customer verifies again", async () => {
 
 it("lets only a Manager override a decline or revoke an approval, with a reason; Staff are told to ask", async () => {
   const declined = await upload();
-  await signIn("ana");
+  await signIn("mario");
   await declineVerification(declined.id, "Blurry");
-  const ask = "Request approval from a CREOMS Manager to override or revoke a verification.";
+  await signIn("ana");
+  const ask = "Only a Manager decides a Senior/PWD ID check. Request approval from a CREOMS Manager.";
   expect(await overrideVerification(declined.id, future(60), "Clear copy shown at the counter")).toEqual({ ok: false, reason: ask });
 
   await signIn("mario");
@@ -240,6 +244,21 @@ it("lets only a Manager override a decline or revoke an approval, with a reason;
   expect(everything()).not.toContain(NUMBER);
 });
 
+it("lets Staff check an ID but only a Manager-level Role approve or decline it; Staff are told to ask", async () => {
+  const { id, photo } = await upload();
+  await signIn("ana");
+  const ask = "Only a Manager decides a Senior/PWD ID check. Request approval from a CREOMS Manager.";
+  expect(await loadVerificationPhoto(id)).toMatchObject({ ok: true });
+  expect(await approveVerification(id, future(30))).toEqual({ ok: false, reason: ask });
+  expect(await declineVerification(id, "Blurry")).toEqual({ ok: false, reason: ask });
+  expect(storefront.requests).toBe(0);
+  expect(storage.files.has(photo)).toBe(true);
+  await signIn("owner");
+  expect(await approveVerification(id, future(30))).toMatchObject({ ok: true, status: "approved" });
+  // The storefront keeps the name the ID was verified under beside the hash, and CREOMS shows it.
+  expect(await loadVerificationDetail(id)).toMatchObject({ ok: true, verification: { verifiedName: "Maria", decidedByName: "owner Person" } });
+});
+
 it("keeps Admin and CEO read-only", async () => {
   const { id } = await upload();
   for (const who of ["ada"]) {
@@ -254,7 +273,7 @@ it("does not confirm an Order while its Senior/PWD ID waits for review, and conf
   const { id } = await upload();
   const [delivery] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, senior_pwd_verification_id)
     values ('c1','placed','delivery',100000,${id}) returning id`;
-  await signIn("ana");
+  await signIn("mario");
   const held = { ok: false, reason: "Review the Customer's Senior/PWD ID before confirming this Order." };
   expect(await quoteDeliveryFee(delivery.id, 15000)).toEqual(held);
   await approveVerification(id, future(30));
@@ -263,7 +282,7 @@ it("does not confirm an Order while its Senior/PWD ID waits for review, and conf
 
 it("accepts a Delivery fee on a large subtotal once the ID is reviewed", async () => {
   const { id } = await upload();
-  await signIn("ana");
+  await signIn("mario");
   await approveVerification(id, future(30));
   const [order] = await db.sql`insert into orders (customer_id, status, fulfillment_method, subtotal_in_centavos, delivery_fee_in_centavos, senior_pwd_verification_id)
     values ('c1','placed','delivery',260000,null,${id}) returning id`;
@@ -272,7 +291,7 @@ it("accepts a Delivery fee on a large subtotal once the ID is reviewed", async (
 
 it("leaves the verification unchanged and the photo in place when the storefront refuses or is unreachable", async () => {
   const { id, photo } = await upload();
-  await signIn("ana");
+  await signIn("mario");
   storefront.refusal = "Storefront says no.";
   expect(await approveVerification(id, future(30))).toEqual({ ok: false, reason: "Storefront says no." });
   storefront.refusal = null; storefront.unavailable = true;
@@ -283,7 +302,7 @@ it("leaves the verification unchanged and the photo in place when the storefront
 
 it("still succeeds when the photo cannot be deleted at once; the seven-day expiry removes it", async () => {
   const { id, photo } = await upload();
-  await signIn("ana");
+  await signIn("mario");
   storage.failRemove = true;
   storage.remove = async () => { throw new Error("down"); };
   expect(await approveVerification(id, future(30))).toEqual({ ok: true, status: "approved", photoRemoved: false });

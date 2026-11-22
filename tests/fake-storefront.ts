@@ -296,16 +296,19 @@ export class FakeStorefront {
   }
 
   /** The Customer uploads the ID photo and types the number. The number is hashed at once and never stored. */
-  async submitVerification(customerId: string, idType: "senior" | "pwd", idNumber: string, photoFileId: string): Promise<number | { error: string }> {
+  async submitVerification(
+    customerId: string, idType: "senior" | "pwd", idNumber: string, photoFileId: string,
+    idNumberRead: "matched" | "differs" | "unread" = "unread",
+  ): Promise<number | { error: string }> {
     const idHash = createHmac("sha256", FakeStorefront.HASH_KEY).update(idNumber.replace(/\s+/g, "").toUpperCase()).digest("hex");
     return this.sql.begin(async tx => {
       const [taken] = await tx`select 1 from senior_pwd_verifications where id_hash = ${idHash} and customer_id <> ${customerId}
         and status in ('pending', 'approved') limit 1`;
-      if (taken) return { error: "This ID is already used on another account." };
+      if (taken) return { error: "This ID is already used by another account." };
       // Like the storefront: an ID that was used on another account before (declined, revoked) is accepted but flagged.
       const [before] = await tx`select id from senior_pwd_verifications where id_hash = ${idHash} and customer_id <> ${customerId} order by id desc limit 1`;
-      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at, same_id_as_verification_id)
-        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}, ${before?.id ?? null}) returning id`;
+      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at, same_id_as_verification_id, id_number_read)
+        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}, ${before?.id ?? null}, ${idNumberRead}) returning id`;
       return Number(row.id);
     });
   }
@@ -337,7 +340,9 @@ export class FakeStorefront {
       await tx`update senior_pwd_verifications set status = ${status}, photo_file_id = null, decided_at = ${this.now()},
         decided_by_id = ${body.staffId}, decided_by_name = ${body.staffName},
         decline_reason = ${action === "approve" ? null : body.reason.trim()},
-        expires_on = ${action === "approve" ? body.expiresOn : v.expires} where id = ${id}`;
+        expires_on = ${action === "approve" ? body.expiresOn : v.expires},
+        verified_name = ${action === "approve" ? (await tx`select full_name from customers where id = ${v.customer_id}`)[0]?.full_name ?? null : v.verified_name}
+        where id = ${id}`;
       this.verificationEmails.push({ verificationId: id, status,
         text: action === "decline" ? `Your Senior/PWD ID was declined: ${body.reason.trim()}` : `Your Senior/PWD verification is ${status}.` });
       return Response.json({ id, status, expiresOn: action === "approve" ? body.expiresOn : v.expires });

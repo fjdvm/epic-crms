@@ -37,7 +37,9 @@ const SCHEMA = `
     decided_by_name text,
     decline_reason text,
     expires_on date,
-    same_id_as_verification_id integer references senior_pwd_verifications (id)
+    same_id_as_verification_id integer references senior_pwd_verifications (id),
+    id_number_read text check (id_number_read in ('matched', 'differs', 'unread')),
+    verified_name text
   );
   create table orders (
     id integer primary key generated always as identity,

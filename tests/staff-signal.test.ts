@@ -12,6 +12,7 @@ vi.mock("@/lib/db", () => ({ database: () => db.sql }));
 vi.mock("@/lib/tickets-db", () => ({ ticketsDatabase: () => db.sql }));
 const startRead = vi.fn();
 vi.mock("@/features/orders/payment-proof-start", () => ({ startPaymentProofRead: () => startRead() }));
+vi.mock("@/features/senior-pwd/id-read-start", () => ({ startIdRead: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/portal/staff", () => ({ getShell: vi.fn(async () => ({ staff: { username: "ana", name: "Ana" }, permittedPages: ["/orders"] })) }));
 let db: TestDatabase;

@@ -1,6 +1,8 @@
 import { database } from "@/lib/db";
 import { FULFILMENT_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, SENIOR_PWD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireAnyModule } from "@/lib/portal/staff";
+import { crmsDatabase } from "@/lib/crms-db";
+import { loadIdReadFlags } from "@/features/senior-pwd/id-reader";
 import { listVerifications } from "@/features/senior-pwd/verifications";
 
 import { approvals } from "./server";
@@ -23,7 +25,9 @@ export async function loadApprovalRows(): Promise<{ staff: Awaited<ReturnType<ty
     try {
       if (module === SENIOR_PWD_MODULE) {
         const { pending, decided } = await listVerifications(database(), new Date());
-        rows.push(...[...pending, ...decided].map(idCheckToView));
+        // The ID reader's flags are extra help; the list still shows without them.
+        const flags = await loadIdReadFlags(crmsDatabase(), pending.map((v) => v.id)).catch(() => new Map<number, string[]>());
+        rows.push(...[...pending, ...decided].map((v) => idCheckToView(v, flags.get(v.id)?.length)));
         return;
       }
       if (module === FULFILMENT_MODULE) {

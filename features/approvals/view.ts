@@ -148,13 +148,16 @@ function checkOf(payload: unknown): ApprovalView["check"] {
 export function idCheckToView(v: {
   id: number; customerName: string; idType: "senior" | "pwd"; status: string; submittedAt: Date;
   decidedByName: string | null; declineReason: string | null;
-}): ApprovalView {
+}, readerFlags?: number): ApprovalView {
   const kind = v.idType === "senior" ? "Senior citizen" : "PWD";
+  // The ID reader's count, on waiting checks only: a hint of what to look at, never a decision.
+  const flagged = v.status === "pending" && readerFlags
+    ? ` · ID reader flagged ${readerFlags} thing${readerFlags === 1 ? "" : "s"} to check` : "";
   const status = v.status === "pending" ? "waiting-id" : v.status === "approved" ? "approved" : "declined";
 
   return {
     id: `id-${v.id}`, action: "id-check", module: "Senior/PWD", targetId: String(v.id), amountInCentavos: 0, limitInCentavos: 0,
-    reason: `${kind} ID uploaded for review`, requesterId: "", requesterName: v.customerName, status,
+    reason: `${kind} ID uploaded for review${flagged}`, requesterId: "", requesterName: v.customerName, status,
     requestedAt: v.submittedAt.toISOString(), managerName: v.decidedByName, ceoName: null,
     declineReason: status === "declined" ? v.declineReason ?? `${v.status[0].toUpperCase()}${v.status.slice(1)}` : null,
   };
