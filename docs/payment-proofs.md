@@ -44,3 +44,12 @@ Run `docs/db/creoms-payment-proofs-readonly.sql` after the storefront deploys.
 The GCash number, Maya number and bank account are Admin settings in General, logged as
 `payment_settings.changed`. They live in the Portal and the storefront reads them at checkout, so they are
 not built in this repository.
+
+## Refunds tab
+
+The Payments page records refunds; it never settles one. A refund is settled on its Return (a Manager, and the CEO above
+the Approval limit). `loadRefunds` (`features/orders/refunds.ts`) reads Returns marked `refunded` in the last 30 days, newest
+first: the recorded amount (or, for an older refund without details, the items plus any Delivery fee refunded), how it was
+sent, the transfer reference, who marked it Refunded (from the Return history) and when. The page loads it with the other
+tabs, so the tab opens at once; a read failure says so on that tab only. The Return number links to the Return only for
+Staff who also hold the Returns Module. Tests: `tests/payments-refunds.test.ts`, `tests/payments-refunds-tab.test.tsx`.
