@@ -32,9 +32,10 @@ const shop = postgres(direct(process.env.CREOMS_DATABASE_URL), { max: 1 });
 const crms = postgres(direct(process.env.CREOMS_WRITER_DATABASE_URL), { max: 1 });
 try {
   const live = await shop`
-    select s.ims_product_id as id, s.price_in_centavos as centavos,
+    select s.ims_product_id as id, s.price_in_centavos as centavos, left(coalesce(p.description, ''), 2000) as description,
       first.file_id, first.url
     from sizes s
+    join products p on p.slug = s.product_slug
     left join lateral (select pi.file_id, pi.url from product_images pi where pi.product_slug = s.product_slug order by pi.position limit 1) first on true where s.ims_product_id is not null and not s.discontinued and s.price_in_centavos > 0`;
   let added = 0;
   for (const size of live) {
@@ -45,11 +46,16 @@ try {
       return tx`
         insert into crms.product_content (ims_product_id, description, price, price_updated_by_id, price_updated_by_name, price_updated_at,
           image_file_id, image_url, updated_by_id, updated_by_name, updated_at)
-        values (${size.id}, '', ${size.centavos / 100}, 'migration', 'Carried over from the storefront', now(),
+        values (${size.id}, ${size.description}, ${size.centavos / 100}, 'migration', 'Carried over from the storefront', now(),
           ${url ? size.file_id ?? "storefront" : null}, ${url}, 'migration', 'Carried over from the storefront', now())
-        on conflict (ims_product_id) do update set image_file_id = excluded.image_file_id, image_url = excluded.image_url
-          -- Only fills an image this carry-over left empty; anything a person set stays.
-          where crms.product_content.updated_by_id = 'migration' and crms.product_content.image_url is null and excluded.image_url is not null
+        on conflict (ims_product_id) do update set
+          image_file_id = coalesce(crms.product_content.image_file_id, excluded.image_file_id),
+          image_url = coalesce(crms.product_content.image_url, excluded.image_url),
+          description = case when crms.product_content.description = '' then excluded.description else crms.product_content.description end
+          -- Only fills an image or description this carry-over left empty, on a row it added; anything a person set stays.
+          where crms.product_content.updated_by_id = 'migration'
+            and ((crms.product_content.image_url is null and excluded.image_url is not null)
+              or (crms.product_content.description = '' and excluded.description <> ''))
         returning ims_product_id`;
     });
     added += rows.length;
