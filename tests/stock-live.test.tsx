@@ -17,7 +17,7 @@ class Socket {
   constructor(readonly url: string) { Socket.all.push(this); }
 }
 const row = (sizeId: number, product: string, available: number): StockRow =>
-  ({ sizeId, product, size: "", image: null, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
+  ({ sizeId, product, imsName: product, size: "", image: null, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
 const pageOf = (rows: StockRow[]): StockPage => ({ rows, hasStock: true, summary: summarize(rows) });
 const elapse = async (ms = 0) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
 const send = (data: unknown) => act(async () => { Socket.all[0].onmessage?.({ data: JSON.stringify(data) }); await vi.advanceTimersByTimeAsync(0); });
@@ -83,4 +83,24 @@ it("refreshes the copy once when the page opens, and keeps the rows and says not
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByText(/could not be reached/)).toBeNull();
   spy.mockRestore();
+});
+
+it("takes the Size ID as the notification service sends it, a string, and ignores ids that are not Sizes", async () => {
+  render(<LiveStock page={pageOf([row(1, "Alpha", 20)])} />); await elapse();
+  refetchOne.mockResolvedValueOnce({ ok: true, row: row(1, "Alpha", 4) });
+  await send({ type: "stock.changed", sizeId: "1" });
+  expect(refetchOne).toHaveBeenCalledWith(1);
+  expect(screen.getByText("Only 4 left")).toBeTruthy();
+  for (const sizeId of ["", "abc", "1.5", "-2", "0", null]) await send({ type: "stock.changed", sizeId });
+  expect(refetchOne).toHaveBeenCalledTimes(1);
+});
+
+it("starts again from a new server render, then keeps applying live changes to it", async () => {
+  const view = render(<LiveStock page={pageOf([row(1, "Alpha", 20)])} />); await elapse();
+  view.rerender(<LiveStock page={pageOf([row(1, "Alpha renamed", 20)])} />);
+  expect(screen.getByText("Alpha renamed")).toBeTruthy();
+  refetchOne.mockResolvedValueOnce({ ok: true, row: row(1, "Alpha renamed", 2) });
+  await send({ type: "stock.changed", sizeId: "1" });
+  expect(screen.getByText("Only 2 left")).toBeTruthy();
+  expect(Socket.all).toHaveLength(1);
 });

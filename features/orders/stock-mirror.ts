@@ -10,6 +10,8 @@ export interface StockMirror {
   load(): Promise<MirrorSnapshot | null>;
   save(feed: ImsProduct[], stock: Map<number, ImsSizeStock>): Promise<void>;
   saveOne(item: ImsProduct, stock: ImsSizeStock | undefined): Promise<void>;
+  /** The IMS no longer lists this Size. */
+  deleteOne(productId: number): Promise<void>;
 }
 
 interface Row {
@@ -44,6 +46,10 @@ export async function saveMirror(sql: postgres.Sql, feed: ImsProduct[], stock: M
 
 export async function saveMirrorOne(sql: postgres.Sql, item: ImsProduct, held: ImsSizeStock | undefined): Promise<void> {
   await upsert(sql, [toRow(item, held, new Date())]);
+}
+
+export async function deleteMirrorOne(sql: postgres.Sql, productId: number): Promise<void> {
+  await sql`delete from crms.stock_mirror where ims_product_id = ${productId}`;
 }
 
 /** Null when nothing was ever read from the IMS. */

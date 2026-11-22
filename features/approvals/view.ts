@@ -37,11 +37,11 @@ export function inTab(status: string, tab: ApprovalTab): boolean {
 }
 
 /** What kind of approval a request is, so the list can be grouped and filtered by it. */
-export type ApprovalKind = "id-check" | "refund" | "payment" | "cancellation" | "write-off" | "return";
+export type ApprovalKind = "id-check" | "refund" | "payment" | "cancellation" | "write-off" | "return" | "price";
 export type KindFilter = "all" | ApprovalKind;
 
 export const KIND_LABELS: Record<ApprovalKind, string> = {
-  "id-check": "ID checks", refund: "Refunds", payment: "Payments", cancellation: "Cancellations", "write-off": "Write-offs", return: "Returns",
+  "id-check": "ID checks", refund: "Refunds", payment: "Payments", cancellation: "Cancellations", "write-off": "Write-offs", return: "Returns", price: "Shop prices",
 };
 export const KINDS = Object.keys(KIND_LABELS) as ApprovalKind[];
 
@@ -51,6 +51,7 @@ export function kindOf(action: ApprovalListAction): ApprovalKind {
   if (action === "payment.approve-anyway") return "payment";
   if (action === "order.cancel-after-dispatch" || action === "order.cancel-settle") return "cancellation";
   if (action === "write-off") return "write-off";
+  if (action === "product.price") return "price";
   return "return";
 }
 
@@ -61,6 +62,7 @@ export function isKindFilter(value: string | undefined): value is KindFilter {
 /** What the request is about and where to open it: a Return, an Order, or an ID check's review page. */
 export function targetOf(r: Pick<ApprovalView, "action" | "targetId" | "module">): { label: string; href: string } {
   if (r.action === "id-check") return { label: `ID check #${r.targetId}`, href: `/customer-profiles/senior-pwd/${r.targetId}` };
+  if (r.action === "product.price") return { label: `Product ${r.targetId}`, href: "/orders/stock" };
   const aboutOrder = r.action.startsWith("order.") || r.action.startsWith("payment.") || (r.action === "write-off" && r.module === "Fulfilment");
   return aboutOrder
     ? { label: `BR-${r.targetId}`, href: `/orders/${r.targetId}` }
@@ -83,11 +85,12 @@ export const ACTION_LABELS: Record<ApprovalAction, string> = {
   "return.change-destination": "Change refund destination",
   "return.decide": "Decide return",
   "write-off": "Write-off",
+  "product.price": "Shop price",
 };
 
 /** Refunds and write-offs move money or stock, so their approval waits for the server. */
 export function isMoneyDecision(action: ApprovalListAction): boolean {
-  return action === "return.refund" || action === "write-off" || action === "order.cancel-after-dispatch" || action === "order.cancel-settle";
+  return action === "return.refund" || action === "write-off" || action === "product.price" || action === "order.cancel-after-dispatch" || action === "order.cancel-settle";
 }
 
 export const pesos = (centavos: number) =>

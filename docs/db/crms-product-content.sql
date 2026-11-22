@@ -1,6 +1,6 @@
 -- Additive migration (#677). Run as creoms_writer (owner of crms); no storefront writes. Safe to re-run.
--- What Staff publish to the store for one IMS product: the shop image (a public File in File Storage) and the description.
--- Keyed by the IMS product id. The IMS still owns name, Variant and price.
+-- What CREOMS publishes to the store for one IMS product: the shop image (a public File in File Storage) and the description.
+-- Keyed by the IMS product id. The shop name and price were added by crms-product-content-name-price.sql; the IMS still owns the Variant and stock.
 BEGIN;
 CREATE TABLE IF NOT EXISTS crms.product_content (
   ims_product_id integer PRIMARY KEY,

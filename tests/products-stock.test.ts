@@ -28,12 +28,17 @@ const feedOfSeed = async (): Promise<ImsProduct[]> => (await db.sql<{ id: number
   select s.ims_product_id as id, p.name, s.label from sizes s join products p on p.slug = s.product_slug order by s.id`)
   .map((row) => ({ productId: row.id, name: row.name, variant: row.label, image: "img", price: 100, active: true }));
 
+/** What CREOMS published: by default every product has a shop image and a price, so it is on the shop. */
+type Content = { description: string; imageUrl: string | null; name: string | null; price: number | null };
+const priced = (over: Record<number, Partial<Content>> = {}) => async (ids: number[]) =>
+  new Map(ids.map((id) => [id, { description: "", imageUrl: "img", name: null, price: 100, ...over[id] }]));
+
 const ims = (entries: [number, number, number, number][]) => async () =>
   new Map<number, ImsSizeStock>(entries.map(([sizeId, quantity, reserved, available]) => [sizeId, { sizeId, quantity, reserved, available }]));
 
 describe("Products & stock", () => {
   it("shows in stock, CREOMS's own reserved, available and what the shop shows, with low and sold-out counted", async () => {
-    const result = await loadStock(() => db.sql, ims([[101, 26, 8, 18], [102, 12, 5, 7], [103, 0, 0, 0]]), feedOfSeed);
+    const result = await loadStock(() => db.sql, ims([[101, 26, 8, 18], [102, 12, 5, 7], [103, 0, 0, 0]]), feedOfSeed, priced());
     if (!result.ok) throw new Error("expected stock");
     expect(result.page.rows.map((r) => [r.product, r.size, r.inStock, r.reserved, r.available, r.shows])).toEqual([
       ["120 Mesh Ube Powder", "500 g", 0, 0, 0, "Sold out"],
@@ -157,8 +162,8 @@ describe("Order detail reservations", () => {
 describe("Products & stock from the IMS product feed", () => {
   const product = (productId: number, over: Partial<ImsProduct> = {}): ImsProduct =>
     ({ productId, name: `Product ${productId}`, variant: "250g", image: `img-${productId}`, price: 120, active: true, ...over });
-  const load = async (products: ImsProduct[] | null, stock: [number, number, number, number][] = []) => {
-    const result = await loadStock(() => db.sql, ims(stock), async () => products);
+  const load = async (products: ImsProduct[] | null, stock: [number, number, number, number][] = [], content = priced()) => {
+    const result = await loadStock(() => db.sql, ims(stock), async () => products, content);
     if (!result.ok) throw new Error("expected stock");
     return result.page;
   };
@@ -175,21 +180,33 @@ describe("Products & stock from the IMS product feed", () => {
     expect(page.rows[0].size).toBe("");
   });
 
-  it("marks a product missing its name, image or price as Not on shop and lists what is missing", async () => {
-    const page = await load([product(1, { name: "", image: null }), product(2, { price: null }), product(3)]);
+  it("marks a product missing its name, or CREOMS's image or price, as Not on shop and lists what is missing", async () => {
+    const content = async (ids: number[]) => new Map((await priced({ 2: { price: null }, 4: { name: "Ube Jam" } })(ids.filter((id) => id !== 1))));
+    const page = await load([product(1, { name: "" }), product(2), product(3), product(4, { name: "" })], [], content);
     const marker = (id: number) => page.rows.find((r) => r.sizeId === id)!.marker;
-    expect(marker(1)).toEqual({ kind: "not-on-shop", missing: ["name", "image"] });
+    // The IMS image and price never put a product on the shop: CREOMS sets both.
+    expect(marker(1)).toEqual({ kind: "not-on-shop", missing: ["name", "image", "price"] });
     expect(marker(2)).toEqual({ kind: "not-on-shop", missing: ["price"] });
     expect(marker(3)).toBeNull();
+    // CREOMS's own name stands in for a blank IMS name.
+    expect(marker(4)).toBeNull();
+  });
+
+  it("shows CREOMS's name and price, never the IMS price, and keeps the IMS name for reference", async () => {
+    const page = await load([product(1, { name: "IMS Jam", price: 999 }), product(2, { name: "IMS Halaya", price: 999 })], [],
+      priced({ 1: { name: "Ube Jam Extreme", price: 250 }, 2: { price: null } }));
+    const row = (id: number) => page.rows.find((r) => r.sizeId === id)!;
+    expect(row(1)).toMatchObject({ product: "Ube Jam Extreme", imsName: "IMS Jam", price: 250 });
+    expect(row(2)).toMatchObject({ product: "IMS Halaya", imsName: "IMS Halaya", price: null });
   });
 
   it("keeps a discontinued product visible with its image and last known numbers", async () => {
-    const page = await load([product(1, { active: false })], [[1, 9, 2, 7]]);
+    const page = await load([product(1, { active: false })], [[1, 9, 2, 7]], async () => new Map());
     expect(page.rows[0]).toMatchObject({ marker: { kind: "discontinued" }, image: "img-1", inStock: 9, reserved: 0, available: 9 });
   });
 
   it("does not count Not on shop or Discontinued products as on sale, low or sold out", async () => {
-    const page = await load([product(1), product(2, { active: false }), product(3, { image: null })], [[1, 20, 0, 20], [2, 0, 0, 0], [3, 0, 0, 0]]);
+    const page = await load([product(1), product(2, { active: false }), product(3)], [[1, 20, 0, 20], [2, 0, 0, 0], [3, 0, 0, 0]], priced({ 3: { imageUrl: null } }));
     expect(page.summary).toEqual({ sizes: 1, soldOut: 0, reserved: 0, low: 0 });
   });
 
@@ -217,7 +234,7 @@ describe("Refetching one Size", () => {
   });
 
   it("merges a refetched Size into the page: replace, insert in order, drop, and recount", () => {
-    const mk = (sizeId: number, product: string, available: number) => ({ sizeId, product, size: "", image: null, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
+    const mk = (sizeId: number, product: string, available: number) => ({ sizeId, product, imsName: product, size: "", image: null, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
     const base = { hasStock: true, rows: [mk(1, "A", 20), mk(3, "C", 20)], summary: summarize([mk(1, "A", 20), mk(3, "C", 20)]) };
     const inserted = withSize(base, 2, mk(2, "B", 0));
     expect(inserted.rows.map((r) => r.sizeId)).toEqual([1, 2, 3]);
@@ -232,7 +249,7 @@ describe("Products & stock with a local copy of the IMS", () => {
   const stockOf = (rows: [number, number][]): Map<number, ImsSizeStock> =>
     new Map(rows.map(([id, qty]) => [id, { sizeId: id, quantity: qty, reserved: 0, available: qty }]));
   const memory = (initial: { feed: ImsProduct[]; stock: Map<number, ImsSizeStock>; syncedAt: Date } | null) => {
-    const state = { mirror: initial, saved: 0, savedOne: 0, failWrites: false };
+    const state = { mirror: initial, saved: 0, savedOne: 0, deleted: 0, failWrites: false };
     return {
       state,
       load: async () => state.mirror,
@@ -242,6 +259,7 @@ describe("Products & stock with a local copy of the IMS", () => {
         state.mirror = { feed, stock, syncedAt: new Date() };
       },
       saveOne: async () => { if (state.failWrites) throw new Error("mirror down"); state.savedOne++; },
+      deleteOne: async () => { state.deleted++; },
     };
   };
   const live = async () => (await feedOfSeed());
@@ -257,10 +275,10 @@ describe("Products & stock with a local copy of the IMS", () => {
   });
 
   it("opens on the copy without asking the IMS: name, image, price, stock and CREOMS's own reserved", async () => {
-    const feed = (await feedOfSeed()).map((item) => ({ ...item, price: 250 }));
+    const feed = await feedOfSeed();
     const mirror = memory({ feed, stock: new Map([[101, { sizeId: 101, quantity: 12, reserved: 99, available: 1 }]]), syncedAt: asOf });
     await db.sql`insert into stock_reservations values ('r1', 7, 'placed', ${db.sql.json([{ orderLineId: 1, sizeId: 1, quantity: 4 }] as never)})`;
-    const result = await loadStockCopy(() => db.sql, noContent, mirror);
+    const result = await loadStockCopy(() => db.sql, priced({ 101: { price: 250 } }), mirror);
     if (!result.ok) throw new Error("expected a page");
     expect(result.page.hasStock).toBe(true);
     expect(result.page.rows.find((r) => r.sizeId === 101)).toMatchObject({
@@ -313,5 +331,12 @@ describe("Products & stock with a local copy of the IMS", () => {
     const mirror = memory(null);
     await loadStockSize(() => db.sql, 101, async () => stockOf([[101, 7]]), live, noContent, mirror);
     expect(mirror.state.savedOne).toBe(1);
+  });
+
+  it("forgets a Size in the copy once the IMS no longer lists it", async () => {
+    const mirror = memory(null);
+    expect(await loadStockSize(() => db.sql, 777, async () => stockOf([]), live, noContent, mirror)).toEqual({ ok: true, row: null });
+    expect(mirror.state.deleted).toBe(1);
+    expect(mirror.state.savedOne).toBe(0);
   });
 });

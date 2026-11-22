@@ -1,5 +1,5 @@
 import { database } from "@/lib/db";
-import { FULFILMENT_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, SENIOR_PWD_MODULE } from "@/lib/portal/config";
+import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, SENIOR_PWD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireAnyModule } from "@/lib/portal/staff";
 import { crmsDatabase } from "@/lib/crms-db";
 import { loadIdReadFlags } from "@/features/senior-pwd/id-reader";
@@ -9,7 +9,7 @@ import { approvals } from "./server";
 import { idCheckToView, toView, type ApprovalView } from "./view";
 
 /** The Modules whose requests land on the Approvals page. */
-export const APPROVAL_MODULES = [RETURNS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, SENIOR_PWD_MODULE] as const;
+export const APPROVAL_MODULES = [RETURNS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, ORDERS_MODULE, SENIOR_PWD_MODULE] as const;
 
 /**
  * Everything the signed-in person may see on Approvals, newest first: the requests raised under each Module they hold

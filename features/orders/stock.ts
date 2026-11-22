@@ -37,12 +37,18 @@ const HOLDING_STATUS: Record<string, HoldingStatus> = {
   preparing: "Paid and waiting to dispatch",
 };
 
-/** What the IMS holds that the shop does not sell: missing details, or a product the IMS removed or deactivated. */
+/**
+ * What the IMS holds that the shop does not sell: missing details, or a product the IMS removed or deactivated. CREOMS
+ * owns the shop price and image, so a product is off the shop until CREOMS has given it both.
+ */
 export type StockMarker = { kind: "not-on-shop"; missing: ("name" | "image" | "price")[] } | { kind: "discontinued" };
 
 export interface StockRow {
   sizeId: number;
+  /** The shop name: CREOMS's own when it set one, else the IMS name. */
   product: string;
+  /** The name the IMS gives this product, kept for reference; CREOMS's name never goes back to it. */
+  imsName: string;
   /** The IMS Variant; empty for a product with no Variant (one unlabelled default Size). */
   size: string;
   /** The image Staff published, else the IMS image; null when the product has neither. */
@@ -50,7 +56,7 @@ export interface StockRow {
   /** What Staff published for the shop; empty until they add one. */
   description: string;
   marker: StockMarker | null;
-  /** The price in pesos from CREOMS's copy of the IMS; null when the IMS has none. */
+  /** The shop price in pesos CREOMS set (a Manager decision); null until it has one. The IMS price is never used. */
   price: number | null;
   /** Null when CREOMS has no quantity for this Size yet. */
   inStock: number | null;
@@ -73,7 +79,7 @@ export type StockResult = { ok: true; page: StockPage } | { ok: false };
 
 const markerOf = (item: ImsProduct, content?: ProductContent): StockMarker | null => {
   if (!item.active) return { kind: "discontinued" };
-  const missing = ([["name", !item.name], ["image", !item.image && !content?.imageUrl], ["price", item.price === null]] as const)
+  const missing = ([["name", !(content?.name ?? item.name)], ["image", !content?.imageUrl], ["price", (content?.price ?? null) === null]] as const)
     .filter(([, absent]) => absent).map(([what]) => what);
   return missing.length > 0 ? { kind: "not-on-shop", missing } : null;
 };
@@ -92,7 +98,8 @@ type ContentReader = (productIds: number[]) => Promise<Map<number, ProductConten
 const noContent: ContentReader = async () => new Map();
 
 const sizeSource = (item: ImsProduct, content: ProductContent | undefined): SizeSource => ({
-  id: item.productId, product: item.name, size: item.variant ?? "", image: content?.imageUrl ?? item.image, price: item.price,
+  id: item.productId, product: content?.name ?? item.name, imsName: item.name, size: item.variant ?? "", image: content?.imageUrl ?? item.image,
+  price: content?.price ?? null,
   description: content?.description ?? "", marker: markerOf(item, content),
 });
 
@@ -164,7 +171,7 @@ async function recall(mirror: StockMirror | undefined) {
   catch (error) { console.error("The stock copy could not be read", error); return null; }
 }
 
-interface SizeSource { id: number; product: string; size: string; image: string | null; price: number | null; description: string; marker: StockMarker | null }
+interface SizeSource { id: number; product: string; imsName: string; size: string; image: string | null; price: number | null; description: string; marker: StockMarker | null }
 
 /** Reserved is CREOMS's own count of what open Orders hold; available is what is physically there less that. */
 function toRow(size: SizeSource, stock: Map<number, ImsSizeStock> | null, holding: Map<number, HoldingOrder[]> | null): StockRow {
@@ -174,7 +181,7 @@ function toRow(size: SizeSource, stock: Map<number, ImsSizeStock> | null, holdin
   const inStock = held?.quantity ?? null;
   const available = inStock !== null && reserved !== null ? inStock - reserved : held?.available ?? null;
   return {
-    sizeId: size.id, product: size.product, size: size.size, image: size.image, price: size.price, description: size.description, marker: size.marker,
+    sizeId: size.id, product: size.product, imsName: size.imsName, size: size.size, image: size.image, price: size.price, description: size.description, marker: size.marker,
     inStock, reserved, available, shows: shopShows(available), orders,
   };
 }
@@ -216,7 +223,11 @@ export async function loadStockSize(
     const feed = await readFeed();
     if (!feed) return { ok: false };
     const item = feed.find((entry) => entry.productId === sizeId);
-    if (!item) return { ok: true, row: null };
+    if (!item) {
+      // The IMS deleted it: CREOMS's copy forgets it too, so the next open does not bring it back.
+      await remember(() => mirror?.deleteOne(sizeId));
+      return { ok: true, row: null };
+    }
     const stock = await read([sizeId]);
     if (stock) await remember(() => mirror?.saveOne(item, stock.get(sizeId)));
     const holding = await loadHoldingOrders(connect);
