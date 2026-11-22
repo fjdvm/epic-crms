@@ -117,6 +117,19 @@ it("Staff inspect item by item: sellable goes back to stock, damaged waits for a
   expect(storefront.restocked).toHaveLength(1);
 });
 
+it("reaches the storefront even before its inspection columns exist, showing its answer, not 'temporarily unavailable'", async () => {
+  const { id, lines } = await received();
+  await signIn("ana");
+  storefront.refusal = "The storefront refused this inspection.";
+  await db.sql`alter table order_return_items rename column inspection_id to inspection_ref`;
+  try {
+    expect(await inspectReturn(id, randomUUID(), mixed(lines))).toEqual({ ok: false, reason: "The storefront refused this inspection." });
+  } finally {
+    await db.sql`alter table order_return_items rename column inspection_ref to inspection_id`;
+    storefront.refusal = null;
+  }
+});
+
 it("refuses inspection before goods are received and from read-only Roles", async () => {
   const { id, lines } = await received();
   await db.sql`update order_returns set status = 'approved' where id = ${id}`;
