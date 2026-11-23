@@ -16,7 +16,7 @@ import { StockSkeleton, StockView, StockHeader } from "@/features/orders/stock-v
 afterEach(cleanup);
 
 const row = (sizeId: number, product: string, available: number | null, shows: StockPage["rows"][number]["shows"]) =>
-  ({ sizeId, product, imsName: product, size: "250 g", image: null, price: 120.5, description: "", marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
+  ({ sizeId, product, imsName: product, size: "250 g", image: null, hasShopImage: true, price: 120.5, description: "", marker: null, inStock: available, reserved: available === null ? null : 2, available, shows, orders: available === null ? null : [{ orderId: 40 + sizeId, customer: `Customer ${sizeId}`, status: "Awaiting payment" as const, quantity: 2 }] });
 const page: StockPage = {
   hasStock: true,
   summary: { sizes: 3, soldOut: 1, reserved: 6, low: 1 },
@@ -140,12 +140,28 @@ it("shows Not on shop with what is missing, and Discontinued, and keeps them out
     ],
   };
   render(<StockView page={flagged} />);
+  // In store opens first and holds only what the shop sells.
+  expect(screen.getByRole("tab", { name: /In store/ }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("tab", { name: /In store/ }).textContent).toBe("In store1");
+  expect(Array.from(document.querySelectorAll("[data-stock-row]")).map((r) => r.textContent?.split(" · ")[0])).toEqual(["Plain"]);
+  fireEvent.click(screen.getByRole("tab", { name: /All sizes/ }));
+  expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(3);
   expect(screen.getByText("Not on shop")).toBeTruthy();
   expect(screen.getByText("Missing: image, price")).toBeTruthy();
   expect(screen.getByText("Discontinued")).toBeTruthy();
   expect(screen.getByText("Gone · 250 g")).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: /Sold out/ }));
   expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(0);
+});
+
+it("opens on the In store tab, and says so when nothing is on the shop yet", () => {
+  const offShop = { ...row(4, "Half made", 10, "In stock"), marker: { kind: "not-on-shop" as const, missing: ["image" as const] } };
+  render(<StockView page={{ ...page, rows: [offShop] }} />);
+  const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
+  expect(tabs).toEqual(["In store0", "All sizes1", "Low stock1", "Sold out1"]);
+  expect(screen.getByText("Nothing is on the shop yet.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: /All sizes/ }));
+  expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(1);
 });
 
 it("shows a product with no Variant by its name alone", () => {

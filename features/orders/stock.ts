@@ -53,6 +53,8 @@ export interface StockRow {
   size: string;
   /** The image Staff published, else the IMS image; null when the product has neither. */
   image: string | null;
+  /** True when CREOMS has its own shop image; the IMS image alone is never shown on the shop. */
+  hasShopImage: boolean;
   /** What Staff published for the shop; empty until they add one. */
   description: string;
   marker: StockMarker | null;
@@ -99,7 +101,7 @@ const noContent: ContentReader = async () => new Map();
 
 const sizeSource = (item: ImsProduct, content: ProductContent | undefined): SizeSource => ({
   id: item.productId, product: content?.name ?? item.name, imsName: item.name, size: item.variant ?? "", image: content?.imageUrl ?? item.image,
-  price: content?.price ?? null,
+  hasShopImage: Boolean(content?.imageUrl), price: content?.price ?? null,
   description: content?.description ?? "", marker: markerOf(item, content),
 });
 
@@ -171,7 +173,7 @@ async function recall(mirror: StockMirror | undefined) {
   catch (error) { console.error("The stock copy could not be read", error); return null; }
 }
 
-interface SizeSource { id: number; product: string; imsName: string; size: string; image: string | null; price: number | null; description: string; marker: StockMarker | null }
+interface SizeSource { id: number; product: string; imsName: string; size: string; image: string | null; hasShopImage: boolean; price: number | null; description: string; marker: StockMarker | null }
 
 /** Reserved is CREOMS's own count of what open Orders hold; available is what is physically there less that. */
 function toRow(size: SizeSource, stock: Map<number, ImsSizeStock> | null, holding: Map<number, HoldingOrder[]> | null): StockRow {
@@ -181,7 +183,7 @@ function toRow(size: SizeSource, stock: Map<number, ImsSizeStock> | null, holdin
   const inStock = held?.quantity ?? null;
   const available = inStock !== null && reserved !== null ? inStock - reserved : held?.available ?? null;
   return {
-    sizeId: size.id, product: size.product, imsName: size.imsName, size: size.size, image: size.image, price: size.price, description: size.description, marker: size.marker,
+    sizeId: size.id, product: size.product, imsName: size.imsName, size: size.size, image: size.image, hasShopImage: size.hasShopImage, price: size.price, description: size.description, marker: size.marker,
     inStock, reserved, available, shows: shopShows(available), orders,
   };
 }

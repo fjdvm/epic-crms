@@ -17,7 +17,7 @@ class Socket {
   constructor(readonly url: string) { Socket.all.push(this); }
 }
 const row = (sizeId: number, product: string, available: number): StockRow =>
-  ({ sizeId, product, imsName: product, size: "", image: null, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
+  ({ sizeId, product, imsName: product, size: "", image: null, hasShopImage: true, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
 const pageOf = (rows: StockRow[]): StockPage => ({ rows, hasStock: true, summary: summarize(rows) });
 const elapse = async (ms = 0) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
 const send = (data: unknown) => act(async () => { Socket.all[0].onmessage?.({ data: JSON.stringify(data) }); await vi.advanceTimersByTimeAsync(0); });

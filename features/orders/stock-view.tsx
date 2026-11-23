@@ -14,11 +14,13 @@ import { cn } from "@/lib/utils";
 
 import { LOW_STOCK_BELOW, rowLabel, shopLabel, type HoldingOrder, type StockPage, type StockRow } from "./stock";
 
-type Tab = "all" | "low" | "sold-out";
+type Tab = "in-store" | "all" | "low" | "sold-out";
 
 const GRID = "flex items-center gap-2 px-4";
 const COLUMN = { price: "w-[110px] shrink-0 text-right", stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", shows: "w-[170px] shrink-0", edit: "w-8 shrink-0" };
 
+/** On the shop now: CREOMS gave it what the shop needs and the IMS still sells it. */
+const inStore = (row: StockRow) => row.marker === null;
 const isLow = (row: StockRow) => row.marker === null && typeof row.shows === "object";
 const isSoldOut = (row: StockRow) => row.marker === null && row.shows === "Sold out";
 
@@ -118,19 +120,20 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
 
 /** `canEdit` is false for the read-only Roles (Admin), who see no edit button; `canPrice` is for Manager-level Roles only. */
 export function StockView({ page, canEdit = false, canPrice = false, initialQuery = "" }: { page: StockPage; canEdit?: boolean; canPrice?: boolean; /** The search the page opened with, e.g. from an Order line. */ initialQuery?: string }) {
-  const [tab, setTab] = useState<Tab>("all");
+  const [tab, setTab] = useState<Tab>("in-store");
   const [query, setQuery] = useState(initialQuery);
   const [opened, setOpened] = useState<StockRow | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const { summary } = page;
   const tabs: { id: Tab; label: string; count: number }[] = [
+    { id: "in-store", label: "In store", count: page.rows.filter(inStore).length },
     { id: "all", label: "All sizes", count: page.rows.length },
     { id: "low", label: "Low stock", count: summary.low },
     { id: "sold-out", label: "Sold out", count: summary.soldOut },
   ];
   const needle = query.trim().toLowerCase();
   const rows = page.rows
-    .filter((row) => (tab === "low" ? isLow(row) : tab === "sold-out" ? isSoldOut(row) : true))
+    .filter((row) => (tab === "in-store" ? inStore(row) : tab === "low" ? isLow(row) : tab === "sold-out" ? isSoldOut(row) : true))
     .filter((row) => !needle || rowLabel(row).toLowerCase().includes(needle));
 
   return (
@@ -187,7 +190,7 @@ export function StockView({ page, canEdit = false, canPrice = false, initialQuer
             <div className={COLUMN.shows}>Shop shows</div>
             <div className={COLUMN.edit} />
           </div>
-          {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">No sizes here.</p>}
+          {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">{tab === "in-store" && !needle ? "Nothing is on the shop yet." : "No sizes here."}</p>}
           {rows.map((row) => {
             // The row opens the edit drawer for those who may edit, otherwise the Orders holding it, if any.
             const open = canEdit ? () => setEditingId(row.sizeId) : (row.orders?.length ?? 0) > 0 ? () => setOpened(row) : null;
