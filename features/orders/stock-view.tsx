@@ -25,7 +25,7 @@ const isLow = (row: StockRow) => row.marker === null && typeof row.shows === "ob
 const isSoldOut = (row: StockRow) => row.marker === null && row.shows === "Sold out";
 
 function ShowsPill({ row }: { row: StockRow }) {
-  if (row.marker) return <Pill className={PILL.grey}>{row.marker.kind === "discontinued" ? "Discontinued" : "Not on shop"}</Pill>;
+  if (row.marker) return <Pill className={PILL.grey}>{row.marker.kind === "discontinued" ? "Discontinued" : row.marker.kind === "removed" ? "Removed from store" : "Not on shop"}</Pill>;
   const tone = isSoldOut(row) ? PILL.red : isLow(row) ? PILL.amber : row.shows === "Unknown" ? PILL.grey : PILL.green;
   return <Pill className={tone}>{shopLabel(row.shows)}</Pill>;
 }

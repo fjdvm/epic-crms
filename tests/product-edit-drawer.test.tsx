@@ -2,12 +2,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const { refresh, publish, setPrice, upload, toastError, toastSuccess, toastInfo } = vi.hoisted(() => ({
-  refresh: vi.fn(), publish: vi.fn(), setPrice: vi.fn(), upload: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(), toastInfo: vi.fn(),
+const { refresh, publish, remove, setPrice, upload, toastError, toastSuccess, toastInfo } = vi.hoisted(() => ({
+  refresh: vi.fn(), publish: vi.fn(), remove: vi.fn(), setPrice: vi.fn(), upload: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(), toastInfo: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("sonner", () => ({ toast: { error: toastError, success: toastSuccess, info: toastInfo } }));
-vi.mock("@/features/orders/product-content-actions", () => ({ publishProductContent: publish, setProductPrice: setPrice }));
+vi.mock("@/features/orders/product-content-actions", () => ({ publishProductContent: publish, removeFromStore: remove, setProductPrice: setPrice }));
 vi.mock("@/features/orders/product-image-upload", () => ({ uploadProductImage: upload }));
 
 import { ProductEditDrawer } from "@/features/orders/product-edit-drawer";
@@ -124,6 +124,51 @@ it("tells Staff why a refused publish did not go through", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
   fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
   await waitFor(() => expect(toastError).toHaveBeenCalledWith("Your Role can only view shop work."));
+});
+
+it("removes a product on the shop from the store after a confirm, then closes", async () => {
+  remove.mockResolvedValue({ ok: true });
+  const onClose = vi.fn();
+  render(<ProductEditDrawer row={row} onClose={onClose} />);
+  fireEvent.click(screen.getByRole("button", { name: "Remove from store" }));
+  expect(remove).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith(12));
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Removed from the store."));
+  expect(onClose).toHaveBeenCalled();
+});
+
+it("tells Staff why a refused removal did not go through, and keeps the drawer open", async () => {
+  remove.mockResolvedValue({ ok: false, reason: "That product is already off the shop." });
+  const onClose = vi.fn();
+  render(<ProductEditDrawer row={row} onClose={onClose} />);
+  fireEvent.click(screen.getByRole("button", { name: "Remove from store" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+  await waitFor(() => expect(toastError).toHaveBeenCalledWith("That product is already off the shop."));
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["Removed from store", { kind: "removed" as const }],
+  ["Not on shop", { kind: "not-on-shop" as const, missing: ["price" as const] }],
+  ["Discontinued", { kind: "discontinued" as const }],
+])("offers no Remove from store for a product that is %s", (_, marker) => {
+  render(<ProductEditDrawer row={{ ...row, marker }} onClose={vi.fn()} />);
+  expect(screen.queryByRole("button", { name: "Remove from store" })).toBeNull();
+});
+
+it("publishing a removed product puts it back on the store", async () => {
+  render(<ProductEditDrawer row={{ ...row, marker: { kind: "removed" } }} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
+  expect(await screen.findByText("Put it back on the store?")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Back on the store."));
+});
+
+it("labels a removed product on the stock list", () => {
+  render(<StockView page={{ hasStock: true, summary: { sizes: 0, soldOut: 0, reserved: 4, low: 0 }, rows: [{ ...row, marker: { kind: "removed" } }] }} canEdit />);
+  fireEvent.click(screen.getByRole("tab", { name: /All sizes/ }));
+  expect(screen.getByText("Removed from store")).toBeTruthy();
 });
 
 const page = { hasStock: true, summary: { sizes: 1, soldOut: 0, reserved: 4, low: 0 }, rows: [row] };

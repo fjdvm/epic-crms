@@ -41,7 +41,7 @@ const HOLDING_STATUS: Record<string, HoldingStatus> = {
  * What the IMS holds that the shop does not sell: missing details, or a product the IMS removed or deactivated. CREOMS
  * owns the shop price and image, so a product is off the shop until CREOMS has given it both.
  */
-export type StockMarker = { kind: "not-on-shop"; missing: ("name" | "image" | "price")[] } | { kind: "discontinued" };
+export type StockMarker = { kind: "not-on-shop"; missing: ("name" | "image" | "price")[] } | { kind: "discontinued" } | { kind: "removed" };
 
 export interface StockRow {
   sizeId: number;
@@ -81,6 +81,8 @@ export type StockResult = { ok: true; page: StockPage } | { ok: false };
 
 const markerOf = (item: ImsProduct, content?: ProductContent): StockMarker | null => {
   if (!item.active) return { kind: "discontinued" };
+  // Taken off the shop in CREOMS ("Remove from store"); publishing again puts it back.
+  if (content?.removed) return { kind: "removed" };
   const missing = ([["name", !(content?.name ?? item.name)], ["image", !content?.imageUrl], ["price", (content?.price ?? null) === null]] as const)
     .filter(([, absent]) => absent).map(([what]) => what);
   return missing.length > 0 ? { kind: "not-on-shop", missing } : null;

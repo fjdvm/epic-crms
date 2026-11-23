@@ -13,7 +13,11 @@ export { MAX_DESCRIPTION, MAX_NAME } from "./product-content-limits";
  * What CREOMS published for one IMS product. All of it stays in CREOMS: none is ever sent to the IMS, which still owns
  * the product and its stock. A null name means the IMS name shows; a null price keeps the product off the shop.
  */
-export interface ProductContent { description: string; imageUrl: string | null; name: string | null; price: number | null }
+export interface ProductContent {
+  description: string; imageUrl: string | null; name: string | null; price: number | null;
+  /** True when Staff or a Manager took it off the shop ("Remove from store"); publishing again clears it. */
+  removed: boolean;
+}
 export interface PublishedImage { fileId: string; url: string }
 export type ProductContentResult = { ok: true } | { ok: false; reason: string };
 
@@ -23,11 +27,12 @@ export const IMAGE_REQUIRED_REASON = "Add an image before publishing. The shop s
 
 /** Published content by IMS product id. Throws when the table cannot be read; callers decide how to degrade. */
 export async function loadProductContent(sql: postgres.Sql, productIds?: number[]): Promise<Map<number, ProductContent>> {
-  const rows = await sql<{ id: number; description: string; image_url: string | null; name: string | null; price: string | null }[]>`
-    select ims_product_id as id, description, image_url, name, price from crms.product_content
+  const rows = await sql<{ id: number; description: string; image_url: string | null; name: string | null; price: string | null; removed: boolean }[]>`
+    select ims_product_id as id, description, image_url, name, price, removed_at is not null as removed from crms.product_content
     ${productIds ? sql`where ims_product_id = any(${productIds})` : sql``}`;
   return new Map(rows.map((row) => [row.id, {
     description: row.description, imageUrl: row.image_url, name: row.name, price: row.price === null ? null : Number(row.price),
+    removed: Boolean(row.removed),
   }]));
 }
 
@@ -60,11 +65,11 @@ export async function saveProductContent(
   if (!named.ok) return named;
   const image = input.image ?? null;
   const keepName = named.name === undefined;
-  if (!image) {
-    // The shop shows a product only with CREOMS's own image, so a publish without one would never reach Customers.
-    const [saved] = await sql<{ image_url: string | null }[]>`select image_url from crms.product_content where ims_product_id = ${input.productId}`;
-    if (!saved?.image_url) return { ok: false, reason: IMAGE_REQUIRED_REASON };
-  }
+  const [saved] = await sql<{ image_url: string | null; removed: boolean }[]>`
+    select image_url, removed_at is not null as removed from crms.product_content where ims_product_id = ${input.productId}`;
+  // The shop shows a product only with CREOMS's own image, so a publish without one would never reach Customers.
+  if (!image && !saved?.image_url) return { ok: false, reason: IMAGE_REQUIRED_REASON };
+  const wasRemoved = Boolean(saved?.removed);
 
   await sql`
     insert into crms.product_content (ims_product_id, description, image_file_id, image_url, name, updated_by_id, updated_by_name, updated_at)
@@ -73,14 +78,44 @@ export async function saveProductContent(
       image_file_id = coalesce(excluded.image_file_id, crms.product_content.image_file_id),
       image_url = coalesce(excluded.image_url, crms.product_content.image_url),
       name = case when ${keepName} then crms.product_content.name else excluded.name end,
+      removed_at = null, removed_by_id = null, removed_by_name = null,
       updated_by_id = excluded.updated_by_id, updated_by_name = excluded.updated_by_name, updated_at = excluded.updated_at`;
 
   await recordAudit(audit, {
     module: ORDERS_MODULE, action: "product_content.published", outcome: "success", actor: staffAuditActor(staff),
     target: { type: "product", id: String(input.productId), display_name: `Product ${input.productId}` },
-    description: `${staff.name} published the ${keepName ? "" : "name, "}${image ? "image and " : ""}description of product ${input.productId} to the store.`,
-    occurred_at: new Date().toISOString(), metadata: { imageChanged: image !== null, nameChanged: !keepName, descriptionLength: description.length },
+    description: `${staff.name} published the ${keepName ? "" : "name, "}${image ? "image and " : ""}description of product ${input.productId} to the store${wasRemoved ? ", putting it back on the shop" : ""}.`,
+    occurred_at: new Date().toISOString(), metadata: { imageChanged: image !== null, nameChanged: !keepName, descriptionLength: description.length, restored: wasRemoved },
     operationId: `product-content:${input.productId}:${randomUUID()}`,
+  });
+  return { ok: true };
+}
+
+/**
+ * Takes one product off the shop. Reversible: publishing it again puts it back. Staff or Manager only, checked here and
+ * not only on the page. Audited under the person's name. The IMS product and its stock are untouched.
+ */
+export async function removeProductFromStore(
+  sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: { productId: number },
+): Promise<ProductContentResult> {
+  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  if (!validProduct(input.productId)) return { ok: false, reason: "That product could not be found." };
+  const [saved] = await sql<{ removed: boolean }[]>`
+    select removed_at is not null as removed from crms.product_content where ims_product_id = ${input.productId}`;
+  if (saved?.removed) return { ok: false, reason: "That product is already off the shop." };
+
+  await sql`
+    insert into crms.product_content (ims_product_id, removed_at, removed_by_id, removed_by_name, updated_by_id, updated_by_name, updated_at)
+    values (${input.productId}, now(), ${staff.id}, ${staff.name}, ${staff.id}, ${staff.name}, now())
+    on conflict (ims_product_id) do update set removed_at = excluded.removed_at, removed_by_id = excluded.removed_by_id,
+      removed_by_name = excluded.removed_by_name`;
+
+  await recordAudit(audit, {
+    module: ORDERS_MODULE, action: "product_content.removed", outcome: "success", actor: staffAuditActor(staff),
+    target: { type: "product", id: String(input.productId), display_name: `Product ${input.productId}` },
+    description: `${staff.name} removed product ${input.productId} from the store.`,
+    occurred_at: new Date().toISOString(), metadata: {},
+    operationId: `product-removed:${input.productId}:${randomUUID()}`,
   });
   return { ok: true };
 }

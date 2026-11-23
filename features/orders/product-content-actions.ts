@@ -10,7 +10,7 @@ import { canWork, READ_ONLY_REASON } from "@/lib/portal/roles";
 import { approvals } from "@/features/approvals/server";
 import { nudgeStorefront } from "@/features/management/storefront-nudge";
 
-import { applyProductPrice, saveProductContent, type ProductContentResult, type PublishedImage } from "./product-content";
+import { applyProductPrice, removeProductFromStore, saveProductContent, type ProductContentResult, type PublishedImage } from "./product-content";
 import { parsePrice } from "./product-content-limits";
 
 /** Open storefront pages refetch what they show; a failed nudge never undoes a save. */
@@ -42,6 +42,22 @@ export async function publishProductContent(productId: number, description: stri
   } catch (error) {
     console.error("Product content could not be published", error);
     return { ok: false, reason: "CREOMS could not publish that. Try again in a moment." };
+  }
+}
+
+/**
+ * Takes one product off the shop; publishing it again puts it back. Not optimistic: Customers stop seeing it, so the
+ * screen waits for this answer. The Role is checked again inside.
+ */
+export async function removeFromStore(productId: number): Promise<ProductContentResult> {
+  const staff = await requireModule(ORDERS_MODULE);
+  try {
+    const result = await removeProductFromStore(crmsDatabase(), gatewayAuditTrail, staff, { productId });
+    if (result.ok) await tellStorefront();
+    return result;
+  } catch (error) {
+    console.error("A product could not be removed from the store", error);
+    return { ok: false, reason: "CREOMS could not remove that. Try again in a moment." };
   }
 }
 

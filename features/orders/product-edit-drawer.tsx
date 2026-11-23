@@ -12,7 +12,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { Textarea } from "@/components/ui/textarea";
 
 import { OrderActionDialog } from "./action-dialog";
-import { publishProductContent, setProductPrice } from "./product-content-actions";
+import { publishProductContent, removeFromStore, setProductPrice } from "./product-content-actions";
 import { uploadProductImage } from "./product-image-upload";
 import { MAX_DESCRIPTION, MAX_NAME, parsePrice } from "./product-content-limits";
 import { rowLabel, type StockRow } from "./stock";
@@ -96,8 +96,9 @@ interface Chosen { reference: string; preview: string }
 export const IMAGE_REQUIRED = "Add an image before publishing. The shop shows a product only once it has one.";
 
 /** What the success message says: when the product is not yet complete, what it still waits for. */
-function publishedMessage(price: number | null): string {
-  return price === null ? "Published. It shows on the shop once a Manager sets the price." : "Published to the store.";
+function publishedMessage(price: number | null, removed: boolean): string {
+  if (price === null) return "Published. It shows on the shop once a Manager sets the price.";
+  return removed ? "Back on the store." : "Published to the store.";
 }
 
 function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean; onClose: () => void }) {
@@ -137,6 +138,7 @@ function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean
   // The shop needs CREOMS's own image; an IMS image only shows here, for reference.
   const hasImage = chosen !== null || row.hasShopImage;
   const imsImageOnly = chosen === null && !row.hasShopImage && row.image !== null;
+  const removed = row.marker?.kind === "removed";
 
   return (
     <>
@@ -192,12 +194,28 @@ function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean
       </div>
 
       <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[#f0f0f2] pt-4">
+        {row.marker === null && (
+          <div className="mr-auto">
+            <OrderActionDialog
+              trigger="Remove from store" tone="destructive" triggerDisabled={uploading}
+              title="Remove from the store?"
+              description={`Customers will no longer see or order ${rowLabel(row)}. Open Orders keep their items. Publish it again to put it back.`}
+              confirm="Remove" busy="Removing…" successMessage="Removed from the store."
+              run={async () => {
+                const result = await removeFromStore(row.sizeId);
+                if (result.ok) onClose();
+                return result;
+              }}
+            />
+          </div>
+        )}
         <Button type="button" variant="outline" onClick={onClose} className="h-auto rounded-lg px-4 py-[9px] shadow-none">Cancel</Button>
         {hasImage ? (
           <OrderActionDialog
             trigger="Publish to store" triggerDisabled={uploading}
-            title="Publish to the store?" description={`Customers will see this name, image and description for ${rowLabel(row)}.`}
-            confirm="Publish" busy="Publishing…" successMessage={publishedMessage(row.price)}
+            title={removed ? "Put it back on the store?" : "Publish to the store?"}
+            description={`Customers will see this name, image and description for ${rowLabel(row)}.`}
+            confirm="Publish" busy="Publishing…" successMessage={publishedMessage(row.price, removed)}
             run={async () => {
               const result = await publishProductContent(row.sizeId, description, chosen?.reference ?? null, name);
               if (result.ok) onClose();
