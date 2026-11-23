@@ -300,7 +300,7 @@ The CREOMS sidebar screen, open to every role with the Orders Module, listing ev
 _Avoid_: Inventory, stock page
 
 **Not on shop**:
-A product the IMS holds that Customers cannot yet see because its name, or the shop image or price CREOMS sets, is missing; the missing items are listed. The IMS image and price never put a product on the shop. It goes live by itself once all three exist. Its category (Ube Powder, Jam or Halaya) is read from its name, and its description stays empty until Staff publish one from Products & Stocks.
+A product the IMS holds that Customers cannot yet see because its name, or the shop image or price CREOMS sets, is missing; the missing items are listed. The IMS image and price never put a product on the shop. It goes live by itself once all three exist. Its category (Ube Powder, Jam or Halaya) is read from its name, and its description stays empty until Staff publish one from Products & Stocks. Publishing needs a shop image: without one, CREOMS refuses the publish and asks for it. The In store tab of Products & Stocks, which opens first, lists only what is on the shop.
 
 **Discontinued**:
 A product removed or deactivated in the IMS. It leaves the storefront at once and cannot be reserved; CREOMS keeps showing it with its image and last known numbers. Open Orders keep their Reservations and finish normally, and Order history keeps the name and price from when the Order was placed. Bringing it back in the IMS makes it live again.

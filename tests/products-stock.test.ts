@@ -234,7 +234,7 @@ describe("Refetching one Size", () => {
   });
 
   it("merges a refetched Size into the page: replace, insert in order, drop, and recount", () => {
-    const mk = (sizeId: number, product: string, available: number) => ({ sizeId, product, imsName: product, size: "", image: null, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
+    const mk = (sizeId: number, product: string, available: number) => ({ sizeId, product, imsName: product, size: "", image: null, hasShopImage: true, price: 100, description: "", marker: null, inStock: available, reserved: 0, available, shows: shopShows(available), orders: [] });
     const base = { hasStock: true, rows: [mk(1, "A", 20), mk(3, "C", 20)], summary: summarize([mk(1, "A", 20), mk(3, "C", 20)]) };
     const inserted = withSize(base, 2, mk(2, "B", 0));
     expect(inserted.rows.map((r) => r.sizeId)).toEqual([1, 2, 3]);

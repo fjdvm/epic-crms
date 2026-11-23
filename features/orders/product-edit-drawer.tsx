@@ -10,10 +10,10 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { uploadFile } from "@/features/files/client";
 
 import { OrderActionDialog } from "./action-dialog";
 import { publishProductContent, setProductPrice } from "./product-content-actions";
+import { uploadProductImage } from "./product-image-upload";
 import { MAX_DESCRIPTION, MAX_NAME, parsePrice } from "./product-content-limits";
 import { rowLabel, type StockRow } from "./stock";
 
@@ -93,6 +93,13 @@ function PriceField({ row, canPrice }: { row: StockRow; canPrice: boolean }) {
 /** The new image Staff chose: uploaded already, published only when they confirm. */
 interface Chosen { reference: string; preview: string }
 
+export const IMAGE_REQUIRED = "Add an image before publishing. The shop shows a product only once it has one.";
+
+/** What the success message says: when the product is not yet complete, what it still waits for. */
+function publishedMessage(price: number | null): string {
+  return price === null ? "Published. It shows on the shop once a Manager sets the price." : "Published to the store.";
+}
+
 function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean; onClose: () => void }) {
   const [description, setDescription] = useState(row.description);
   // Empty means the IMS name; what is shown starts from CREOMS's own name, if it set one.
@@ -100,6 +107,8 @@ function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean
   const [chosen, setChosen] = useState<Chosen | null>(null);
   const [uploading, setUploading] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [imageMissing, setImageMissing] = useState(false);
+  const imageButton = useRef<HTMLButtonElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const preview = useRef<string | null>(null);
 
@@ -110,11 +119,12 @@ function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean
     setProblem(null);
     setUploading(true);
     try {
-      const result = await uploadFile("Orders", file);
+      const result = await uploadProductImage(file);
       if (!result.ok) return setProblem(result.reason);
       if (preview.current) URL.revokeObjectURL(preview.current);
       preview.current = URL.createObjectURL(file);
       setChosen({ reference: result.reference, preview: preview.current });
+      setImageMissing(false);
     } catch {
       setProblem("The image could not be uploaded. Please try again.");
     } finally {
@@ -124,6 +134,9 @@ function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean
   }
 
   const shown = chosen?.preview ?? row.image;
+  // The shop needs CREOMS's own image; an IMS image only shows here, for reference.
+  const hasImage = chosen !== null || row.hasShopImage;
+  const imsImageOnly = chosen === null && !row.hasShopImage && row.image !== null;
 
   return (
     <>
@@ -151,16 +164,19 @@ function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean
               {shown && <ZoomableImage src={shown} alt={chosen ? "New image preview" : "Current image"} className="size-20 object-cover" />}
             </div>
             <div className="flex flex-col items-start gap-1">
-              <Button type="button" variant="outline" disabled={uploading} onClick={() => picker.current?.click()} className="h-auto gap-2 rounded-lg px-3.5 py-[9px] shadow-none">
+              <Button ref={imageButton} type="button" variant="outline" disabled={uploading} onClick={() => picker.current?.click()} className="h-auto gap-2 rounded-lg px-3.5 py-[9px] shadow-none">
                 {uploading ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <ImagePlus aria-hidden className="size-4" />}
-                {uploading ? "Uploading…" : shown ? "Replace image" : "Upload image"}
+                {uploading ? "Uploading…" : hasImage ? "Replace image" : "Upload image"}
               </Button>
               <input
                 ref={picker} id="product-image" type="file" accept="image/jpeg,image/png" aria-label="Product image" className="sr-only"
                 onChange={(event) => void choose(event.target.files?.[0])}
               />
-              <p className="text-xs text-[#6e6680]">JPG or PNG. Shown on the shop instead of the IMS image.</p>
+              <p className="text-xs text-[#6e6680]">
+                {imsImageOnly ? "IMS image, not on the shop. Upload a JPG or PNG for the shop." : "JPG or PNG, up to 5 MB. Required: the shop shows a product only once it has one."}
+              </p>
               {problem && <p role="alert" className="text-xs text-[#b42318]">{problem}</p>}
+              {imageMissing && !problem && <p role="alert" className="text-xs text-[#b42318]">{IMAGE_REQUIRED}</p>}
             </div>
           </div>
         </div>
@@ -177,16 +193,23 @@ function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean
 
       <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[#f0f0f2] pt-4">
         <Button type="button" variant="outline" onClick={onClose} className="h-auto rounded-lg px-4 py-[9px] shadow-none">Cancel</Button>
-        <OrderActionDialog
-          trigger="Publish to store" triggerDisabled={uploading}
-          title="Publish to the store?" description={`Customers will see this name, image and description for ${rowLabel(row)}.`}
-          confirm="Publish" busy="Publishing…" successMessage="Published to the store."
-          run={async () => {
-            const result = await publishProductContent(row.sizeId, description, chosen?.reference ?? null, name);
-            if (result.ok) onClose();
-            return result;
-          }}
-        />
+        {hasImage ? (
+          <OrderActionDialog
+            trigger="Publish to store" triggerDisabled={uploading}
+            title="Publish to the store?" description={`Customers will see this name, image and description for ${rowLabel(row)}.`}
+            confirm="Publish" busy="Publishing…" successMessage={publishedMessage(row.price)}
+            run={async () => {
+              const result = await publishProductContent(row.sizeId, description, chosen?.reference ?? null, name);
+              if (result.ok) onClose();
+              return result;
+            }}
+          />
+        ) : (
+          // No image yet: say so where the image goes, instead of opening the confirm.
+          <Button type="button" disabled={uploading} onClick={() => { setImageMissing(true); imageButton.current?.focus(); }} className="h-auto rounded-lg px-4 py-[9px]">
+            Publish to store
+          </Button>
+        )}
       </div>
     </>
   );

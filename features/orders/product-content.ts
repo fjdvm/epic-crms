@@ -19,6 +19,8 @@ export type ProductContentResult = { ok: true } | { ok: false; reason: string };
 
 type Staff = { id: string; name: string; role: string };
 
+export const IMAGE_REQUIRED_REASON = "Add an image before publishing. The shop shows a product only once it has one.";
+
 /** Published content by IMS product id. Throws when the table cannot be read; callers decide how to degrade. */
 export async function loadProductContent(sql: postgres.Sql, productIds?: number[]): Promise<Map<number, ProductContent>> {
   const rows = await sql<{ id: number; description: string; image_url: string | null; name: string | null; price: string | null }[]>`
@@ -58,6 +60,11 @@ export async function saveProductContent(
   if (!named.ok) return named;
   const image = input.image ?? null;
   const keepName = named.name === undefined;
+  if (!image) {
+    // The shop shows a product only with CREOMS's own image, so a publish without one would never reach Customers.
+    const [saved] = await sql<{ image_url: string | null }[]>`select image_url from crms.product_content where ims_product_id = ${input.productId}`;
+    if (!saved?.image_url) return { ok: false, reason: IMAGE_REQUIRED_REASON };
+  }
 
   await sql`
     insert into crms.product_content (ims_product_id, description, image_file_id, image_url, name, updated_by_id, updated_by_name, updated_at)

@@ -6,6 +6,7 @@ import { parsePrice } from "@/features/orders/product-content-limits";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 const staff = { id: "s1", name: "Sam", role: "Staff/Employee" };
+const IMG = { fileId: "f0", url: "https://files.example/f0.png" };
 
 describe("saveProductContent", () => {
   let db: TestDatabase;
@@ -52,9 +53,21 @@ describe("saveProductContent", () => {
     expect(JSON.stringify(audit.mock.calls[0])).toContain("Sam");
   });
 
+  it("refuses to publish a product that has no image yet, and accepts a saved or a new one", async () => {
+    const refused = await saveProductContent(db.sql, audit, staff, { productId: 7, description: "Hi", image: null, name: "Ube Jam" });
+    expect(refused).toEqual({ ok: false, reason: "Add an image before publishing. The shop shows a product only once it has one." });
+    expect((await loadProductContent(db.sql)).size).toBe(0);
+    expect(audit).not.toHaveBeenCalled();
+    // A price set first (a Manager decision) still leaves the product without an image.
+    await applyProductPrice(db.sql, audit, { id: "m1", name: "Mia", role: "CREOMS Manager" }, { productId: 8, price: 100 });
+    expect((await saveProductContent(db.sql, audit, staff, { productId: 8, description: "Hi" })).ok).toBe(false);
+    expect(await saveProductContent(db.sql, audit, staff, { productId: 8, description: "Hi", image: IMG })).toEqual({ ok: true });
+    expect(await saveProductContent(db.sql, audit, staff, { productId: 8, description: "Again" })).toEqual({ ok: true });
+  });
+
   it("reads only the asked-for products", async () => {
-    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "A", image: null });
-    await saveProductContent(db.sql, audit, staff, { productId: 8, description: "B", image: null });
+    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "A", image: IMG });
+    await saveProductContent(db.sql, audit, staff, { productId: 8, description: "B", image: IMG });
     expect([...(await loadProductContent(db.sql, [8, 99])).keys()]).toEqual([8]);
   });
 
@@ -67,7 +80,7 @@ describe("saveProductContent", () => {
   });
 
   it("keeps CREOMS's own shop name: undefined keeps it, empty goes back to the IMS name", async () => {
-    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "A", name: "  Ube   Jam Extreme " });
+    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "A", name: "  Ube   Jam Extreme ", image: IMG });
     expect((await loadProductContent(db.sql)).get(7)?.name).toBe("Ube Jam Extreme");
     await saveProductContent(db.sql, audit, staff, { productId: 7, description: "B" });
     expect((await loadProductContent(db.sql)).get(7)?.name).toBe("Ube Jam Extreme");
@@ -95,10 +108,10 @@ describe("applyProductPrice", () => {
   beforeEach(async () => { audit.mockClear(); await db.sql`delete from crms.product_content`; });
 
   it("sets the price in CREOMS only, keeps the description, and audits the old and new price under the Manager's name", async () => {
-    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "Sweet." });
+    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "Sweet.", image: IMG });
     expect(await applyProductPrice(db.sql, audit, manager, { productId: 7, price: 250 })).toEqual({ ok: true });
     expect(await applyProductPrice(db.sql, audit, manager, { productId: 7, price: 275.5 })).toEqual({ ok: true });
-    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "Sweet.", imageUrl: null, name: null, price: 275.5 });
+    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "Sweet.", imageUrl: IMG.url, name: null, price: 275.5 });
     const [row] = await db.sql`select price_updated_by_name from crms.product_content where ims_product_id = 7`;
     expect(row.price_updated_by_name).toBe("Mia");
     const last = JSON.stringify(audit.mock.calls.at(-1));

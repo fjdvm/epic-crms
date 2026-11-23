@@ -8,14 +8,14 @@ const { refresh, publish, setPrice, upload, toastError, toastSuccess, toastInfo 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("sonner", () => ({ toast: { error: toastError, success: toastSuccess, info: toastInfo } }));
 vi.mock("@/features/orders/product-content-actions", () => ({ publishProductContent: publish, setProductPrice: setPrice }));
-vi.mock("@/features/files/client", () => ({ uploadFile: upload }));
+vi.mock("@/features/orders/product-image-upload", () => ({ uploadProductImage: upload }));
 
 import { ProductEditDrawer } from "@/features/orders/product-edit-drawer";
 import type { StockRow } from "@/features/orders/stock";
 import { StockView } from "@/features/orders/stock-view";
 
 const row: StockRow = {
-  sizeId: 12, product: "Ube Jam Extreme", imsName: "Ube Jam Extreme", size: "250g Container", image: null, price: 250, description: "Sweet ube.", marker: null,
+  sizeId: 12, product: "Ube Jam Extreme", imsName: "Ube Jam Extreme", size: "250g Container", image: "https://files.example/jam.png", hasShopImage: true, price: 250, description: "Sweet ube.", marker: null,
   inStock: 40, reserved: 4, available: 36, shows: "In stock", orders: [],
 };
 
@@ -64,8 +64,38 @@ it("asks to confirm before publishing, then sends the description and says it is
   expect(publish).not.toHaveBeenCalled();
   fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
   await waitFor(() => expect(publish).toHaveBeenCalledWith(12, "Fresh ube jam.", null, ""));
-  await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Published to the store."));
   expect(refresh).toHaveBeenCalled();
+});
+
+it("refuses to publish without an image: says so under Image and never opens the confirm", () => {
+  render(<ProductEditDrawer row={{ ...row, image: null, hasShopImage: false }} onClose={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Upload image" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
+  expect(screen.getByRole("alert").textContent).toBe("Add an image before publishing. The shop shows a product only once it has one.");
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(publish).not.toHaveBeenCalled();
+});
+
+it("labels an IMS image as not on the shop and still asks for an upload before publishing", () => {
+  render(<ProductEditDrawer row={{ ...row, hasShopImage: false }} onClose={vi.fn()} />);
+  expect(screen.getByText(/IMS image, not on the shop/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
+  expect(screen.getByRole("alert").textContent).toContain("Add an image before publishing");
+  expect(publish).not.toHaveBeenCalled();
+});
+
+it("publishes once an image is uploaded, and says the price is still needed when there is none", async () => {
+  upload.mockResolvedValue({ ok: true, reference: "ref-2" });
+  render(<ProductEditDrawer row={{ ...row, image: null, hasShopImage: false, price: null }} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
+  fireEvent.change(screen.getByLabelText("Product image"), { target: { files: [new File(["x"], "jam.png", { type: "image/png" })] } });
+  await screen.findByAltText("New image preview");
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
+  await waitFor(() => expect(publish).toHaveBeenCalledWith(12, "Sweet ube.", "ref-2", ""));
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Published. It shows on the shop once a Manager sets the price."));
 });
 
 it("uploads a chosen image, previews it, and publishes its reference", async () => {
@@ -73,7 +103,7 @@ it("uploads a chosen image, previews it, and publishes its reference", async () 
   open();
   const file = new File(["x"], "jam.png", { type: "image/png" });
   fireEvent.change(screen.getByLabelText("Product image"), { target: { files: [file] } });
-  await waitFor(() => expect(upload).toHaveBeenCalledWith("Orders", file));
+  await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
   expect((await screen.findByAltText("New image preview") as HTMLImageElement).src).toBe("blob:preview");
   fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
   fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
