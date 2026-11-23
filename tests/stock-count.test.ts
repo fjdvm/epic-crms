@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { loadMirror, saveMirror, saveMirrorOne } from "@/features/orders/stock-mirror";
+import { applyImsFigures, loadMirror, saveMirror, saveMirrorOne, type ImsStockPush } from "@/features/orders/stock-count";
 import type { ImsProduct, ImsSizeStock } from "@/lib/storefront";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -10,15 +10,21 @@ const item = (productId: number, over: Partial<ImsProduct> = {}): ImsProduct =>
 const held = (sizeId: number, quantity: number | null, reserved: number | null = 0): ImsSizeStock =>
   ({ sizeId, quantity, reserved, available: quantity === null || reserved === null ? null : quantity - reserved });
 
-describe("stock mirror", () => {
+describe("stock count", () => {
   let db: TestDatabase;
   beforeAll(async () => {
     db = await startTestDatabase();
     await db.sql`create schema crms`;
+    // Production had the old copy; the migration renames it and keeps its rows.
     await db.sql.unsafe(readFileSync("docs/db/crms-stock-mirror.sql", "utf8"));
+    await db.sql`insert into crms.stock_mirror (ims_product_id, name, quantity, reserved, available) values (99, 'Old', 1, 0, 1)`;
+    await db.sql.unsafe(readFileSync("docs/db/crms-stock-count.sql", "utf8"));
+    await db.sql.unsafe(readFileSync("docs/db/crms-stock-count.sql", "utf8"));
+    expect((await db.sql`select name from crms.stock_count where ims_product_id = 99`)[0]?.name).toBe("Old");
+    expect((await db.sql`select name from crms.stock_mirror where ims_product_id = 99`)[0]?.name).toBe("Old");
   }, 60_000);
   afterAll(async () => { await db.close(); });
-  beforeEach(async () => { await db.sql`delete from crms.stock_mirror`; });
+  beforeEach(async () => { await db.sql`delete from crms.stock_count`; });
 
   it("is empty before the first read", async () => {
     expect(await loadMirror(db.sql)).toBeNull();
@@ -54,5 +60,26 @@ describe("stock mirror", () => {
     expect(mirror?.feed.map((p) => p.name)).toEqual(["Product 1", "Fresh"]);
     expect(mirror?.stock.get(2)).toEqual(held(2, 9, 1));
     expect(mirror?.stock.get(1)).toEqual(held(1, 5));
+  });
+
+  const push = (version: bigint, over: Partial<ImsStockPush> = {}): ImsStockPush => ({
+    productId: 22, name: "Ube Halaya Smooth", variant: "500g", image: null, price: 399, active: true, quantity: 10, reserved: 3, available: 7, version, ...over,
+  });
+
+  it("takes the IMS's figures, and only newer ones, so crossed pushes never go backwards", async () => {
+    expect(await applyImsFigures(db.sql, push(BigInt(100)))).toBe(true);
+    expect((await loadMirror(db.sql))?.stock.get(22)).toEqual({ sizeId: 22, quantity: 10, reserved: 3, available: 7 });
+    expect(await applyImsFigures(db.sql, push(BigInt(300), { reserved: 0, available: 10 }))).toBe(true);
+    expect(await applyImsFigures(db.sql, push(BigInt(200), { reserved: 5, available: 5 }))).toBe(false);
+    expect(await applyImsFigures(db.sql, push(BigInt(300), { reserved: 5, available: 5 }))).toBe(false);
+    expect((await loadMirror(db.sql))?.stock.get(22)).toEqual({ sizeId: 22, quantity: 10, reserved: 0, available: 10 });
+  });
+
+  it("keeps the last figures when the IMS could not count them this time", async () => {
+    await applyImsFigures(db.sql, push(BigInt(1)));
+    await applyImsFigures(db.sql, push(BigInt(2), { quantity: null, reserved: null, available: null, name: "Renamed" }));
+    const count = await loadMirror(db.sql);
+    expect(count?.feed[0].name).toBe("Renamed");
+    expect(count?.stock.get(22)).toEqual({ sizeId: 22, quantity: 10, reserved: 3, available: 7 });
   });
 });

@@ -17,7 +17,7 @@ function exampleKeys() {
 }
 
 function secretKeys() {
-  return exampleKeys().filter((key) => !fixedKeys.includes(key) && key !== "CREOMS_UPLOAD_SECRET" && key !== "OWNER_ALERT_EMAIL" && key !== "PORTAL_SYSTEM_SECRET");
+  return exampleKeys().filter((key) => !fixedKeys.includes(key) && key !== "CREOMS_UPLOAD_SECRET" && key !== "OWNER_ALERT_EMAIL" && key !== "IMS_CREOMS_SECRET_PREVIOUS" && key !== "PORTAL_SYSTEM_SECRET");
 }
 
 describe("render-container-app.py", () => {
@@ -108,6 +108,9 @@ describe("render-container-app.py", () => {
 
     const names = manifest().properties.template.containers[0].env.map((entry: { name: string }) => entry.name);
     expect(names).not.toContain("CREOMS_UPLOAD_SECRET");
+    // Only set while the IMS push secret rotates.
+    expect(names).not.toContain("IMS_CREOMS_SECRET_PREVIOUS");
+    expect(names).toContain("IMS_CREOMS_SECRET");
   });
 
   it("keeps an already-bound custom domain so a deploy never unbinds it", () => {

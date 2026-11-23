@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { loadLineReservations, loadStock, loadStockCopy, loadStockSize, shopShows, summarize, withSize } from "@/features/orders/stock";
+import { loadLineReservations, loadStock, loadStockCopy, loadStockSize, loadStockSizeCopy, shopShows, summarize, withSize } from "@/features/orders/stock";
 import type { ImsProduct, ImsSizeStock } from "@/lib/storefront";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -331,6 +331,17 @@ describe("Products & stock with a local copy of the IMS", () => {
       const result = await loadStock(() => db.sql, async () => null, none, noContent, mirror);
       expect(result.ok && result.page).toMatchObject({ rows: [], hasStock: false });
     }
+  });
+
+  it("refetches one Size from CREOMS's stock count alone, with CREOMS's own reserved", async () => {
+    const feed = await feedOfSeed();
+    const mirror = memory({ feed, stock: new Map([[101, { sizeId: 101, quantity: 12, reserved: 0, available: 12 }]]), syncedAt: asOf });
+    await db.sql`insert into stock_reservations values ('r1', 7, 'placed', ${db.sql.json([{ orderLineId: 1, sizeId: 1, quantity: 4 }] as never)})`;
+    const result = await loadStockSizeCopy(() => db.sql, 101, priced(), mirror);
+    expect(result).toMatchObject({ ok: true, row: { sizeId: 101, inStock: 12, reserved: 4, available: 8 } });
+    expect(mirror.state.saved + mirror.state.savedOne).toBe(0);
+    expect(await loadStockSizeCopy(() => db.sql, 777, priced(), mirror)).toEqual({ ok: true, row: null });
+    expect(await loadStockSizeCopy(() => db.sql, 101, priced(), { ...mirror, load: async () => { throw new Error("down"); } })).toEqual({ ok: false });
   });
 
   it("writes a refetched Size through to the copy", async () => {
