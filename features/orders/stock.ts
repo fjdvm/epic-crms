@@ -4,7 +4,7 @@ import { customerNameSql } from "@/lib/deleted-customer";
 import { readProductFeed, readProductStock, readStock, type ImsProduct, type ImsSizeStock } from "@/lib/storefront";
 
 import type { ProductContent } from "./product-content";
-import type { StockMirror } from "./stock-mirror";
+import type { StockMirror } from "./stock-count";
 
 /** A Size with fewer than this many available is low stock; the shop then says "Only N left". Matches the storefront. */
 export const LOW_STOCK_BELOW = 10;
@@ -108,8 +108,8 @@ const sizeSource = (item: ImsProduct, content: ProductContent | undefined): Size
 });
 
 /**
- * Products & Stocks as the page opens: CREOMS's own copy of the IMS, with no wait on the IMS. The copy is
- * written by `loadStock`, whenever an IMS read succeeds.
+ * Products & Stocks from CREOMS's own stock count, with no wait on the IMS. The IMS pushes every change to the count
+ * (`applyImsFigures`); `loadStock` fills it once from a full IMS read (the backfill).
  */
 export async function loadStockCopy(
   connect: () => postgres.Sql,
@@ -239,6 +239,28 @@ export async function loadStockSize(
     return { ok: true, row: toRow(sizeSource(item, published.get(sizeId)), stock, holding) };
   } catch (error) {
     console.error("A Size could not be refetched", error);
+    return { ok: false };
+  }
+}
+
+/**
+ * One Size again, from CREOMS's stock count, after the IMS announced (and pushed) a change to it. Never calls the IMS.
+ * A null row means the count no longer holds that Size.
+ */
+export async function loadStockSizeCopy(
+  connect: () => postgres.Sql,
+  sizeId: number,
+  readPublished: ContentReader,
+  mirror: StockMirror,
+): Promise<StockSizeResult> {
+  try {
+    const copy = await mirror.load();
+    const item = copy?.feed.find((entry) => entry.productId === sizeId);
+    if (!copy || !item) return { ok: true, row: null };
+    const [holding, published] = await Promise.all([loadHoldingOrders(connect), readContent([sizeId], readPublished)]);
+    return { ok: true, row: toRow(sizeSource(item, published.get(sizeId)), copy.stock, holding) };
+  } catch (error) {
+    console.error("A Size could not be read from the stock count", error);
     return { ok: false };
   }
 }

@@ -13,6 +13,12 @@ describe("proxy matcher", () => {
     expect(matches("/api/payment-methods")).toBe(false);
   });
 
+  it("leaves only the IMS stock push outside the Portal session, since it authenticates with the IMS credential", () => {
+    expect(matches("/api/internal/ims-stock")).toBe(false);
+    expect(matches("/api/internal/ims-stock-admin")).toBe(true);
+    expect(matches("/api/internal/other")).toBe(true);
+  });
+
   it("still guards the payment accounts routes and similarly named paths", () => {
     expect(matches("/api/payment-accounts/1/qr")).toBe(true);
     expect(matches("/api/payment-methods-admin")).toBe(true);

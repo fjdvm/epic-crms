@@ -5,7 +5,7 @@ import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
 
 import { readPublishedContent, stockMirror } from "./published-content";
-import { loadStock, loadStockSize, type StockResult, type StockSizeResult } from "./stock";
+import { loadStockCopy, loadStockSizeCopy, type StockResult, type StockSizeResult } from "./stock";
 
 /** A single-use pass for the Staff stock channel, issued only to Staff who hold the Orders Module. */
 export async function staffStockLiveUrl(): Promise<string | null> {
@@ -29,15 +29,15 @@ export async function staffStockLiveUrl(): Promise<string | null> {
   }
 }
 
-/** Everything again, after a connect or reconnect. */
+/** Everything again from CREOMS's stock count, after a connect or reconnect. */
 export async function refetchStock(): Promise<StockResult> {
   await requireModule(ORDERS_MODULE);
-  return loadStock(ticketsDatabase, undefined, undefined, readPublishedContent, stockMirror);
+  return loadStockCopy(ticketsDatabase, readPublishedContent, stockMirror);
 }
 
-/** One Size again, after the IMS announced a change to it. */
+/** One Size again from CREOMS's stock count, after the IMS pushed and announced a change to it. */
 export async function refetchStockSize(sizeId: number): Promise<StockSizeResult> {
   await requireModule(ORDERS_MODULE);
   if (!Number.isSafeInteger(sizeId)) return { ok: false };
-  return loadStockSize(ticketsDatabase, sizeId, undefined, undefined, readPublishedContent, stockMirror);
+  return loadStockSizeCopy(ticketsDatabase, sizeId, readPublishedContent, stockMirror);
 }
