@@ -29,9 +29,9 @@ const feedOfSeed = async (): Promise<ImsProduct[]> => (await db.sql<{ id: number
   .map((row) => ({ productId: row.id, name: row.name, variant: row.label, image: "img", price: 100, active: true }));
 
 /** What CREOMS published: by default every product has a shop image and a price, so it is on the shop. */
-type Content = { description: string; imageUrl: string | null; name: string | null; price: number | null };
+type Content = { description: string; imageUrl: string | null; name: string | null; price: number | null; removed: boolean };
 const priced = (over: Record<number, Partial<Content>> = {}) => async (ids: number[]) =>
-  new Map(ids.map((id) => [id, { description: "", imageUrl: "img", name: null, price: 100, ...over[id] }]));
+  new Map(ids.map((id) => [id, { description: "", imageUrl: "img", name: null, price: 100, removed: false, ...over[id] }]));
 
 const ims = (entries: [number, number, number, number][]) => async () =>
   new Map<number, ImsSizeStock>(entries.map(([sizeId, quantity, reserved, available]) => [sizeId, { sizeId, quantity, reserved, available }]));
@@ -208,6 +208,12 @@ describe("Products & stock from the IMS product feed", () => {
   it("does not count Not on shop or Discontinued products as on sale, low or sold out", async () => {
     const page = await load([product(1), product(2, { active: false }), product(3)], [[1, 20, 0, 20], [2, 0, 0, 0], [3, 0, 0, 0]], priced({ 3: { imageUrl: null } }));
     expect(page.summary).toEqual({ sizes: 1, soldOut: 0, reserved: 0, low: 0 });
+  });
+
+  it("marks a product taken off the shop as removed and does not count it as on sale", async () => {
+    const page = await load([product(1), product(2)], [[1, 20, 0, 20], [2, 20, 0, 20]], priced({ 2: { removed: true } }));
+    expect(page.rows.find((row) => row.sizeId === 2)?.marker).toEqual({ kind: "removed" });
+    expect(page.summary.sizes).toBe(1);
   });
 
   it("lists nothing and says the IMS is unreachable when the feed cannot be read, never the storefront's own Sizes", async () => {

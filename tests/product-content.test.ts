@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyProductPrice, loadProductContent, saveProductContent } from "@/features/orders/product-content";
+import { applyProductPrice, loadProductContent, removeProductFromStore, saveProductContent } from "@/features/orders/product-content";
 import { parsePrice } from "@/features/orders/product-content-limits";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
@@ -18,6 +18,8 @@ describe("saveProductContent", () => {
     await db.sql.unsafe(readFileSync("docs/db/crms-product-content-name-price.sql", "utf8"));
     // Safe to re-run.
     await db.sql.unsafe(readFileSync("docs/db/crms-product-content-name-price.sql", "utf8"));
+    await db.sql.unsafe(readFileSync("docs/db/crms-product-content-removed.sql", "utf8"));
+    await db.sql.unsafe(readFileSync("docs/db/crms-product-content-removed.sql", "utf8"));
   }, 60_000);
   afterAll(async () => { await db.close(); });
   beforeEach(async () => {
@@ -48,7 +50,7 @@ describe("saveProductContent", () => {
     const image = { fileId: "f1", url: "https://files.example/f1.png" };
     const result = await saveProductContent(db.sql, audit, staff, { productId: 7, description: "  Ube jam, 250 g.  ", image });
     expect(result).toEqual({ ok: true });
-    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "Ube jam, 250 g.", imageUrl: image.url, name: null, price: null });
+    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "Ube jam, 250 g.", imageUrl: image.url, name: null, price: null, removed: false });
     expect(audit).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(audit.mock.calls[0])).toContain("Sam");
   });
@@ -74,7 +76,7 @@ describe("saveProductContent", () => {
   it("keeps the saved image when the edit leaves it unchanged, and replaces it when a new one is given", async () => {
     await saveProductContent(db.sql, audit, staff, { productId: 7, description: "A", image: { fileId: "f1", url: "https://files.example/f1.png" } });
     await saveProductContent(db.sql, audit, staff, { productId: 7, description: "B", image: undefined });
-    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "B", imageUrl: "https://files.example/f1.png", name: null, price: null });
+    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "B", imageUrl: "https://files.example/f1.png", name: null, price: null, removed: false });
     await saveProductContent(db.sql, audit, staff, { productId: 7, description: "B", image: { fileId: "f2", url: "https://files.example/f2.png" } });
     expect((await loadProductContent(db.sql)).get(7)?.imageUrl).toBe("https://files.example/f2.png");
   });
@@ -94,6 +96,53 @@ describe("saveProductContent", () => {
   });
 });
 
+describe("removeProductFromStore", () => {
+  let db: TestDatabase;
+  const audit = vi.fn(async () => {});
+  beforeAll(async () => {
+    db = await startTestDatabase();
+    await db.sql`create schema crms`;
+    await db.sql.unsafe(readFileSync("docs/db/crms-product-content.sql", "utf8"));
+    await db.sql.unsafe(readFileSync("docs/db/crms-product-content-name-price.sql", "utf8"));
+    await db.sql.unsafe(readFileSync("docs/db/crms-product-content-removed.sql", "utf8"));
+  }, 60_000);
+  afterAll(async () => { await db.close(); });
+  beforeEach(async () => { audit.mockClear(); await db.sql`delete from crms.product_content`; });
+
+  it("takes the product off the shop under the person's name and keeps what was published", async () => {
+    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "Sweet.", image: IMG });
+    audit.mockClear();
+    expect(await removeProductFromStore(db.sql, audit, staff, { productId: 7 })).toEqual({ ok: true });
+    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "Sweet.", imageUrl: IMG.url, name: null, price: null, removed: true });
+    const [row] = await db.sql`select removed_by_name from crms.product_content where ims_product_id = 7`;
+    expect(row.removed_by_name).toBe("Sam");
+    const last = JSON.stringify(audit.mock.calls.at(-1));
+    expect(last).toContain("product_content.removed");
+    expect(last).toContain("Sam removed product 7 from the store.");
+  });
+
+  it("says so when the product is already off the shop", async () => {
+    await removeProductFromStore(db.sql, audit, staff, { productId: 7 });
+    expect(await removeProductFromStore(db.sql, audit, staff, { productId: 7 })).toEqual({ ok: false, reason: "That product is already off the shop." });
+  });
+
+  it("publishing again puts it back on the shop", async () => {
+    await saveProductContent(db.sql, audit, staff, { productId: 7, description: "Sweet.", image: IMG });
+    await removeProductFromStore(db.sql, audit, staff, { productId: 7 });
+    audit.mockClear();
+    expect(await saveProductContent(db.sql, audit, staff, { productId: 7, description: "Sweet." })).toEqual({ ok: true });
+    expect((await loadProductContent(db.sql)).get(7)?.removed).toBe(false);
+    expect(JSON.stringify(audit.mock.calls.at(-1))).toContain("putting it back on the shop");
+  });
+
+  it("refuses a view-only Role and an unknown product, writing nothing", async () => {
+    expect(await removeProductFromStore(db.sql, audit, { ...staff, role: "Super Admin" }, { productId: 7 })).toEqual({ ok: false, reason: "Your Role can only view shop work." });
+    expect((await removeProductFromStore(db.sql, audit, staff, { productId: 0 })).ok).toBe(false);
+    expect((await loadProductContent(db.sql)).size).toBe(0);
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
 describe("applyProductPrice", () => {
   let db: TestDatabase;
   const audit = vi.fn(async () => {});
@@ -103,6 +152,7 @@ describe("applyProductPrice", () => {
     await db.sql`create schema crms`;
     await db.sql.unsafe(readFileSync("docs/db/crms-product-content.sql", "utf8"));
     await db.sql.unsafe(readFileSync("docs/db/crms-product-content-name-price.sql", "utf8"));
+    await db.sql.unsafe(readFileSync("docs/db/crms-product-content-removed.sql", "utf8"));
   }, 60_000);
   afterAll(async () => { await db.close(); });
   beforeEach(async () => { audit.mockClear(); await db.sql`delete from crms.product_content`; });
@@ -111,7 +161,7 @@ describe("applyProductPrice", () => {
     await saveProductContent(db.sql, audit, staff, { productId: 7, description: "Sweet.", image: IMG });
     expect(await applyProductPrice(db.sql, audit, manager, { productId: 7, price: 250 })).toEqual({ ok: true });
     expect(await applyProductPrice(db.sql, audit, manager, { productId: 7, price: 275.5 })).toEqual({ ok: true });
-    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "Sweet.", imageUrl: IMG.url, name: null, price: 275.5 });
+    expect((await loadProductContent(db.sql)).get(7)).toEqual({ description: "Sweet.", imageUrl: IMG.url, name: null, price: 275.5, removed: false });
     const [row] = await db.sql`select price_updated_by_name from crms.product_content where ims_product_id = 7`;
     expect(row.price_updated_by_name).toBe("Mia");
     const last = JSON.stringify(audit.mock.calls.at(-1));
@@ -122,7 +172,7 @@ describe("applyProductPrice", () => {
 
   it("sets a price on a product with nothing published yet", async () => {
     expect(await applyProductPrice(db.sql, audit, manager, { productId: 9, price: 99 })).toEqual({ ok: true });
-    expect((await loadProductContent(db.sql)).get(9)).toEqual({ description: "", imageUrl: null, name: null, price: 99 });
+    expect((await loadProductContent(db.sql)).get(9)).toEqual({ description: "", imageUrl: null, name: null, price: 99, removed: false });
   });
 
   it.each([0, -5, 1.234, 1_000_001, Number.NaN])("refuses the price %s and writes nothing", async (price) => {
