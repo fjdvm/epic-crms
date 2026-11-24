@@ -24,6 +24,24 @@ export const MIN_ORDERS_FOR_RATE = 3;
 const STEPS = ["#e4d8f1", "#c9b3e0", "#a985cf", "#8256b3", "#5b2a86"];
 const NO_DATA = "#f1f0f3";
 
+/** Metro Manila is a speck at country scale, so it is drawn again, enlarged, in the sea west of Luzon. */
+const INSET_KEY = "metro manila";
+const INSET = { x: 18, y: 200, scale: 5.5, padding: 6 };
+const inset = (() => {
+  const shape = map.shapes.find((s) => s.key === INSET_KEY);
+  if (!shape) return null;
+  const n = (shape.d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+  const xs = n.filter((_, i) => i % 2 === 0), ys = n.filter((_, i) => i % 2 === 1);
+  const minX = Math.min(...xs), minY = Math.min(...ys), maxX = Math.max(...xs), maxY = Math.max(...ys);
+  const width = (maxX - minX) * INSET.scale + INSET.padding * 2, height = (maxY - minY) * INSET.scale + INSET.padding * 2;
+  return {
+    d: shape.d, width, height,
+    transform: `translate(${INSET.x + INSET.padding - minX * INSET.scale} ${INSET.y + INSET.padding - minY * INSET.scale}) scale(${INSET.scale})`,
+    // From the inset's right edge to the real place.
+    line: { x1: INSET.x + width, y1: INSET.y + height / 2, x2: minX, y2: (minY + maxY) / 2 },
+  };
+})();
+
 const isRate = (metric: AreaMetric) => metric === "failed" || metric === "returned" || metric === "cod";
 
 /** The value an area is coloured and ranked by: a count, centavos, or a 0–1 share; null when there is too little to say. */
@@ -82,6 +100,24 @@ export function AreaMap({ insights }: { insights: AreaInsights }) {
   };
 
   const chosen = selected ? byKey.get(selected) ?? null : null;
+
+  const area = (areaKey: string, d: string, inInset = false) => (
+      <path
+        key={areaKey}
+        d={d}
+        data-area={inInset ? undefined : areaKey}
+        fill={fill(areaKey)}
+        stroke={areaKey === selected ? "#18181b" : "#ffffff"}
+        strokeWidth={areaKey === selected ? 1.5 : 0.5}
+        vectorEffect="non-scaling-stroke"
+        className="cursor-pointer"
+        onMouseMove={(event) => {
+          const box = event.currentTarget.ownerSVGElement?.parentElement?.getBoundingClientRect();
+          if (box) setHover({ key: areaKey, x: event.clientX - box.left, y: event.clientY - box.top });
+        }}
+        onClick={() => setSelected(areaKey === selected ? null : byKey.has(areaKey) ? areaKey : null)}
+      />
+  );
   const hovered = hover ? byKey.get(hover.key) : null;
 
   return (
@@ -115,22 +151,17 @@ export function AreaMap({ insights }: { insights: AreaInsights }) {
             aria-label={`Map of the Philippines shaded by ${METRIC_LABELS[metric]}. The list beside it has the same figures.`}
             className="h-auto w-full"
           >
-            {map.shapes.map((shape) => (
-              <path
-                key={shape.key}
-                d={shape.d}
-                data-area={shape.key}
-                fill={fill(shape.key)}
-                stroke={shape.key === selected ? "#18181b" : "#ffffff"}
-                strokeWidth={shape.key === selected ? 1.5 : 0.5}
-                className="cursor-pointer"
-                onMouseMove={(event) => {
-                  const box = event.currentTarget.ownerSVGElement?.parentElement?.getBoundingClientRect();
-                  if (box) setHover({ key: shape.key, x: event.clientX - box.left, y: event.clientY - box.top });
-                }}
-                onClick={() => setSelected(shape.key === selected ? null : byKey.has(shape.key) ? shape.key : null)}
-              />
-            ))}
+            {map.shapes.map((shape) => area(shape.key, shape.d))}
+            {inset && (
+              <g data-inset={INSET_KEY}>
+                <line {...inset.line} stroke="#a1a1aa" strokeWidth={0.5} strokeDasharray="2 2" />
+                <rect x={INSET.x} y={INSET.y} width={inset.width} height={inset.height} rx={4} fill="#ffffff" stroke="#e6e1ee" />
+                <g transform={inset.transform}>
+                  {area(INSET_KEY, inset.d, true)}
+                </g>
+                <text x={INSET.x + inset.width / 2} y={INSET.y + inset.height + 11} textAnchor="middle" fontSize={9} fill="#71717a">Metro Manila</text>
+              </g>
+            )}
           </svg>
           {hover && (
             <div
