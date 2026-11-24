@@ -52,7 +52,9 @@ describe("Payment account lifecycle", () => {
     const row = (await listPaymentAccounts(db.sql)).find((x) => x.id === a)!;
     expect(row).toMatchObject({ method: "gcash", label: "Renamed", maskedNumber: "•••••••8888" });
     expect(events()[0]).toMatchObject({ action: "payment_account.edited", metadata: { number_last4: "8888", old_number_last4: "4567" } });
-    expect(JSON.stringify(events())).not.toMatch(/0917|0919|777/);
+    // Any more than the last four digits of either number, in any spacing. Not bare "777": the events also carry random
+    // UUIDs and millisecond timestamps, which can hold it by chance.
+    expect(JSON.stringify(events())).not.toMatch(/0\D?9\D?1\D?7\D?1\D?2\D?3|0\D?9\D?1\D?9\D?7\D?7\D?7/);
   });
 
   it("refuses an edit that duplicates another account or is invalid", async () => {
