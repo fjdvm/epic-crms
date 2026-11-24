@@ -16,7 +16,6 @@ import { SalesChart, SalesChartSkeleton } from "@/features/dashboard/sales-chart
 import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
 import { DASHBOARD_DATA_MODULES, DASHBOARD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireModule } from "@/lib/portal/staff";
-import { UnusualActivityCards } from "@/features/dashboard/unusual-activity-cards";
 import { RoleStrip } from "@/features/dashboard/role-strip";
 import { approvals } from "@/features/approvals/server";
 import { toView } from "@/features/approvals/view";
@@ -135,13 +134,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-7 sm:px-8">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 space-y-1 leading-[normal]">
-          <h1 className="text-2xl font-semibold text-[#18181b]">Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-[#18181b]">Summary</h1>
           <p className="text-sm text-[#71717a]">How the business is doing, at a glance</p>
         </div>
         <PeriodPicker />
       </div>
       <RoleStrip role={role} requests={requests} now={now.getTime()} />
-      {role !== null && role !== "staff" && <UnusualActivityCards canDismiss={role === "manager"} />}
       {Object.values(show).some(Boolean) || attention ? (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -212,7 +210,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       ) : (
         <Alert>
           <AlertTitle>Nothing to show yet</AlertTitle>
-          <AlertDescription>Your Modules do not include any data the Dashboard summarises.</AlertDescription>
+          <AlertDescription>Your Modules do not include any data the Summary shows.</AlertDescription>
         </Alert>
       )}
     </div>

@@ -17,6 +17,9 @@ export const APPROVALS_ID_CHECKS = "/approvals?type=id-check";
 /** The Senior/PWD review pages. Not in the sidebar, but they keep their own Portal Module. */
 export const SENIOR_PWD_PAGE = "/customer-profiles/senior-pwd";
 
+/** The AI Insights page. Part of the Dashboard Module, opened only by Manager-level Roles and Admin. */
+export const AI_INSIGHTS_PAGE = "/dashboard/ai-insights";
+
 /** Every CREOMS page belongs to exactly one Module, in the order `/` tries them. */
 export const pages = [
   { href: "/dashboard", module: DASHBOARD_MODULE },
