@@ -30,6 +30,12 @@ it("shows nothing when there are no cards", async () => {
   await waitFor(() => expect(container.innerHTML).toBe(""));
 });
 
+it("shows the empty state it is given when there are no cards", async () => {
+  fetchMock.mockReturnValue(json({ cards: [], unavailable: [] }));
+  render(<UnusualActivityCards canDismiss canExplain={false} emptyState={<p>No unusual activity right now.</p>} />);
+  expect(await screen.findByText("No unusual activity right now.")).toBeTruthy();
+});
+
 it("hides a card at once on Dismiss and posts the numbers the person saw", async () => {
   fetchMock.mockReturnValueOnce(json({ cards: [card("a", "Rule A"), card("b", "Rule B")], unavailable: [] }));
   let release!: () => void;

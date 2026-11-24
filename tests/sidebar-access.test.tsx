@@ -110,7 +110,7 @@ describe("the sidebar", () => {
 
     await screen.findByText("OVERVIEW");
     const text = document.body.textContent ?? "";
-    const order = ["OVERVIEW", "Dashboard", "CUSTOMERS", "Customer Profiles", "COMMERCE", "Orders", "Products & Stocks", "Payments", "CUSTOMER SUPPORT", "Tickets", "MANAGEMENT", "Approvals"];
+    const order = ["OVERVIEW", "Summary", "CUSTOMERS", "Customer Profiles", "COMMERCE", "Orders", "Products & Stocks", "Payments", "CUSTOMER SUPPORT", "Tickets", "MANAGEMENT", "Approvals"];
     const at = order.map((t) => text.indexOf(t));
 
     expect(at.every((n) => n >= 0)).toBe(true);
@@ -135,16 +135,28 @@ describe("the sidebar", () => {
     expect(screen.queryByText("COMMERCE")).toBeNull();
   });
 
-  it("links the Dashboard only for Staff who hold its Module", async () => {
+  it("links the Summary only for Staff who hold the Dashboard Module", async () => {
     const { unmount } = renderSidebar(["/dashboard", "/customer-profiles"]);
 
-    expect((await screen.findByRole("link", { name: "Dashboard" })).getAttribute("href")).toBe("/dashboard");
+    expect((await screen.findByRole("link", { name: "Summary" })).getAttribute("href")).toBe("/dashboard");
+    expect(screen.queryByText("AI Insights")).toBeNull();
     unmount();
 
     renderSidebar(["/customer-profiles"]);
     await screen.findByRole("link", { name: "Customer Profiles" });
 
-    expect(screen.queryByText("Dashboard")).toBeNull();
+    expect(screen.queryByText("Summary")).toBeNull();
+  });
+
+  it("lists AI Insights under Summary when permitted, and highlights only it on its own page", async () => {
+    path.current = "/dashboard/ai-insights";
+    renderSidebar(["/dashboard", "/dashboard/ai-insights", "/customer-profiles"]);
+
+    const insights = await screen.findByRole("link", { name: "AI Insights" });
+    expect(insights.getAttribute("href")).toBe("/dashboard/ai-insights");
+    expect(screen.getAllByRole("link").map((link) => link.textContent).slice(0, 2)).toEqual(["Summary", "AI Insights"]);
+    expect(insights.closest("[data-active=true]")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Summary" }).closest("[data-active=true]")).toBeNull();
   });
 
   it("links Orders, Payments and Fulfilment only for the Modules the Staff member holds", async () => {

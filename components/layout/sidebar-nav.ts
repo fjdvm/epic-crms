@@ -15,6 +15,7 @@ import {
   Package,
   ClipboardCheck,
   Landmark,
+  Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -41,9 +42,17 @@ export type SystemChild = SystemItem;
 
 export const dashboardItem: NavItem = {
   group: "OVERVIEW",
-  name: "Dashboard",
+  name: "Summary",
   href: "/dashboard",
   icon: LayoutDashboard,
+};
+
+/** The AI's Unusual activity cards. Manager and Admin only; the shell adds the page for them. */
+export const aiInsightsItem: NavItem = {
+  group: "OVERVIEW",
+  name: "AI Insights",
+  href: "/dashboard/ai-insights",
+  icon: Sparkles,
 };
 
 export const customerProfilesItem: NavItem = {
@@ -127,6 +136,7 @@ export const commerceSettingsItem: NavItem = {
 /** The Figma sidebar, top to bottom. */
 export const sidebarItems: NavItem[] = [
   dashboardItem,
+  aiInsightsItem,
   customerProfilesItem,
   ordersItem,
   productsStocksItem,

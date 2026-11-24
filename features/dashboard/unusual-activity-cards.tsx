@@ -2,7 +2,7 @@
 
 import { AlertTriangle, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -128,7 +128,10 @@ function Card({ card, canDismiss, onDismiss, onOpen }: { card: UnusualActivityCa
  * Up to five cards, most urgent first, chosen by the server from the Modules the Staff member holds.
  * Read once when the Dashboard opens and again only on a user action; never on a timer.
  */
-export function UnusualActivityCards({ canDismiss, canExplain = canDismiss, initial }: { canDismiss: boolean; canExplain?: boolean; initial?: UnusualActivity }) {
+/** `emptyState` shows when there is nothing unusual; without it the section hides. */
+export function UnusualActivityCards({ canDismiss, canExplain = canDismiss, initial, emptyState = null }: {
+  canDismiss: boolean; canExplain?: boolean; initial?: UnusualActivity; emptyState?: ReactNode;
+}) {
   const [cards, setCards] = useState<UnusualActivityCard[] | null>(initial?.cards ?? null);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,7 +186,7 @@ export function UnusualActivityCards({ canDismiss, canExplain = canDismiss, init
 
   const open = cards?.find(c => c.key === openKey) ?? null;
   if (cards === null) return <UnusualActivitySkeleton />;
-  if (cards.length === 0 && !failed && !error) return null;
+  if (cards.length === 0 && !failed && !error) return <>{emptyState}</>;
   return (
     <section aria-label="Unusual activity" className={SECTION}>
       <Title />

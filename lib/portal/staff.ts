@@ -5,7 +5,7 @@ import { accessFor } from "./access";
 import { DEV_ROLE_COOKIE, isDevRole } from "./dev-bypass";
 import type { Staff } from "./client";
 import { LOGIN_PATH, MANAGEMENT_MODULE, NO_ACCESS_PATH, ORDER_DETAIL_MODULES, SESSION_COOKIE, UNAVAILABLE_PATH } from "./config";
-import { SENIOR_PWD_PAGE } from "./pages";
+import { AI_INSIGHTS_PAGE, SENIOR_PWD_PAGE } from "./pages";
 import { safeReturnTo } from "./return-to";
 import { canManage, shopRole } from "./roles";
 
@@ -99,12 +99,26 @@ export async function getShell(): Promise<{ staff: Staff; permittedPages: string
     redirect(NO_ACCESS_PATH);
   }
 
+  return { staff: result.staff, permittedPages: shellPages(result.pages, result.staff.role) };
+}
+
+/** The Module pages plus the pages that are not Modules of their own: Approvals and AI Insights. */
+export function shellPages(modulePages: readonly string[], role: string): string[] {
+  const shop = shopRole(role);
+  const pages = [...modulePages];
   // Approvals is not a Module: every Role sees it when it holds a Module whose requests it lists (Returns, Payments,
   // Fulfilment or Senior/PWD). Staff see the ID checks and their own requests; the Manager and Admin see them all.
-  const lists = ["/returns", "/payments", "/fulfilment", SENIOR_PWD_PAGE].some(page => result.pages.includes(page));
-  const pages = lists && shopRole(result.staff.role) ? [...result.pages, "/approvals"] : result.pages;
+  const lists = ["/returns", "/payments", "/fulfilment", SENIOR_PWD_PAGE].some(page => modulePages.includes(page));
+  if (lists && shop) pages.push("/approvals");
+  // AI Insights is part of the Dashboard Module, for Manager-level Roles and Admin only (Staff never see AI warnings).
+  if (modulePages.includes("/dashboard") && canSeeAiInsights(role)) pages.push(AI_INSIGHTS_PAGE);
+  return pages;
+}
 
-  return { staff: result.staff, permittedPages: pages };
+/** Manager-level Roles act on the AI Insights cards; Admin views them. Staff never open the page. */
+export function canSeeAiInsights(role: string): boolean {
+  const shop = shopRole(role);
+  return shop === "manager" || shop === "admin";
 }
 
 /** Where `/` goes: the first page the Staff member may open, or the "no access" page. */
