@@ -11,6 +11,7 @@ import {
 import { saveAutomaticChecks } from "@/features/settings/automatic-checks-server";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
+import { expectOnlyFailureEvents } from "./settings-audit-helpers";
 
 let db: TestDatabase;
 const audit = vi.fn(async () => {});
@@ -69,7 +70,7 @@ describe("saving", () => {
       expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/^Only a Manager/) });
     }
     expect(await loadAutomaticChecks(db.sql)).toEqual(DEFAULT_AUTOMATIC_CHECKS);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it("keeps a switch and a number, and audits the change under the Admin's name", async () => {
@@ -88,7 +89,7 @@ describe("saving", () => {
     const zero = edit(c => { c.dashboard.returnSpike.count = 0; });
     expect(await saveAutomaticChecks(db.sql, audit, admin, zero)).toMatchObject({ ok: false, reason: expect.stringContaining("Returns on one product") });
     expect(validateAutomaticChecks({ cod: {} })).toMatchObject({ ok: false });
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 });
 

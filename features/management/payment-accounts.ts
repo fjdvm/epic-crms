@@ -4,6 +4,7 @@ import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail
 import { MANAGEMENT_MODULE } from "@/lib/portal/config";
 import { canManage } from "@/lib/portal/roles";
 
+import { fingerprint, minuteOf, withFailureAudit, type SettingSpec } from "./settings-audit";
 import { maskNumber, methodLabel, PAYMENT_METHODS, validateAccount } from "./payment-account-format";
 
 export type PaymentAccountRow = {
@@ -21,8 +22,16 @@ export async function listPaymentAccounts(sql: postgres.Sql): Promise<PaymentAcc
 type Staff = { id: string; name: string; role: string };
 export type AddAccountResult = { ok: true } | { ok: false; reason: string };
 
+/** Where a refused or failed Payment account change is recorded: the same action name as its success event. */
+const spec = (action: string, what: string, type: string, id: string, display_name: string): SettingSpec =>
+  ({ module: MANAGEMENT_MODULE, action, what, target: { type, id, display_name } });
+
 /** Manager only, checked here and not only on the page. The Audit Log never holds more than the last four digits. */
-export async function addPaymentAccount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<AddAccountResult> {
+export function addPaymentAccount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<AddAccountResult> {
+  return withFailureAudit(audit, staff, spec("payment_account.added", "add a Payment account", "payment_account", "new", "New Payment account"), () => add(sql, audit, staff, input));
+}
+
+async function add(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<AddAccountResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can add a Payment account." };
   const valid = validateAccount(input);
   if (!valid.ok) return valid;
@@ -53,7 +62,14 @@ export type QrFiles = {
 };
 
 /** Sets or, with a null reference, removes the QR. The audit names the change, never a signed link or the file's address. */
-export async function setPaymentAccountQr(
+export function setPaymentAccountQr(
+  sql: postgres.Sql, audit: AuditTrail, files: QrFiles, staff: Staff & { username: string }, accountId: string, reference: string | null,
+): Promise<AddAccountResult> {
+  const action = reference === null ? "payment_account.qr_removed" : "payment_account.qr_set";
+  return withFailureAudit(audit, staff, spec(action, "change a Payment account's QR", "payment_account", accountId, "Payment account"), () => changeQr(sql, audit, files, staff, accountId, reference));
+}
+
+async function changeQr(
   sql: postgres.Sql, audit: AuditTrail, files: QrFiles, staff: Staff & { username: string }, accountId: string, reference: string | null,
 ): Promise<AddAccountResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change a Payment account's QR." };
@@ -76,7 +92,7 @@ export async function setPaymentAccountQr(
       ? `${staff.name} ${before.qr_file_id ? "replaced" : "added"} the QR image of the ${methodLabel(before.method)} Payment account “${before.label}”.`
       : `${staff.name} removed the QR image of the ${methodLabel(before.method)} Payment account “${before.label}”.`,
     occurred_at: new Date().toISOString(), metadata: { method: before.method, had_qr: before.qr_file_id !== null, has_qr: newId !== null },
-    operationId: `payment-account-qr:${accountId}:${crypto.randomUUID()}`,
+    operationId: `payment-account-qr:${accountId}:${fingerprint(newId)}:${minuteOf(new Date())}`,
   });
   if (before.qr_file_id && before.qr_file_id !== newId) await files.remove(before.qr_file_id).catch(() => {});
   return { ok: true };
@@ -112,7 +128,11 @@ const find = async (sql: postgres.Sql, id: string) => (await sql<Found[]>`
 const MISSING = { ok: false, reason: "That Payment account no longer exists." } as const;
 
 /** Edits an account's details. The method cannot change; add a new account instead. The audit holds the masked number only. */
-export async function editPaymentAccount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, input: unknown): Promise<AddAccountResult> {
+export function editPaymentAccount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, input: unknown): Promise<AddAccountResult> {
+  return withFailureAudit(audit, staff, spec("payment_account.edited", "edit a Payment account", "payment_account", accountId, "Payment account"), () => edit(sql, audit, staff, accountId, input));
+}
+
+async function edit(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, input: unknown): Promise<AddAccountResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can edit a Payment account." };
   const before = await find(sql, accountId);
   if (!before) return MISSING;
@@ -131,13 +151,18 @@ export async function editPaymentAccount(sql: postgres.Sql, audit: AuditTrail, s
     target: { type: "payment_account", id: accountId, display_name: a.label },
     description: `${staff.name} edited the ${methodLabel(a.method)} Payment account “${a.label}” (${maskNumber(before.account_number)} → ${maskNumber(a.numberNormalised)}).`,
     occurred_at: new Date().toISOString(), metadata: { method: a.method, bank_name: a.bankName, old_number_last4: before.account_number.replace(/\D/g, "").slice(-4), number_last4: a.numberNormalised.slice(-4) },
-    operationId: `payment-account-edited:${accountId}:${crypto.randomUUID()}`,
+    operationId: `payment-account-edited:${accountId}:${staff.id}:${fingerprint(a)}:${minuteOf(new Date())}`,
   });
   return { ok: true };
 }
 
 /** Switches an account off or on without deleting it. Switching off the last active account of an enabled method is refused. */
-export async function setPaymentAccountActive(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, active: boolean): Promise<AddAccountResult> {
+export function setPaymentAccountActive(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, active: boolean): Promise<AddAccountResult> {
+  const action = active ? "payment_account.activated" : "payment_account.deactivated";
+  return withFailureAudit(audit, staff, spec(action, "switch a Payment account on or off", "payment_account", accountId, "Payment account"), () => switchActive(sql, audit, staff, accountId, active));
+}
+
+async function switchActive(sql: postgres.Sql, audit: AuditTrail, staff: Staff, accountId: string, active: boolean): Promise<AddAccountResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can switch a Payment account on or off." };
   const done = await sql.begin(async (tx) => {
     const [row] = await tx<Found[]>`
@@ -163,13 +188,18 @@ export async function setPaymentAccountActive(sql: postgres.Sql, audit: AuditTra
     target: { type: "payment_account", id: accountId, display_name: row.label },
     description: `${staff.name} switched ${active ? "on" : "off"} the ${methodLabel(row.method)} Payment account “${row.label}” (${maskNumber(row.account_number)}).`,
     occurred_at: new Date().toISOString(), metadata: { method: row.method, active, number_last4: row.account_number.replace(/\D/g, "").slice(-4) },
-    operationId: `payment-account-active:${accountId}:${crypto.randomUUID()}`,
+    operationId: `payment-account-active:${accountId}:${active}:${staff.id}:${minuteOf(new Date())}`,
   });
   return { ok: true };
 }
 
 /** Disables or re-enables a whole method. A method cannot come back on without an active account to receive money. */
-export async function setPaymentMethodEnabled(sql: postgres.Sql, audit: AuditTrail, staff: Staff, method: string, enabled: boolean): Promise<AddAccountResult> {
+export function setPaymentMethodEnabled(sql: postgres.Sql, audit: AuditTrail, staff: Staff, method: string, enabled: boolean): Promise<AddAccountResult> {
+  const action = enabled ? "payment_method.enabled" : "payment_method.disabled";
+  return withFailureAudit(audit, staff, spec(action, "enable or disable a payment method", "payment_method", method, methodLabel(method)), () => switchMethod(sql, audit, staff, method, enabled));
+}
+
+async function switchMethod(sql: postgres.Sql, audit: AuditTrail, staff: Staff, method: string, enabled: boolean): Promise<AddAccountResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can enable or disable a payment method." };
   if (!PAYMENT_METHODS.some((m) => m.value === method)) return { ok: false, reason: "Choose GCash, Maya or Bank transfer." };
   if (enabled) {
@@ -186,13 +216,17 @@ export async function setPaymentMethodEnabled(sql: postgres.Sql, audit: AuditTra
     target: { type: "payment_method", id: method, display_name: methodLabel(method) },
     description: `${staff.name} ${enabled ? "enabled" : "disabled"} ${methodLabel(method)} as a payment method.`,
     occurred_at: new Date().toISOString(), metadata: { method, enabled },
-    operationId: `payment-method:${method}:${crypto.randomUUID()}`,
+    operationId: `payment-method:${method}:${enabled}:${staff.id}:${minuteOf(new Date())}`,
   });
   return { ok: true };
 }
 
 /** Deletes an account nobody has used. Once a Customer has seen or used it, it can only be switched off, so history stays whole. */
-export async function deletePaymentAccount(sql: postgres.Sql, audit: AuditTrail, files: Pick<QrFiles, "remove">, staff: Staff, accountId: string): Promise<AddAccountResult> {
+export function deletePaymentAccount(sql: postgres.Sql, audit: AuditTrail, files: Pick<QrFiles, "remove">, staff: Staff, accountId: string): Promise<AddAccountResult> {
+  return withFailureAudit(audit, staff, spec("payment_account.deleted", "delete a Payment account", "payment_account", accountId, "Payment account"), () => remove(sql, audit, files, staff, accountId));
+}
+
+async function remove(sql: postgres.Sql, audit: AuditTrail, files: Pick<QrFiles, "remove">, staff: Staff, accountId: string): Promise<AddAccountResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can delete a Payment account." };
   const [row] = await sql<(Found & { qr_file_id: string | null })[]>`
     delete from crms.payment_accounts where id::text = ${accountId} and first_used_at is null

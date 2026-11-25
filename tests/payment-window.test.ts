@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { changePaymentWindow, loadPaymentWindow } from "@/features/management/payment-window";
 import { parseWindowHours } from "@/features/management/payment-window-format";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
+import { expectOnlyFailureEvents } from "./settings-audit-helpers";
 
 describe("parseWindowHours", () => {
   it.each([["24", 24], [" 48 ", 48], [1, 1], ["336", 336]])("accepts %j", (input, hours) => {
@@ -45,14 +46,14 @@ describe("changePaymentWindow", () => {
     const r = await changePaymentWindow(db.sql, audit, { id: "x", name: "X", role }, "48");
     expect(r).toEqual({ ok: false, reason: "Only a Manager can change the payment window." });
     expect(await loadPaymentWindow(db.sql)).toBe(24);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it("refuses invalid hours without saving or auditing", async () => {
     const r = await changePaymentWindow(db.sql, audit, { id: "m", name: "Mario", role: "CRMS Manager" }, "0");
     expect(r.ok).toBe(false);
     expect(await loadPaymentWindow(db.sql)).toBe(24);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it.each(["CRMS Manager", "CEO"])("saves for %s and audits old and new value under their name", async (role) => {

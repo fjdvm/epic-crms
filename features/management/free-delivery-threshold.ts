@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { MANAGEMENT_MODULE } from "@/lib/portal/config";
 import { canManage } from "@/lib/portal/roles";
 
+import { fingerprint, minuteOf, withFailureAudit, type SettingSpec } from "./settings-audit";
 import { parseThreshold, pesos, type ThresholdResult } from "./threshold-format";
 
 /** The saved threshold in centavos, or null when the setting cannot be read. */
@@ -15,8 +15,19 @@ export async function loadFreeDeliveryThreshold(sql: postgres.Sql): Promise<numb
 
 type Staff = { id: string; name: string; role: string };
 
-/** Manager only, checked here and not only on the page. Saved at once and audited with the old and new value. */
-export async function changeFreeDeliveryThreshold(
+const SPEC: SettingSpec = {
+  module: MANAGEMENT_MODULE, action: "free_delivery_threshold.changed", what: "change the Free delivery threshold",
+  target: { type: "setting", id: "free-delivery-threshold", display_name: "Free delivery threshold" },
+};
+
+/** Manager only, checked here and not only on the page. Saved at once and audited with the old and new value; a refusal is audited too. */
+export function changeFreeDeliveryThreshold(
+  sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown, notify: () => Promise<void> = async () => {},
+): Promise<ThresholdResult> {
+  return withFailureAudit(audit, staff, SPEC, () => save(sql, audit, staff, input, notify));
+}
+
+async function save(
   sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown, notify: () => Promise<void> = async () => {},
 ): Promise<ThresholdResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the Free delivery threshold." };
@@ -37,7 +48,7 @@ export async function changeFreeDeliveryThreshold(
     module: MANAGEMENT_MODULE, action: "free_delivery_threshold.changed", outcome: "success", actor: staffAuditActor(staff),
     target: { type: "setting", id: "free-delivery-threshold", display_name: "Free delivery threshold" },
     description: `${staff.name} changed the Free delivery threshold from ${previous === null ? "an unknown amount" : pesos(previous)} to ${pesos(next)}.`,
-    occurred_at: new Date().toISOString(), metadata: { previous, next }, operationId: `free-delivery-threshold:${randomUUID()}`,
+    occurred_at: new Date().toISOString(), metadata: { previous, next }, operationId: `free-delivery-threshold:${staff.id}:${fingerprint(next)}:${minuteOf(new Date())}`,
   });
   // Open storefront pages refresh their banner. A failed nudge never undoes the saved change; the next page load shows it.
   try { await notify(); } catch (error) { console.error("Storefront nudge failed; the banner updates on the next page load", error); }

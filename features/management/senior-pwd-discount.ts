@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { MANAGEMENT_MODULE } from "@/lib/portal/config";
 import { canManage } from "@/lib/portal/roles";
 
+import { fingerprint, minuteOf, withFailureAudit, type SettingSpec } from "./settings-audit";
 import { describeDiscount, parseDiscount, type DiscountKind, type DiscountPer, type DiscountResult, type SeniorPwdDiscount } from "./senior-pwd-discount-format";
 
 type Row = { kind: DiscountKind; hundredths: string; limit: string; per: DiscountPer };
@@ -19,8 +19,17 @@ export async function loadSeniorPwdDiscount(sql: postgres.Sql): Promise<SeniorPw
 
 type Staff = { id: string; name: string; role: string };
 
-/** Manager only, checked here and not only on the page. Saved at once and audited with the old and new rule. */
-export async function changeSeniorPwdDiscount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<DiscountResult> {
+const SPEC: SettingSpec = {
+  module: MANAGEMENT_MODULE, action: "senior_pwd_discount.changed", what: "change the Senior/PWD discount",
+  target: { type: "setting", id: "senior-pwd-discount", display_name: "Senior/PWD discount" },
+};
+
+/** Manager only, checked here and not only on the page. Saved at once and audited with the old and new rule; a refusal is audited too. */
+export function changeSeniorPwdDiscount(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<DiscountResult> {
+  return withFailureAudit(audit, staff, SPEC, () => save(sql, audit, staff, input));
+}
+
+async function save(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<DiscountResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the Senior/PWD discount." };
   const valid = parseDiscount(input);
   if (!valid.ok) return valid;
@@ -41,7 +50,7 @@ export async function changeSeniorPwdDiscount(sql: postgres.Sql, audit: AuditTra
     module: MANAGEMENT_MODULE, action: "senior_pwd_discount.changed", outcome: "success", actor: staffAuditActor(staff),
     target: { type: "setting", id: "senior-pwd-discount", display_name: "Senior/PWD discount" },
     description: `${staff.name} changed the Senior/PWD discount from ${previous ? describeDiscount(previous) : "an unknown rule"} to ${describeDiscount(next)}.`,
-    occurred_at: new Date().toISOString(), metadata: { previous, next }, operationId: `senior-pwd-discount:${randomUUID()}`,
+    occurred_at: new Date().toISOString(), metadata: { previous, next }, operationId: `senior-pwd-discount:${staff.id}:${fingerprint(next)}:${minuteOf(new Date())}`,
   });
   return { ok: true, discount: next };
 }

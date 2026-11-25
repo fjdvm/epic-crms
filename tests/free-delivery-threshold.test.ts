@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { changeFreeDeliveryThreshold, loadFreeDeliveryThreshold } from "@/features/management/free-delivery-threshold";
 import { parseThreshold } from "@/features/management/threshold-format";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
+import { expectOnlyFailureEvents } from "./settings-audit-helpers";
 
 describe("parseThreshold", () => {
   it.each([["2500", 250000], ["₱2,500", 250000], [" 2,500.5 ", 250050], [1000, 100000], ["0.01", 1]])("accepts %s", (input, centavos) => {
@@ -34,14 +35,14 @@ describe("changeFreeDeliveryThreshold", () => {
     const r = await changeFreeDeliveryThreshold(db.sql, audit, { id: "x", name: "X", role }, "3000");
     expect(r).toEqual({ ok: false, reason: "Only a Manager can change the Free delivery threshold." });
     expect(await loadFreeDeliveryThreshold(db.sql)).toBe(250000);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it("refuses an invalid amount without saving or auditing", async () => {
     const r = await changeFreeDeliveryThreshold(db.sql, audit, { id: "m", name: "Mario", role: "CRMS Manager" }, "0");
     expect(r.ok).toBe(false);
     expect(await loadFreeDeliveryThreshold(db.sql)).toBe(250000);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it.each(["CRMS Manager", "CEO"])("saves for %s and audits old and new value under their name", async (role) => {

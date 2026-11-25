@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { MANAGEMENT_MODULE } from "@/lib/portal/config";
 import { canManage } from "@/lib/portal/roles";
 
+import { fingerprint, minuteOf, withFailureAudit, type SettingSpec } from "./settings-audit";
 import { hoursText, parseWindowHours, type WindowResult } from "./payment-window-format";
 
 /** The saved payment window in hours, or null when the setting cannot be read. */
@@ -15,8 +15,17 @@ export async function loadPaymentWindow(sql: postgres.Sql): Promise<number | nul
 
 type Staff = { id: string; name: string; role: string };
 
-/** Manager only, checked here and not only on the page. Affects Orders confirmed afterwards; audited with the old and new value. */
-export async function changePaymentWindow(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<WindowResult> {
+const SPEC: SettingSpec = {
+  module: MANAGEMENT_MODULE, action: "payment_window.changed", what: "change the payment window",
+  target: { type: "setting", id: "payment-window", display_name: "Payment window" },
+};
+
+/** Manager only, checked here and not only on the page. Affects Orders confirmed afterwards; audited with the old and new value; a refusal is audited too. */
+export function changePaymentWindow(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<WindowResult> {
+  return withFailureAudit(audit, staff, SPEC, () => save(sql, audit, staff, input));
+}
+
+async function save(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<WindowResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the payment window." };
   const valid = parseWindowHours(input);
   if (!valid.ok) return valid;
@@ -34,7 +43,7 @@ export async function changePaymentWindow(sql: postgres.Sql, audit: AuditTrail, 
     module: MANAGEMENT_MODULE, action: "payment_window.changed", outcome: "success", actor: staffAuditActor(staff),
     target: { type: "setting", id: "payment-window", display_name: "Payment window" },
     description: `${staff.name} changed the payment window from ${previous === null ? "an unknown time" : hoursText(previous)} to ${hoursText(next)}.`,
-    occurred_at: new Date().toISOString(), metadata: { previous, next }, operationId: `payment-window:${randomUUID()}`,
+    occurred_at: new Date().toISOString(), metadata: { previous, next }, operationId: `payment-window:${staff.id}:${fingerprint(next)}:${minuteOf(new Date())}`,
   });
   return { ok: true, hours: next };
 }

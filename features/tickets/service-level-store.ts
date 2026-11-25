@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { TICKETS_MODULE } from "@/lib/portal/config";
 import { canManage } from "@/lib/portal/roles";
+import { fingerprint, minuteOf, withFailureAudit, type SettingSpec } from "@/features/management/settings-audit";
 
 import {
   DEFAULT_HISTORY,
@@ -40,7 +41,21 @@ const wholeHours = (n: unknown): n is number => Number.isSafeInteger(n) && (n as
  * A Manager saves the two targets. It adds a row rather than changing one, so Tickets already opened keep
  * their pair. The row records who and what it replaced, and the change is sent to the Audit service.
  */
-export async function setServiceTargets(
+const SERVICE_LEVELS_SPEC: SettingSpec = {
+  module: TICKETS_MODULE, action: "service_levels.changed", what: "change the Service levels",
+  target: { type: "setting", id: "service-levels", display_name: "Service levels" },
+};
+
+export function setServiceTargets(
+  sql: postgres.Sql,
+  audit: AuditTrail,
+  staff: Staff,
+  input: { firstReplyHours: unknown; resolveHours: unknown },
+): Promise<Result> {
+  return withFailureAudit(audit, staff, SERVICE_LEVELS_SPEC, () => save(sql, audit, staff, input));
+}
+
+async function save(
   sql: postgres.Sql,
   audit: AuditTrail,
   staff: Staff,
@@ -82,7 +97,7 @@ export async function setServiceTargets(
       firstReplyHours,
       resolveHours,
     },
-    operationId: `service-levels:${change.id}`,
+    operationId: `service-levels:${staff.id}:${fingerprint(firstReplyHours, resolveHours)}:${minuteOf(new Date())}`,
   });
 
   return { ok: true, targets: { firstReplyHours, resolveHours } };
