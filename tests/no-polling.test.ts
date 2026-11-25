@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 const root = path.resolve(import.meta.dirname, "..");
 const roots = ["app","components","features","hooks","lib"];
 const allowed: Record<string, string> = { "features/notifications/live-updates.tsx": "WebSocket heartbeat only; no data request" };
-const forbidden = /setInterval|refetchInterval|refetchOnWindowFocus|revalidateOnFocus/;
+const forbidden = /setInterval|refetchInterval|refetchOnWindowFocus|revalidateOnFocus|visibilitychange/;
 
 function sources(dir: string): string[] {
   let names: string[];

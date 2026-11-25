@@ -122,8 +122,6 @@ export function LiveUpdatesProvider({
     let running = false;
     let stopped = false;
 
-    const visible = () => document.visibilityState === "visible";
-
     const receive = (next: NotificationFeed) => {
       const arrived = next.notifications.filter((n) => !seen.current.has(n.id));
 
@@ -181,10 +179,6 @@ export function LiveUpdatesProvider({
       }
     };
 
-    const onVisibilityChange = () => {
-      if (visible()) void refresh();
-    };
-
     let socket: WebSocket | undefined;
     let pinger: ReturnType<typeof setInterval> | undefined;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -240,7 +234,6 @@ export function LiveUpdatesProvider({
       };
     };
 
-    document.addEventListener("visibilitychange", onVisibilityChange);
     void connect();
 
     return () => {
@@ -251,7 +244,6 @@ export function LiveUpdatesProvider({
       socket = undefined;
       closing?.close();
       highlightTimers.forEach(clearTimeout);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [enabled]);
 
