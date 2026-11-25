@@ -97,6 +97,10 @@ Every screen must feel instant. This builds on `docs/adr/0002-instant-reads-and-
 - **Targets:** react in under 100 ms, confirm in under 500 ms; a flow that misses gets its own follow-up issue.
 - **Tests:** cover the rollback and the refusal message for each optimistic action, and the immediate loading state for each new page.
 
+## Desktop layout everywhere (rule)
+
+On 2026-11-25 the owner decided CREOMS always shows the desktop site, on phones too. The root layout (`app/layout.tsx`) sets a fixed 1280 px viewport, so phones lay the page out at desktop width and zoom out to fit; the body keeps `min-w-[1280px]` for browsers that ignore the viewport tag. Design every screen for desktop width. Never set `width=device-width`, never block pinch-zoom, and never add phone-only layouts. Check: `tests/desktop-viewport.test.ts`.
+
 ## Exports (rule)
 
 Every exported or printed document (PDF, image, anything downloaded) starts from the shared template in `lib/export/pdf-template.ts`: the Bren Raphael's Ube Jam & Halaya logo (`public/images/brand/logo-ube-jam-halaya.jpeg`), brand colours, Philippine-time footer and page numbers. Never hand-draw a header or call `window.print()` on page content. Details in `docs/exports.md`.
