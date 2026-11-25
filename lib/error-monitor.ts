@@ -59,6 +59,16 @@ export async function reportError(kind: string, error: unknown, ports: ErrorMoni
   }
 }
 
+/**
+ * True when the browser went away mid-response (navigated, refreshed, closed the tab): React cancels
+ * the render with this message and Next.js reports it, but nothing on the server is broken.
+ */
+export function isClientDisconnect(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "AbortError" || error.name === "ResponseAborted" ||
+    error.message === "The destination stream closed early.";
+}
+
 /** The kind of a request error: the route and the error's name, so one broken route is one kind. */
 export function requestErrorKind(error: unknown, routePath: string): string {
   return `${error instanceof Error ? error.name : "Error"} at ${routePath}`;
