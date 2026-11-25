@@ -35,13 +35,23 @@ describe("the header bell", () => {
     expect(screen.queryByLabelText(/unread/)).toBeNull();
   });
 
-  it("lists each Customer with how long ago and a link to their profile", async () => {
+  it("lists each Customer with the date and time and a link to their profile", async () => {
     render(<Bell feed={feed} />);
     await userEvent.click(screen.getByTitle("Notifications"));
 
     const link = await screen.findByRole("link", { name: /Ben Cruz became a Customer/ });
     expect(link.getAttribute("href")).toBe("/customer-profiles/u-ben");
-    expect(screen.getByText("3 days ago")).toBeTruthy();
+    const when = screen.getAllByText(/^\d{1,2}\/\d{1,2}\/\d{4}, \d{1,2}:\d{2}:\d{2} [AP]M$/);
+    expect(when).toHaveLength(2);
+    expect(when[0].tagName).toBe("TIME");
+  });
+
+  it("tells screen readers which rows are unread", async () => {
+    render(<Bell feed={feed} />);
+    await userEvent.click(screen.getByTitle("Notifications"));
+
+    expect((await screen.findByRole("link", { name: /Ben Cruz/ })).textContent).toContain("Unread");
+    expect(screen.getByRole("link", { name: /Ada Lim/ }).textContent).not.toContain("Unread");
   });
 
   it("marks one as read when its link is opened", async () => {

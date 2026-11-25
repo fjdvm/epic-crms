@@ -9,12 +9,21 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatAgo } from "@/features/customer-profiles/format";
 import { describeNotification } from "@/features/notifications/describe";
 import type { NotificationFeed } from "@/features/notifications/notifications";
+
+/** Same date and time as the other Systems' bells, e.g. "11/26/2026, 12:26:48 AM", in Philippine time. */
+const timeFormat = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Manila",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+});
 
 export function HeaderNotifications({
   feed,
@@ -50,9 +59,9 @@ export function HeaderNotifications({
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent className="w-80 bg-popover border-border text-popover-foreground z-[99999]" align="end">
-        <div className="flex items-center justify-between p-sm border-b border-border">
-          <DropdownMenuLabel className="p-0 text-body-sm font-bold text-foreground">
+      <DropdownMenuContent className="w-80 p-0 bg-popover border-border text-popover-foreground shadow-lg z-[99999]" align="end">
+        <div className="flex items-center justify-between p-3 border-b border-border">
+          <DropdownMenuLabel className="p-0 text-base font-semibold text-foreground">
             Notifications
           </DropdownMenuLabel>
           <Button
@@ -60,44 +69,46 @@ export function HeaderNotifications({
             size="sm"
             disabled={unread === 0}
             onClick={onMarkAllRead}
-            className="h-auto p-0 text-label-sm text-muted-foreground hover:text-foreground"
+            className="h-auto p-0 text-sm font-medium text-primary hover:bg-transparent hover:text-primary/80"
           >
-            <CheckCheck /> Mark all read
+            <CheckCheck className="size-4" /> Mark all read
           </Button>
         </div>
 
-        <div className="max-h-64 overflow-y-auto">
+        <div className="max-h-80 overflow-y-auto">
           {feed === null ? (
-            <p className="p-md text-center text-label-sm text-muted-foreground">
+            <p className="p-6 text-center text-sm text-muted-foreground">
               Notifications are temporarily unavailable.
             </p>
           ) : feed.notifications.length === 0 ? (
-            <p className="p-md text-center text-label-sm text-muted-foreground">No notifications yet.</p>
+            <div className="p-6 text-center text-muted-foreground space-y-1">
+              <Bell aria-hidden className="size-6 mx-auto opacity-30" />
+              <p className="text-sm font-medium">No notifications yet.</p>
+            </div>
           ) : (
-            <ul>
+            <ul className="divide-y divide-border">
               {feed.notifications.map((n) => {
                 const { text, href } = describeNotification(n);
+                const createdAt = new Date(n.createdAt);
 
                 return (
-                <li key={n.id} className="border-b border-border last:border-b-0">
+                <li key={n.id}>
                   <Link
                     href={href}
                     onClick={() => {
                       if (!n.read) onMarkRead(n.id);
                     }}
-                    className="flex items-start gap-sm p-sm hover:bg-accent"
+                    className={`flex items-start gap-2.5 p-3 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none ${n.read ? "" : "bg-muted/50"}`}
                   >
-                    <span
-                      aria-hidden
-                      className={`mt-1.5 w-2 h-2 shrink-0 rounded-full ${n.read ? "bg-transparent" : "bg-badge-notification"}`}
-                    />
-                    <span className="min-w-0">
-                      <span className={`block truncate text-body-sm ${n.read ? "" : "font-semibold"}`}>
-                        {text}
-                      </span>
-                      <span className="block text-label-sm text-muted-foreground">
-                        {formatAgo(n.createdAt)}
-                      </span>
+                    <span aria-hidden className="p-1.5 rounded-full bg-muted border border-border mt-0.5 shrink-0">
+                      <Bell className="size-3.5 text-muted-foreground" />
+                    </span>
+                    <span className="flex-1 min-w-0 space-y-0.5">
+                      <span className="block text-sm font-semibold text-foreground break-words">{text}</span>
+                      <time dateTime={createdAt.toISOString()} className="block text-xs text-muted-foreground">
+                        {timeFormat.format(createdAt)}
+                      </time>
+                      {!n.read && <span className="sr-only">Unread</span>}
                     </span>
                   </Link>
                 </li>
@@ -106,8 +117,6 @@ export function HeaderNotifications({
             </ul>
           )}
         </div>
-
-        <DropdownMenuSeparator className="bg-border m-0" />
       </DropdownMenuContent>
     </DropdownMenu>
   );
