@@ -323,7 +323,6 @@ end time) or that threw, and a suggestion request that produced nothing (`unavai
 `feedback:<action>:denied:<staff id>:<hash of reason and metadata>`, so a replayed refusal records once. Metadata holds the reason
 only. When Feedback reply or publish/hide are built in CREOMS, they must record through this module.
 Known limit: a later identical refusal (same person, action and reason) shares one identity.
-||||||| e5af798
 
 
 ## Approvals gaps (#748)
@@ -374,3 +373,14 @@ and the reason. Access refused at the Dashboard Module is already recorded by th
 preset or days window and the reason only, never figures, insight text or Customer details. The operation id is
 `dashboard-export:<action>:<staff id>:<choice>:<ok or reason>:<minute>`, so a replayed request records once.
 Known limit: two real downloads of the same export by the same person within one minute share one identity.
+
+## Commerce Settings (#753)
+
+Every Commerce Settings change records one Audit Event with the before and after values (`free_delivery_threshold.changed`,
+`payment_window.changed`, `senior_pwd_discount.changed`, `automatic_checks.changed`, `service_levels.changed`, and the
+`payment_account.*` and `payment_method.*` events). A refused Role, a value that did not validate, a clash or a save that
+threw records the same action with outcome `failure` (`features/management/settings-audit.ts`). Failure metadata is the
+setting id and a fixed reason; never what was typed. A throw is recorded as `unavailable` and still reaches the Server Action.
+
+Operation identity is the setting, the Staff id, a fingerprint of the new value and the minute, so a replayed or retried
+request records once; a different value is a new event. No migration is needed.

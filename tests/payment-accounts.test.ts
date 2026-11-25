@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { maskNumber, validateAccount } from "@/features/management/payment-account-format";
 import { addPaymentAccount, listPaymentAccounts } from "@/features/management/payment-accounts";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
+import { expectOnlyFailureEvents } from "./settings-audit-helpers";
 
 const gcash = { method: "gcash", label: "Main GCash", accountName: "Bren Raphael", accountNumber: "0917 123 4567", bankName: "" };
 const bank = { method: "bank_transfer", label: "BDO", accountName: "Bren Raphael", accountNumber: "0012-3456-7890", bankName: "BDO" };
@@ -49,13 +50,13 @@ describe("addPaymentAccount", () => {
     const r = await addPaymentAccount(db.sql, audit, { ...manager, role }, gcash);
     expect(r).toEqual({ ok: false, reason: "Only a Manager can add a Payment account." });
     expect(await listPaymentAccounts(db.sql)).toEqual([]);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it("refuses invalid input without saving or auditing", async () => {
     expect((await addPaymentAccount(db.sql, audit, manager, { ...gcash, accountNumber: "1" })).ok).toBe(false);
     expect(await listPaymentAccounts(db.sql)).toEqual([]);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it.each(["CRMS Manager", "CEO"])("saves for %s, lists it masked and audits only the last four digits", async (role) => {
@@ -76,7 +77,7 @@ describe("addPaymentAccount", () => {
     const r = await addPaymentAccount(db.sql, audit, manager, { ...gcash, label: "Other", accountNumber: "+63-917-123-4567" });
     expect(r).toEqual({ ok: false, reason: "A GCash account with that number already exists." });
     expect(await listPaymentAccounts(db.sql)).toHaveLength(1);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it("allows the same number under another method", async () => {

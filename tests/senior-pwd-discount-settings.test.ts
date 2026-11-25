@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { parseDiscount, describeDiscount } from "@/features/management/senior-pwd-discount-format";
 import { changeSeniorPwdDiscount, loadSeniorPwdDiscount } from "@/features/management/senior-pwd-discount";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
+import { expectOnlyFailureEvents } from "./settings-audit-helpers";
 
 const input = (o: Record<string, unknown> = {}) => ({ kind: "percent", amount: "5", limit: "1500", per: "week", ...o });
 
@@ -53,13 +54,13 @@ describe("changeSeniorPwdDiscount", () => {
     const r = await changeSeniorPwdDiscount(db.sql, audit, { id: "x", name: "X", role }, input());
     expect(r).toEqual({ ok: false, reason: "Only a Manager can change the Senior/PWD discount." });
     expect((await loadSeniorPwdDiscount(db.sql))?.limitInCentavos).toBe(12500);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it("refuses an invalid change without saving or auditing", async () => {
     expect((await changeSeniorPwdDiscount(db.sql, audit, manager, input({ amount: "0" }))).ok).toBe(false);
     expect((await loadSeniorPwdDiscount(db.sql))?.hundredths).toBe(500);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it.each(["CRMS Manager", "CEO"])("saves for %s and audits the old and new rule under their name", async (role) => {

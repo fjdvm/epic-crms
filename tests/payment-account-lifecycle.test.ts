@@ -5,6 +5,7 @@ import {
   addPaymentAccount, deletePaymentAccount, editPaymentAccount, listDisabledMethods, listMethodAvailability, listPaymentAccounts, setPaymentAccountActive, setPaymentMethodEnabled,
 } from "@/features/management/payment-accounts";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
+import { expectOnlyFailureEvents } from "./settings-audit-helpers";
 
 const gcash = { method: "gcash", label: "Main GCash", accountName: "Bren", accountNumber: "0917 123 4567", bankName: "" };
 const gcash2 = { ...gcash, label: "Second", accountNumber: "0918 555 1212" };
@@ -13,7 +14,9 @@ describe("Payment account lifecycle", () => {
   let db: TestDatabase;
   const audit = vi.fn(async () => {});
   const manager = { id: "m", name: "Mario", role: "CRMS Manager" };
-  const events = () => audit.mock.calls.map((c) => (c as unknown as [import("@/lib/audit-trail").AuditEvent])[0]);
+  const allEvents = () => audit.mock.calls.map((c) => (c as unknown as [import("@/lib/audit-trail").AuditEvent])[0]);
+  /** The changes that happened; refusals are checked through their own failure events. */
+  const events = () => allEvents().filter((e) => e.outcome === "success");
   // Ordered by label, not creation time: two accounts added in one millisecond tie on created_at and come back in random order.
   const ids = async () => (await listPaymentAccounts(db.sql)).sort((x, y) => x.label.localeCompare(y.label)).map((a) => a.id);
   const files = { remove: vi.fn(async () => {}) };
@@ -43,7 +46,7 @@ describe("Payment account lifecycle", () => {
     ]) expect(r.ok).toBe(false);
     expect(await ids()).toHaveLength(2);
     expect((await listPaymentAccounts(db.sql)).every((x) => x.active)).toBe(true);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 
   it("edits details, keeps the method, and audits only masked numbers", async () => {
@@ -105,7 +108,7 @@ describe("Payment account lifecycle", () => {
     await db.sql`update crms.payment_accounts set first_used_at = now() where id = ${a}`;
     expect(await deletePaymentAccount(db.sql, audit, files, manager, a)).toEqual({ ok: false, reason: expect.stringContaining("has been used") });
     expect(await ids()).toHaveLength(2);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
     expect(await deletePaymentAccount(db.sql, audit, files, manager, b)).toEqual({ ok: true });
     expect(await ids()).toEqual([a]);
     expect(events()[0]).toMatchObject({ action: "payment_account.deleted", metadata: { number_last4: "1212" } });

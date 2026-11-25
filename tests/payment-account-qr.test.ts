@@ -7,6 +7,7 @@ import { listPaymentAccounts, qrFileId, setPaymentAccountQr, type QrFiles } from
 import { requireModule } from "@/lib/portal/staff";
 import { FakeFileStorage } from "./fake-file-storage";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
+import { expectOnlyFailureEvents } from "./settings-audit-helpers";
 
 vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn() }));
 const asRole = (role: string) => vi.mocked(requireModule).mockResolvedValue({ id: "m", username: "mario", name: "Mario", role } as Awaited<ReturnType<typeof requireModule>>);
@@ -107,12 +108,12 @@ describe("setPaymentAccountQr", () => {
   it.each(["Staff/Employee", "Super Admin"])("refuses %s and changes nothing", async (role) => {
     expect(await setPaymentAccountQr(db.sql, audit, files, { ...manager, role }, id, "ref-1")).toMatchObject({ ok: false });
     expect(await qrFileId(db.sql, id)).toBeNull();
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
   it("refuses an invalid reference and a missing account, removing the claimed File", async () => {
     expect(await setPaymentAccountQr(db.sql, audit, files, manager, id, "bad")).toMatchObject({ ok: false });
     expect(await setPaymentAccountQr(db.sql, audit, files, manager, "00000000-0000-0000-0000-000000000000", "ref-9")).toMatchObject({ ok: false });
     expect(removed).toEqual(["file-9"]);
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
   });
 });

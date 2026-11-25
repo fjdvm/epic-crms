@@ -8,6 +8,7 @@ import { getTicket } from "@/features/tickets/ticket";
 import { listTickets } from "@/features/tickets/tickets";
 
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
+import { expectOnlyFailureEvents } from "./settings-audit-helpers";
 
 const NOW = new Date("2026-10-20T12:00:00Z");
 const ago = (hours: number) => new Date(NOW.getTime() - hours * 3600_000);
@@ -104,7 +105,7 @@ describe("saving the Service levels", () => {
       const refused = await setServiceTargets(db.sql, audit, { id: "x", name: "X", role }, { firstReplyHours: 2, resolveHours: 6 });
       expect(refused.ok).toBe(false);
     }
-    expect(audit).not.toHaveBeenCalled();
+    expectOnlyFailureEvents(audit);
     expect(await setServiceTargets(db.sql, audit, admin, { firstReplyHours: 12, resolveHours: 48 })).toEqual({ ok: true, targets: { firstReplyHours: 12, resolveHours: 48 } });
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "service_levels.changed", metadata: expect.objectContaining({ previousFirstReplyHours: 24, firstReplyHours: 12 }) }));
     const [row] = await db.sql`select changed_by_name, previous_resolve_hours from crms.service_level_changes order by id desc limit 1`;

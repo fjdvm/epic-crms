@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import { crmsDatabase } from "@/lib/crms-db";
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
 import { canManage } from "@/lib/portal/roles";
+import { fingerprint, minuteOf, withFailureAudit, type SettingSpec } from "@/features/management/settings-audit";
 
 import {
   AUTOMATIC_CHECK_GROUPS, DEFAULT_AUTOMATIC_CHECKS, loadAutomaticChecks, resolveAutomaticChecks, validateAutomaticChecks,
@@ -40,8 +40,17 @@ function changedRules(before: AutomaticChecks, after: AutomaticChecks): string[]
     .filter(([r]) => JSON.stringify(a[g][r]) !== JSON.stringify(b[g][r])).map(([, rule]) => rule.label));
 }
 
-/** Manager only. The whole set is saved at once; the change is audited under their name. */
-export async function saveAutomaticChecks(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<ChecksResult> {
+const SPEC: SettingSpec = {
+  module: "Portal Settings", action: "automatic_checks.changed", what: "change the Automatic checks",
+  target: { type: "setting", id: "automatic-checks", display_name: "Automatic checks" },
+};
+
+/** Manager only. The whole set is saved at once; the change is audited under their name, and so is a refusal. */
+export function saveAutomaticChecks(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<ChecksResult> {
+  return withFailureAudit(audit, staff, SPEC, () => save(sql, audit, staff, input));
+}
+
+async function save(sql: postgres.Sql, audit: AuditTrail, staff: Staff, input: unknown): Promise<ChecksResult> {
   if (!canManage(staff)) return { ok: false, reason: "Only a Manager can change the Automatic checks." };
   const valid = validateAutomaticChecks(input);
   if (!valid.ok) return valid;
@@ -68,7 +77,7 @@ export async function saveAutomaticChecks(sql: postgres.Sql, audit: AuditTrail, 
     description: changed.length
       ? `${staff.name} changed the Automatic checks: ${changed.join(", ")}.`
       : `${staff.name} saved the Automatic checks without changes.`,
-    occurred_at: new Date().toISOString(), metadata: { previous, next, changed }, operationId: `automatic-checks:${randomUUID()}`,
+    occurred_at: new Date().toISOString(), metadata: { previous, next, changed }, operationId: `automatic-checks:${staff.id}:${fingerprint(next)}:${minuteOf(new Date())}`,
   });
   return { ok: true, checks: next };
 }
