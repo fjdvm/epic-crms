@@ -91,7 +91,7 @@ export function InsightGrid({ initial, days, answers: initialAnswers, enoughData
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-[#e6e1ee] bg-white px-6 py-10 text-center">
           <Sparkles className="size-5 text-[#5b2a86]" aria-hidden />
           <p className="text-[15px] font-semibold text-[#18181b]">No insights yet</p>
-          <p className="max-w-md text-sm text-[#71717a]">
+          <p className="max-w-[28rem] text-sm text-[#71717a]">
             {waiting
               ? "Insights are worked out each morning at 6:00 am. Until the first run, the Dashboard shows what needs attention today."
               : "Insights start once there are about 2 weeks of orders. Until then, the Dashboard shows what needs attention today."}
@@ -197,7 +197,7 @@ function EvidenceDrawer({ insight, days, answer, error, onClose, onAnswer, onDis
 
   return (
     <Sheet open={!!insight} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
+      <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-[28rem]">
         {insight && (
           <>
             <div className="flex flex-col gap-2 border-b border-[#f0edf4] px-5 pb-4 pt-5 pr-12">

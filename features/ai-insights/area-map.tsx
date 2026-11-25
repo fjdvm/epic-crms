@@ -297,7 +297,7 @@ export function AreaSection({ areas, unmapped, orders, days, enoughData }: {
 
           {!enoughData && (
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div className="max-w-xs rounded-xl border border-[#e6e1ee] bg-white px-5 py-4 text-center shadow-sm">
+              <div className="w-full max-w-[20rem] rounded-xl border border-[#e6e1ee] bg-white px-5 py-4 text-center shadow-sm">
                 <MapPin className="mx-auto size-5 text-[#5b2a86]" aria-hidden />
                 <p className="mt-2 text-sm font-semibold text-[#18181b]">Not enough orders to draw the map</p>
                 <p className="mt-1 text-xs text-[#71717a]">{orders} orders in the {period}. Areas show up after about 30.</p>

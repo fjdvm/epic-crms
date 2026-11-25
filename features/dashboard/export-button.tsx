@@ -59,7 +59,7 @@ export function DashboardExportButton({ period, endpoint, filename, label = "Exp
         {busy ? "Exporting…" : label}
       </Button>
       {failed && (
-        <p role="alert" className="max-w-xs text-sm text-destructive">
+        <p role="alert" className="max-w-[20rem] text-sm text-destructive">
           Couldn&apos;t export {endpoint ? "this page" : "the Dashboard"}. Please try again.
         </p>
       )}
