@@ -1,12 +1,13 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { database } from "@/lib/db";
 import { crmsDatabase } from "@/lib/crms-db";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
-import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
+import { deliverGatewayAuditEvent, gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
+import { deliverPendingAudits, savePendingAudit } from "@/lib/pending-audit";
 import { recordUpload } from "@/features/files/server";
 import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE } from "@/lib/portal/config";
 import type { Staff } from "@/lib/portal/client";
@@ -56,7 +57,7 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
   id: number,
   run: (order: CurrentOrder, staff: Staff) => Promise<R>,
   requiredModule: string = ORDERS_MODULE,
-  audit?: { action: string; description: (staff: Staff) => string; metadata?: Record<string, unknown> },
+  audit?: { action: string; description: (staff: Staff) => string; metadata?: Record<string, unknown>; durable?: boolean },
 ): Promise<R | OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
   const staff = await requireModule(requiredModule);
@@ -82,7 +83,8 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
   // Order writes are never optimistic, and a refusal must not look like a changed Order.
   if (result.ok) {
     if (audit) {
-      await auditOrder(id, staff, requiredModule, audit.action, audit.description(staff), audit.metadata);
+      if (audit.durable) await auditOrderDurably(id, staff, requiredModule, audit.action, audit.description(staff), audit.metadata);
+      else await auditOrder(id, staff, requiredModule, audit.action, audit.description(staff), audit.metadata);
     }
     revalidatePath(`/orders/${id}`);
     revalidatePath("/orders");
@@ -95,11 +97,44 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
 
 /** These transitions and the Delivery photo attachment happen at most once per Order. */
 async function auditOrder(id: number, staff: Staff, module: string, action: string, description: string, metadata?: Record<string, unknown>) {
-  await recordAudit(gatewayAuditTrail, {
-    action, module, outcome: "success", actor: staffAuditActor(staff),
+  await recordAudit(gatewayAuditTrail, orderEvent(id, staff, module, action, description, metadata));
+}
+
+function orderEvent(id: number, staff: Staff, module: string, action: string, description: string, metadata?: Record<string, unknown>, outcome: "success" | "failure" = "success", operationId = `order:${id}:${action}`) {
+  return {
+    action, module, outcome, actor: staffAuditActor(staff),
     target: { type: "order", id: String(id), display_name: `Order #${id}` },
-    description, ...(metadata ? { metadata } : {}), occurred_at: new Date().toISOString(), operationId: `order:${id}:${action}`,
-  });
+    description, ...(metadata ? { metadata } : {}), occurred_at: new Date().toISOString(), operationId,
+  };
+}
+
+/**
+ * Money and Manager-approval actions (#743): the event is saved as a pending audit record first, then delivered to the Portal
+ * (with any older pending records) and retried later if the gateway is down. Delivery never blocks or undoes the action.
+ * The saved change itself lives in the storefront, so the record is saved right after it is confirmed rather than in one
+ * database transaction; if CREOMS cannot save the record, the event falls back to the best-effort path.
+ */
+async function auditOrderDurably(id: number, staff: Staff, module: string, action: string, description: string, metadata?: Record<string, unknown>) {
+  const event = orderEvent(id, staff, module, action, description, metadata);
+  try {
+    await savePendingAudit(crmsDatabase(), event);
+  } catch (error) {
+    console.error("The pending audit record could not be saved", error);
+    await recordAudit(gatewayAuditTrail, event);
+    return;
+  }
+  try {
+    await deliverPendingAudits(crmsDatabase(), deliverGatewayAuditEvent);
+  } catch (error) {
+    console.error("Pending audit records could not be delivered", error);
+  }
+}
+
+/** A refused or failed "approve anyway" attempt, with the reason; the same attempt by the same person keeps one identity. */
+async function auditApproveAnywayDenied(id: number, staff: Staff, attempt: string, reason: string, metadata: Record<string, unknown>) {
+  const key = createHash("sha256").update(attempt).digest("hex").slice(0, 16);
+  await recordAudit(gatewayAuditTrail, orderEvent(id, staff, PAYMENTS_MODULE, "payment.approved_anyway",
+    `${staff.name} could not approve Order #${id} anyway: ${reason}`, metadata, "failure", `order:${id}:payment.approved_anyway:denied:${staff.id}:${key}`));
 }
 
 /** What Staff chose on a flagged Cash on Delivery Order, worded for the log; nothing when there was none. */
@@ -316,16 +351,24 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
       if (order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
       return changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name });
     }
-    if (rejections < MANAGER_AFTER_REJECTIONS && order.payment_proof_rejected_at) return { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
+    const attempt = JSON.stringify([staff.id, options.reason ?? "", options.approvalId ?? "", options.allocateToOrderId ?? null]);
+    const denied = async <T extends { ok: boolean }>(result: T): Promise<T> => {
+      // Allocating the transfer to another Order is audited as its own change, not as a refusal.
+      if (!result.ok && !(allocatedTo !== null && allocatedTo !== id)) {
+        await auditApproveAnywayDenied(id, staff, attempt, (result as { reason?: string }).reason ?? "Refused.", { rejections, reusedReferenceOrderIds: reusedOn });
+      }
+      return result;
+    };
+    if (rejections < MANAGER_AFTER_REJECTIONS && order.payment_proof_rejected_at) return denied({ ok: false, reason: "This proof was rejected. Wait for the Customer to send another." });
     const reason = clean(options.reason);
     // The reason is needed to request, to approve anyway, and is checked again against the approved request.
-    if (!options.approvalId && !reason) return { ok: false, reason: "Enter a reason to approve this payment anyway." };
+    if (!options.approvalId && !reason) return denied({ ok: false, reason: "Enter a reason to approve this payment anyway." });
     // A reused reference must say which Order the transfer pays: this one or one that already used it.
     const chosen = options.allocateToOrderId;
     if (reusedOn.length > 0 && (chosen === undefined || ![id, ...reusedOn].includes(chosen))) {
-      return { ok: false, reason: "Choose which Order this transfer pays." };
+      return denied({ ok: false, reason: "Choose which Order this transfer pays." });
     }
-    return approvals().run(staff, { module: PAYMENTS_MODULE, action: "payment.approve-anyway", targetId: String(id),
+    return denied(await approvals().run(staff, { module: PAYMENTS_MODULE, action: "payment.approve-anyway", targetId: String(id),
       payload: { rejections, reusedReferenceOrderIds: reusedOn, ...(reusedOn.length ? { allocateToOrderId: chosen } : {}) }, amountInCentavos: 0 },
     { reason, approvalId: options.approvalId }, async () => {
       // A Staff retry names only the approval; the reason is the one they gave when they asked.
@@ -361,8 +404,10 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
       const paid = await changeOrderStatus(id, { status: "paid", staffId: staff.username, staffName: staff.name, approvedAnyway: { reason: approvedAnyway } });
       if (!paid.ok && claimed) await releaseReference(crmsDatabase(), claimed, id);
       return paid;
-    });
+    }));
   }, PAYMENTS_MODULE, {
+    // Approving anyway is a money and Manager decision: its Audit Event is kept as a pending record until delivered.
+    get durable() { return approvedAnyway !== null; },
     get action() { return approvedAnyway ? "payment.approved_anyway" : "payment.marked_paid"; },
     description: staff => approvedAnyway
       ? `${staff.name} approved Order #${id} anyway: ${approvedAnyway}`
