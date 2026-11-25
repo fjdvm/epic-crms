@@ -71,6 +71,9 @@ period:
   again with `maskText`).
 - A sentence that quotes a number not in its facts, or a link, is thrown away. The card then shows the rule's own next step,
   labelled as such.
+- Cards are numbered in the prompt and notes come back by number. Groq and Gemini both copy a number reliably; Gemini
+  replaced keys with titles.
+- With fewer than 30 Orders no model is asked at all, including the Ticket themes grouping.
 - What was sent, the system prompt and the model are kept on the run.
 - If no model answers, the run is stored without the AI words.
 

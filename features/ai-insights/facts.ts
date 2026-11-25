@@ -8,7 +8,7 @@ import { addressArea, areaName, cityKey, cityLabel } from "@/lib/geo/areas";
 import { notReplacement } from "@/lib/replacement-order";
 
 import {
-  RULES, type AreaFigures, type CityFigures, type CourierFigures, type ExpiringFigures, type InsightFacts, type PeriodDays,
+  enoughData, RULES, type AreaFigures, type CityFigures, type CourierFigures, type ExpiringFigures, type InsightFacts, type PeriodDays,
   type PlaceFigures, type ReturnProduct, type SlaFigures, type StockFigures, type ThemeFigures,
 } from "./insights";
 
@@ -277,12 +277,13 @@ export async function loadFacts(sources: Sources, days: PeriodDays, now: Date,
   shared?: { stock: StockFigures[] | null; expiring: ExpiringFigures | null; sla: SlaFigures | null }): Promise<InsightFacts> {
   const span = periodSpan(days, now);
   const soft = <T>(p: Promise<T>) => p.catch(() => null);
-  const [orders, returns, themes, now_] = await Promise.all([
+  const [orders, returns, now_] = await Promise.all([
     orderFactsIn(sources.source, span, now),
     soft(returnFactsIn(sources.source, span)),
-    soft(themeFactsIn(sources, span)),
     shared ?? loadNowFacts(sources, now),
   ]);
+  // Grouping Ticket themes asks a model, so it runs only when there is enough data for the page to show insights at all.
+  const themes = enoughData(orders) ? await soft(themeFactsIn(sources, span)) : null;
   return {
     days, orders: orders.orders, previousOrders: orders.previousOrders, wentOut: orders.wentOut, lateOrFailed: orders.lateOrFailed,
     returnsRequested: returns?.requested ?? 0, returnedOrders: orders.returnedOrders, areas: orders.areas, unmapped: orders.unmapped,

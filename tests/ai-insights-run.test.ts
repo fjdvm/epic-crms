@@ -40,7 +40,7 @@ beforeEach(async () => {
   spy = (vi.spyOn(structured, "structuredOutput") as unknown as typeof spy).mockImplementation(async ({ system }) =>
     system === SYSTEM
       ? { ok: true, model: "m", output: { summary: "Orders reached 31 this week. Two unpaid Orders need a look first.", notes: [
-        { key: "payments:expiring", note: "These 2 Orders cancel soon; a reminder may save them." },
+        { n: 1, note: "These 2 Orders cancel soon; a reminder may save them." },
       ] } }
       : { ok: true, model: "m", output: { themes: [] } });
 });
@@ -81,7 +81,7 @@ describe("the morning run", () => {
     await orders(31);
     await expiring();
     spy.mockImplementation(async ({ system }) => system === SYSTEM
-      ? { ok: true, model: "m", output: { summary: "Orders rose 48% this week.", notes: [{ key: "payments:expiring", note: "About 9 Orders will cancel; see https://example.com." }] } }
+      ? { ok: true, model: "m", output: { summary: "Orders rose 48% this week.", notes: [{ n: 1, note: "About 9 Orders will cancel; see https://example.com." }] } }
       : { ok: true, model: "m", output: { themes: [] } });
     await runInsights(sources(), now, models);
     const run = (await loadLatestRun(db.sql, 7))!;
@@ -96,7 +96,7 @@ describe("the morning run", () => {
     await runInsights(sources(), now, models);
     const run = (await loadLatestRun(db.sql, 7))!;
     expect(run).toMatchObject({ enoughData: false, orders: 12, insights: [], summary: null });
-    expect(spy.mock.calls.filter(([a]) => a.system === SYSTEM)).toHaveLength(0);
+    expect(spy).not.toHaveBeenCalled(); // neither the wording nor the Ticket themes
     expect(run.stats.orders).toEqual({ value: null, note: "No data yet" });
   });
 

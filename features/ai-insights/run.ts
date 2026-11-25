@@ -30,13 +30,14 @@ export interface InsightRun {
 
 export const SYSTEM = "You write short notes for shop Managers about insights that code worked out from their shop's figures. " +
   "Using only the facts given, write \"summary\": two or three plain sentences (at most 420 characters) on what changed in the period " +
-  "and where to look first, and for each insight key given, a \"note\": one or two sentences (at most 260 characters) on why it " +
+  "and where to look first, and for each numbered insight, a note with its number \"n\" and \"note\": one or two sentences (at most 260 characters) on why it " +
   "matters and what a person could check next. Quote only numbers that appear in the facts, and do not work out new ones. " +
   "Never include links, names of people, promises to Customers, or instructions to change anything automatically. " +
   "You only suggest; a person decides. This is internal assistance and changes nothing.";
-const schema = z.object({
+/** Notes come back by the card's number: models copy a number reliably, where a key is often replaced by a title. */
+export const schema = z.object({
   summary: z.string().trim().max(420),
-  notes: z.array(z.object({ key: z.string().max(200), note: z.string().trim().max(260) })).max(30),
+  notes: z.array(z.object({ n: z.number().int(), note: z.string().trim().max(260) })).max(30),
 });
 
 const periodLine = (days: PeriodDays) => `Period: the last ${days} days, compared with the ${days} days before.`;
@@ -61,7 +62,7 @@ export function promptFor(facts: InsightFacts, stats: Stats, insights: Insight[]
   return [
     periodLine(facts.days),
     `Figures: ${numbers(headlineNumbers(facts, stats))}`,
-    ...insights.map((i) => mask(`Insight [${i.key}] (${i.category}, ${i.priority} priority, ${i.confidence} confidence): ${insightText(i)} Numbers: ${numbers(i.numbers)}`)),
+    ...insights.map((i, index) => mask(`Insight ${index + 1} (${i.category}, ${i.priority} priority, ${i.confidence} confidence): ${insightText(i)} Numbers: ${numbers(i.numbers)}`)),
   ].join("\n");
 }
 
@@ -70,10 +71,10 @@ export function checkedWords(facts: InsightFacts, stats: Stats, insights: Insigh
   const all = { rule: `${periodLine(facts.days)} ${insights.map(insightText).join(" ")}`, numbers: headlineNumbers(facts, stats), links: [] };
   const summary = output.summary && quotesOnlyAlertFacts(output.summary, all) ? output.summary : null;
   const notes = new Map<string, string>();
-  for (const { key, note } of output.notes) {
-    const insight = insights.find((i) => i.key === key);
-    if (!insight || !note || notes.has(key)) continue;
-    if (quotesOnlyAlertFacts(note, { rule: `${periodLine(facts.days)} ${insightText(insight)}`, numbers: insight.numbers, links: [] })) notes.set(key, note);
+  for (const { n, note } of output.notes) {
+    const insight = insights[n - 1];
+    if (!insight || !note || notes.has(insight.key)) continue;
+    if (quotesOnlyAlertFacts(note, { rule: `${periodLine(facts.days)} ${insightText(insight)}`, numbers: insight.numbers, links: [] })) notes.set(insight.key, note);
   }
   return { summary, notes };
 }
