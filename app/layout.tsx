@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -22,13 +22,23 @@ export const metadata: Metadata = {
   description: "Customer Relationship Management",
 };
 
+// Always lay out at desktop width, phones included: phones get the zoomed-out desktop site
+// (owner decision 2026-11-25). Never switch back to the phone width or block pinch-zoom.
+const DESKTOP_WIDTH = 1280;
+export const viewport: Viewport = {
+  width: DESKTOP_WIDTH,
+  // Next.js adds initial-scale=1 by default, which opens phones at 100% on a slice of the page.
+  // Left unset, phones zoom out to show the whole desktop width.
+  initialScale: undefined,
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
       className={`${inter.variable} ${fraunces.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-screen bg-background text-foreground font-sans">
+      <body className="min-h-screen min-w-[1280px] bg-background text-foreground font-sans">
         {children}
         <Toaster />
       </body>
