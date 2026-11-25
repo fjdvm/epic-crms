@@ -362,3 +362,15 @@ Staff attempt that needs a Manager ("Request approval"), validation refusals, a 
 unavailable save. The notes read records `customer_note.viewed`, once a minute per person and Customer. Metadata holds the reason
 and the Task id only, never note or Task text, nor Customer details. The operation id is per person, action, Customer, reason and
 request id, so a replayed refusal records once. When Customer edit and merge are built in CREOMS they must record through this module.
+
+## Dashboard and Reports exports (#752)
+
+CREOMS has two exports: the Dashboard PDF (`/api/dashboard/pdf`) and the AI insights PDF (`/api/dashboard/ai-insights/pdf`). The
+fulfilment and ticket reports only show on screen and have no download yet; when one is built it must record through
+`features/dashboard/export-audit.ts`. Both routes are GETs, so the coverage guard does not scan them; the tests carry the proof.
+A finished export records `dashboard.pdf_exported` or `dashboard.ai_insights_pdf_exported` (outcome `success`); a refused or failed one
+(a Role that cannot open AI insights, no stored run, or a PDF that could not be made) records the same action with outcome `failure`
+and the reason. Access refused at the Dashboard Module is already recorded by the portal guard. Target id and metadata hold the period
+preset or days window and the reason only, never figures, insight text or Customer details. The operation id is
+`dashboard-export:<action>:<staff id>:<choice>:<ok or reason>:<minute>`, so a replayed request records once.
+Known limit: two real downloads of the same export by the same person within one minute share one identity.
