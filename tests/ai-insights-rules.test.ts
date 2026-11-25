@@ -26,7 +26,7 @@ function facts(over: Partial<InsightFacts> = {}): InsightFacts {
 }
 
 describe("not enough data", () => {
-  it("makes no insights and shows dashes below about 30 Orders, whatever else is true", () => {
+  it("makes no insights below about 30 Orders but still shows the real figures, whatever else is true", () => {
     const thin = facts({
       orders: MIN_ORDERS - 1,
       expiring: { orders: 5, value: 100000, orderIds: [1, 2, 3, 4, 5], soonestHours: 2 },
@@ -34,7 +34,8 @@ describe("not enough data", () => {
     });
     expect(buildInsights(thin)).toEqual([]);
     const stats = buildStats(thin);
-    expect(Object.values(stats).every((s) => s.value === null && s.note === "No data yet")).toBe(true);
+    expect(stats.orders.value).toBe(MIN_ORDERS - 1);
+    expect(stats.stockWatch.value).toBe(1);
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowRight, BarChart3, CreditCard, LayoutDashboard, LifeBuoy, Package, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Truck, X,
+  ArrowRight, CreditCard, LayoutDashboard, LifeBuoy, Package, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Truck, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -94,14 +94,11 @@ export function InsightGrid({ initial, days, answers: initialAnswers, enoughData
           <p className="max-w-[28rem] text-sm text-[#71717a]">
             {waiting
               ? "Insights are worked out each morning at 6:00 am. Until the first run, the Dashboard shows what needs attention today."
-              : "Insights start once there are about 2 weeks of orders. Until then, the Dashboard shows what needs attention today."}
+              : "Insights start once there are at least 30 orders in the period. Until then, the Dashboard shows what needs attention today."}
           </p>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
             <Link href="/dashboard" prefetch className="flex items-center gap-1.5 rounded-lg bg-[#5b2a86] px-3 py-2 text-sm font-medium text-white">
               <LayoutDashboard className="size-4" aria-hidden /> Open Dashboard
-            </Link>
-            <Link href="/reports" prefetch className="flex items-center gap-1.5 rounded-lg border border-[#e4e4e7] bg-white px-3 py-2 text-sm font-medium text-[#18181b]">
-              <BarChart3 className="size-4" aria-hidden /> Open Reports
             </Link>
           </div>
         </div>

@@ -97,7 +97,7 @@ describe("the morning run", () => {
     const run = (await loadLatestRun(db.sql, 7))!;
     expect(run).toMatchObject({ enoughData: false, orders: 12, insights: [], summary: null });
     expect(spy).not.toHaveBeenCalled(); // neither the wording nor the Ticket themes
-    expect(run.stats.orders).toEqual({ value: null, note: "No data yet" });
+    expect(run.stats.orders.value).toBe(12); // real figures stay visible; only the judgements wait for 30
   });
 
   it("keeps the cards when no model answers, and a rerun the same day replaces the run", async () => {
