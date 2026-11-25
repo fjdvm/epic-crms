@@ -315,7 +315,7 @@ it("explains missing legacy values and failed comparisons without changing the p
 });
 
 describe("approve anyway keeps a pending audit record (#743)", () => {
-  const pendingRows = () => db.sql<{ state: string; attempts: number; event: import("@/lib/audit-trail").AuditEvent }[]>`select state, attempts, event from crms.pending_audit_records`;
+  const pendingRows = () => db.sql<{ state: string; attempts: number; event: import("@/lib/audit-trail").AuditEvent }[]>`select state, attempts, event from crms.pending_audit_records where event->>'action' not like 'approval.%'`;
   const anyway = () => audit.mock.calls.map(([e]) => e).filter(e => e.action === "payment.approved_anyway");
 
   async function approvedByManager() {

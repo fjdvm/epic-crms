@@ -15,6 +15,8 @@ import { shopRole } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
+import { auditTicketDenied } from "./tickets-audit";
+
 import {
   claimerWorkload,
   reassignTickets,
@@ -90,12 +92,23 @@ async function move(
   operationId: string,
   bulk: boolean,
 ): Promise<ReassignOutcome> {
-  const staff = await manager();
-  if (!staff) return { ok: false, reason: "forbidden" };
+  const caller = await requireModule(TICKETS_MODULE);
+  const staff = shopRole(caller.role) === "manager" ? caller : null;
+  // A refused or failed move is one `failure` Audit Event (ids only, never the typed reason): the first Ticket is the
+  // Target and a bulk move lists every Ticket id. The operation id keeps a replayed move at one event.
+  const denied = async (why: string) => auditTicketDenied(caller, { type: "ticket", id: ticketIds[0] ?? null }, "ticket.reassigned",
+    bulk ? "move Tickets, starting with" : "move", why, operationId, { ticketIds, fromId: String(fromId), toId: String(toId), bulk });
+  if (!staff) {
+    await denied("forbidden");
+    return { ok: false, reason: "forbidden" };
+  }
 
   try {
     const to = (await directory()).find((p) => p.id === String(toId));
-    if (!to) return { ok: false, reason: "invalid-recipient" as ReassignFailure };
+    if (!to) {
+      await denied("invalid-recipient");
+      return { ok: false, reason: "invalid-recipient" as ReassignFailure };
+    }
 
     let customer: { id: string; name: string } | null = null;
     if (!bulk && ticketIds.length === 1) {
@@ -118,11 +131,12 @@ async function move(
         await syncNotificationCopies().catch(() => {});
         await nudgeStaff().catch(() => {});
       });
-    }
+    } else await denied(result.reason);
 
     return result;
   } catch (error) {
     console.error("Tickets could not be reassigned", error);
+    await denied("unavailable");
 
     return { ok: false, reason: "unavailable" };
   }

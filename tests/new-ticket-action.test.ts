@@ -11,7 +11,7 @@ vi.mock("next/server", () => ({ after: mocks.after }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/features/tickets/new-ticket", () => ({ openTicket: mocks.openTicket }));
 vi.mock("@/lib/tickets-db", () => ({ ticketsDatabase: () => "reader", ticketsWriterDatabase: () => "writer" }));
-vi.mock("@/lib/gateway", () => ({ gatewayFileStorage: {}, storefrontTicketUrl: vi.fn(), sendAppEmail: vi.fn() }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn(async () => {}), gatewayFileStorage: {}, storefrontTicketUrl: vi.fn(), sendAppEmail: vi.fn() }));
 
 import { openNewTicket } from "@/features/tickets/actions";
 

@@ -15,6 +15,7 @@ import { canWork, READ_ONLY_REFUSAL, shopRole } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsWriterDatabase } from "@/lib/tickets-db";
 
+import { auditTicketDenied } from "./tickets-audit";
 import { escalateTicket, sendBackEscalation, takeEscalation, type ManagerRecipient } from "./escalate";
 import type { EscalateFailure, EscalationReason } from "./escalate-reasons";
 
@@ -36,9 +37,19 @@ function deps() {
 }
 
 /** Run one escalation action as a Staff member who holds the Tickets Module, then refresh what it touches. */
-async function act(ticketId: number, run: (staff: Awaited<ReturnType<typeof requireModule>>) => Promise<EscalateOutcome>): Promise<EscalateOutcome> {
+async function act(
+  ticketId: number,
+  attempt: { action: string; what: string },
+  token: string | undefined,
+  run: (staff: Awaited<ReturnType<typeof requireModule>>) => Promise<EscalateOutcome>,
+): Promise<EscalateOutcome> {
   const staff = await requireModule(TICKETS_MODULE);
-  if (!canWork(staff)) return READ_ONLY_REFUSAL as EscalateOutcome;
+  // A refused or failed attempt is one `failure` Audit Event with the same action name as the success event.
+  const denied = (reason: string) => auditTicketDenied(staff, { type: "ticket", id: ticketId }, attempt.action, attempt.what, reason, token);
+  if (!canWork(staff)) {
+    await denied(READ_ONLY_REFUSAL.reason);
+    return READ_ONLY_REFUSAL as EscalateOutcome;
+  }
 
   try {
     const result = await run(staff);
@@ -53,9 +64,12 @@ async function act(ticketId: number, run: (staff: Awaited<ReturnType<typeof requ
       });
     }
 
+    if (!result.ok) await denied(result.reason);
+
     return result;
   } catch (error) {
     console.error("Escalation could not be saved", error);
+    await denied("unavailable");
 
     return { ok: false, reason: "unavailable" };
   }
@@ -63,18 +77,18 @@ async function act(ticketId: number, run: (staff: Awaited<ReturnType<typeof requ
 
 /** The Claimer asks every Manager for help. */
 export async function escalate(ticketId: number, reason: EscalationReason, note: string, operationId?: string): Promise<EscalateOutcome> {
-  return act(Number(ticketId), async (staff) =>
+  return act(Number(ticketId), { action: "ticket.escalated", what: "escalate" }, operationId, async (staff) =>
     escalateTicket(deps(), staff, Number(ticketId), { reason, note: String(note ?? "") }, await managers(), operationId || randomUUID()),
   );
 }
 
 /** A Manager takes the Ticket and becomes its Claimer. */
 export async function takeEscalated(ticketId: number, operationId?: string): Promise<EscalateOutcome> {
-  return act(Number(ticketId), (staff) => takeEscalation(deps(), staff, Number(ticketId), operationId || randomUUID()));
+  return act(Number(ticketId), { action: "ticket.escalation-taken", what: "take the escalation of" }, operationId, (staff) => takeEscalation(deps(), staff, Number(ticketId), operationId || randomUUID()));
 }
 
 /** A Manager sends the Ticket back to its Claimer with a note. */
 export async function sendBack(ticketId: number, note: string, operationId?: string): Promise<EscalateOutcome> {
-  return act(Number(ticketId), (staff) => sendBackEscalation(deps(), staff, Number(ticketId), String(note ?? ""), operationId || randomUUID()));
+  return act(Number(ticketId), { action: "ticket.escalation-sent-back", what: "send back the escalation of" }, operationId, (staff) => sendBackEscalation(deps(), staff, Number(ticketId), String(note ?? ""), operationId || randomUUID()));
 }
 
