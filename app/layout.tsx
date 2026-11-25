@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Bren Raphael's | Customer Relation & Ecommerce Ordering Management System",
-  description: "Customer Relationship Management",
+  description: "Customer Relation and Ecommerce Ordering Management System",
 };
 
 // Always lay out at desktop width, phones included: phones get the zoomed-out desktop site
