@@ -312,3 +312,13 @@ Refund destination change save a pending audit record first (#743); the Return i
 makes a replay one event. Corrections now have a stable operation id (the correction row) instead of a random one.
 There is no store credit or "hold batch" action in CREOMS yet; when they are built they join this group.
 Known limit: the storefront saves the change before CREOMS saves the pending record, so a crash in that gap loses the event.
+
+## Approvals gaps (#748)
+
+Every Approvals decision (`approval.granted`, `approval.declined`, `approval_limit.changed`, `approval.requested`,
+`ai_suggestion.accepted`) is saved as a pending audit record (#743) in the same transaction as the change, then delivered; the
+approval event id is the operation id, so a replay is one event. A refused or failed attempt (wrong Role, request not found or
+already decided, missing decline reason, invalid input, no matching approval to claim, AI acceptance by a view-only Role) records a
+`failure` event through `features/approvals/workflow.ts` with the same action name, `metadata.reason`, and the operation id
+`approval:<request id|none>:<action>:denied:<staff id>:<hash>`, so a replayed refusal records once. Metadata holds ids and the reason only.
+There is no separate "send back" action on the Approvals screen; a decline is the send-back.

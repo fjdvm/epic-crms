@@ -147,6 +147,22 @@ it("records a human's accepted AI suggestion without sending or changing an Orde
   await signIn("ada"); expect(await acceptAISuggestion("Returns", "suggestion-2", "1")).toMatchObject({ ok: false });
 });
 
+it("audits denied approval attempts once each, and decisions through pending records (#748)", async () => {
+  const id = await returned(600000);
+  await signIn("ana"); const pending = await requestWriteOff(id, "Damaged stock");
+  if (!pending.approvalId) throw new Error("Missing request");
+  const failures = () => audit.mock.calls.map(([e]) => e).filter(e => e.outcome === "failure" && e.target.type === "approval");
+  for (const _ of [1, 2]) { await signIn("ana"); expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: false }); }
+  await signIn("ada"); expect(await setApprovalLimit(1)).toMatchObject({ ok: false });
+  await signIn("mario"); expect(await decideApproval("Returns", pending.approvalId, "decline", "")).toMatchObject({ ok: false });
+  expect(failures().map(e => e.action).sort()).toEqual(["approval.granted", "approval.granted", "approval.declined", "approval_limit.changed"].sort());
+  expect(failures()[0]).toMatchObject({ actor: { id: "ana" }, target: { id: pending.approvalId }, metadata: { reason: "Your Role cannot decide this approval step." } });
+  expect(new Set(failures().map(e => e.operationId)).size).toBe(3);
+  expect(JSON.stringify(failures())).not.toMatch(/@example\.com/);
+  expect(await decideApproval("Returns", pending.approvalId, "approve")).toMatchObject({ ok: true });
+  expect(await db.sql`select state from crms.pending_audit_records where event->>'action' = 'approval.granted'`).toEqual([{ state: "delivered" }]);
+});
+
 vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));
 
 it("retains Manager notifications when an old Portal directory omits Roles, then delivers on a user refresh", async () => {

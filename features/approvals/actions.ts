@@ -38,9 +38,9 @@ export async function requestWriteOff(returnId: number, reason: string) {
 export async function acceptAISuggestion(module: string, suggestionId: string, targetId: string) {
   const staff = await requireModule(module);
   const { canWork } = await import("@/lib/portal/roles");
-  if (!canWork(staff)) return { ok: false, reason: "Your Role can only view shop work." };
+  if (!canWork(staff)) return approvals().refuseAI(staff, module, targetId, "Your Role can only view shop work.");
   if (typeof suggestionId !== "string" || !suggestionId.trim() || suggestionId.length > 200 || typeof targetId !== "string" || !targetId.trim()) {
-    return { ok: false, reason: "Choose an AI suggestion and its target." };
+    return approvals().refuseAI(staff, module, targetId, "Choose an AI suggestion and its target.");
   }
   return approvals().acceptAI(staff, module, suggestionId, targetId);
 }
