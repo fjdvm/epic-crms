@@ -260,3 +260,11 @@ that use a CREOMS-side transaction (refunds, write-offs, store credit) should sa
   or other contact detail; Customer Profile changes list field names, not values.
 - Operation identity: stable per action and Target (plus a submission token when the action can repeat), so a
   replay records one Audit Event.
+
+## Orders denied attempts (#744)
+
+Confirm (delivery fee quote), cancel, reject, item cancellation, the Customer's cancel request decisions, Status email
+resend and the COD "ask GCash first" choice record a `failure` event when refused or failed (read-only Role, stale
+Order, validation, storefront refusal). It has the same action name as the success event, the reason in the
+description and as `metadata.reason`, and the operation id `order:<id>:<action>:denied:<staff id>:<hash of attempt and
+reason>`, so a replayed refusal records once. Resends and COD choices that succeed still get a fresh id per click.

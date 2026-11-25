@@ -36,6 +36,9 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({ database: vi.fn(() => db.sql) }));
 let db: TestDatabase;
 
+/** The Audit Events the fake port was given, by outcome (#744: refused attempts are events too). */
+const events = (outcome: "success" | "failure") => audit.mock.calls.map(([event]) => event).filter(event => event.outcome === outcome);
+
 /** The total Staff would have seen on screen: what the database holds for the Order. */
 async function shownTotal(id: number, fee: number) {
   const [row] = Number.isSafeInteger(id) ? await db.sql`select subtotal_in_centavos as s, coalesce((to_jsonb(o) ->> 'discount_in_centavos')::int, 0) as d from orders o where id = ${id}` : [];
@@ -147,7 +150,8 @@ describe("Order actions", () => {
     await db.sql`update orders set subtotal_in_centavos = 100000 where id = ${delivery}`;
     expect(await realQuote(delivery, 15_000, 100_000)).toMatchObject({ ok: false, reason: expect.stringContaining("₱1150.00") });
     expect(storefront.requests).toBe(0);
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
+    expect(events("failure")).toEqual([expect.objectContaining({ action: "order.confirmed", description: expect.stringContaining("Ana could not confirm Order #") })]);
     expect(await db.sql`select status from orders where id in ${db.sql([delivery])}`).toEqual([{ status: "placed" }]);
   });
 
@@ -173,7 +177,8 @@ describe("Order actions", () => {
       const id = await qualifying();
       expect(await quoteDeliveryFee(id, 15_000)).toEqual({ ok: false, reason: expect.stringContaining("locked at ₱0.00") });
       expect(storefront.requests).toBe(0);
-      expect(audit).not.toHaveBeenCalled();
+      expect(events("success")).toEqual([]);
+      expect(events("failure")).toHaveLength(1);
       expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "placed" } });
     });
 
@@ -230,7 +235,13 @@ describe("Order actions", () => {
     storefront.refusal = "Storefront refused the change.";
     expect(await cancelOrderItems(id, [1])).toEqual({ ok: false, reason: storefront.refusal });
     expect(await loadOrder(() => db.sql, id)).toMatchObject({ ok: true, order: { status: "paid" } });
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
+    // The Staff "Request approval" block, the four malformed picks and the storefront refusal are each a denied attempt.
+    expect(events("failure")).toHaveLength(6);
+    expect(events("failure")[0]).toMatchObject({
+      action: "order.items_cancelled", module: "Orders", actor: { type: "user", id: "ana", display_name: "Ana" },
+      target: { type: "order", id: String(id), display_name: `Order #${id}` }, metadata: { reason: expect.stringContaining("Request approval") },
+    });
   });
 
   it("refuses direct calls when the Portal grants Payments and Fulfilment but no Orders Module", async () => {
@@ -870,7 +881,7 @@ describe("Order and Payment Audit Events", () => {
       ...(test.action === "order.confirmed" ? { metadata: expect.objectContaining({ total_in_centavos: expect.any(Number) }) } : {}),
     });
     expect((await test.run(id)).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(1);
+    expect(events("success")).toHaveLength(1);
   });
   it.each(cases)("keeps the $action change when the audit trail fails", async test => {
     const id = await ready(test);
@@ -880,7 +891,7 @@ describe("Order and Payment Audit Events", () => {
     expect((await test.run(id)).ok).toBe(true);
     expect(logged).toHaveBeenCalledWith("CREOMS Audit Event could not be recorded", error);
     expect((await test.run(id)).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit.mock.calls.filter(([event]) => event.outcome === "success")).toHaveLength(1);
     expect(revalidatePath).toHaveBeenCalledWith(`/orders/${id}`);
     const result = await loadOrder(() => db.sql, id);
     expect(result).toMatchObject({ ok: true, order: { status: test.action === "payment.marked_paid" ? "paid" : test.action === "order.cancelled" ? "cancelled" : "confirmed" } });
@@ -889,13 +900,13 @@ describe("Order and Payment Audit Events", () => {
     const id = await ready(test);
     storefront.refusal = "Order already changed.";
     expect((await test.run(id)).ok).toBe(false);
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
   });
   it("records only the winner of concurrent confirmations", async () => {
     const id = await ready(cases[0]);
     const results = await Promise.all([quoteDeliveryFee(id, 15000), quoteDeliveryFee(id, 20000)]);
     expect(results.filter(result => result.ok)).toHaveLength(1);
-    expect(audit).toHaveBeenCalledTimes(1);
+    expect(events("success")).toHaveLength(1);
   });
   it("does not audit Payment queue reads", async () => {
     await loadPaymentQueue();
@@ -1002,15 +1013,17 @@ describe("resendStatusEmail", () => {
     await resendStatusEmail(id, "confirmation");
     expect((await resendStatusEmail(id, "confirmation")).ok).toBe(false);
     expect(storefront.resentEmails).toHaveLength(1);
-    expect(audit).toHaveBeenCalledTimes(1);
+    expect(events("success")).toHaveLength(1);
+    expect(events("failure")).toEqual([expect.objectContaining({ action: "order.email_resent", description: expect.stringContaining("could not resend") })]);
   });
 
-  it("refuses when the storefront refuses, keeping the failure and writing no audit", async () => {
+  it("refuses when the storefront refuses, keeping the failure and recording a denied attempt", async () => {
     const id = await failedEmail();
     storefront.refusal = "Resend is not available right now.";
     expect(await resendStatusEmail(id, "confirmation")).toEqual({ ok: false, reason: "Resend is not available right now." });
     expect((await outcomes(id))[0].status).toBe("failed");
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
+    expect(events("failure")).toEqual([expect.objectContaining({ action: "order.email_resent", metadata: { reason: "Resend is not available right now." } })]);
   });
 
   it("refuses an email that is not failed, or the wrong occurrence, without calling the storefront", async () => {
@@ -1021,7 +1034,8 @@ describe("resendStatusEmail", () => {
     expect((await resendStatusEmail(other, "payment-rejected", "2")).ok).toBe(false);
     expect((await resendStatusEmail(other, "payment-rejected")).ok).toBe(false);
     expect(storefront.resentEmails).toEqual([]);
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
+    expect(events("failure")).toHaveLength(3);
   });
 
   it("refuses an unknown email or a malformed occurrence", async () => {
@@ -1039,7 +1053,7 @@ describe("resendStatusEmail", () => {
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "order.email_resent", module: "Returns", description: expect.stringContaining("Ana"), metadata: expect.objectContaining({ kind: "return-refunded", occurrence: "7" }) }));
     expect((await resendStatusEmail(id, "return-refunded", "7")).ok).toBe(false);
     expect(storefront.resentEmails).toHaveLength(1);
-    expect(audit).toHaveBeenCalledTimes(1);
+    expect(events("success")).toHaveLength(1);
   });
 
   it("refuses a refund email resend that names no Return", async () => {
@@ -1170,5 +1184,94 @@ describe("a Customer's cancellation request", () => {
     await order("delivery", "confirmed");
     const result = await loadOrders(() => db.sql, { tab: "cancel-requests" });
     expect(result).toMatchObject({ ok: true, list: { counts: { "cancel-requests": 1 }, rows: [{ id, cancelRequested: true }] } });
+  });
+});
+
+describe("Orders denied-attempt Audit Events (#744)", () => {
+  const ana = { id: "portal-ana", username: "ana", name: "Ana", email: "ana@example.com" };
+  const denied = () => events("failure");
+
+  it("records a refused rejection with the reason, actor and Order, and nothing else", async () => {
+    const id = await order();
+    expect(await rejectOrder(id, "  ")).toEqual({ ok: false, reason: "Say why you are rejecting this Order." });
+    expect(audit).toHaveBeenCalledExactlyOnceWith({
+      action: "order.rejected", module: "Orders", outcome: "failure",
+      actor: { type: "user", id: "ana", display_name: "Ana" },
+      target: { type: "order", id: String(id), display_name: `Order #${id}` },
+      description: `Ana could not reject Order #${id}: Say why you are rejecting this Order.`,
+      metadata: { reason: "Say why you are rejecting this Order." }, occurred_at: expect.any(String), operationId: expect.stringContaining(`order:${id}:order.rejected:denied:ana:`),
+    });
+  });
+
+  it("records one event when the same refused attempt is replayed, and a new one for a different refusal", async () => {
+    const id = await order("delivery", "confirmed");
+    await rejectOrder(id, "Out of stock");
+    await rejectOrder(id, "Out of stock");
+    const [first, second] = denied();
+    expect(first.operationId).toBe(second.operationId);
+    await cancelOrder(await order("delivery", "delivered"));
+    expect(new Set(denied().map(event => event.operationId)).size).toBe(2);
+  });
+
+  it("records a refused cancellation, in Orders and in Payments", async () => {
+    const id = await order("delivery", "delivered");
+    expect((await cancelOrder(id)).ok).toBe(false);
+    expect((await cancelPaymentOrder(id)).ok).toBe(false);
+    expect(denied().map(event => [event.action, event.module])).toEqual([["order.cancelled", "Orders"], ["order.cancelled", "Payments"]]);
+    expect(denied()[0].description).toBe(`Ana could not cancel Order #${id}: Order already changed; refresh it before trying again.`);
+  });
+
+  it("records a read-only Role's attempt to confirm, and sends nothing to the storefront", async () => {
+    const id = await order();
+    vi.mocked(requireModule).mockResolvedValue({ ...ana, id: "owner", username: "owner", name: "Owner", role: "Admin" });
+    expect(await quoteDeliveryFee(id, 15_000)).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
+    expect(storefront.requests).toBe(0);
+    expect(denied()).toEqual([expect.objectContaining({ action: "order.confirmed", actor: { type: "user", id: "owner", display_name: "Owner" }, description: `Owner could not confirm Order #${id}: Your Role can only view shop work.` })]);
+  });
+
+  it("records refused decisions on a Customer's cancel request", async () => {
+    const id = await order("delivery", "confirmed");
+    const request = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+    expect((await approveCancelRequest(id, request)).ok).toBe(false);
+    expect((await declineCancelRequest(id, request, "")).ok).toBe(false);
+    expect(denied().map(event => event.action)).toEqual(["order.cancel_request_approved", "order.cancel_request_declined"]);
+    expect(denied()[0].description).toContain("could not approve the cancel request for Order #");
+  });
+
+  it("records a refused item cancellation with the lines left out of the metadata", async () => {
+    const id = await order("delivery", "delivered");
+    await cancelOrderItems(id, [1]);
+    expect(denied()).toEqual([expect.objectContaining({ action: "order.items_cancelled", metadata: { reason: "Order already changed; refresh it before trying again." } })]);
+  });
+
+  it("records a refused fee as a failed attempt and changes nothing", async () => {
+    const id = await order();
+    expect(await quoteDeliveryFee(id, -1)).toMatchObject({ ok: false });
+    expect(denied()).toHaveLength(1);
+    expect(events("success")).toEqual([]);
+  });
+
+  it("holds no personal data in a denied event", async () => {
+    const id = await order();
+    await rejectOrder(id, "");
+    expect(JSON.stringify(denied())).not.toMatch(/maria|@example\.com/i);
+  });
+
+  it("does not let a failing audit trail change the refusal", async () => {
+    const id = await order("delivery", "delivered");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    audit.mockRejectedValueOnce(new Error("audit offline"));
+    expect(await cancelOrder(id)).toMatchObject({ ok: false, reason: expect.stringContaining("already changed") });
+  });
+
+  it("records a read-only Role's ask-for-GCash choice as a denied attempt", async () => {
+    const { recordAskGcashFirst } = await import("@/features/orders/cod-actions");
+    const id = await order();
+    vi.mocked(requireModule).mockResolvedValue({ ...ana, role: "Admin" });
+    expect(await recordAskGcashFirst(id)).toEqual({ ok: false, reason: "Your Role can only view shop work." });
+    expect(await recordAskGcashFirst(id)).toMatchObject({ ok: false });
+    expect(denied()).toHaveLength(2);
+    expect(denied()[0]).toMatchObject({ action: "cod_flag.ask_gcash", outcome: "failure", module: "Orders", operationId: `cod-ask-gcash:${id}:denied:portal-ana` });
+    expect(denied()[0].operationId).toBe(denied()[1].operationId);
   });
 });

@@ -56,8 +56,17 @@ export async function setCodAmount(amountInCentavos: number) {
 /** Staff chose to ask for GCash first instead of confirming: nothing on the Order changes, the choice is logged. */
 export async function recordAskGcashFirst(orderId: number): Promise<{ ok: true } | { ok: false; reason: string }> {
   const staff = await requireModule(ORDERS_MODULE);
-  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   if (!Number.isSafeInteger(orderId) || orderId < 1) return { ok: false, reason: "Invalid Order number." };
+  const target = { type: "order", id: String(orderId), display_name: `Order #${orderId}` };
+  if (!canWork(staff)) {
+    // A refused attempt keeps one identity per person and Order, so a replay records once.
+    await recordAudit(gatewayAuditTrail, {
+      module: ORDERS_MODULE, action: "cod_flag.ask_gcash", outcome: "failure", actor: staffAuditActor(staff), target,
+      description: `${staff.name} could not choose to ask for GCash first on flagged Order #${orderId}: ${READ_ONLY_REASON}`,
+      occurred_at: new Date().toISOString(), metadata: { choice: "ask-gcash", reason: READ_ONLY_REASON }, operationId: `cod-ask-gcash:${orderId}:denied:${staff.id}`,
+    });
+    return { ok: false, reason: READ_ONLY_REASON };
+  }
   await recordAudit(gatewayAuditTrail, {
     module: ORDERS_MODULE, action: "cod_flag.ask_gcash", outcome: "success", actor: staffAuditActor(staff),
     target: { type: "order", id: String(orderId), display_name: `Order #${orderId}` },
