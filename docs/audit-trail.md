@@ -276,6 +276,8 @@ the same path as #744; an approve-anyway refusal keeps its own `payment.approved
 Claiming and handing over a Manager payment review (`payment_review.claimed`, `payment_review.reassigned`) and the Proof
 reader corrections (`payment_proof.corrected`, `payment_proof.flag_overridden`) do the same, with the operation id
 `...:denied:<staff id>:<hash of the reason>`. A refused correction names the Order once it is known, otherwise the payment
-proof; its metadata holds only the proof id, the field and the reason, never the typed value or the reading. Successful
-claims, hand-overs and corrections now have stable operation ids (person, target and what changed) instead of a random
-one, so a replayed action records one event.
+proof; its metadata holds only the proof id, the field and the reason, never the typed value or the reading (the success
+events keep their earlier before/after values). Successful claims, hand-overs and corrections now have stable operation
+ids (person, target and what changed) instead of a random one, so a replayed action records one event. Known limit: with
+no submission token, a later identical repeat (the same Manager claiming the same Order again, or the same correction
+made twice) shares that identity; adding a token to these forms would close it.
