@@ -313,6 +313,19 @@ makes a replay one event. Corrections now have a stable operation id (the correc
 There is no store credit or "hold batch" action in CREOMS yet; when they are built they join this group.
 Known limit: the storefront saves the change before CREOMS saves the pending record, so a crash in that gap loses the event.
 
+## Feedback gaps (#750)
+
+CREOMS has no Feedback reply or review publish/hide action yet (reviews are moderated in the storefront), so the only Feedback
+write actions are Analyze (`feedback.analysis_run`) and the product suggestions (`feedback.product_advice`), which already record
+their successes. Refused or failed attempts now record a `failure` event with the same action name through
+`features/feedback/feedback-audit.ts`: a view-only Role (Admin), a run that could not start (`no-keys`, `busy`, `cooling-down` with its
+end time) or that threw, and a suggestion request that produced nothing (`unavailable`). The operation id is
+`feedback:<action>:denied:<staff id>:<hash of reason and metadata>`, so a replayed refusal records once. Metadata holds the reason
+only. When Feedback reply or publish/hide are built in CREOMS, they must record through this module.
+Known limit: a later identical refusal (same person, action and reason) shares one identity.
+||||||| e5af798
+
+
 ## Approvals gaps (#748)
 
 Every Approvals decision (`approval.granted`, `approval.declined`, `approval_limit.changed`, `approval.requested`,
@@ -339,3 +352,25 @@ note or hold text, nor Customer details. A bulk move is one event whose Target i
 
 All of these are best effort and never block or undo the action (no money or approval step is involved, so there is no pending record).
 Known limit: without a token, a later identical refusal (the same person, action, Ticket and reason) shares one identity.
+
+## Customer Profiles gaps (#751)
+
+CREOMS has no Customer edit or merge action yet (they live in the storefront), so the Customer Profiles write actions are notes
+and Tasks, which already record their successes. Refused or failed attempts now record a `failure` event with the same action name
+(`customer_note.created`, `customer_task.<kind>`) through `features/customer-profiles/customer-audit.ts`: a view-only Role, a
+Staff attempt that needs a Manager ("Request approval"), validation refusals, a reused request id, a missing Customer, and an
+unavailable save. The notes read records `customer_note.viewed`, once a minute per person and Customer. Metadata holds the reason
+and the Task id only, never note or Task text, nor Customer details. The operation id is per person, action, Customer, reason and
+request id, so a replayed refusal records once. When Customer edit and merge are built in CREOMS they must record through this module.
+
+## Dashboard and Reports exports (#752)
+
+CREOMS has two exports: the Dashboard PDF (`/api/dashboard/pdf`) and the AI insights PDF (`/api/dashboard/ai-insights/pdf`). The
+fulfilment and ticket reports only show on screen and have no download yet; when one is built it must record through
+`features/dashboard/export-audit.ts`. Both routes are GETs, so the coverage guard does not scan them; the tests carry the proof.
+A finished export records `dashboard.pdf_exported` or `dashboard.ai_insights_pdf_exported` (outcome `success`); a refused or failed one
+(a Role that cannot open AI insights, no stored run, or a PDF that could not be made) records the same action with outcome `failure`
+and the reason. Access refused at the Dashboard Module is already recorded by the portal guard. Target id and metadata hold the period
+preset or days window and the reason only, never figures, insight text or Customer details. The operation id is
+`dashboard-export:<action>:<staff id>:<choice>:<ok or reason>:<minute>`, so a replayed request records once.
+Known limit: two real downloads of the same export by the same person within one minute share one identity.

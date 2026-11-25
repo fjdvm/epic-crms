@@ -44,7 +44,6 @@ const exempt: Record<string, string> = {
   "features/notifications/actions.ts#markNotificationRead": "own-state: the reader's own unread flag",
   "features/notifications/actions.ts#markAllNotificationsRead": "own-state: the reader's own unread flags",
   // Gaps still to close, by #741 group.
-  "features/customer-profiles/note-actions.ts#readCustomerNotes": "gap: group 4, sensitive read of notes",
   "features/files/actions.ts#getFileView": "gap: group 1, sensitive read of an uploaded file",
   "features/files/actions.ts#requestFileUpload": "gap: group 1, upload started",
   "features/files/actions.ts#confirmFileUpload": "gap: group 1, upload saved",

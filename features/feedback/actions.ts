@@ -14,6 +14,7 @@ import { requireModule } from "@/lib/portal/staff";
 
 import { runAnalysis, type AnalysisResult } from "./analysis";
 import { openProductAdvice, type ProductAdviceResponse } from "./product-advice";
+import { auditFeedbackDenied } from "./feedback-audit";
 import { configuredClients } from "./sentiment-clients";
 
 export type AnalyzeOutcome = AnalysisResult | { status: "unavailable" | "read-only" };
@@ -25,7 +26,11 @@ export type AnalyzeOutcome = AnalysisResult | { status: "unavailable" | "read-on
 export async function analyze(): Promise<AnalyzeOutcome> {
   const staff = await requireModule(FEEDBACK_MODULE);
 
-  if (!canWork(staff)) return { status: "read-only" };
+  if (!canWork(staff)) {
+    await auditFeedbackDenied(staff, "feedback.analysis_run", "read-only");
+
+    return { status: "read-only" };
+  }
   try {
     const result = await runAnalysis({
       sql: feedbackWriterDatabase(),
@@ -36,10 +41,15 @@ export async function analyze(): Promise<AnalyzeOutcome> {
     });
 
     revalidatePath("/feedback");
+    // A run that did not start is a refused attempt; a finished run recorded its own event inside runAnalysis.
+    if (result.status === "no-keys" || result.status === "busy" || result.status === "cooling-down") {
+      await auditFeedbackDenied(staff, "feedback.analysis_run", result.status, result.status === "cooling-down" ? { until: result.until.toISOString() } : {});
+    }
 
     return result;
   } catch (error) {
     console.error("Feedback analysis could not run", error);
+    await auditFeedbackDenied(staff, "feedback.analysis_run", "unavailable");
 
     return { status: "unavailable" };
   }
@@ -49,7 +59,11 @@ export async function analyze(): Promise<AnalyzeOutcome> {
 export async function generateProductAdvice(): Promise<ProductAdviceResponse> {
   const staff = await requireModule(FEEDBACK_MODULE);
 
-  if (!canWork(staff)) return { result: null, unavailable: true, refused: "read-only" };
+  if (!canWork(staff)) {
+    await auditFeedbackDenied(staff, "feedback.product_advice", "read-only");
+
+    return { result: null, unavailable: true, refused: "read-only" };
+  }
 
   const response = await openProductAdvice({ tickets: ticketsDatabase(), crms: crmsDatabase() }, staff, { generate: true });
 
@@ -66,6 +80,8 @@ export async function generateProductAdvice(): Promise<ProductAdviceResponse> {
       operationId: `feedback.product_advice:${response.result.createdAt}`,
     });
   }
+
+  else await auditFeedbackDenied(staff, "feedback.product_advice", "unavailable");
 
   return response;
 }

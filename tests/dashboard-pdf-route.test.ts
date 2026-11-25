@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/portal/staff", () => ({ requireModule: mocks.requireModule, heldModules: mocks.heldModules }));
 vi.mock("@/lib/tickets-db", () => ({ ticketsDatabase: mocks.database }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: vi.fn() }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => "crms" }));
 vi.mock("@/features/tickets/service-level-store", () => ({ readServiceLevels: async () => ({ history: [] }) }));
 vi.mock("@/features/settings/automatic-checks-server", () => ({ currentUnconfirmedHours: async () => 48, currentPaymentReviewHours: async () => 48 }));
