@@ -150,8 +150,8 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
   const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
   const orderId = String(form.get("orderId") ?? "");
   const customerId = String(form.get("customerId") ?? "");
-  const denied = async (reason: string) => auditTicketDenied(staff, { type: "customer", id: customerId }, "ticket.opened", "open a Ticket for", reason, undefined,
-    { orderId: /^\d+$/.test(orderId) ? Number(orderId) : null });
+  const linkedOrderId = /^\d+$/.test(orderId) ? Number(orderId) : null;
+  const denied = async (reason: string) => auditTicketDenied(staff, { type: "customer", id: customerId }, "ticket.opened", "open a Ticket for", reason, undefined, { orderId: linkedOrderId });
 
   if (!canWork(staff)) {
     await denied(READ_ONLY_REFUSAL.reason);
@@ -172,7 +172,7 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
         fileId: upload?.fileId,
         subject: String(form.get("subject") ?? ""),
         customerId,
-        orderId: /^\d+$/.test(orderId) ? Number(orderId) : null,
+        orderId: linkedOrderId,
         priority: String(form.get("priority") ?? "normal"),
         description: String(form.get("description") ?? ""),
         image: picked
@@ -183,7 +183,7 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
     );
     if (result.ok) {
       revalidatePath("/tickets");
-      await auditTicketSuccess(staff, { type: "ticket", id: result.id }, "ticket.opened", "opened", { customerId, orderId: /^\d+$/.test(orderId) ? Number(orderId) : null, priority: String(form.get("priority") ?? "normal") }, JSON.stringify(["opened", result.id]));
+      await auditTicketSuccess(staff, { type: "ticket", id: result.id }, "ticket.opened", "opened", { customerId, orderId: linkedOrderId, priority: String(form.get("priority") ?? "normal") }, JSON.stringify(["opened", result.id]));
     } else await denied(result.reason);
 
     return result;
