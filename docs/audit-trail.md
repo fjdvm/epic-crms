@@ -339,3 +339,14 @@ note or hold text, nor Customer details. A bulk move is one event whose Target i
 
 All of these are best effort and never block or undo the action (no money or approval step is involved, so there is no pending record).
 Known limit: without a token, a later identical refusal (the same person, action, Ticket and reason) shares one identity.
+
+## Feedback gaps (#750)
+
+CREOMS has no Feedback reply or review publish/hide action yet (reviews are moderated in the storefront), so the only Feedback
+write actions are Analyze (`feedback.analysis_run`) and the product suggestions (`feedback.product_advice`), which already record
+their successes. Refused or failed attempts now record a `failure` event with the same action name through
+`features/feedback/feedback-audit.ts`: a view-only Role (Admin), a run that could not start (`no-keys`, `busy`, `cooling-down` with its
+end time) or that threw, and a suggestion request that produced nothing (`unavailable`). The operation id is
+`feedback:<action>:denied:<staff id>:<hash of reason and metadata>`, so a replayed refusal records once. Metadata holds the reason
+only. When Feedback reply or publish/hide are built in CREOMS, they must record through this module.
+Known limit: a later identical refusal (same person, action and reason) shares one identity.
