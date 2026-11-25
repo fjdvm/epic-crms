@@ -13,7 +13,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 import { FakeFileStorage, PNG } from "./fake-file-storage";
 const storage = new FakeFileStorage();
 const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(async () => {}));
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({
   storageUrl: (url: string) => url,
   directFileStorage: { view: vi.fn((id: string) => storage.view(id)) },
@@ -426,6 +426,8 @@ describe("Return Audit Events", () => {
     vi.mocked(requireModule).mockResolvedValue({ ...ana, id: "portal-user-123" });
     return id;
   }
+  const successes = () => audit.mock.calls.map(([event]) => event).filter(event => event.outcome === "success");
+  const failures = () => audit.mock.calls.map(([event]) => event).filter(event => event.outcome === "failure");
   it.each(cases)("audits $next once across retries with Portal identity", async test => {
     const id = await ready(test);
     expect((await test.run(id)).ok).toBe(true);
@@ -442,36 +444,50 @@ describe("Return Audit Events", () => {
     };
     // Sending a replacement also records the linked Replacement Order, once.
     const calls = test.next === "replaced" ? 2 : 1;
-    expect(audit).toHaveBeenCalledTimes(calls);
+    expect(successes()).toHaveLength(calls);
     expect(audit).toHaveBeenCalledWith(decided);
     expect((await test.run(id)).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(calls);
+    expect(successes()).toHaveLength(calls);
+    // The repeat is refused, and that refusal is one denied-attempt event (#747).
+    // (A refund repeats through its proof step first, which refuses with the same reason.)
+    expect(failures()).toEqual([expect.objectContaining({ action: test.next === "refunded" ? "return.refund_proof_saved" : action, outcome: "failure", target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+      metadata: { reason: "Return already changed or is not ready for this step; refresh it before trying again." } })]);
+    expect((await test.run(id)).ok).toBe(false);
+    expect(failures()).toHaveLength(2);
+    expect(failures()[1].operationId).toBe(failures()[0].operationId);
   });
   it.each(cases)("preserves $next when audit throws", async test => {
     const id = await ready(test);
     const error = new Error("offline");
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    audit.mockRejectedValueOnce(error);
+    const durable = test.next === "refunded" || test.next === "replaced";
+    if (durable) audit.mockRejectedValue(error); else audit.mockRejectedValueOnce(error);
     expect((await test.run(id)).ok).toBe(true);
-    expect(logged).toHaveBeenCalledWith("CREOMS Audit Event could not be recorded", error);
+    if (durable) {
+      // Money and stock keep a pending audit record that is retried later (#743).
+      expect(await db.sql`select state from crms.pending_audit_records where state = 'pending'`).not.toHaveLength(0);
+    } else expect(logged).toHaveBeenCalledWith("CREOMS Audit Event could not be recorded", error);
     expect(await getReturnDetail(id)).toMatchObject({ ok: true, detail: { status: test.next } });
     expect(revalidatePath).toHaveBeenCalledWith("/(app)/returns", "layout");
   });
-  it.each(cases)("does not audit refused $next", async test => {
+  it.each(cases)("records a denied attempt, not a success, for refused $next", async test => {
     const id = await ready(test);
     storefront.refusal = "Already changed";
     expect((await test.run(id)).ok).toBe(false);
-    expect(audit).not.toHaveBeenCalled();
+    expect(successes()).toEqual([]);
+    expect(failures()).toEqual([expect.objectContaining({ outcome: "failure", actor: expect.objectContaining({ id: "portal-user-123" }), metadata: { reason: expect.any(String) } })]);
   });
   it("audits a confirmed refund before proof promotion, without duplicating on reconciliation", async () => {
     const id = await ready(cases[3]);
     storage.failPromote = true;
     expect((await refundVia(db.sql, id, proof())).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(1);
+    expect(successes()).toHaveLength(1);
+    // The refund was saved and only its proof could not be made Permanent: not a refusal, so no failure event.
+    expect(failures()).toHaveLength(0);
     storage.failPromote = false;
     expect(await reconcileRefundProof(id)).toEqual({ ok: true });
     expect((await refundVia(db.sql, id, proof())).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(1);
+    expect(successes()).toHaveLength(1);
   });
 });
 

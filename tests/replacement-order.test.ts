@@ -13,7 +13,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 const session = vi.hoisted(() => ({ handle: "" }));
 const audit = vi.hoisted(() => vi.fn(async (_event: import("@/lib/audit-trail").AuditEvent) => {}));
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: (id: string) => storage.view(id) } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }), headers: async () => new Headers() }));
 vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));
@@ -28,11 +28,11 @@ const notices: { userIds: string[]; body: string }[] = [];
 beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create schema crms`;
-  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-pending-audit.sql", "utf8"));
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.sql`truncate crms.approval_requests, crms.approval_events, order_returns, orders, customers, neon_auth."user" restart identity cascade`;
+  await db.sql`truncate crms.pending_audit_records, crms.approval_requests, crms.approval_events, order_returns, orders, customers, neon_auth."user" restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
   await db.sql`insert into neon_auth."user" (id, "emailVerified") values ('c1', true) on conflict do nothing`;
@@ -181,4 +181,21 @@ it("will not extend the window of an Order that is not delivered", async () => {
   await db.sql`update orders set status = 'dispatched' where id = 1`;
   await signIn("mario");
   expect(await extendRefundWindow(1, "Why")).toMatchObject({ ok: false, reason: "Only a delivered Order has a Refund window to extend." });
+});
+
+it("audits a window extension through a pending record once, and refused extensions as denied attempts (#747)", async () => {
+  await wantsReplacement();
+  await signIn("mario");
+  const events = (outcome: string) => audit.mock.calls.map(([event]) => event).filter(event => event.action === "return.window_extended" && event.outcome === outcome);
+  expect(await extendRefundWindow(1, "  ")).toMatchObject({ ok: false });
+  expect(events("failure")).toEqual([expect.objectContaining({ target: { type: "order", id: "1", display_name: "Order #1" }, metadata: { reason: "Enter a reason for extending the window." } })]);
+  expect(await extendRefundWindow(1, "Customer was travelling")).toMatchObject({ ok: true });
+  expect(events("success")).toEqual([expect.objectContaining({ operationId: "order:1:window_extended", metadata: { reason: "Customer was travelling" } })]);
+  expect(await db.sql`select state from crms.pending_audit_records where event->>'action' = 'return.window_extended'`).toEqual([{ state: "delivered" }]);
+  expect(await extendRefundWindow(1, "Again")).toMatchObject({ ok: false });
+  expect(events("success")).toHaveLength(1);
+  expect(events("failure")[1]).toMatchObject({ metadata: { reason: "The Refund window was already extended once." } });
+  await signIn("ada");
+  expect(await extendRefundWindow(1, "x")).toMatchObject({ ok: false });
+  expect(events("failure")[2]).toMatchObject({ actor: expect.objectContaining({ id: "ada" }) });
 });

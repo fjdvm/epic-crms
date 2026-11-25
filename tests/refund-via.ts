@@ -10,8 +10,8 @@ import type { ApprovalOptions, ApprovalResult } from "@/features/approvals/workf
 import type { ReturnChangeResult } from "@/lib/storefront";
 
 /** The CREOMS tables the two-step refund needs: the saved proof, the Proof reader's results and the corrections (#614, #615). */
-export const REFUND_PROOF_SQL = ["docs/db/crms-refund-proof-reads.sql", "docs/db/crms-refund-proof-drafts.sql"];
-export const REFUND_PROOF_TABLES = "crms.refund_proof_drafts, crms.refund_proof_reads, crms.refund_proof_corrections";
+export const REFUND_PROOF_SQL = ["docs/db/crms-refund-proof-reads.sql", "docs/db/crms-refund-proof-drafts.sql", "docs/db/crms-pending-audit.sql"];
+export const REFUND_PROOF_TABLES = "crms.refund_proof_drafts, crms.refund_proof_reads, crms.refund_proof_corrections, crms.pending_audit_records";
 
 /**
  * The whole refund the way Staff do it: save the proof and details, let the Proof reader finish (a read that failed shows Needs Review and
