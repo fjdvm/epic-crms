@@ -291,3 +291,40 @@ describe("Correcting what the Proof reader read (#597)", () => {
     expect(o.status).toBe("awaiting payment");
   });
 });
+
+describe("denied and failed review and Proof reader attempts are audited (#745)", () => {
+  const failures = (action: string) => audit.mock.calls.map(c => c[0]).filter(e => e.action === action && e.outcome === "failure");
+
+  it("records a refused claim and a refused hand-over, once per repeated refusal", async () => {
+    const id = await reviewOrder();
+    await signIn("ana");
+    await claimPaymentReview(id); await claimPaymentReview(id);
+    const claims = failures("payment_review.claimed");
+    expect(claims).toMatchObject([{ actor: { id: "ana" }, target: { id: String(id) }, module: "Payments" }, { actor: { id: "ana" } }]);
+    expect(claims[0].operationId).toBe(claims[1].operationId);
+    await signIn("mario"); await claimPaymentReview(id);
+    expect(await reassignPaymentReview(id, "marta", " ")).toMatchObject({ ok: false });
+    expect(failures("payment_review.reassigned")).toMatchObject([{ actor: { id: "mario" }, metadata: { reason: "Enter a reason for handing this review over." } }]);
+  });
+
+  it("records a refused correction or override, and a replayed correction records one success", async () => {
+    const miss = { finding: "Mismatch", read: "1000", expected: "x" }, ok = { finding: "Match", read: "x", expected: "x" };
+    const id = await proofOrder("gcash", "REF-DUP");
+    const [p] = await db.sql`select id from order_payment_proofs where order_id = ${id}`;
+    await db.sql`insert into crms.payment_proof_reads (proof_id, order_id, status, findings) values (${p.id}, ${id}, 'read', ${db.sql.json({ amount: miss, date: ok, reference: ok, recipient: ok, accountNumber: ok })})`;
+    const proof = Number(p.id);
+    await signIn("ana");
+    expect(await correctProofReading(proof, "amount", "1250", " ")).toMatchObject({ ok: false });
+    expect(await proceedDespiteFlag(proof, "date", "Fine")).toMatchObject({ ok: false });
+    expect(await correctProofReading(9999, "amount", "1", "Because")).toMatchObject({ ok: false });
+    expect(failures("payment_proof.corrected")).toMatchObject([
+      { actor: { id: "ana" }, target: { id: String(id) }, metadata: { proofId: proof, field: "amount", reason: "Enter a reason for the correction." } },
+      { target: { id: "9999" }, metadata: { proofId: 9999 } }]);
+    expect(failures("payment_proof.flag_overridden")).toMatchObject([{ target: { id: String(id) }, metadata: { proofId: proof, field: "date" } }]);
+    audit.mockClear();
+    await correctProofReading(proof, "amount", "1250", "Cut off"); await correctProofReading(proof, "amount", "1250", "Cut off");
+    const success = audit.mock.calls.map(c => c[0]).filter(e => e.action === "payment_proof.corrected" && e.outcome === "success");
+    expect(success).toHaveLength(2);
+    expect(success[0].operationId).toBe(success[1].operationId);
+  });
+});

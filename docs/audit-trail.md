@@ -268,3 +268,31 @@ resend and the COD "ask GCash first" choice record a `failure` event when refuse
 Order, validation, storefront refusal). It has the same action name as the success event, the reason in the
 description and as `metadata.reason`, and the operation id `order:<id>:<action>:denied:<staff id>:<hash of attempt and
 reason>`, so a replayed refusal records once. Resends and COD choices that succeed still get a fresh id per click.
+
+## Payments gaps (#745)
+
+Mark paid and reject proof (asking the Customer for a new one) record a `failure` event when refused or failed, through
+the same path as #744; an approve-anyway refusal keeps its own `payment.approved_anyway` failure event, never two.
+Claiming and handing over a Manager payment review (`payment_review.claimed`, `payment_review.reassigned`) and the Proof
+reader corrections (`payment_proof.corrected`, `payment_proof.flag_overridden`) do the same, with the operation id
+`...:denied:<staff id>:<hash of the reason>`. A refused correction names the Order once it is known, otherwise the payment
+proof; its metadata holds only the proof id, the field and the reason, never the typed value or the reading (the success
+events keep their earlier before/after values). Successful claims, hand-overs and corrections now have stable operation
+ids (person, target and what changed) instead of a random one, so a replayed action records one event. Known limit: with
+no submission token, a later identical repeat (the same Manager claiming the same Order again, or the same correction
+made twice) shares that identity; adding a token to these forms would close it.
+
+## Fulfilment gaps (#746)
+
+Pack (`order.preparing`, now recorded on success; it had no event), dispatch, dispatch update and delivered record a
+`failure` event when refused or failed, through the same path as #744: the same action name, the reason, and the operation
+id `order:<id>:<action>:denied:<staff id>:<hash>`, so a replayed refusal records once. A delivery that was saved but whose
+photo could not be made Permanent is not a refusal and records no failure event.
+
+Failed delivery records `failed_delivery.recorded`, `.rebooked`, `.restocked` and `.written_off` (metadata: attempt id, and the
+next step for a recording; never the reason text, message, courier or rider details). Restock and write-off, and the dispatched
+cancellation request (`order.cancellation_requested`) and its settlement (`order.cancelled_after_dispatch`), use the pending
+audit record of #743 (`features/orders/fulfilment-audit.ts`). The attempt id or request id is the operation identity, so a
+replay keeps one record. A write-off waiting for a Manager is the approval workflow's own event, not a denied attempt.
+Refusals of all of these (read-only Role, Staff "Request approval", stale Order, storefront refusal) are `failure` events.
+Known limit: the cancellation request is saved right after the storefront confirms it, so a crash in that gap loses the event.

@@ -103,14 +103,14 @@ describe("Order actions", () => {
     expect(await startPreparing(id)).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
     expect(await loadPackingSlip(id)).toMatchObject({ ok: true, slip: { fulfillmentMethod: "delivery", packedBy: null } });
     expect(storefront.requests).toBe(0);
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
   });
 
   it("does not accept packing confirmation without the expected Staff identity and time", async () => {
     const id = await order("delivery", "confirmed");
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id, status: "preparing", deliveryFeeInCentavos: null, packedBy: { id: "someone-else", name: "Other", at: "invalid" } })));
     expect(await startPreparing(id)).toMatchObject({ ok: false, reason: expect.stringContaining("did not confirm") });
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
@@ -129,7 +129,7 @@ describe("Order actions", () => {
       lines: [{ product: "Halaya", size: "250g", quantity: 2 }], packedBy: { id: "ana", name: "Ana", at: expect.any(Date) } } });
     expect(await startPreparing(id)).toMatchObject({ ok: false });
     expect(storefront.packedEvents).toEqual([{ action: "order.packed", actor: { id: "ana", name: "Ana" }, at: expect.any(String) }]);
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([expect.objectContaining({ action: "order.preparing" })]);
   });
 
   it("accepts a ₱0 Delivery fee on any subtotal and audits it as free delivery", async () => {
@@ -416,20 +416,20 @@ describe("Changing the dispatch record later", () => {
     expect(await updateDispatchRecord(id, { courier: "Grab", trackingUrl: "http://x.example/a" })).toMatchObject({ ok: false });
     for (const other of [preparing, delivered]) expect(await updateDispatchRecord(other, { courier: "Grab" })).toMatchObject({ ok: false });
     expect(storefront.requests).toBe(requests);
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
   });
   it("keeps the old record and the audit empty when the storefront refuses", async () => {
     const id = await dispatched();
     storefront.refusal = "Order already changed.";
     expect(await updateDispatchRecord(id, { courier: "Grab", trackingUrl: "https://grab.example/ride/9" })).toEqual({ ok: false, reason: "Order already changed." });
     expect((await loadDispatchRecord(db.sql, id, true))?.courier).toBe("Lalamove");
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
   });
   it.each(["Admin"])("is read-only for %s", async role => {
     const id = await dispatched();
     vi.mocked(requireModule).mockResolvedValue({ id: "o", username: "o", name: "Owner", email: "o@example.com", role });
     expect(await updateDispatchRecord(id, { courier: "Grab" })).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
   });
   it("hands rider details only to a reader who may see them", async () => {
     const id = await dispatched();
@@ -442,7 +442,7 @@ describe("Changing the dispatch record later", () => {
     const id = await order("delivery", "preparing");
     storefront.refusal = "Another Staff member has already moved this Order.";
     expect(await dispatch(id)).toEqual({ ok: false, reason: storefront.refusal });
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
   });
 });
 
@@ -643,6 +643,51 @@ describe("Fulfilment Order actions", () => {
       expect(await deliverOrder(await order("delivery", status, status === "dispatched" ? "gcash" : "cash-on-delivery"))).toMatchObject({ ok: false, reason: expect.stringContaining("Only a dispatched Order") });
     }
     expect(storefront.requests).toBe(0);
+  });
+
+  it("audits pack, dispatch, dispatch update and delivered once each, and a refusal as a denied attempt (#746)", async () => {
+    const id = await order("delivery", "confirmed");
+    expect((await startPreparing(id)).ok).toBe(true);
+    expect((await dispatchOrder(id, COURIER)).ok).toBe(true);
+    expect((await updateDispatchRecord(id, { ...COURIER, trackingUrl: "https://grab.test/changed" })).ok).toBe(true);
+    expect((await deliverOrder(id, deliveryPhoto(), 0)).ok).toBe(true);
+    const done = events("success").filter(event => event.module === "Fulfilment").map(event => event.action);
+    expect(done).toEqual(["order.preparing", "order.dispatched", "order.dispatch_updated", "order.delivered", "order.delivery_photo_attached"]);
+    expect(events("failure")).toEqual([]);
+
+    // Each refusal names the person, Order and reason, with ids only; a replay of the same refusal keeps one operation identity.
+    const stale = await order("delivery", "delivered");
+    for (const move of [() => startPreparing(stale), () => dispatchOrder(stale, COURIER), () => updateDispatchRecord(stale, COURIER), () => deliverOrder(stale, deliveryPhoto())]) {
+      expect((await move()).ok).toBe(false);
+    }
+    expect((await dispatchOrder(stale, COURIER)).ok).toBe(false);
+    const denied = events("failure");
+    expect(denied.map(event => event.action)).toEqual(["order.preparing", "order.dispatched", "order.dispatch_updated", "order.delivered", "order.dispatched"]);
+    expect(denied[0]).toMatchObject({ outcome: "failure", module: "Fulfilment", target: { type: "order", id: String(stale) }, actor: expect.objectContaining({ id: "ana" }),
+      description: expect.stringContaining("Ana could not start preparing"), metadata: { reason: expect.stringContaining("not ready to prepare") } });
+    expect(denied[4].operationId).toBe(denied[1].operationId);
+    expect(new Set(denied.slice(0, 4).map(event => event.operationId)).size).toBe(4);
+    expect(JSON.stringify(denied)).not.toMatch(/maria@example|0917/);
+  });
+
+  it("records a read-only Role and a storefront refusal on a Fulfilment move as denied attempts (#746)", async () => {
+    storefront.refusal = "Another Staff member has already moved this Order.";
+    expect((await startPreparing(await order("delivery", "confirmed"))).ok).toBe(false);
+    expect(events("failure")).toEqual([expect.objectContaining({ action: "order.preparing", metadata: { reason: storefront.refusal } })]);
+    expect(events("success")).toEqual([]);
+    storefront.refusal = null;
+    vi.mocked(requireModule).mockResolvedValue({ id: "ada", username: "ada", name: "Ada", email: "ada@example.com", role: "Admin" });
+    expect(await dispatchOrder(await order("delivery", "preparing"), COURIER)).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
+    expect(events("failure")[1]).toMatchObject({ action: "order.dispatched", actor: expect.objectContaining({ id: "ada" }), metadata: { reason: "Your Role can only view shop work." } });
+  });
+
+  it("records no denied attempt when delivery saved but its photo could not be made Permanent (#746)", async () => {
+    const id = await order("delivery", "dispatched", "gcash");
+    storage.failPromote = true;
+    expect(await deliverOrder(id, deliveryPhoto())).toMatchObject({ ok: false, reason: expect.stringContaining("marked delivered") });
+    storage.failPromote = false;
+    expect(events("failure")).toEqual([]);
+    expect(events("success").map(event => event.action)).toEqual(["order.delivered", "order.delivery_photo_attached"]);
   });
 
   it("allows preparation of paid GCash and confirmed Cash on Delivery Orders", async () => {
@@ -936,7 +981,8 @@ describe("Fulfilment Audit Events", () => {
       });
     }
     expect((await test.run(id)).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(test.actions.length);
+    expect(events("success")).toHaveLength(test.actions.length);
+    expect(events("failure")).toHaveLength(1);
   });
   it.each(cases)("preserves $next when audit fails", async test => {
     const id = await order("delivery", test.status, test.status === "dispatched" ? "gcash" : "cash-on-delivery");
@@ -951,17 +997,17 @@ describe("Fulfilment Audit Events", () => {
     const id = await order("delivery", test.status, test.status === "dispatched" ? "gcash" : "cash-on-delivery");
     storefront.refusal = "Already changed";
     expect((await test.run(id)).ok).toBe(false);
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
   });
   it("audits delivery and attachment even when photo promotion fails, without duplicating on reconciliation", async () => {
     const id = await order("delivery", "dispatched", "gcash");
     storage.failPromote = true;
     expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(2);
+    expect(events("success")).toHaveLength(2);
     storage.failPromote = false;
     expect(await reconcileDeliveryPhoto(id)).toEqual({ ok: true });
     expect((await deliverOrder(id, deliveryPhoto())).ok).toBe(false);
-    expect(audit).toHaveBeenCalledTimes(2);
+    expect(events("success")).toHaveLength(2);
   });
 });
 
@@ -1102,7 +1148,7 @@ describe("COD collection", () => {
     }
     expect(storefront.requests).toBe(before);
     expect(await collection(id)).toMatchObject({ status: "dispatched", amount: null, at: null });
-    expect(audit).not.toHaveBeenCalled();
+    expect(events("success")).toEqual([]);
   });
   it("keeps neither the status nor the collection when the storefront save fails", async () => {
     const id = await codOrder("dispatched");
