@@ -352,3 +352,13 @@ note or hold text, nor Customer details. A bulk move is one event whose Target i
 
 All of these are best effort and never block or undo the action (no money or approval step is involved, so there is no pending record).
 Known limit: without a token, a later identical refusal (the same person, action, Ticket and reason) shares one identity.
+
+## Customer Profiles gaps (#751)
+
+CREOMS has no Customer edit or merge action yet (they live in the storefront), so the Customer Profiles write actions are notes
+and Tasks, which already record their successes. Refused or failed attempts now record a `failure` event with the same action name
+(`customer_note.created`, `customer_task.<kind>`) through `features/customer-profiles/customer-audit.ts`: a view-only Role, a
+Staff attempt that needs a Manager ("Request approval"), validation refusals, a reused request id, a missing Customer, and an
+unavailable save. The notes read records `customer_note.viewed`, once a minute per person and Customer. Metadata holds the reason
+and the Task id only, never note or Task text, nor Customer details. The operation id is per person, action, Customer, reason and
+request id, so a replayed refusal records once. When Customer edit and merge are built in CREOMS they must record through this module.

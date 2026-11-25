@@ -79,10 +79,10 @@ it.each(["Admin", "Unknown"])("refuses every %s write with a plain reason", asyn
   const id = await task(); audit.mockClear(); actor.role = role;
   const results = [await create(), await markCustomerTaskDone("c1", id, randomUUID()), await reopenCustomerTask("c1", id, randomUUID()), await changeCustomerTaskDueDate("c1", id, "2026-11-20", randomUUID()), await reassignCustomerTask("c1", id, { id: "bea", name: "Bea" }, randomUUID())];
   for (const result of results) expect(result).toMatchObject({ ok: false, message: "Your Role can only view shop work." });
-  expect(audit).not.toHaveBeenCalled();
+  expect(audit.mock.calls.filter(([e]) => (e as { outcome: string }).outcome === "success")).toEqual([]);
 });
 it.each([{ description: " " }, { description: "a".repeat(201) }, { dueDate: "" }, { dueDate: "2026-02-30" }, { dueDate: "2026-11-16T00:00:00Z" }])("rejects invalid input %j", async invalid => {
-  expect(await create(invalid)).toMatchObject({ ok: false, message: expect.any(String) }); expect(audit).not.toHaveBeenCalled();
+  expect(await create(invalid)).toMatchObject({ ok: false, message: expect.any(String) }); expect(audit.mock.calls.filter(([e]) => (e as { outcome: string }).outcome === "success")).toEqual([]);
 });
 it("rejects missing dates, nonexistent Customers, Leads, mismatched Customers and reused operation ids", async () => {
   expect(await create({ dueDate: undefined })).toMatchObject({ ok: false });

@@ -10,6 +10,7 @@ import { CUSTOMER_PROFILES_MODULE } from "@/lib/portal/config";
 import { canWork, READ_ONLY_REASON, shopRole } from "@/lib/portal/roles";
 import { portalGateway } from "@/features/notifications/portal-gateway";
 import { requireModule } from "@/lib/portal/staff";
+import { auditCustomerDenied } from "./customer-audit";
 import { readCustomerTasks, type CustomerTask } from "./tasks";
 
 export type TaskResult = { ok: true; task: CustomerTask } | { ok: false; message: string; unavailable?: true };
@@ -19,6 +20,7 @@ type Change = { kind: "created"; description: string; dueDate: string; owner?: O
   | { kind: "due_date_changed"; dueDate: string }
   | { kind: "reassigned"; owner: Owner };
 const refused = (message: string): TaskResult => ({ ok: false, message });
+const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 100);
 function validDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
     && Number(value.slice(0, 4)) > 0 && !Number.isNaN(Date.parse(value))
@@ -29,7 +31,7 @@ function validOwner(owner: Owner): boolean {
     && typeof owner.name === "string" && !!owner.name.trim() && owner.name.length <= 200;
 }
 
-async function changeTask(customerId: string, taskId: string | null, change: Change, operationId: string): Promise<TaskResult> {
+async function performTask(customerId: string, taskId: string | null, change: Change, operationId: string): Promise<TaskResult> {
   const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
   if (!canWork(staff)) return refused(READ_ONLY_REASON);
   if (typeof customerId !== "string" || !customerId || customerId.length > 200
@@ -104,6 +106,17 @@ async function changeTask(customerId: string, taskId: string | null, change: Cha
     console.error("Customer Task could not be saved", error);
     return { ok: false, unavailable: true, message: "Tasks are unavailable right now. Please try again." };
   }
+}
+
+/** Every refused or failed attempt is one `failure` event with the same action name; a saved change recorded its own. */
+async function changeTask(customerId: string, taskId: string | null, change: Change, operationId: string): Promise<TaskResult> {
+  const result = await performTask(customerId, taskId, change, operationId);
+  if (!result.ok) {
+    const staff = await requireModule(CUSTOMER_PROFILES_MODULE);
+    const reason = result.unavailable ? "unavailable" : slug(result.message);
+    await auditCustomerDenied(staff, customerId, `customer_task.${change?.kind}`, "change a Customer Task", reason, operationId, typeof taskId === "string" ? { taskId } : {});
+  }
+  return result;
 }
 
 export async function createCustomerTask(customerId: string, input: { description: string; dueDate: string; owner?: Owner }, operationId: string): Promise<TaskResult> {

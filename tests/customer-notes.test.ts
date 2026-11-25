@@ -40,7 +40,7 @@ it.each(["Admin"])("%s reads but cannot write", async role => {
   mocks.role = role;
   expect(await addCustomerNote("customer", "Secret", "one")).toMatchObject({ ok: false, message: READ_ONLY_REASON });
   expect(await readCustomerNotes("customer")).toEqual({ ok: true, notes: [] });
-  expect(mocks.audit).not.toHaveBeenCalled();
+  expect((mocks.audit.mock.calls as unknown as [{ action: string; outcome: string }][]).filter(([e]) => e.action === "customer_note.created" && e.outcome === "success")).toEqual([]);
 });
 it("rejects blank, excessive and malformed input with plain reasons", async () => {
   for (const text of ["", " \n\t", "x".repeat(2001)]) {
@@ -56,8 +56,9 @@ it("saves and audits a concurrent retry once without copying note text to the au
   expect(results[0]).toMatchObject({ ok: true });
   expect(results).toEqual([results[0], results[0], results[0]]);
   expect(await readCustomerNotes("customer")).toMatchObject({ ok: true, notes: [expect.objectContaining({ text: "Private preference" })] });
-  expect(mocks.audit).toHaveBeenCalledTimes(1);
-  expect(mocks.audit.mock.calls[0]).toEqual([expect.objectContaining({ actor: { type: "user", id: "staff-1", display_name: "Ana" }, target: { type: "customer", id: "customer", display_name: "Maria" }, description: "Ana added a Customer note for Maria." })]);
+  const created = (mocks.audit.mock.calls as unknown as [{ action: string }][]).filter(([e]) => e.action === "customer_note.created");
+  expect(created).toHaveLength(1);
+  expect(created[0]).toEqual([expect.objectContaining({ actor: { type: "user", id: "staff-1", display_name: "Ana" }, target: { type: "customer", id: "customer", display_name: "Maria" }, description: "Ana added a Customer note for Maria." })]);
   expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("Private preference");
   expect(await addCustomerNote("customer", "Changed retry", "retry")).toEqual(results[0]);
 });
