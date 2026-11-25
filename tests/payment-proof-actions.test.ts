@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { deliverPendingAudits } from "@/lib/pending-audit";
 import { markPaid, rejectPaymentProof, loadPaymentQueue, loadPayments } from "@/features/orders/actions";
 import { loadOrder } from "@/features/orders/orders";
 import { decideApproval, getApprovalRequests } from "@/features/approvals/actions";
@@ -12,7 +13,8 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 const session = vi.hoisted(() => ({ handle: "" }));
 const audit = vi.hoisted(() => vi.fn(async (_event: import("@/lib/audit-trail").AuditEvent) => {}));
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+const deliver = vi.hoisted(() => vi.fn(async (event: import("@/lib/audit-trail").AuditEvent) => { await audit(event); }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: deliver, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: (id: string) => storage.view(id) } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }), headers: async () => new Headers() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -29,13 +31,14 @@ beforeAll(async () => {
   await db.sql`create schema crms`;
   await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
   await db.sql.unsafe(readFileSync("docs/db/crms-payment-allocations.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-pending-audit.sql", "utf8"));
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.sql`truncate crms.payment_reference_allocations, crms.approval_requests, crms.approval_events, order_payment_proofs, order_returns, orders, customers restart identity cascade`;
+  await db.sql`truncate crms.pending_audit_records, crms.payment_reference_allocations, crms.approval_requests, crms.approval_events, order_payment_proofs, order_returns, orders, customers restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
-    portal = new FakePortal(); storefront = new FakeStorefront(db.sql, undefined, storage); storage.reset(); notices.length = 0; oldDirectory = false; audit.mockClear();
+    portal = new FakePortal(); storefront = new FakeStorefront(db.sql, undefined, storage); storage.reset(); notices.length = 0; oldDirectory = false; audit.mockClear(); deliver.mockClear();
   for (const [id, role] of Object.entries({ ana: "Staff/Employee", mario: "CRMS Manager", ada: "Super Admin", owner: "CEO" })) {
     portal.addStaff(id, { id, username: id, name: `${id} Person`, email: `${id}@example.com`, role }, ["Payments"]);
   }
@@ -307,4 +310,71 @@ it("explains missing legacy values and failed comparisons without changing the p
     date: { pass: false, reason: "Payment date is not after the Order was placed." },
     recipient: { pass: false, reason: "Recipient does not match the shop account." },
   } }] } });
+});
+
+describe("approve anyway keeps a pending audit record (#743)", () => {
+  const pendingRows = () => db.sql<{ state: string; attempts: number; event: import("@/lib/audit-trail").AuditEvent }[]>`select state, attempts, event from crms.pending_audit_records`;
+  const anyway = () => audit.mock.calls.map(([e]) => e).filter(e => e.action === "payment.approved_anyway");
+
+  async function approvedByManager() {
+    const id = await proofOrder();
+    await signIn("ana"); await rejectAndResubmit(id, 3);
+    await signIn("mario");
+    return id;
+  }
+
+  it("saves the Manager's approval as a pending record, delivers it, and keeps personal data out", async () => {
+    const id = await approvedByManager();
+    expect(await markPaid(id, { reason: "Confirmed in the bank app" })).toMatchObject({ ok: true, order: { status: "paid" } });
+    const [row] = await pendingRows();
+    expect(row).toMatchObject({ state: "delivered", attempts: 1, event: { action: "payment.approved_anyway", outcome: "success", actor: { id: "mario" }, target: { type: "order", id: String(id) } } });
+    expect(anyway()).toHaveLength(1);
+    expect(JSON.stringify(row.event)).not.toMatch(/REF-|@example\.com/);
+  });
+
+  it("never blocks the action when delivery fails, and a retry delivers the same event once", async () => {
+    const id = await approvedByManager();
+    deliver.mockRejectedValueOnce(new Error("The gateway refused the audit event: 503"));
+    expect(await markPaid(id, { reason: "Confirmed in the bank app" })).toMatchObject({ ok: true, order: { status: "paid" } });
+    expect(await loadOrder(() => db.sql, id)).toMatchObject({ order: { status: "paid" } });
+    expect(await pendingRows()).toMatchObject([{ state: "pending", attempts: 1 }]);
+    expect(anyway()).toHaveLength(0);
+    expect(await deliverPendingAudits(db.sql, deliver)).toEqual({ delivered: 1, failed: 0 });
+    expect(await deliverPendingAudits(db.sql, deliver)).toEqual({ delivered: 0, failed: 0 });
+    expect(anyway()).toHaveLength(1);
+    expect(await pendingRows()).toMatchObject([{ state: "delivered", attempts: 2 }]);
+  });
+
+  it("retries an older pending record when the next approval is made", async () => {
+    const [a, b] = [await proofOrder(), await proofOrder()];
+    await signIn("ana"); await rejectAndResubmit(a, 3); await rejectAndResubmit(b, 3);
+    await signIn("mario");
+    deliver.mockRejectedValueOnce(new Error("down"));
+    await markPaid(a, { reason: "Slip seen" });
+    expect(anyway()).toHaveLength(0);
+    await markPaid(b, { reason: "Slip seen too" });
+    expect(anyway().map(e => e.target.id).sort()).toEqual([String(a), String(b)].sort());
+  });
+
+  it("records one event when the same approval is replayed", async () => {
+    const id = await approvedByManager();
+    expect(await markPaid(id, { reason: "Confirmed" })).toMatchObject({ ok: true });
+    expect(await markPaid(id, { reason: "Confirmed" })).toMatchObject({ ok: false });
+    expect(await pendingRows()).toHaveLength(1);
+    expect(anyway()).toHaveLength(1);
+  });
+
+  it("records a denied attempt as a failure event with the reason, and the same attempt keeps one identity", async () => {
+    const id = await proofOrder();
+    await signIn("ana"); await rejectAndResubmit(id, 3);
+    expect(await markPaid(id)).toEqual({ ok: false, reason: "Enter a reason to approve this payment anyway." });
+    expect(anyway()).toMatchObject([{ outcome: "failure", actor: { id: "ana" }, target: { id: String(id) }, description: expect.stringContaining("Enter a reason") }]);
+    audit.mockClear();
+    await markPaid(id, { reason: "Slip seen" }); await markPaid(id, { reason: "Slip seen" });
+    const denied = anyway();
+    expect(denied).toHaveLength(2);
+    expect(denied[0]).toMatchObject({ outcome: "failure", description: expect.stringContaining("Waiting for approval") });
+    expect(denied[0].operationId).toBe(denied[1].operationId);
+    expect(await pendingRows()).toEqual([]);
+  });
 });

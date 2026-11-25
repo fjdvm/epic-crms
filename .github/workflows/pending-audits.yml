@@ -1,0 +1,21 @@
+name: Pending audit records
+
+# Retries Audit Events that money and Manager-approval actions saved but the gateway did not accept (#743).
+# A backstop: each such action also retries older records when it runs. GitHub throttles this schedule.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the pending audit route
+        env:
+          CREOMS_APP_URL: ${{ secrets.CREOMS_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 60 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$CREOMS_APP_URL/api/cron/pending-audits"

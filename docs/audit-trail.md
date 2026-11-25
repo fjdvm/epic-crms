@@ -226,6 +226,29 @@ A unit with no path to the boundary must be on the exemption list at the top of 
 #741; each group PR deletes its entries). A stale entry (now audited, or the unit is gone) also fails, so the
 list only shrinks. A new write action therefore ships with an Audit Event or a reviewed exemption.
 
+### Pending audit records (#743)
+
+Money and Manager-approval actions keep their Audit Event in `crms.pending_audit_records`
+(`docs/db/crms-pending-audit.sql`, applied as `creoms_writer`; safe to rerun) and deliver it afterwards, so an outage
+at the Portal never leaves an approval unrecorded and never blocks the person. `lib/pending-audit.ts` is the one
+mechanism later tickets reuse: `savePendingAudit(tx, event)` saves the event (pass the action's own transaction to commit
+them together), `deliverPendingAudits(sql, deliverGatewayAuditEvent)` sends the oldest pending records through the
+acknowledged gateway delivery. A failed delivery leaves the record pending (attempts and a short error are kept) and never
+throws; a record another caller is delivering is skipped. The record's key is the gateway's own idempotency hash of the
+action, Target and operation identity, so a replayed action saves one record and a retry never adds a second event.
+
+Retries follow ADR-0005 (no polling): each action delivers its own record and any older pending ones when it runs, and
+`GET /api/cron/pending-audits` (`.github/workflows/pending-audits.yml`, `Authorization: Bearer $CRON_SECRET`) is the
+server-side backstop.
+
+Proven on Payments "approve anyway" (`payment.approved_anyway`, `features/orders/actions.ts#markPaid`). The change itself
+is saved by the storefront, which CREOMS cannot join in a database transaction, so the record is saved right after the
+storefront confirms (a crash in that gap loses the event, as before); if the pending record cannot be saved the event
+falls back to the best-effort path. A refused attempt (Staff "Request approval", a missing reason, no Order chosen, a
+reference already allocated) records the same action with outcome `failure` and the reason, with an identity per person and
+attempt so a replay stays one event. Metadata holds ids and the reason only, never the payment reference. Later groups
+that use a CREOMS-side transaction (refunds, write-offs, store credit) should save the record in it.
+
 ### Event naming and metadata
 
 - Name: `module.past_tense`, lower case, for example `order.confirmed`, `return.refunded`,
