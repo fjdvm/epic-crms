@@ -234,6 +234,16 @@ describe("the live connection", () => {
     expect(poll).not.toHaveBeenCalled();
   });
 
+  it("does not fetch when the tab is hidden and shown again", async () => {
+    const poll = vi.fn().mockResolvedValue(feedOf(ada));
+    await connected(poll);
+    poll.mockClear();
+    act(() => setVisibility("hidden"));
+    act(() => setVisibility("visible"));
+    await elapse(60_000);
+    expect(poll).not.toHaveBeenCalled();
+  });
+
   it("shows nothing new when the nudge finds nothing this Staff member may see", async () => {
     const poll = vi.fn().mockResolvedValue(feedOf(ada));
     const socket = await connected(poll);
