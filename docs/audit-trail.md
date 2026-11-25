@@ -210,3 +210,30 @@ linked to the Order, under the `process` Actor "Unpaid Order expiry". The operat
 no such row and is audited only as `order.cancelled`. Apply `docs/db/creoms-expiry-audit-readonly.sql` as the
 storefront table owner (grants `creoms_readonly` SELECT on `customer_notifications`); deploy the storefront's
 expiry first.
+
+## Coverage guard (#742)
+
+`tests/audit-coverage.test.ts` fails when a write has no Audit Event. A write is every exported function in a
+`"use server"` file under `features/` or `lib/`, every `POST`, `PUT`, `PATCH` or `DELETE` route handler under
+`app/api`, and the cron `GET` routes. `tests/audit-coverage-scan.ts` parses the source and follows calls through
+imports (five hops, never into `lib/portal/`, whose guards audit refusals for every action) looking for the
+audit boundary: `recordAudit`, `deliverGatewayAuditEvent`, the injected `AuditTrail` or an audit helper built on
+them. A type or `staffAuditActor` alone does not count. The check is static: it shows the code can record an
+event, not that every branch does, so the behavioural tests through a fake `AuditTrail` still carry that proof.
+
+A unit with no path to the boundary must be on the exemption list at the top of the test, with a reason:
+`read-only:` (changes nothing), `own-state:` (a person's own view state) or `gap: group N` (still to close in
+#741; each group PR deletes its entries). A stale entry (now audited, or the unit is gone) also fails, so the
+list only shrinks. A new write action therefore ships with an Audit Event or a reviewed exemption.
+
+### Event naming and metadata
+
+- Name: `module.past_tense`, lower case, for example `order.confirmed`, `return.refunded`,
+  `customer_task.done`. Existing names are kept; gaps follow the same style.
+- Outcome: `success` for a saved change; `failure` for a denied or failed attempt, with the reason in the
+  description (Staff "Request approval" blocks and access denials included).
+- Actor and Target: the Portal User id and display name; the Target is the Order, Return, Ticket or Customer id.
+- Metadata: ids and before/after values only. Never an ID number, payment reference, proof image, email address
+  or other contact detail; Customer Profile changes list field names, not values.
+- Operation identity: stable per action and Target (plus a submission token when the action can repeat), so a
+  replay records one Audit Event.
