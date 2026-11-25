@@ -26,6 +26,7 @@ import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase, ticketsWriterDatabase } from "@/lib/tickets-db";
 
 import { HOLD_MESSAGE_MAX } from "./tickets";
+import { auditTicketDenied, auditTicketSuccess } from "./tickets-audit";
 import { customerOrders, openTicket, searchCustomers, type CustomerChoice, type OpenTicketResult, type OrderChoice } from "./new-ticket";
 import {
   addInternalNote,
@@ -48,30 +49,39 @@ export type ReplyOutcome = DraftSendResult | { ok: false; reason: "unavailable" 
 /** Server actions are public endpoints, so each proves the Staff member holds the Tickets Module. */
 async function act<R extends TicketActionResult | DraftSendResult>(
   id: number,
+  attempt: { action: string; what: string },
   run: (actor: Actor & { role: string }, audit: TicketAudit) => Promise<R>,
-  operationId: string = randomUUID(),
+  token?: string,
 ): Promise<R | { ok: false; reason: "unavailable" | "read-only" }> {
   const staff = await requireModule(TICKETS_MODULE);
+  const operationId = token ?? randomUUID();
+  // Every refused or failed attempt is one `failure` Audit Event; a replay with the same token or reason records once.
+  const denied = async (reason: string) => auditTicketDenied(staff, { type: "ticket", id }, attempt.action, attempt.what, reason, token);
 
-  if (!canWork(staff)) return READ_ONLY_REFUSAL;
+  if (!canWork(staff)) {
+    await denied(READ_ONLY_REFUSAL.reason);
+    return READ_ONLY_REFUSAL;
+  }
   try {
     const result = await run({ id: staff.username, name: staff.name, role: staff.role }, { trail: gatewayAuditTrail, staff, operationId });
     if (result.ok) revalidatePath(`/tickets/${id}`);
+    else await denied(result.reason);
 
     return result;
   } catch (error) {
     console.error("Ticket could not be changed", error);
+    await denied("unavailable");
 
     return { ok: false, reason: "unavailable" };
   }
 }
 
 export async function claim(id: number, operationId?: string) {
-  return act(id, (actor, audit) => claimTicket(ticketsWriterDatabase(), id, actor, audit), operationId);
+  return act(id, { action: "ticket.claimed", what: "claim" }, (actor, audit) => claimTicket(ticketsWriterDatabase(), id, actor, audit), operationId);
 }
 
 export async function release(id: number, operationId?: string) {
-  return act(id, (actor, audit) => releaseTicket(ticketsWriterDatabase(), id, actor, audit), operationId);
+  return act(id, { action: "ticket.released", what: "release" }, (actor, audit) => releaseTicket(ticketsWriterDatabase(), id, actor, audit), operationId);
 }
 
 /** The reply form: a `body` and, optionally, one `image` file. */
@@ -81,7 +91,10 @@ export async function reply(id: number, form: FormData) {
   // An empty file input still posts a nameless, empty File; that is "no image", not an empty image.
   const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
 
-  return act(id, async (actor, audit) => {
+  const draftField = form.get("draftId");
+  const attempt = draftField === null ? { action: "ticket.replied", what: "reply to" } : { action: "ticket.drafted_reply_sent", what: "send a Drafted reply on" };
+
+  return act(id, attempt, async (actor, audit) => {
     const reference = form.get("attachment");
     const upload = typeof reference === "string" ? await ticketUpload(reference, actor.id, id) : null;
     if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" as const };
@@ -92,13 +105,19 @@ export async function reply(id: number, form: FormData) {
         image: { filename: picked.name || "image", bytes: new Uint8Array(await picked.arrayBuffer()) },
         storage: gatewayFileStorage,
       } : undefined);
-    if (draftId === null) return send();
-    return sendWithDraft({ tickets: ticketsDatabase(), crms: crmsDatabase() }, actor, id, body, draftId, send, audit);
+    const result = draftId === null ? await send() : await sendWithDraft({ tickets: ticketsDatabase(), crms: crmsDatabase() }, actor, id, body, draftId, send, audit);
+    // The Message stays in the Conversation; the event holds ids only, never its text.
+    // A Drafted reply is audited as `ticket.drafted_reply_sent` by the send boundary, so it is not recorded twice.
+    if (result.ok && draftId === null) {
+      await auditTicketSuccess(audit.staff, { type: "ticket", id }, "ticket.replied", "replied on",
+        { messageId: result.messageId, withImage: Boolean(upload || picked) }, JSON.stringify(["reply", id, result.messageId]));
+    }
+    return result;
   });
 }
 
 export async function resolve(id: number, operationId?: string) {
-  return act(id, (_actor, audit) =>
+  return act(id, { action: "ticket.status_changed", what: "mark Resolved" }, (_actor, audit) =>
     markResolved(ticketsWriterDatabase(), ticketsDatabase(), id, storefrontTicketUrl, sendAppEmail, audit),
     operationId,
   );
@@ -130,12 +149,21 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
   const file = form.get("image");
   const picked = file instanceof File && (file.size > 0 || file.name !== "") ? file : null;
   const orderId = String(form.get("orderId") ?? "");
+  const customerId = String(form.get("customerId") ?? "");
+  const denied = async (reason: string) => auditTicketDenied(staff, { type: "customer", id: customerId }, "ticket.opened", "open a Ticket for", reason, undefined,
+    { orderId: /^\d+$/.test(orderId) ? Number(orderId) : null });
 
-  if (!canWork(staff)) return READ_ONLY_REFUSAL;
+  if (!canWork(staff)) {
+    await denied(READ_ONLY_REFUSAL.reason);
+    return READ_ONLY_REFUSAL;
+  }
   try {
     const reference = form.get("attachment");
     const upload = typeof reference === "string" ? await ticketUpload(reference, staff.username, null) : null;
-    if (reference !== null && (!upload || picked)) return { ok: false, reason: "invalid-attachment" };
+    if (reference !== null && (!upload || picked)) {
+      await denied("invalid-attachment");
+      return { ok: false, reason: "invalid-attachment" };
+    }
     const result = await openTicket(
       ticketsWriterDatabase(),
       ticketsDatabase(),
@@ -143,7 +171,7 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
       {
         fileId: upload?.fileId,
         subject: String(form.get("subject") ?? ""),
-        customerId: String(form.get("customerId") ?? ""),
+        customerId,
         orderId: /^\d+$/.test(orderId) ? Number(orderId) : null,
         priority: String(form.get("priority") ?? "normal"),
         description: String(form.get("description") ?? ""),
@@ -153,11 +181,15 @@ export async function openNewTicket(form: FormData): Promise<OpenTicketOutcome> 
       },
       { storefrontTicketUrl, sendEmail: sendAppEmail, storage: gatewayFileStorage, afterSave: after },
     );
-    if (result.ok) revalidatePath("/tickets");
+    if (result.ok) {
+      revalidatePath("/tickets");
+      await auditTicketSuccess(staff, { type: "ticket", id: result.id }, "ticket.opened", "opened", { customerId, orderId: /^\d+$/.test(orderId) ? Number(orderId) : null, priority: String(form.get("priority") ?? "normal") }, JSON.stringify(["opened", result.id]));
+    } else await denied(result.reason);
 
     return result;
   } catch (error) {
     console.error("Ticket could not be opened", error);
+    await denied("unavailable");
 
     return { ok: false, reason: "unavailable" };
   }
@@ -191,7 +223,7 @@ export async function findCustomerOrders(customerId: string): Promise<OrderChoic
 
 /** Backend endpoint for Priority changes; the Tickets Module is checked by act. */
 export async function changePriority(id: number, priority: string, operationId?: string) {
-  return act(id, (_actor, audit) => changeTicketPriority(ticketsWriterDatabase(), id, priority, audit), operationId);
+  return act(id, { action: "ticket.priority_changed", what: "change the Priority of" }, (_actor, audit) => changeTicketPriority(ticketsWriterDatabase(), id, priority, audit), operationId);
 }
 
 /**
@@ -205,10 +237,10 @@ export async function putOnHold(
 ) {
   const until = new Date(request.until);
   const message = request.message?.trim();
-  if (message && message.length > HOLD_MESSAGE_MAX) return { ok: false as const, reason: "note-too-long" as const };
   const hold: HoldRequest = { reason: request.reason, note: request.note, until: Number.isNaN(until.getTime()) ? null : until };
 
-  return act(id, async (actor, audit) => {
+  return act(id, { action: "ticket.put_on_hold", what: "put on hold" }, async (actor, audit) => {
+    if (message && message.length > HOLD_MESSAGE_MAX) return { ok: false as const, reason: "note-too-long" as const };
     const result = await putTicketOnHold(ticketsWriterDatabase(), id, actor, hold, audit);
     if (!result.ok || !message) return result;
 
@@ -219,18 +251,29 @@ export async function putOnHold(
 }
 
 export async function takeOffHold(id: number, operationId?: string) {
-  return act(id, (actor, audit) => takeTicketOffHold(ticketsWriterDatabase(), id, actor, audit), operationId);
+  return act(id, { action: "ticket.taken_off_hold", what: "take off hold" }, (actor, audit) => takeTicketOffHold(ticketsWriterDatabase(), id, actor, audit), operationId);
 }
 
 /** An Internal note: Staff-only text. Any Staff member with the Tickets Module may write one. */
 export async function addNote(id: number, body: string) {
   const staff = await requireModule(TICKETS_MODULE);
 
-  if (!canWork(staff)) return READ_ONLY_REFUSAL;
+  const denied = async (reason: string) => auditTicketDenied(staff, { type: "ticket", id }, "ticket.note_added", "add an Internal note to", reason);
+
+  if (!canWork(staff)) {
+    await denied(READ_ONLY_REFUSAL.reason);
+    return READ_ONLY_REFUSAL;
+  }
   try {
-    return await addInternalNote(ticketsWriterDatabase(), id, { id: staff.username, name: staff.name }, String(body ?? ""));
+    const result = await addInternalNote(ticketsWriterDatabase(), id, { id: staff.username, name: staff.name }, String(body ?? ""));
+    // The note text stays in the Conversation; the event holds the message id only.
+    if (result.ok) await auditTicketSuccess(staff, { type: "ticket", id }, "ticket.note_added", "added an Internal note to", { messageId: result.messageId }, JSON.stringify(["note", id, result.messageId]));
+    else await denied(result.reason);
+
+    return result;
   } catch (error) {
     console.error("Internal note could not be saved", error);
+    await denied("unavailable");
 
     return { ok: false as const, reason: "unavailable" as const };
   }
@@ -304,7 +347,13 @@ export async function applySuggestedField(
   operationId: string = randomUUID(),
 ): Promise<ApplyOutcome> {
   const staff = await requireModule(TICKETS_MODULE);
-  if (!canWork(staff)) return READ_ONLY_REFUSAL;
+  const kind = field === "priority" ? "priority" : "category";
+  const action = suggestionId === null ? `ticket.${kind}_changed` : `ticket.ai_${kind}_accepted`;
+  const denied = async (reason: string) => auditTicketDenied(staff, { type: "ticket", id }, action, `${suggestionId === null ? "change" : "accept the AI suggestion for"} the ${kind} of`, reason, String(operationId));
+  if (!canWork(staff)) {
+    await denied(READ_ONLY_REFUSAL.reason);
+    return READ_ONLY_REFUSAL;
+  }
 
   try {
     const result = await applyField(
@@ -317,10 +366,12 @@ export async function applySuggestedField(
       String(operationId),
     );
     if (result.ok) revalidatePath(`/tickets/${id}`);
+    else await denied(result.reason);
 
     return result;
   } catch (error) {
     console.error("Category or Priority could not be saved", error);
+    await denied("unavailable");
 
     return { ok: false, reason: "unavailable" };
   }
@@ -329,11 +380,22 @@ export async function applySuggestedField(
 /** Only an explicit Claimer action generates or shortens a Drafted reply. No Ticket or Message changes. */
 export async function requestDraftedReply(id: number, request: DraftRequest): Promise<DraftResult> {
   const staff = await requireModule(TICKETS_MODULE);
-  if (!canWork(staff)) return { ok: false, reason: "Your Role can only view shop work." };
+  const meta = { language: request?.language ?? null, shorter: request?.shorterThanId !== undefined };
+  const denied = async (reason: string) => auditTicketDenied(staff, { type: "ticket", id }, "ticket.drafted_reply_requested", "ask for a Drafted reply on", reason, undefined, meta);
+  if (!canWork(staff)) {
+    await denied("read-only");
+    return { ok: false, reason: "Your Role can only view shop work." };
+  }
   try {
-    return await draftReply({ tickets: ticketsDatabase(), crms: crmsDatabase() },
+    const result = await draftReply({ tickets: ticketsDatabase(), crms: crmsDatabase() },
       { id: staff.username, name: staff.name, role: staff.role }, id, request);
+    // Nothing is sent: the event records that a draft was asked for (ids only, never its text), until the Claimer sends it.
+    if (result.ok) await auditTicketSuccess(staff, { type: "ticket", id }, "ticket.drafted_reply_requested", "asked for a Drafted reply on", { ...meta, draftId: result.draft.id }, JSON.stringify(["drafted-reply-requested", id, result.draft.id]));
+    else await denied(result.reason);
+
+    return result;
   } catch {
+    await denied("unavailable");
     return { ok: false, reason: "Draft unavailable. You can still write your reply by hand." };
   }
 }

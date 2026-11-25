@@ -322,3 +322,20 @@ already decided, missing decline reason, invalid input, no matching approval to 
 `failure` event through `features/approvals/workflow.ts` with the same action name, `metadata.reason`, and the operation id
 `approval:<request id|none>:<action>:denied:<staff id>:<hash>`, so a replayed refusal records once. Metadata holds ids and the reason only.
 There is no separate "send back" action on the Approvals screen; a decline is the send-back.
+
+## Tickets and Conversations gaps (#749)
+
+Claim, release, reply, resolve (`ticket.status_changed`), Priority, hold, take off hold, escalate, take and send back an escalation,
+reassign (single and bulk), Drafted reply requested (`ticket.drafted_reply_requested`) and sent (`ticket.drafted_reply_sent`), AI
+suggestion accepted or changed (`ticket.ai_<field>_accepted`), new Ticket (`ticket.opened`) and Internal note (`ticket.note_added`) are
+audited through `features/tickets/tickets-audit.ts`. A plain reply is `ticket.replied`; a Drafted reply is recorded once, as
+`ticket.drafted_reply_sent`. Accepted AI suggestions carry the accepting person's name as the Actor.
+
+A refused or failed attempt (read-only Role, Staff trying a Manager-only move, stale or completed Ticket, validation, a save that
+threw) records the same action with outcome `failure`, the reason in the description and `metadata.reason`, and the operation id
+`ticket:<id|none>:<action>:denied:<staff id>:<hash>`. The hash covers the reason and the submission token when the form sends one,
+so a replayed attempt is one event while a fresh submission is a new one. Metadata holds ids and the reason only: never message,
+note or hold text, nor Customer details. A bulk move is one event whose Target is its first Ticket and which lists every id.
+
+All of these are best effort and never block or undo the action (no money or approval step is involved, so there is no pending record).
+Known limit: without a token, a later identical refusal (the same person, action, Ticket and reason) shares one identity.

@@ -36,7 +36,10 @@ it('audits sent as drafted and sent as edited with the Claimer identity only aft
   const result = await requestDraftedReply(1, { language: 'English' });
   expect(result.ok).toBe(true);
   if (!result.ok) throw new Error(result.reason);
-  expect(audit).not.toHaveBeenCalled();
+  // Asking for a draft sends nothing; it is one event with ids only, never the draft text.
+  expect(audit).toHaveBeenCalledTimes(1);
+  expect(audit.mock.calls[0][0]).toMatchObject({ action: 'ticket.drafted_reply_requested', outcome: 'success', target: { type: 'ticket', id: '1' }, metadata: { language: 'English', shorter: false, draftId: result.draft.id } });
+  audit.mockClear();
   expect(await db.sql`select * from ticket_messages`).toHaveLength(0);
   for (const [body, decision] of [[result.draft.text, 'sent as drafted'], ['Here is my edited reply.', 'sent as edited']]) {
     const form = new FormData(); form.set('body', body); form.set('draftId', String(result.draft.id));
@@ -49,10 +52,12 @@ it('audits sent as drafted and sent as edited with the Claimer identity only aft
   }
   expect(audit).toHaveBeenCalledTimes(2);
   expect(audit.mock.calls[0][0].operationId).not.toBe(audit.mock.calls[1][0].operationId);
+  audit.mockClear();
   await db.sql`update tickets set claimed_by_id = 'other' where id = 1`;
   const form = new FormData(); form.set('body', 'Cannot send'); form.set('draftId', String(result.draft.id));
   expect((await reply(1, form)).ok).toBe(false);
-  expect(audit).toHaveBeenCalledTimes(2);
+  expect(audit).toHaveBeenCalledTimes(1);
+  expect(audit.mock.calls[0][0]).toMatchObject({ action: 'ticket.drafted_reply_sent', outcome: 'failure', metadata: { reason: 'claimed' } });
 });
 it('requires the Tickets Module, refuses read-only Roles before configuring models, and allows a Manager Claimer', async () => {
   requireModule.mockRejectedValueOnce(new Error('denied'));
@@ -63,12 +68,14 @@ it('requires the Tickets Module, refuses read-only Roles before configuring mode
     expect((await requestDraftedReply(1, { language: 'English' })).ok).toBe(false);
   }
   expect(configuredModels).not.toHaveBeenCalled();
+  expect(audit.mock.calls.map(([e]) => [e.action, e.outcome, e.metadata.reason])).toEqual([['ticket.drafted_reply_requested', 'failure', 'read-only']]);
   requireModule.mockResolvedValue({ id: 'portal-id', username: 'liza', name: 'Liza Cruz', role: 'CREOMS Manager' });
   expect((await requestDraftedReply(1, { language: 'English' })).ok).toBe(true);
 });
-it('refuses forged, foreign, missing and dropped draft references without sending or auditing', async () => {
+it('refuses forged, foreign, missing and dropped draft references without sending, and records each refusal once', async () => {
   const made = await requestDraftedReply(1, { language: 'English' });
   if (!made.ok) throw new Error(made.reason);
+  audit.mockClear();
   await db.sql`update crms.ticket_drafts set requested_by_id = 'other' where id = ${made.draft.id}`;
   for (const draftId of [String(made.draft.id), '999', 'NaN', '-1', '']) {
     const form = new FormData(); form.set('body', 'hello'); form.set('draftId', draftId);
@@ -78,5 +85,7 @@ it('refuses forged, foreign, missing and dropped draft references without sendin
   const form = new FormData(); form.set('body', 'hello'); form.set('draftId', String(made.draft.id));
   expect(await reply(1, form)).toEqual({ ok: false, reason: 'invalid-draft' });
   expect(await db.sql`select * from ticket_messages`).toHaveLength(0);
-  expect(audit).not.toHaveBeenCalled();
+  // Every refusal is a failure event; identical refusals share an operation id, so a replay is one event on the gateway.
+  expect(audit.mock.calls.every(([e]) => e.action === 'ticket.drafted_reply_sent' && e.outcome === 'failure' && e.metadata.reason === 'invalid-draft')).toBe(true);
+  expect(new Set(audit.mock.calls.map(([e]) => e.operationId)).size).toBe(1);
 });
