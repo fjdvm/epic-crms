@@ -57,14 +57,19 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
   id: number,
   run: (order: CurrentOrder, staff: Staff) => Promise<R>,
   requiredModule: string = ORDERS_MODULE,
-  audit?: { action: string; description: (staff: Staff) => string; metadata?: Record<string, unknown>; durable?: boolean },
+  audit?: { action: string; description?: (staff: Staff) => string; metadata?: Record<string, unknown>; durable?: boolean; attempt?: string },
 ): Promise<R | OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
   const staff = await requireModule(requiredModule);
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Order number." };
 
   let result: R;
-  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  // `audit.attempt` names what was tried ("confirm"); with it, a refused or failed attempt is an Audit Event too (#744).
+  const refused = async <T extends OrderChangeResult>(refusal: T): Promise<T> => {
+    if (audit?.attempt) await auditOrderDenied(id, staff, requiredModule, audit.action, audit.attempt, refusal.ok ? "Refused." : refusal.reason);
+    return refusal;
+  };
+  if (!canWork(staff)) return refused({ ok: false, reason: READ_ONLY_REASON });
   try {
     const [order] = await database()<CurrentOrder[]>`
       select status, fulfillment_method, payment_method, subtotal_in_centavos, delivery_fee_in_centavos, payment_proof_submitted_at,
@@ -77,12 +82,12 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
     if (!order) return { ok: false, reason: "Order was not found." };
     result = await run(order, staff);
   } catch {
-    return { ok: false, reason: "Order is temporarily unavailable." };
+    return refused({ ok: false, reason: "Order is temporarily unavailable." });
   }
 
   // Order writes are never optimistic, and a refusal must not look like a changed Order.
   if (result.ok) {
-    if (audit) {
+    if (audit?.description) {
       if (audit.durable) await auditOrderDurably(id, staff, requiredModule, audit.action, audit.description(staff), audit.metadata);
       else await auditOrder(id, staff, requiredModule, audit.action, audit.description(staff), audit.metadata);
     }
@@ -91,6 +96,8 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
     revalidatePath("/payments");
     revalidatePath("/fulfilment");
     revalidatePath("/customer-profiles", "layout");
+  } else if (audit?.attempt) {
+    await refused({ ok: false, reason: result.reason });
   }
   return result;
 }
@@ -128,6 +135,16 @@ async function auditOrderDurably(id: number, staff: Staff, module: string, actio
   } catch (error) {
     console.error("Pending audit records could not be delivered", error);
   }
+}
+
+/**
+ * A refused or failed attempt (#744): outcome failure, the reason in the description, ids only in the metadata. The same person
+ * refused for the same reason on the same Order keeps one identity, so a replay records one event.
+ */
+async function auditOrderDenied(id: number, staff: Staff, module: string, action: string, attempt: string, reason: string) {
+  const key = createHash("sha256").update(`${attempt}\n${reason}`).digest("hex").slice(0, 16);
+  await recordAudit(gatewayAuditTrail, orderEvent(id, staff, module, action, `${staff.name} could not ${attempt} Order #${id}: ${reason}`,
+    { reason }, "failure", `order:${id}:${action}:denied:${staff.id}:${key}`));
 }
 
 /** A refused or failed "approve anyway" attempt, with the reason; the same attempt by the same person keeps one identity. */
@@ -189,7 +206,7 @@ export async function quoteDeliveryFee(id: number, deliveryFeeInCentavos: number
     confirmed = final.amounts;
     return changeOrderStatus(id, { status: "confirmed", deliveryFeeInCentavos, amounts: final.amounts, ...(paymentAccountId ? { paymentAccountId } : {}) }, order.status === "placed" ? "confirmed" : order.status);
   }, ORDERS_MODULE, {
-    action: "order.confirmed",
+    action: "order.confirmed", attempt: "confirm",
     description: staff => `${staff.name} ${deliveryFeeInCentavos === 0 ? "quoted free delivery (₱0.00)" : `quoted a Delivery fee of ${pesos(deliveryFeeInCentavos)}`} and confirmed Order #${id}${choiceNote(codChoice)}.`,
     get metadata() {
       if (!confirmed) return undefined;
@@ -209,7 +226,7 @@ async function cancel(id: number, module: string): Promise<OrderChangeResult> {
     }
     return changeOrderStatus(id, { status: "cancelled" });
   }, module, {
-    action: "order.cancelled", description: staff => `${staff.name} cancelled Order #${id}.`,
+    action: "order.cancelled", attempt: "cancel", description: staff => `${staff.name} cancelled Order #${id}.`,
   });
 }
 
@@ -248,19 +265,19 @@ export async function cancelOrderItems(id: number, lineIds: number[]): Promise<O
       occurred_at: new Date().toISOString(), operationId: `order:${id}:items-cancelled:${[...lineIds].sort((a,b) => a-b).join("-")}`,
     });
     return result;
-  });
+  }, ORDERS_MODULE, { action: "order.items_cancelled", attempt: "cancel items on" });
 }
 
 /** Staff turn a placed Order down. It is a cancellation with a required reason the Customer is shown; only a placed Order can be rejected. */
 export async function rejectOrder(id: number, reason: string): Promise<OrderChangeResult> {
   const text = typeof reason === "string" ? reason.trim() : "";
-  if (!text) return { ok: false, reason: "Say why you are rejecting this Order." };
-  if (text.length > 500) return { ok: false, reason: "Keep the reason under 500 characters." };
   return act(id, async (order) => {
+    if (!text) return { ok: false, reason: "Say why you are rejecting this Order." };
+    if (text.length > 500) return { ok: false, reason: "Keep the reason under 500 characters." };
     if (order.status !== "placed") return { ok: false, reason: ALREADY_CHANGED };
     return changeOrderStatus(id, { status: "cancelled", reason: text });
   }, ORDERS_MODULE, {
-    action: "order.rejected", description: staff => `${staff.name} rejected Order #${id}: ${text}`, metadata: { reason: text },
+    action: "order.rejected", attempt: "reject", description: staff => `${staff.name} rejected Order #${id}: ${text}`, metadata: { reason: text },
   });
 }
 
@@ -281,20 +298,20 @@ export async function approveCancelRequest(id: number, requestId: string): Promi
     if (!(await waitingRequest(id, requestId))) return { ok: false, reason: "This request was already decided or withdrawn. Refresh the Order." };
     return decideCancelRequest(id, { requestId, decision: "approved" }, { id: staff.username, name: staff.name });
   }, ORDERS_MODULE, {
-    action: "order.cancel_request_approved", description: staff => `${staff.name} approved the Customer's request to cancel Order #${id}.`, metadata: { request_id: requestId },
+    action: "order.cancel_request_approved", attempt: "approve the cancel request for", description: staff => `${staff.name} approved the Customer's request to cancel Order #${id}.`, metadata: { request_id: requestId },
   });
 }
 
 /** Declining keeps the Order as it is and tells the Customer why, so the reason is required. */
 export async function declineCancelRequest(id: number, requestId: string, reason: string): Promise<OrderChangeResult> {
   const text = typeof reason === "string" ? reason.trim() : "";
-  if (!text) return { ok: false, reason: "Say why you are declining this request." };
-  if (text.length > 500 || /[<>\p{Cc}]/u.test(text)) return { ok: false, reason: "Keep the reason under 500 characters, in plain text." };
   return act(id, async (_order, staff) => {
+    if (!text) return { ok: false, reason: "Say why you are declining this request." };
+    if (text.length > 500 || /[<>\p{Cc}]/u.test(text)) return { ok: false, reason: "Keep the reason under 500 characters, in plain text." };
     if (!(await waitingRequest(id, requestId))) return { ok: false, reason: "This request was already decided or withdrawn. Refresh the Order." };
     return decideCancelRequest(id, { requestId, decision: "declined", reason: text }, { id: staff.username, name: staff.name });
   }, ORDERS_MODULE, {
-    action: "order.cancel_request_declined", description: staff => `${staff.name} declined the Customer's request to cancel Order #${id}: ${text}`, metadata: { request_id: requestId, reason: text },
+    action: "order.cancel_request_declined", attempt: "decline the cancel request for", description: staff => `${staff.name} declined the Customer's request to cancel Order #${id}: ${text}`, metadata: { request_id: requestId, reason: text },
   });
 }
 
@@ -611,15 +628,20 @@ export async function resendStatusEmail(id: number, kind: string, occurrence: st
   // The refund email is one per Return, so its occurrence must name that Return.
   if (kind === RETURN_REFUNDED_EMAIL && !(occurrence && /^[1-9]\d*$/.test(occurrence))) return { ok: false, reason: "Unknown email." };
   const staff = await requireModule(STATUS_EMAILS[kind].module);
-  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  const module = STATUS_EMAILS[kind].module;
+  const refused = async (reason: string): Promise<{ ok: false; reason: string }> => {
+    await auditOrderDenied(id, staff, module, "order.email_resent", `resend the ${STATUS_EMAILS[kind].label} email for`, reason);
+    return { ok: false, reason };
+  };
+  if (!canWork(staff)) return refused(READ_ONLY_REASON);
   try {
     const failed = await failedEmails(database(), id);
-    if (!failed.some((email) => email.kind === kind && email.occurrence === occurrence)) return { ok: false, reason: "That email is not marked as failed. Refresh the Order." };
+    if (!failed.some((email) => email.kind === kind && email.occurrence === occurrence)) return refused("That email is not marked as failed. Refresh the Order.");
   } catch {
-    return { ok: false, reason: "Order is temporarily unavailable." };
+    return refused("Order is temporarily unavailable.");
   }
   const result = await resendOrderEmail(id, { kind, occurrence }, { id: staff.id, name: staff.name });
-  if (!result.ok) return result;
+  if (!result.ok) return refused(result.reason);
   await recordAudit(gatewayAuditTrail, {
     action: "order.email_resent", module: STATUS_EMAILS[kind].module, outcome: "success", actor: staffAuditActor(staff),
     target: { type: "order", id: String(id), display_name: `Order #${id}` },
