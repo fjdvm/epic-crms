@@ -313,33 +313,6 @@ makes a replay one event. Corrections now have a stable operation id (the correc
 There is no store credit or "hold batch" action in CREOMS yet; when they are built they join this group.
 Known limit: the storefront saves the change before CREOMS saves the pending record, so a crash in that gap loses the event.
 
-## Approvals gaps (#748)
-
-Every Approvals decision (`approval.granted`, `approval.declined`, `approval_limit.changed`, `approval.requested`,
-`ai_suggestion.accepted`) is saved as a pending audit record (#743) in the same transaction as the change, then delivered; the
-approval event id is the operation id, so a replay is one event. A refused or failed attempt (wrong Role, request not found or
-already decided, missing decline reason, invalid input, no matching approval to claim, AI acceptance by a view-only Role) records a
-`failure` event through `features/approvals/workflow.ts` with the same action name, `metadata.reason`, and the operation id
-`approval:<request id|none>:<action>:denied:<staff id>:<hash>`, so a replayed refusal records once. Metadata holds ids and the reason only.
-There is no separate "send back" action on the Approvals screen; a decline is the send-back.
-
-## Tickets and Conversations gaps (#749)
-
-Claim, release, reply, resolve (`ticket.status_changed`), Priority, hold, take off hold, escalate, take and send back an escalation,
-reassign (single and bulk), Drafted reply requested (`ticket.drafted_reply_requested`) and sent (`ticket.drafted_reply_sent`), AI
-suggestion accepted or changed (`ticket.ai_<field>_accepted`), new Ticket (`ticket.opened`) and Internal note (`ticket.note_added`) are
-audited through `features/tickets/tickets-audit.ts`. A plain reply is `ticket.replied`; a Drafted reply is recorded once, as
-`ticket.drafted_reply_sent`. Accepted AI suggestions carry the accepting person's name as the Actor.
-
-A refused or failed attempt (read-only Role, Staff trying a Manager-only move, stale or completed Ticket, validation, a save that
-threw) records the same action with outcome `failure`, the reason in the description and `metadata.reason`, and the operation id
-`ticket:<id|none>:<action>:denied:<staff id>:<hash>`. The hash covers the reason and the submission token when the form sends one,
-so a replayed attempt is one event while a fresh submission is a new one. Metadata holds ids and the reason only: never message,
-note or hold text, nor Customer details. A bulk move is one event whose Target is its first Ticket and which lists every id.
-
-All of these are best effort and never block or undo the action (no money or approval step is involved, so there is no pending record).
-Known limit: without a token, a later identical refusal (the same person, action, Ticket and reason) shares one identity.
-
 ## Feedback gaps (#750)
 
 CREOMS has no Feedback reply or review publish/hide action yet (reviews are moderated in the storefront), so the only Feedback
