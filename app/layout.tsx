@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter, Geist_Mono } from "next/font/google";
+import { StaleBuildListener } from "@/components/stale-build-listener";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -41,6 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-screen min-w-[1280px] bg-background text-foreground font-sans">
         {children}
         <Toaster />
+        <StaleBuildListener />
       </body>
     </html>
   );

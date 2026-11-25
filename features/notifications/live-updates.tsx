@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { offerRefreshIfStale } from "@/lib/stale-build";
+
 import { describeNotification } from "./describe";
 import type { NotificationFeed } from "./notifications";
 
@@ -167,7 +169,7 @@ export function LiveUpdatesProvider({
         const next = await pollRef.current();
         if (next && !stopped) receive(next);
       } catch (error) {
-        console.error("Live feed refresh failed", error);
+        if (!offerRefreshIfStale(error)) console.error("Live feed refresh failed", error);
       } finally {
         running = false;
       }

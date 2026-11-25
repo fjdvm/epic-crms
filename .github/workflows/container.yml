@@ -13,6 +13,7 @@ env:
     NEXT_PUBLIC_HRMS_URL=https://hrms.buildwrite.me/
     NEXT_PUBLIC_POS_URL=https://web-pos-alpha-vert.vercel.app/
     NEXT_PUBLIC_IMS_URL=https://br-sims.vercel.app/
+    NEXT_DEPLOYMENT_ID=${{ github.sha }}
 jobs:
   changes:
     runs-on: ubuntu-latest

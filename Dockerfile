@@ -14,7 +14,10 @@ ARG NEXT_PUBLIC_CRMS_URL
 ARG NEXT_PUBLIC_HRMS_URL
 ARG NEXT_PUBLIC_POS_URL
 ARG NEXT_PUBLIC_IMS_URL
-RUN --mount=type=cache,target=/app/.next/cache for v in NEXT_PUBLIC_HOST_URL NEXT_PUBLIC_CRMS_URL NEXT_PUBLIC_HRMS_URL NEXT_PUBLIC_POS_URL NEXT_PUBLIC_IMS_URL; do \
+# The commit being built. An open tab from an older deploy then reloads on its next navigation
+# instead of calling Server Actions the new build no longer has (Next.js deploymentId).
+ARG NEXT_DEPLOYMENT_ID
+RUN --mount=type=cache,target=/app/.next/cache for v in NEXT_PUBLIC_HOST_URL NEXT_PUBLIC_CRMS_URL NEXT_PUBLIC_HRMS_URL NEXT_PUBLIC_POS_URL NEXT_PUBLIC_IMS_URL NEXT_DEPLOYMENT_ID; do \
       eval "[ -n \"\$$v\" ] || unset $v"; \
     done && npm run build
 
