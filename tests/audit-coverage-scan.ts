@@ -86,9 +86,9 @@ const isCron = (file: string) => file.startsWith("app/api/cron/");
 
 export function writeUnits(): WriteUnit[] {
   const units: WriteUnit[] = [];
-  for (const file of [...walk("features"), ...walk("lib"), ...walk("app")].sort()) {
+  for (const file of [...walk("features"), ...walk("lib"), ...walk("app"), ...walk("components"), ...walk("hooks")].sort()) {
     const isRoute = /^app\/api\/.*\/route\.ts$/.test(file);
-    const parsed = isRoute || file.startsWith("features/") || file.startsWith("lib/") ? parse(file) : null;
+    const parsed = parse(file);
     if (!parsed) continue;
     if (isRoute) {
       for (const name of parsed.exported) if (ROUTE_WRITE.has(name) || (name === "GET" && isCron(file))) units.push({ id: `${file}#${name}`, audited: reachesAudit(file, name) });
