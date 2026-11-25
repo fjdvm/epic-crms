@@ -16,7 +16,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 const session = vi.hoisted(() => ({ handle: "" }));
 const audit = vi.hoisted(() => vi.fn(async (_event: import("@/lib/audit-trail").AuditEvent) => {}));
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: (id: string) => storage.view(id) } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }), headers: async () => new Headers() }));
 vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));
@@ -31,11 +31,11 @@ const notices: { userIds: string[]; body: string }[] = [];
 beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create schema crms`;
-  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); for (const file of REFUND_PROOF_SQL) await db.sql.unsafe(readFileSync(file, "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); for (const file of REFUND_PROOF_SQL) await db.sql.unsafe(readFileSync(file, "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-pending-audit.sql", "utf8"));
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.sql.unsafe(`truncate ${REFUND_PROOF_TABLES}`); await db.sql`truncate crms.approval_requests, crms.approval_events, order_returns, orders, customers restart identity cascade`;
+  await db.sql.unsafe(`truncate ${REFUND_PROOF_TABLES}`); await db.sql`truncate crms.pending_audit_records, crms.approval_requests, crms.approval_events, order_returns, orders, customers restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
   await db.sql`insert into orders (customer_id, status, payment_method, subtotal_in_centavos) values ('c1','delivered','gcash', 10000000)`;
@@ -334,4 +334,67 @@ it("keeps an above-limit settlement retryable when proof preparation fails befor
   expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof())).toMatchObject({ ok: false, reason: expect.stringContaining("No cancellation was sent") });
   storage.failPromote = false;
   expect(await settleDispatchedCancellation(1, id, "restock", cancellationProof())).toMatchObject({ ok: true, status: "cancelled" });
+});
+
+const eventsOf = (outcome: "success" | "failure") => audit.mock.calls.map(([event]) => event).filter(event => event.outcome === outcome && /^(failed_delivery|order\.cancel)/.test(event.action));
+
+it("audits each failed-delivery change once, with ids only, and its refusals as denied attempts (#746)", async () => {
+  await db.sql`update orders set status = 'dispatched', fulfillment_method = 'delivery' where id = 1`;
+  await db.sql`insert into order_lines (order_id, product_name, price_in_centavos, quantity) values (1,'Cake',1000,1)`;
+  const attemptId = randomUUID();
+  await signIn("ana");
+  expect(await changeFailedDelivery(1, { action: "record", attemptId, reason: "Gate locked, Maria 0917", nextStep: "rebook", customerMessage: "Staff will rebook." })).toMatchObject({ ok: true });
+  storefront.refusal = "Courier booking changed. Refresh first.";
+  expect((await changeFailedDelivery(1, { action: "rebook", attemptId, courier: { name: "Grab" } })).ok).toBe(false);
+  expect((await changeFailedDelivery(1, { action: "rebook", attemptId, courier: { name: "Grab" } })).ok).toBe(false);
+  storefront.refusal = null;
+  expect((await changeFailedDelivery(1, { action: "rebook", attemptId, courier: { name: "Grab" } })).ok).toBe(true);
+  const done = eventsOf("success");
+  expect(done.map(event => event.action)).toEqual(["failed_delivery.recorded", "failed_delivery.rebooked"]);
+  expect(done[0]).toMatchObject({ module: "Fulfilment", target: { type: "order", id: "1" }, actor: expect.objectContaining({ id: "ana" }), metadata: { attempt_id: attemptId, next_step: "rebook" } });
+  const denied = eventsOf("failure");
+  expect(denied).toHaveLength(2);
+  expect(denied[0]).toMatchObject({ action: "failed_delivery.rebooked", metadata: { attempt_id: attemptId, reason: "Courier booking changed. Refresh first." } });
+  expect(denied[1].operationId).toBe(denied[0].operationId);
+  expect(JSON.stringify(audit.mock.calls.filter(([event]) => event.action.startsWith("failed_delivery")))).not.toMatch(/0917|Gate locked/);
+  // A read-only Role is a denied attempt too.
+  await signIn("ada");
+  expect(await changeFailedDelivery(1, { action: "restock", attemptId })).toMatchObject({ ok: false, reason: "Your Role can only view shop work." });
+  expect(eventsOf("failure")[2]).toMatchObject({ action: "failed_delivery.restocked", actor: expect.objectContaining({ id: "ada" }) });
+});
+
+it("records a failed-delivery write-off through a pending audit record, once, after Manager approval (#746)", async () => {
+  await db.sql`update orders set status = 'dispatched', fulfillment_method = 'delivery' where id = 1`;
+  await db.sql`insert into order_lines (order_id, product_name, price_in_centavos, quantity) values (1,'Cake',1000,1)`;
+  const attemptId = randomUUID();
+  await signIn("ana");
+  await changeFailedDelivery(1, { action: "record", attemptId, reason: "Damaged", nextStep: "request-cancellation", customerMessage: "Requested." });
+  await signIn("mario");
+  expect(await changeFailedDelivery(1, { action: "write-off", attemptId })).toMatchObject({ ok: true });
+  expect(eventsOf("success").map(event => event.action)).toEqual(["failed_delivery.recorded", "failed_delivery.written_off"]);
+  expect(await db.sql`select state from crms.pending_audit_records where event->>'action' = 'failed_delivery.written_off'`).toEqual([{ state: "delivered" }]);
+  // A replay of the same write-off keeps one record and delivers one event.
+  expect((await changeFailedDelivery(1, { action: "write-off", attemptId })).ok).toBe(true);
+  expect(await db.sql`select 1 from crms.pending_audit_records where event->>'action' = 'failed_delivery.written_off'`).toHaveLength(1);
+  expect(eventsOf("success").filter(event => event.action === "failed_delivery.written_off")).toHaveLength(1);
+});
+
+it("audits a dispatched cancellation request and settlement through pending records, and refusals as denied attempts (#746)", async () => {
+  const id = await cancellation();
+  expect(eventsOf("success")).toEqual([expect.objectContaining({ action: "order.cancellation_requested", metadata: expect.objectContaining({ request_id: id }) })]);
+  expect(await db.sql`select state from crms.pending_audit_records where event->>'action' = 'order.cancellation_requested'`).toEqual([{ state: "delivered" }]);
+  await signIn("mario");
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: false, reason: "A Manager must approve this cancellation first." });
+  expect(eventsOf("failure")).toEqual([expect.objectContaining({ action: "order.cancelled_after_dispatch", metadata: { request_id: id, reason: "A Manager must approve this cancellation first." } })]);
+  await decideApproval("Fulfilment", id, "approve");
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: true, status: "cancelled" });
+  const settled = eventsOf("success").filter(event => event.action === "order.cancelled_after_dispatch");
+  expect(settled).toEqual([expect.objectContaining({ module: "Fulfilment", target: { type: "order", id: "1", display_name: "Order #1" }, actor: expect.objectContaining({ id: "mario" }),
+    metadata: { request_id: id, stock_outcome: "restock", refund_method: null } })]);
+  expect(await settleDispatchedCancellation(1, id, "restock")).toMatchObject({ ok: false });
+  expect(await db.sql`select 1 from crms.pending_audit_records where event->>'action' = 'order.cancelled_after_dispatch'`).toHaveLength(1);
+  // A Staff member's refused settlement is a denied attempt too.
+  await signIn("ana");
+  await settleDispatchedCancellation(1, id, "restock");
+  expect(eventsOf("failure").at(-1)).toMatchObject({ actor: expect.objectContaining({ id: "ana" }), metadata: { request_id: id, reason: "Only a CREOMS Manager can settle a dispatched cancellation." } });
 });

@@ -281,3 +281,18 @@ events keep their earlier before/after values). Successful claims, hand-overs an
 ids (person, target and what changed) instead of a random one, so a replayed action records one event. Known limit: with
 no submission token, a later identical repeat (the same Manager claiming the same Order again, or the same correction
 made twice) shares that identity; adding a token to these forms would close it.
+
+## Fulfilment gaps (#746)
+
+Pack (`order.preparing`, now recorded on success; it had no event), dispatch, dispatch update and delivered record a
+`failure` event when refused or failed, through the same path as #744: the same action name, the reason, and the operation
+id `order:<id>:<action>:denied:<staff id>:<hash>`, so a replayed refusal records once. A delivery that was saved but whose
+photo could not be made Permanent is not a refusal and records no failure event.
+
+Failed delivery records `failed_delivery.recorded`, `.rebooked`, `.restocked` and `.written_off` (metadata: attempt id, and the
+next step for a recording; never the reason text, message, courier or rider details). Restock and write-off, and the dispatched
+cancellation request (`order.cancellation_requested`) and its settlement (`order.cancelled_after_dispatch`), use the pending
+audit record of #743 (`features/orders/fulfilment-audit.ts`). The attempt id or request id is the operation identity, so a
+replay keeps one record. A write-off waiting for a Manager is the approval workflow's own event, not a denied attempt.
+Refusals of all of these (read-only Role, Staff "Request approval", stale Order, storefront refusal) are `failure` events.
+Known limit: the cancellation request is saved right after the storefront confirms it, so a crash in that gap loses the event.

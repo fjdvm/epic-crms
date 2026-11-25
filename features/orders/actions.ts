@@ -57,7 +57,7 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
   id: number,
   run: (order: CurrentOrder, staff: Staff) => Promise<R>,
   requiredModule: string = ORDERS_MODULE,
-  audit?: { action: string; description?: (staff: Staff) => string; metadata?: Record<string, unknown>; durable?: boolean; attempt?: string },
+  audit?: { action: string; description?: (staff: Staff) => string; metadata?: Record<string, unknown>; durable?: boolean; attempt?: string; saved?: () => boolean },
 ): Promise<R | OrderChangeResult> {
   // Portal redirects must propagate, rather than becoming an application error.
   const staff = await requireModule(requiredModule);
@@ -96,7 +96,7 @@ async function act<R extends OrderChangeResult | ApprovalResult = OrderChangeRes
     revalidatePath("/payments");
     revalidatePath("/fulfilment");
     revalidatePath("/customer-profiles", "layout");
-  } else if (audit?.attempt) {
+  } else if (audit?.attempt && !audit.saved?.()) {
     await refused({ ok: false, reason: result.reason });
   }
   return result;
@@ -467,7 +467,9 @@ export async function startPreparing(id: number): Promise<OrderChangeResult> {
       return { ok: false, reason: "Order is not ready to prepare or has already changed. Refresh it before trying again." };
     }
     return changeOrderStatus(id, { status: "preparing", staffId: staff.username, staffName: staff.name });
-  }, FULFILMENT_MODULE);
+  }, FULFILMENT_MODULE, {
+    action: "order.preparing", attempt: "start preparing", description: staff => `${staff.name} started preparing Order #${id}.`,
+  });
 }
 
 /** A booking's audit values: the courier and link, never the rider's name, phone or plate. */
@@ -485,7 +487,7 @@ export async function dispatchOrder(id: number, courier?: CourierInput): Promise
     booking = checked.booking;
     return changeOrderStatus(id, { status: "dispatched", courier: booking });
   }, FULFILMENT_MODULE, {
-    action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}${booking ? ` with ${booking.name}` : ""}.`,
+    attempt: "dispatch", action: "order.dispatched", description: staff => `${staff.name} dispatched Order #${id}${booking ? ` with ${booking.name}` : ""}.`,
     get metadata() { return { old: bookingAudit(undefined), new: bookingAudit(booking) }; },
   });
 }
@@ -513,7 +515,7 @@ export async function updateDispatchRecord(id: number, courier?: CourierInput): 
     booking = next;
     return changeOrderCourier(id, { courier: next, staffId: staff.username, staffName: staff.name });
   }, FULFILMENT_MODULE, {
-    action: "order.dispatch_updated", description: staff => `${staff.name} changed the dispatch details of Order #${id}.`,
+    attempt: "change the dispatch details of", action: "order.dispatch_updated", description: staff => `${staff.name} changed the dispatch details of Order #${id}.`,
     get metadata() {
       return { old: bookingAudit(before ? { name: before.courier, trackingUrl: before.trackingUrl ?? undefined } : undefined), new: bookingAudit(booking), rider_details_changed: riderChanged };
     },
@@ -542,6 +544,7 @@ function photoLinkOf(form: FormData): string | null {
 
 /** The storefront records delivered_at, emails the Customer and starts its Feedback request timer. */
 export async function deliverOrder(id: number, form?: FormData, collectedInCentavos?: number): Promise<OrderChangeResult> {
+  let saved = false;
   return act(id, async (order, staff) => {
     if (order.status !== "dispatched") {
       return { ok: false, reason: "Only a dispatched Order can be delivered; it may have already changed. Refresh it before trying again." };
@@ -563,6 +566,7 @@ export async function deliverOrder(id: number, form?: FormData, collectedInCenta
     // Refused or uncertain writes leave Temporary evidence for file-storage's seven-day cleanup.
     const result = await changeOrderStatus(id, { status: "delivered", deliveryPhotoFileId, ...(collection && { codCollection: collection }) });
     if (result.ok) {
+      saved = true;
       await auditOrder(id, staff, FULFILMENT_MODULE, "order.delivered",
         `${staff.name} marked Order #${id} delivered${collection ? ` and recorded ${pesos(collection.amountInCentavos)} collected` : ""}.`, collectionAudit(collection, "dispatched", "delivered"));
       const link = photoLinkOf(form);
@@ -575,7 +579,7 @@ export async function deliverOrder(id: number, form?: FormData, collectedInCenta
       }
     }
     return result;
-  }, FULFILMENT_MODULE);
+  }, FULFILMENT_MODULE, { action: "order.delivered", attempt: "mark delivered", saved: () => saved });
 }
 
 /** Public board read: Fulfilment access is proved on every request, like each move. */
