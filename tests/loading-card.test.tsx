@@ -180,7 +180,7 @@ describe("the return to the Portal loading card from the module switcher", () =>
   });
 
   it("shows no Portal card when another System is chosen", () => {
-    chooseModule("Human Resource Management");
+    chooseModule("Human Resource Management System");
 
     act(() => void vi.advanceTimersByTime(1000));
 
