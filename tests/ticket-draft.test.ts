@@ -80,6 +80,28 @@ it("drops invented links, dates and statuses with a plain reason and keeps the s
   expect(records).toHaveLength(3);
   expect(records.every(r => r.reply === null && r.refusal && r.sent_text)).toBe(true);
 });
+it("drops only the unchecked sentences and keeps the rest of the reply", async () => {
+  const id = await ticket();
+  const model = fake([
+    'Sorry po that your ube arrived expired.',
+    'We are sorry this happened.',
+    'Delivered on 25 December 2026.',
+    'Please send us a photo of the product so we can look into it.',
+  ]);
+  const result = await draftReply(deps(), actor, id, { language: 'English' }, () => [{ name: 'fake', model }]);
+  if (!result.ok) throw new Error(result.reason);
+  expect(result.draft.text).toBe('We are sorry this happened. Please send us a photo of the product so we can look into it.');
+  const [stored] = await db.sql`select reply, refusal from crms.ticket_drafts where id = ${result.draft.id}`;
+  expect(stored).toMatchObject({ reply: result.draft.text, refusal: null });
+});
+it("refuses when dropping leaves only Order facts and no reply", async () => {
+  const id = await ticket();
+  const [o] = await db.sql`insert into orders (customer_id, status) values ('c1', 'dispatched') returning id`;
+  await db.sql`update tickets set order_id = ${o.id} where id = ${id}`;
+  const model = fake(['Your order was delivered today.', '{{status}}']);
+  expect(await draftReply(deps(), actor, id, { language: 'English' }, () => [{ name: 'fake', model }]))
+    .toMatchObject({ ok: false, reason: expect.stringContaining('could not be checked against the Order') });
+});
 it("makes Taglish drafts and asks the model again for a strictly shorter draft", async () => {
   const id = await ticket();
   const long = await draftReply(deps(), actor, id, { language: 'Taglish' }, () => [{ name: 'fake', model: fake(['Hello po!', 'Naiintindihan ko po ang concern ninyo.', 'Salamat po sa inyong pasensya.']) }]);
