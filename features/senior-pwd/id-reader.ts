@@ -46,6 +46,8 @@ export interface IdFacts {
   fileId: string;
   /** The storefront's comparison of the number read off the photo with the number sent. */
   idNumberRead: "matched" | "differs" | "unread" | null;
+  /** The expiry the Customer confirmed on the storefront (`YYYY-MM-DD`), compared here with the printed one; never sent to the model. */
+  expiryDeclared?: string | null;
 }
 
 export interface IdReaderDeps {
@@ -98,6 +100,7 @@ export function judgeReading(reading: ReturnType<typeof combineReadings>, facts:
   if (reading.expiresOn && reading.expiresOn <= today) flags.push("expired");
   if (reading.idKind && reading.idKind !== facts.idType) flags.push("type-mismatch");
   if (facts.idNumberRead === "differs") flags.push("number-differs");
+  if (reading.expiresOn && facts.expiryDeclared && reading.expiresOn !== facts.expiryDeclared) flags.push("expiry-differs");
   if (reused.length > 0) flags.push("photo-reused");
   return { findings, flags };
 }
@@ -182,8 +185,8 @@ export async function readPendingIdPhotos(deps: IdReaderDeps, only?: number): Pr
   await deps.crms`update crms.senior_pwd_id_reads set status = 'needs-review', finished_at = now()
     where status = 'reading' and created_at < now() - ${`${STALE_MINUTES} minutes`}::interval`;
   const done = new Set((await deps.crms<{ verification_id: number }[]>`select verification_id from crms.senior_pwd_id_reads`).map(r => r.verification_id));
-  const rows = await deps.storefront<{ id: number; customer_id: string; full_name: string; id_type: IdType; photo_file_id: string; id_number_read: IdFacts["idNumberRead"] }[]>`
-    select v.id, v.customer_id, c.full_name, v.id_type, v.photo_file_id, v.id_number_read
+  const rows = await deps.storefront<{ id: number; customer_id: string; full_name: string; id_type: IdType; photo_file_id: string; id_number_read: IdFacts["idNumberRead"]; expiry_declared: string | null }[]>`
+    select v.id, v.customer_id, c.full_name, v.id_type, v.photo_file_id, v.id_number_read, to_char(v.expiry_declared, 'YYYY-MM-DD') as expiry_declared
     from public.senior_pwd_verifications v join public.customers c on c.id = v.customer_id
     where v.status = 'pending' and v.photo_file_id is not null and v.submitted_at > now() - interval '7 days'
       and (${only ?? null}::int is null or v.id = ${only ?? null}::int)
@@ -193,6 +196,7 @@ export async function readPendingIdPhotos(deps: IdReaderDeps, only?: number): Pr
     if (done.has(r.id)) { counts.skipped++; continue; }
     const result = await readIdPhoto(deps, {
       verificationId: r.id, customerId: r.customer_id, accountName: r.full_name, idType: r.id_type, fileId: r.photo_file_id, idNumberRead: r.id_number_read ?? null,
+      expiryDeclared: r.expiry_declared ?? null,
     }).catch(() => null);
     if (!result) counts.skipped++; else if (result.status === "read") counts.read++; else counts.needsReview++;
   }

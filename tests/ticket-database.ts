@@ -38,6 +38,7 @@ const SCHEMA = `
     decline_reason text,
     expires_on date,
     same_id_as_verification_id integer references senior_pwd_verifications (id),
+    expiry_declared date,
     id_number_read text check (id_number_read in ('matched', 'differs', 'unread')),
     verified_name text
   );

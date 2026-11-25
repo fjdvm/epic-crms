@@ -50,6 +50,11 @@ export interface Verification {
    * CREOMS; "differs" is flagged for review. Null for IDs sent before the storefront read photos.
    */
   idNumberRead?: "matched" | "differs" | "unread" | null;
+  /**
+   * The expiry date the Customer confirmed on the storefront (`YYYY-MM-DD`), or null when the ID shows none or was sent
+   * before the field existed. Only a suggestion: Staff confirm `expiresOn`, which is the date the discount follows.
+   */
+  expiryDeclared?: string | null;
   /** The account name the ID was approved under, copied by the storefront beside the hash. */
   verifiedName?: string | null;
 }
@@ -61,7 +66,7 @@ type Row = Record<string, unknown>;
 const SELECT = (sql: postgres.Sql) => sql<Row[]>`
   select v.id, v.customer_id, c.full_name, v.id_type, v.status, v.submitted_at, v.photo_file_id, v.photo_back_file_id,
     v.decided_by_name, v.decided_at, v.decline_reason, to_char(v.expires_on, 'YYYY-MM-DD') as expires_on,
-    v.id_number_read, v.verified_name,
+    v.id_number_read, v.verified_name, to_char(v.expiry_declared, 'YYYY-MM-DD') as expiry_declared,
     c.email, held.id as order_id,
     same.id as same_id, same_c.full_name as same_full_name, same_c.email as same_email, same.status as same_status
   from public.senior_pwd_verifications v join public.customers c on c.id = v.customer_id
@@ -94,6 +99,7 @@ function toVerification(row: Row): Verification {
     },
     idNumberRead: (row.id_number_read as Verification["idNumberRead"]) ?? null,
     verifiedName: (row.verified_name as string | null) ?? null,
+    expiryDeclared: (row.expiry_declared as string | null) ?? null,
   };
 }
 

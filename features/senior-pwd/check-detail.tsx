@@ -80,7 +80,7 @@ function Hint({ children, tone = "muted" }: { children: React.ReactNode; tone?: 
 function CheckFields({ v, photos, readOnly, canDecide }: { v: Verification; photos: Photos | { error: string } | null; readOnly: boolean; canDecide: boolean }) {
   const [reading, setReading] = useState<"idle" | "reading" | "failed" | "done">("idle");
   const [name, setName] = useState("");
-  const [expiresOn, setExpiresOn] = useState("");
+  const [expiresOn, setExpiresOn] = useState(v.expiryDeclared ?? "");
   const [confirmed, setConfirmed] = useState({ name: false, expiresOn: false });
   const started = useRef(false);
   const photoUrl = photos && "url" in photos ? photos.url : null;
@@ -95,7 +95,7 @@ function CheckFields({ v, photos, readOnly, canDecide }: { v: Verification; phot
         if (!live) return;
         const f = parseIdText(text);
         setName(f.name ?? "");
-        setExpiresOn(f.expiresOn ?? "");
+        setExpiresOn(f.expiresOn ?? v.expiryDeclared ?? "");
         setReading("done");
       },
       () => live && setReading("failed"),
@@ -145,7 +145,10 @@ function CheckFields({ v, photos, readOnly, canDecide }: { v: Verification; phot
             onChange={(e) => { setExpiresOn(e.target.value); setConfirmed((c) => ({ ...c, expiresOn: false })); }} />
           <ConfirmButton label="Confirm expiry" done={confirmed.expiresOn} disabled={readOnly || !expiresOn} onClick={() => setConfirmed((c) => ({ ...c, expiresOn: true }))} />
         </div>
-        <Hint>Needed to approve</Hint>
+        <Hint>{v.expiryDeclared ? `Needed to approve · the Customer says valid until ${v.expiryDeclared}` : "Needed to approve"}</Hint>
+        {v.expiryDeclared && expiresOn && expiresOn !== v.expiryDeclared && (
+          <Hint tone="bad">{`Differs from the date the Customer typed (${v.expiryDeclared})`}</Hint>
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -221,6 +224,7 @@ export function IdReadFindings({ idRead, v }: { idRead: IdReadState; v: Verifica
         <dl className="grid grid-cols-[7rem_1fr] gap-y-1 text-[#3f3a4d]">
           <dt className="text-[#71717a]">Name read</dt><dd>{findings.name ?? "—"}</dd>
           <dt className="text-[#71717a]">Valid until</dt><dd>{findings.expiresOn ?? "—"}</dd>
+          {v.expiryDeclared && <><dt className="text-[#71717a]">Customer typed</dt><dd>{v.expiryDeclared}</dd></>}
           <dt className="text-[#71717a]">Looks like</dt>
           <dd>{findings.idKind === "senior" || findings.idKind === "pwd" ? `${ID_KIND[findings.idKind]} ID` : findings.idKind === "other" ? "Another kind of card" : "—"}</dd>
         </dl>

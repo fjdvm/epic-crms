@@ -2,7 +2,7 @@ import type { IdType } from "./verifications";
 
 /** What the ID reader may flag on a Senior/PWD check. Each one is for a Manager to look at; none decides anything. */
 export const ID_FLAGS = [
-  "unreadable", "not-an-id", "possible-edit", "name-mismatch", "expired", "type-mismatch", "number-differs", "photo-reused",
+  "unreadable", "not-an-id", "possible-edit", "name-mismatch", "expired", "type-mismatch", "number-differs", "expiry-differs", "photo-reused",
 ] as const;
 export type IdFlag = (typeof ID_FLAGS)[number];
 
@@ -39,6 +39,7 @@ export const ID_FLAG_TEXT: Record<IdFlag, string> = {
   "expired": "The ID looks expired.",
   "type-mismatch": "The ID looks like a different type than the Customer chose.",
   "number-differs": "The number the Customer typed differs from the one read off the photo.",
+  "expiry-differs": "The expiry date the Customer typed differs from the one printed on the ID.",
   "photo-reused": "A photo like this one was sent from another account.",
 };
 

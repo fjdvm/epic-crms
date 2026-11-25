@@ -298,7 +298,7 @@ export class FakeStorefront {
   /** The Customer uploads the ID photo and types the number. The number is hashed at once and never stored. */
   async submitVerification(
     customerId: string, idType: "senior" | "pwd", idNumber: string, photoFileId: string,
-    idNumberRead: "matched" | "differs" | "unread" = "unread",
+    idNumberRead: "matched" | "differs" | "unread" = "unread", expiryDeclared: string | null = null,
   ): Promise<number | { error: string }> {
     const idHash = createHmac("sha256", FakeStorefront.HASH_KEY).update(idNumber.replace(/\s+/g, "").toUpperCase()).digest("hex");
     return this.sql.begin(async tx => {
@@ -307,8 +307,8 @@ export class FakeStorefront {
       if (taken) return { error: "This ID is already used by another account." };
       // Like the storefront: an ID that was used on another account before (declined, revoked) is accepted but flagged.
       const [before] = await tx`select id from senior_pwd_verifications where id_hash = ${idHash} and customer_id <> ${customerId} order by id desc limit 1`;
-      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at, same_id_as_verification_id, id_number_read)
-        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}, ${before?.id ?? null}, ${idNumberRead}) returning id`;
+      const [row] = await tx`insert into senior_pwd_verifications (customer_id, id_type, id_hash, photo_file_id, submitted_at, same_id_as_verification_id, id_number_read, expiry_declared)
+        values (${customerId}, ${idType}, ${idHash}, ${photoFileId}, ${this.now()}, ${before?.id ?? null}, ${idNumberRead}, ${expiryDeclared}) returning id`;
       return Number(row.id);
     });
   }
