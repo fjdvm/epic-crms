@@ -1,82 +1,114 @@
-# AI Insights
+# AI insights
 
-`/dashboard/ai-insights`, under OVERVIEW. Manager-level Roles (CREOMS Manager, General Manager, CEO, VP) act on it; Admin
-views it; Staff are sent back to the Summary. Nothing on the page changes the shop.
+`/dashboard/ai-insights`, under OVERVIEW below Summary. One job: what changed this week, where, and what to look at next.
+The Dashboard (Summary) shows today's work and Reports shows numbers over time; AI insights explains the "why" and suggests a
+next step. Design: Figma file `76nS6Pw2TXA6fWfUvTmzJ1`, section "AI insights" (main, Evidence drawer, Not enough data).
 
-## What it shows
+## Who sees it
 
-From top to bottom, for the chosen period (Today · 7 days · This month · Last month · 90 days):
+Manager-level Roles (CREOMS Manager, General Manager, CEO, VP) and Admin. Staff never see the entry and are sent back to the
+Summary. Admin sees a "Read-only" badge. Nothing on the page is a Manager decision: the buttons only open screens, so CEO and
+VP see the same page as a Manager (AGENTS.md). "Dismiss for me" and "Was this useful?" are personal and allowed for everyone
+who can open the page. Each card, stat tile and the map show only to people who hold their Module.
 
-1. **Suggestions**: up to six, from the last 30 days whatever the period, worked out by fixed rules in
-   `features/ai-insights/suggestions.ts`. The rules and thresholds are fixed in code, with no setting, as the "AI features
-   have fixed defaults" rule in AGENTS.md requires.
-2. **Unusual activity**: unchanged (`docs/unusual-activity.md`).
-3. **Where our Orders go**: a map of the Philippines shaded by Province, for Orders counted in Sales that have a delivery
-   address. It can show Orders, Sales, Failed deliveries %, Returns % or Cash on Delivery share; a rate needs 3 or more
-   Orders. Clicking an area shows its figures and top cities. Nothing finer than a city is shown.
-4. **Tabs**:
-   - **Orders**: how far Orders got (placed, paid, sent out, delivered, with half-within times), busiest weekday and hour,
-     cancellation and failed-delivery reasons, products often bought together.
-   - **Payments**: method mix against the period before, time from the first proof to Paid (weekdays and weekends),
-     proofs asked again and references used on another Order, Orders waiting for payment right now by age, refunds, and
-     Orders that paid a Delivery fee within 20% of free delivery.
-   - **Customers**: stages, loyal Customers gone quiet, repeat rate, days between Orders, Senior/PWD share, lifetime spend,
-     top 10 Customers.
-   - **Stock, delivery & service**: Sizes likely to run out within 5 days at the last 14 days' sales (read-only from
-     `crms.stock_count`, which only the IMS writes), courier results, returns by product and inspected value, Tickets and
-     Feedback.
+## The page
 
-Each section shows only to people who hold its Module, streams in its own Suspense boundary with a skeleton, and reads
-through the five-minute analytics cache. Nothing polls.
+1. Header: "Suggestions only", the period (Last 7 days / Last 30 days), Export PDF, and when the run was made.
+2. "This week in brief": two or three AI sentences with a confidence label, and "See what this is based on".
+3. Stat row: Orders, Late or failed, Returns & damage, Open tickets, Stock watch.
+4. "Where it's happening" and "Top areas" (below).
+5. "Insights to look at": tabs All, Stock, Payments, Support, Returns, Delivery, and equal-height cards. Each card has its
+   category, headline, priority (High / Watch / Info), a "Based on:" line, a "Why and what to do" box with a confidence label,
+   "See evidence", "Open <screen>" and "Dismiss for me".
+6. Unusual activity (unchanged, `docs/unusual-activity.md`).
+7. "How this works".
 
-## Suggestion rules
+**Evidence drawer** ("See evidence"): headline and tags, "How the AI got here" (the rule's steps), why the confidence is what it
+is, the records behind the card (read when the drawer opens, so names and statuses are current; each links to its Order,
+Ticket or Return), the suggested next step, "Was this useful?" and "Dismiss for me".
 
-| Key | When | Opens |
-|---|---|---|
-| `area-failed:<area>` | an area with 5+ Orders and 15%+ of them with a failed delivery | Fulfilment |
-| `area-rising:<area>` | an area's Orders up 30%+ from at least 3 | Orders |
-| `loyal-at-risk` | 3+ At risk or Lost Customers who bought 3+ times | Customers, At risk |
-| `slow-proofs-weekend` / `slow-proofs` | 5+ Orders paid; weekend proofs wait 2× weekday ones (and 3h+), or half wait 6h+ | Payments |
-| `unpaid-over-3-days` | 3+ online-payment Orders unpaid for over 3 days | Payments |
-| `near-free-delivery` | 10+ Orders paid a Delivery fee below the threshold, 25%+ of them within 20% of it | Commerce Settings (Managers only) |
-| `bundle:<a>:<b>` | the top pair bought together in 5+ Orders, 30%+ of the less popular one's Orders | Products & Stocks |
-| `stock:<size>` | a Size that runs out within 5 days at the last 14 days' sales (3 at most) | Products & Stocks |
-| `returns:<product>` | 3+ units of a product returned, 10%+ of those sold | Returns |
-| `low-rating:<product>` | a product averaging 3.5 stars or less from 3+ ratings | Feedback |
-| `courier:<courier>` | 5+ Orders sent with a courier, 15%+ with a failed delivery | Fulfilment |
+**Not enough data**: with fewer than 30 Orders in the period no insight is made and no model is asked. The stat row shows
+dashes, the map says so, and the grid offers "Open Dashboard" and "Open Reports". Before the first morning run the page says
+it is waiting for it.
 
-A suggestion's numbers are whole numbers that grow when things get worse. **Dismiss** (optimistic, rolled back with the
-reason if refused) hides it for that person until a number grows. The action button records **accepted**, then opens the
-screen; it waits for the server, since it is a Manager decision. Both are checked against freshly computed figures,
-stored in `crms.ai_insight_decisions` with the person's name, and sent to the Audit Logs (`ai_insight.accepted` /
-`ai_insight.dismissed`). Admin sees plain links and no Dismiss.
+## The rules (`features/ai-insights/insights.ts`)
 
-## The AI part
+Every figure, priority and confidence comes from code and SQL (`facts.ts`); the rules are fixed, with no setting.
 
-One sentence, "why it matters", per suggestion. The rules decide; the AI only words it.
+| Card | When | Records | Opens |
+|---|---|---|---|
+| Stock | a Size runs out within 5 days at the last 14 days' sales (`crms.stock_count`, read-only) | Orders that sold it | Stock |
+| Payments | GCash, Maya or bank Orders the storefront will cancel at their payment deadline within 24 hours | those Orders | Payments |
+| Support: themes | 3+ Tickets about the same problem, with the product and city most of their Orders share | the Tickets | Tickets |
+| Support: SLA | open Tickets with no reply yet and 75%+ of the first-reply target used (the clock stops while On hold) | the Tickets | Tickets |
+| Returns | a product with 3+ units returned, at 5%+ and at least twice the shop's return rate | the Returns | Returns |
+| Delivery: areas | cities with 4+ deliveries, 15%+ late or failed, up 10+ points on the period before | the late or failed Orders | Fulfilment |
+| Delivery: couriers | the same rule for Lalamove, Grab or another courier | the late or failed Orders | Fulfilment |
 
-- Asked for when a Manager-level person opens the page and a suggestion has no kept sentence. Admin and Staff never
-  cause a model call, and nothing runs on a timer.
-- The model gets only the suggestion's own sentence (masked) and its numbers: province, product and courier names, never
-  a Customer.
-- A sentence quoting a number that is not in the suggestion, or a link, is thrown away.
-- One sentence is kept per suggestion in `crms.ai_insight_notes`, with the model, the exact text sent and the system
-  prompt. It is made again only when the suggestion's numbers change.
-- It is labelled "AI-written, check before acting". If no model is configured or the call fails, the card shows without it.
+- **Late** means delivered more than 48 hours after payment (after placing, for Cash on Delivery). The repo had no
+  definition; this one is fixed in `RULES.lateHours`.
+- **Payment deadline**: the storefront's own rule (`lib/orders/stock-reservations.ts` there). The deadline saved at
+  confirmation, or 24 hours after confirmation for older Orders. Only confirmed Orders, or Orders awaiting payment with no
+  proof waiting to be checked, since a proof waiting pauses it.
+- **Ticket themes** reuse the Complaint themes grouping (`docs/complaint-themes.md`): the model only labels groups; counts
+  and links come from the Ticket IDs sent. The repo has no product batch, so themes are grouped by product and city.
+- **Confidence** comes from the sample: High from 30, Medium from 10, Low below. Themes are never above Medium. Payment
+  deadlines and Ticket clocks are High because they are exact.
+- **Marketing is left out**: no campaigns, segments, win-back or bundle suggestions.
 
-## Migration
+## The morning run
 
-`docs/db/crms-ai-insights.sql`, additive and safe to rerun, as `creoms_writer`:
+`GET /api/cron/ai-insights`, called by `.github/workflows/ai-insights.yml` at 22:00 UTC (6:00 am Philippine time) with
+`Authorization: Bearer $CRON_SECRET`. It works out both periods, the last 7 and 30 whole Philippine days, each against the
+same length before, and keeps one row per day and period in `crms.ai_insight_runs`. A rerun that day replaces it, and the
+workflow can be started by hand. GitHub can start a schedule late; the page shows the time the run actually finished.
+
+**The run is the only thing that ever asks a model.** A page open, an Admin or a Staff member never cause a model call. Per
+period:
+
+- One call words the summary and each card's "Why and what to do". It gets the period, aggregate figures, and each card's own
+  text and numbers. That means names of places, products and couriers, never a Customer's name, phone number or email (masked
+  again with `maskText`).
+- A sentence that quotes a number not in its facts, or a link, is thrown away. The card then shows the rule's own next step,
+  labelled as such.
+- What was sent, the system prompt and the model are kept on the run.
+- If no model answers, the run is stored without the AI words.
+
+## Per person
+
+- **Dismiss for me**: optimistic, rolled back with the reason if refused. Stored in `crms.ai_insight_decisions` with the
+  person's name and sent to the Audit Logs (`ai_insight.dismissed`). The card comes back for that person when one of its
+  numbers gets worse.
+- **Was this useful?**: optimistic too. One answer per person, card and run, in `crms.ai_insight_feedback`.
+
+`POST /api/dashboard/ai-insights` takes `{ action: "dismiss" | "feedback", days, key, helpful? }` with header
+`x-creoms-ai-insight: 1`. `GET /api/dashboard/ai-insights/evidence?days=&key=` reads the records.
+`GET /api/dashboard/ai-insights/pdf?days=` exports the stored run with the shared PDF template. Nothing polls.
+
+## The map
+
+Province shading for the whole country (`lib/geo/ph-provinces.json`), as before. On top:
+
+- Zoom with the wheel, by dragging, by pinching, or with the +/− and reset buttons, and switch between "Metro Manila" (the
+  default) and "Philippines".
+- Zoomed in, the city outlines of Metro Manila, Bulacan, Rizal, Cavite and Laguna appear, with a bubble per city sized by the
+  chosen layer.
+- Layers: Orders, Late or failed, Returns & damage, Complaints (Tickets about the area's Orders) and Free-delivery reach.
+  Rates need 3 or more.
+- Figures are aggregated to city; no customer, street or barangay is shown.
+
+`lib/geo/ph-cities.json` is built by `scripts/build-ph-cities.mjs` from the `municities-provdist-*.0.001.json` files of
+[faeldon/philippines-json-maps](https://github.com/faeldon/philippines-json-maps) (MIT, PSA/NAMRIA boundaries), in the same
+projection as the Province map; the script lists the files. `lib/geo/ph-provinces.json` comes from `scripts/build-ph-map.mjs`.
+
+## Migrations
+
+`docs/db/crms-ai-insights.sql` (decisions) and `docs/db/crms-ai-insights-runs.sql` (runs and feedback), both additive and safe
+to rerun, as `creoms_writer`:
 
 ```
 node --env-file=.env scripts/deploy/migrate-ai-insights.mjs
+node --env-file=.env scripts/deploy/migrate-ai-insights-runs.mjs
 ```
 
-## Map data
-
-`lib/geo/ph-provinces.json` is built by `scripts/build-ph-map.mjs` from the low-resolution
-`latest/geojson/regions/lowres/provdists-region-*.0.001.json` files of
-[faeldon/philippines-json-maps](https://github.com/faeldon/philippines-json-maps) (MIT, PSA/NAMRIA boundaries). The
-boundaries follow the 2023 PSGC while `lib/psgc` is older, so NCR's districts join as Metro Manila and Maguindanao del
-Norte and del Sur join as Maguindanao. `tests/ai-insights-areas.test.ts` checks every Province of the address picker has
-a shape.
+`crms.ai_insight_notes` from the first version is no longer used. It is left in place; dropping it needs the owner's approval.

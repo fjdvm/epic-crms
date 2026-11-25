@@ -139,7 +139,7 @@ describe("the sidebar", () => {
     const { unmount } = renderSidebar(["/dashboard", "/customer-profiles"]);
 
     expect((await screen.findByRole("link", { name: "Summary" })).getAttribute("href")).toBe("/dashboard");
-    expect(screen.queryByText("AI Insights")).toBeNull();
+    expect(screen.queryByText("AI insights")).toBeNull();
     unmount();
 
     renderSidebar(["/customer-profiles"]);
@@ -152,9 +152,9 @@ describe("the sidebar", () => {
     path.current = "/dashboard/ai-insights";
     renderSidebar(["/dashboard", "/dashboard/ai-insights", "/customer-profiles"]);
 
-    const insights = await screen.findByRole("link", { name: "AI Insights" });
+    const insights = await screen.findByRole("link", { name: "AI insights" });
     expect(insights.getAttribute("href")).toBe("/dashboard/ai-insights");
-    expect(screen.getAllByRole("link").map((link) => link.textContent).slice(0, 2)).toEqual(["Summary", "AI Insights"]);
+    expect(screen.getAllByRole("link").map((link) => link.textContent).slice(0, 2)).toEqual(["Summary", "AI insights"]);
     expect(insights.closest("[data-active=true]")).not.toBeNull();
     expect(screen.getByRole("link", { name: "Summary" }).closest("[data-active=true]")).toBeNull();
   });

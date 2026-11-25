@@ -39,3 +39,13 @@ export function addressArea(province: string, city: string): string | null {
 export function areaName(key: string): string {
   return NAMES.get(key) ?? key;
 }
+
+/** A city's name without "City of" or "City", for matching an address to lib/geo/ph-cities.json. Keep in step with scripts/build-ph-cities.mjs. */
+export function cityKey(name: string): string {
+  return areaKey(name).replace(/^city of /, "").replace(/ city$/, "");
+}
+
+/** The name to show for a city: "City of Makati" reads as "Makati". */
+export function cityLabel(name: string): string {
+  return name.trim().replace(/^City of /i, "");
+}

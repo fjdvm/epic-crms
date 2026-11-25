@@ -1,0 +1,21 @@
+name: AI insights
+
+# Works out the AI insights once each morning at 6:00 am Philippines time (22:00 UTC the day before) and stores them.
+# GitHub can start a scheduled run late; the page shows the time the run actually finished.
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the AI insights route
+        env:
+          CREOMS_APP_URL: ${{ secrets.CREOMS_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$CREOMS_APP_URL/api/cron/ai-insights"

@@ -50,7 +50,7 @@ export const dashboardItem: NavItem = {
 /** The AI's Unusual activity cards. Manager and Admin only; the shell adds the page for them. */
 export const aiInsightsItem: NavItem = {
   group: "OVERVIEW",
-  name: "AI Insights",
+  name: "AI insights",
   href: "/dashboard/ai-insights",
   icon: Sparkles,
 };
