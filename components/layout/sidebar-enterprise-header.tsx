@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { ReturningToPortal } from "@/components/loading/returning-to-portal";
-import { systems, type SystemChild } from "./sidebar-nav";
+import { type SystemChild } from "./sidebar-nav";
+import { useVisibleSystems } from "./use-visible-systems";
 
 export function SidebarEnterpriseHeader({
   isMobile,
@@ -28,6 +29,7 @@ export function SidebarEnterpriseHeader({
   navigate?: (url: string) => void;
 }) {
   const [returningToPortal, setReturningToPortal] = useState(false);
+  const visibleSystems = useVisibleSystems();
 
   return (
     <SidebarHeader className="h-24 justify-center py-0 pl-3.5 pr-2.5 border-b border-sidebar-border">
@@ -51,7 +53,7 @@ export function SidebarEnterpriseHeader({
                 Select Enterprise Module
               </DropdownMenuLabel>
               <DropdownMenuSeparator className="my-1 bg-border" />
-              {systems.map((sys: SystemChild) => {
+              {visibleSystems.map((sys: SystemChild) => {
                 const SysIcon = sys.icon;
                 return (
                   <DropdownMenuItem

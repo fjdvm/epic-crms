@@ -14,6 +14,12 @@ import FulfilmentLoading from "@/app/(app)/fulfilment/loading";
 import ConversationsLoading from "@/app/(app)/conversations/loading";
 import TicketLoading from "@/app/(app)/tickets/[id]/loading";
 
+// The switcher lists only the Systems the Portal says were granted; this test is about the card, so show them all.
+vi.mock("@/components/layout/use-visible-systems", async () => {
+  const { systems } = await import("@/components/layout/sidebar-nav");
+  return { useVisibleSystems: () => systems };
+});
+
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), back: vi.fn() }), usePathname: () => "/" }));
 
 beforeEach(() => vi.useFakeTimers());
