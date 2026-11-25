@@ -11,7 +11,7 @@ import {
 } from "@/features/notifications/live-updates";
 import type { Notification, NotificationFeed } from "@/features/notifications/notifications";
 
-const { toast, refresh } = vi.hoisted(() => ({ toast: { info: vi.fn() }, refresh: vi.fn() }));
+const { toast, refresh } = vi.hoisted(() => ({ toast: Object.assign(vi.fn(), { info: vi.fn() }), refresh: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
@@ -242,6 +242,15 @@ describe("the live connection", () => {
     act(() => setVisibility("visible"));
     await elapse(60_000);
     expect(poll).not.toHaveBeenCalled();
+  });
+
+  it("offers a Refresh instead of logging when the tab is older than the server", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stale = Object.assign(new Error("Server Action was not found on the server."), { name: "UnrecognizedActionError" });
+    const poll = vi.fn().mockRejectedValue(stale);
+    await connected(poll);
+    expect(toast).toHaveBeenCalledWith("A new version of CREOMS is available.", expect.objectContaining({ id: "stale-build" }));
+    expect(error).not.toHaveBeenCalledWith("Live feed refresh failed", stale);
   });
 
   it("shows nothing new when the nudge finds nothing this Staff member may see", async () => {
