@@ -356,6 +356,8 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
   let reusedOn: number[] = [];
   let allocatedTo: number | null = null;
   let allocatedBy: { id: string; name: string } | null = null;
+  // A refused approve-anyway attempt is audited by `denied` below; every other refusal is audited by act (#745).
+  let denialAudited = false;
   return act<OrderChangeResult | ApprovalResult>(id, async (order, staff) => {
     if (order.status !== "awaiting payment") return { ok: false, reason: ALREADY_CHANGED };
     if (!isPrepaid(order.payment_method) || !order.payment_proof_submitted_at) {
@@ -370,6 +372,7 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
     }
     const attempt = JSON.stringify([staff.id, options.reason ?? "", options.approvalId ?? "", options.allocateToOrderId ?? null]);
     const denied = async <T extends { ok: boolean }>(result: T): Promise<T> => {
+      if (!result.ok) denialAudited = true;
       // Allocating the transfer to another Order is audited as its own change, not as a refusal.
       if (!result.ok && !(allocatedTo !== null && allocatedTo !== id)) {
         await auditApproveAnywayDenied(id, staff, attempt, (result as { reason?: string }).reason ?? "Refused.", { rejections, reusedReferenceOrderIds: reusedOn });
@@ -423,6 +426,7 @@ export async function markPaid(id: number, options: { reason?: string; approvalI
       return paid;
     }));
   }, PAYMENTS_MODULE, {
+    get attempt() { return denialAudited ? undefined : approvedAnyway ? "approve anyway" : "mark paid"; },
     // Approving anyway is a money and Manager decision: its Audit Event is kept as a pending record until delivered.
     get durable() { return approvedAnyway !== null; },
     get action() { return approvedAnyway ? "payment.approved_anyway" : "payment.marked_paid"; },
@@ -449,6 +453,7 @@ export async function rejectPaymentProof(id: number, reason: string): Promise<Or
     if (result.ok) rejections = result.rejections ?? 0;
     return result;
   }, PAYMENTS_MODULE, {
+    attempt: "reject the Payment proof",
     action: "payment_proof.rejected",
     description: staff => `${staff.name} rejected the Payment proof on Order #${id}: ${text}`,
     get metadata() { return { reason: text, rejections }; },

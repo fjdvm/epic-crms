@@ -145,7 +145,7 @@ it("refuses rejection and payment for Cash on Delivery and non-Staff roles, and 
   expect(storefront.reuploadEmails).toEqual([]);
 });
 
-it("reports an uncertain storefront outcome once, never retries it, and audits nothing", async () => {
+it("reports an uncertain storefront outcome once, never retries it, and audits only failures", async () => {
   const id = await proofOrder();
   await signIn("ana");
   const working = globalThis.fetch;
@@ -161,7 +161,9 @@ it("reports an uncertain storefront outcome once, never retries it, and audits n
   failWith(() => Response.json({ id: 999, status: "paid", deliveryFeeInCentavos: null }));
   expect(await markPaid(id)).toEqual({ ok: false, reason: "Storefront did not confirm the change. Refresh the Order before trying again." });
   expect(storefrontCalls).toBe(3);
-  expect(audit.mock.calls.filter(([event]) => event.action.startsWith("payment"))).toEqual([]);
+  const events = audit.mock.calls.map(([event]) => event).filter(event => event.action.startsWith("payment"));
+  expect(events).toHaveLength(3);
+  expect(events.every(event => event.outcome === "failure")).toBe(true);
 });
 
 describe("after 3 rejections", () => {
@@ -376,5 +378,45 @@ describe("approve anyway keeps a pending audit record (#743)", () => {
     expect(denied[0]).toMatchObject({ outcome: "failure", description: expect.stringContaining("Waiting for approval") });
     expect(denied[0].operationId).toBe(denied[1].operationId);
     expect(await pendingRows()).toEqual([]);
+  });
+});
+
+describe("denied and failed Payments attempts are audited (#745)", () => {
+  const failures = (action: string) => audit.mock.calls.map(c => c[0]).filter(e => e.action === action && e.outcome === "failure");
+
+  it("records a refused Mark paid as one failure event, with the same identity when it is replayed", async () => {
+    const id = await proofOrder();
+    await signIn("ana");
+    expect(await rejectPaymentProof(id, "Blurry")).toMatchObject({ ok: true });
+    audit.mockClear();
+    const refused = { ok: false, reason: "This proof was rejected. Wait for the Customer to send another." };
+    expect(await markPaid(id)).toEqual(refused);
+    expect(await markPaid(id)).toEqual(refused);
+    const events = failures("payment.marked_paid");
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ module: "Payments", outcome: "failure", actor: { id: "ana" }, target: { id: String(id) }, metadata: { reason: refused.reason } });
+    expect(events[0].operationId).toBe(events[1].operationId);
+    expect(audit.mock.calls.map(c => c[0].action)).not.toContain("payment.approved_anyway");
+  });
+
+  it("records a view-only Role's refused Mark paid and reject", async () => {
+    const id = await proofOrder();
+    await signIn("ada");
+    expect(await markPaid(id)).toMatchObject({ ok: false });
+    expect(await rejectPaymentProof(id, "No")).toMatchObject({ ok: false });
+    expect(failures("payment.marked_paid")).toMatchObject([{ actor: { id: "ada" } }]);
+    expect(failures("payment_proof.rejected")).toMatchObject([{ actor: { id: "ada" } }]);
+  });
+
+  it("records a refused reject (no reason, or the storefront refuses) as a failure with the reason", async () => {
+    const id = await proofOrder();
+    await signIn("ana");
+    expect(await rejectPaymentProof(id, "  ")).toMatchObject({ ok: false });
+    storefront.refusal = "The Customer has already cancelled this Order.";
+    expect(await rejectPaymentProof(id, "No")).toMatchObject({ ok: false });
+    const events = failures("payment_proof.rejected");
+    expect(events.map(e => e.metadata)).toEqual([{ reason: "Enter a reason for rejecting the proof." }, { reason: storefront.refusal }]);
+    expect(events[0].target).toMatchObject({ id: String(id) });
+    expect(JSON.stringify(events)).not.toContain("maria@example.com");
   });
 });
