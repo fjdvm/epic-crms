@@ -341,7 +341,6 @@ export function emptyStats(): Stats {
 }
 
 export function buildStats(facts: InsightFacts): Stats {
-  if (!enoughData(facts)) return emptyStats();
   const change = facts.previousOrders > 0 ? Math.round(((facts.orders - facts.previousOrders) / facts.previousOrders) * 100) : null;
   const firstStock = facts.stock?.[0];
   return {

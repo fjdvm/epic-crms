@@ -95,7 +95,7 @@ describe("Insights to look at", () => {
     render(<InsightGrid initial={[]} days={7} answers={{}} enoughData={false} />);
     expect(screen.getByText("No insights yet")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Open Dashboard/ }).getAttribute("href")).toBe("/dashboard");
-    expect(screen.getByRole("link", { name: /Open Reports/ }).getAttribute("href")).toBe("/reports");
+    expect(screen.queryByRole("link", { name: /Open Reports/ })).toBeNull();
     expect(screen.getByText("Waiting for more orders")).toBeTruthy();
   });
 });
