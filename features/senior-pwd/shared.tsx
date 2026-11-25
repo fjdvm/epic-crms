@@ -131,7 +131,7 @@ export function RevokeDialog({ v }: { v: Verification }) {
 
 /** A Manager approves an ID Staff declined or that was revoked. The photo is gone, so the expiry is typed by hand. */
 export function OverrideDialog({ v }: { v: Verification }) {
-  const [expiresOn, setExpiresOn] = useState("");
+  const [expiresOn, setExpiresOn] = useState(v.expiryDeclared ?? "");
   const [reason, setReason] = useState("");
   return (
     <OrderActionDialog

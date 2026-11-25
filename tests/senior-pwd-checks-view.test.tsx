@@ -41,6 +41,19 @@ describe("the Senior/PWD check screen", () => {
   const READ = "SANTOS, MARIA L.\nID No. SC-123456\nValid until 15 Mar 2031";
   const photo = () => vi.mocked(loadVerificationPhoto).mockResolvedValue({ ok: true, url: "https://files.test/photo.png", backUrl: null });
 
+  it("starts the expiry from the date the Customer typed when the photo shows none, and says when they differ", async () => {
+    photo();
+    vi.mocked(readIdPhoto).mockResolvedValue("SANTOS, MARIA L.");
+    detail(v({ expiryDeclared: "2032-06-01" }));
+    await waitFor(() => expect((screen.getByLabelText("Full name") as HTMLInputElement).value).toBe("SANTOS, MARIA L."));
+    expect((screen.getByLabelText("Valid until") as HTMLInputElement).value).toBe("2032-06-01");
+    expect(screen.getByText(/the Customer says valid until 2032-06-01/)).toBeTruthy();
+    // Nothing is applied until the Manager confirms it.
+    expect((screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Valid until"), { target: { value: "2031-03-15" } });
+    expect(screen.getByText(/Differs from the date the Customer typed \(2032-06-01\)/)).toBeTruthy();
+  });
+
   it("pre-fills name and expiry, applies nothing until each is confirmed, then approves", async () => {
     photo();
     vi.mocked(readIdPhoto).mockResolvedValue(READ);

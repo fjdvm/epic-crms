@@ -102,6 +102,15 @@ Run `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys. No CR
 - **Storefront contract (Ecommerce):** the storefront must read this row (it needs SELECT on the table, as for `crms.delivery_settings`) instead of its fixed
   5% and ₱125 per week, and orders keep the rule they were placed under. Until it does, saving here changes only what CREOMS shows.
 
+## Expiry date from the Customer
+
+- The storefront reads the printed expiry off the photo in the Customer's browser, pre-fills "ID valid until", and the Customer confirms or corrects it
+  (or ticks "My ID shows no expiry date"). It is saved as `public.senior_pwd_verifications.expiry_declared` (storefront migration `0070`).
+  Grant it with `docs/db/creoms-senior-pwd-readonly.sql` after the storefront deploys.
+- It is a suggestion only. The review screen shows "the Customer says valid until …", and the Manager's "Valid until" starts from the date read off the
+  photo, or else the Customer's date. The Manager still confirms it, and `expires_on` stays the only date the discount follows. Override starts from it too.
+- The ID reader raises `expiry-differs` when the date it reads differs from the Customer's. The Customer's date is compared after the read and never sent to the model.
+
 ## ID reading in the review screen (#476)
 
 - Approve opens "Read from the photo": the browser reads the ID with Tesseract (`tesseract.js`, `features/senior-pwd/read-id-photo.ts`)

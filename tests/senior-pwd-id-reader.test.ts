@@ -56,6 +56,7 @@ describe("judging what the ID reader saw", () => {
     ["expired", { ...clean, expiresOn: f("2025-01-01") }, facts],
     ["type-mismatch", { ...clean, idKind: "pwd" as const }, facts],
     ["number-differs", clean, { ...facts, idNumberRead: "differs" as const }],
+    ["expiry-differs", { ...clean, expiresOn: f("2031-03-15") }, { ...facts, expiryDeclared: "2032-03-15" }],
   ])("flags %s", (flag, reading, given) => {
     expect(judgeReading(combineReadings(reading, null), given, TODAY, []).flags).toEqual([flag]);
   });
