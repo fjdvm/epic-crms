@@ -7,7 +7,10 @@ import { LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PeriodPreset } from "./period";
 
-export function DashboardExportButton({ period }: { period: PeriodPreset }) {
+/** Downloads the Dashboard PDF; another page passes its own `endpoint`, `filename` and `label`. */
+export function DashboardExportButton({ period, endpoint, filename, label = "Export" }: {
+  period: PeriodPreset; endpoint?: string; filename?: string; label?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -15,7 +18,7 @@ export function DashboardExportButton({ period }: { period: PeriodPreset }) {
     setBusy(true);
     setFailed(false);
     try {
-      const response = await fetch(`/api/dashboard/pdf?period=${period}`);
+      const response = await fetch(endpoint ?? `/api/dashboard/pdf?period=${period}`);
       if (!response.ok || !response.headers.get("content-type")?.startsWith("application/pdf")) {
         throw new Error("Dashboard PDF unavailable");
       }
@@ -24,7 +27,7 @@ export function DashboardExportButton({ period }: { period: PeriodPreset }) {
       const link = document.createElement("a");
       link.href = url;
       link.download = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1]
-        ?? `dashboard-${period}.pdf`;
+        ?? filename ?? `dashboard-${period}.pdf`;
       document.body.append(link);
       try {
         link.click();
@@ -53,11 +56,11 @@ export function DashboardExportButton({ period }: { period: PeriodPreset }) {
         {busy ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : (
           <Image src="/images/dashboard-export.svg" alt="" width={16} height={16} />
         )}
-        {busy ? "Exporting…" : "Export"}
+        {busy ? "Exporting…" : label}
       </Button>
       {failed && (
         <p role="alert" className="max-w-xs text-sm text-destructive">
-          Couldn&apos;t export the Dashboard. Please try again.
+          Couldn&apos;t export {endpoint ? "this page" : "the Dashboard"}. Please try again.
         </p>
       )}
     </div>

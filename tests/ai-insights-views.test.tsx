@@ -2,141 +2,157 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const push = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode; prefetch?: boolean }) => {
+    const props: Record<string, unknown> = { ...rest };
+    delete props.prefetch;
+    return <a href={href} {...props}>{children}</a>;
+  },
+}));
 
-import { InsightTabs } from "@/features/ai-insights/insight-tabs";
-import { busiest, formatHours, OperationsPanel, OrdersPanel, PanelSkeleton, PaymentsPanel } from "@/features/ai-insights/panels";
-import { SuggestionCards } from "@/features/ai-insights/suggestion-cards";
-import type { Suggestion } from "@/features/ai-insights/suggestions";
+import { AreaSection, VIEWS } from "@/features/ai-insights/area-map";
+import { InsightGrid } from "@/features/ai-insights/insight-grid";
+import { emptyStats, type AreaFigures, type Insight } from "@/features/ai-insights/insights";
+import { Brief, StatRow } from "@/features/ai-insights/sections";
 
-const card = (key: string, f: Partial<Suggestion> = {}): Suggestion => ({
-  key, module: "Payments", numbers: { orders: 3 }, text: `Text ${key}`, action: { label: "Open Payments", href: "/payments" }, urgency: 1, why: "Kept why.", ...f,
+const card = (over: Partial<Insight> = {}): Insight => ({
+  key: "payments:expiring", category: "payments", module: "Payments", priority: "high", confidence: "high",
+  confidenceReason: "High because it comes from each Order's saved payment deadline.",
+  headline: "5 unpaid Orders will auto-cancel within 24 hours", basedOn: "GCash, Maya or bank transfer Orders",
+  steps: ["Listed the unpaid Orders.", "Kept the ones due within 24 hours."], numbers: { orders: 5 },
+  records: [{ type: "order", id: 7 }], action: { label: "Open Payments", href: "/payments" },
+  nextStep: "Message these Customers before the deadline.", ai: "These 5 cancel soon; a reminder may help.", ...over,
 });
-const ok = (body: object, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
-let fetchMock: ReturnType<typeof vi.fn>;
+const stock = card({ key: "stock:12", category: "stock", module: "Orders", priority: "watch", confidence: "low", headline: "Ube halaya may run out in about 4 days", ai: null, action: { label: "Open Stock", href: "/orders/stock" } });
 
+let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-  push.mockReset();
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+const reply = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
 
-describe("SuggestionCards", () => {
-  it("dismisses at once and keeps it gone when the server agrees", async () => {
-    fetchMock.mockReturnValue(ok({ ok: true }));
-    render(<SuggestionCards initial={[card("a"), card("b")]} canDecide />);
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss: Text a" }));
-    expect(screen.queryByText("Text a")).toBeNull();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ key: "a", numbers: { orders: 3 }, decision: "dismissed" });
-    expect(screen.getByText("Text b")).toBeTruthy();
+describe("Insights to look at", () => {
+  it("shows each card's evidence line, AI box with confidence, and a plain link to its screen", () => {
+    render(<InsightGrid initial={[card(), stock]} days={7} answers={{}} enoughData />);
+    const first = screen.getByText(card().headline).closest("li")!;
+    expect(within(first).getByText("Based on:")).toBeTruthy();
+    expect(within(first).getByText("These 5 cancel soon; a reminder may help.")).toBeTruthy();
+    expect(within(first).getByText("High confidence")).toBeTruthy();
+    expect(within(first).getByRole("link", { name: /Open Payments/ }).getAttribute("href")).toBe("/payments");
+    // No AI note: the rule's own next step, labelled as such.
+    const second = screen.getByText(stock.headline).closest("li")!;
+    expect(within(second).getByText("The rule's suggested next step.")).toBeTruthy();
   });
 
-  it("puts a dismissed card back and says why when the server refuses", async () => {
-    fetchMock.mockReturnValue(ok({ ok: false, reason: "This suggestion changed or no longer applies. Reload the page to see the latest." }, 409));
-    render(<SuggestionCards initial={[card("a")]} canDecide />);
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss: Text a" }));
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "This suggestion changed or no longer applies. Reload the page to see the latest.");
-    expect(screen.getByText("Text a")).toBeTruthy();
+  it("filters by category", () => {
+    render(<InsightGrid initial={[card(), stock]} days={7} answers={{}} enoughData />);
+    fireEvent.click(screen.getByRole("tab", { name: /Stock/ }));
+    expect(screen.queryByText(card().headline)).toBeNull();
+    expect(screen.getByText(stock.headline)).toBeTruthy();
   });
 
-  it("says to check the connection when the dismissal cannot be sent", async () => {
-    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    render(<SuggestionCards initial={[card("a")]} canDecide />);
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss: Text a" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("Could not dismiss this suggestion. Check your connection and try again.");
-    expect(screen.getByText("Text a")).toBeTruthy();
+  it("dismisses at once and puts the card back with the reason when the server refuses", async () => {
+    let refuse!: (r: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise((r) => { refuse = r; }));
+    render(<InsightGrid initial={[card()]} days={7} answers={{}} enoughData />);
+    fireEvent.click(screen.getByRole("button", { name: `Dismiss for me: ${card().headline}` }));
+    expect(screen.queryByText(card().headline)).toBeNull();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ action: "dismiss", days: 7, key: "payments:expiring" });
+    await act(async () => refuse(new Response(JSON.stringify({ ok: false, reason: "This insight has been updated. Reload the page to see the latest." }), { status: 409 })));
+    expect(screen.getByText(card().headline)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("This insight has been updated");
   });
 
-  it("waits for the server with a spinner before opening the screen on accept", async () => {
-    let answer!: (r: Response) => void;
-    fetchMock.mockReturnValue(new Promise<Response>((r) => { answer = r; }));
-    render(<SuggestionCards initial={[card("a")]} canDecide />);
-    fireEvent.click(screen.getByRole("button", { name: "Open Payments" }));
-    expect(screen.getByRole("button", { name: "Open Payments" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText("Text a")).toBeTruthy();
-    expect(push).not.toHaveBeenCalled();
-    await act(async () => answer(new Response(JSON.stringify({ ok: true, href: "/payments" }))));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/payments"));
+  it("opens the Evidence drawer with a loading state, then the records, and rolls back a refused answer", async () => {
+    let records!: (r: Response) => void;
+    fetchMock.mockImplementation((url: string) => url.includes("/evidence")
+      ? new Promise((r) => { records = r; })
+      : reply(500, { ok: false, reason: "Could not save that. Please try again." }));
+    render(<InsightGrid initial={[card()]} days={30} answers={{}} enoughData />);
+    fireEvent.click(screen.getByRole("button", { name: "See evidence" }));
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("status", { name: "Loading the records" })).toBeTruthy();
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/dashboard/ai-insights/evidence?days=30&key=payments%3Aexpiring");
+    expect(within(drawer).getByText("Listed the unpaid Orders.")).toBeTruthy();
+    expect(within(drawer).getByText(card().confidenceReason)).toBeTruthy();
+
+    await act(async () => records(new Response(JSON.stringify({ ok: true, records: [
+      { type: "order", id: 7, label: "Order #7", detail: "Maria Santos · Pasig", status: "Confirmed", href: "/orders/7" },
+    ] }))));
+    expect(within(drawer).getByRole("link", { name: /Order #7/ }).getAttribute("href")).toBe("/orders/7");
+    expect(within(drawer).getByText("The 1 record")).toBeTruthy();
+
+    const helpful = within(drawer).getByRole("button", { name: "Helpful" });
+    fireEvent.click(helpful);
+    expect(helpful.getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(helpful.getAttribute("aria-pressed")).toBe("false"));
+    expect(within(drawer).getByRole("alert").textContent).toContain("Couldn't save your answer");
   });
 
-  it("asks for a missing why only for a Manager, and shows it when it comes", async () => {
-    fetchMock.mockReturnValue(ok({ why: "Because." }));
-    render(<SuggestionCards initial={[card("a", { why: null })]} canDecide />);
-    expect(screen.getByRole("status", { name: "Loading why it matters" })).toBeTruthy();
-    expect(await screen.findByText("Because.")).toBeTruthy();
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/dashboard/ai-insights/explain");
-  });
-
-  it("is view-only for Admin: plain links, no Dismiss, no model call, no Manager-only action", () => {
-    render(<SuggestionCards initial={[card("a", { why: null }), card("b", { action: { label: "Open Commerce Settings", href: "/management/commerce-settings", managerOnly: true } })]} canDecide={false} />);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: /Dismiss/ })).toBeNull();
-    expect(screen.getByRole("link", { name: "Open Payments" }).getAttribute("href")).toBe("/payments");
-    expect(screen.queryByText("Open Commerce Settings")).toBeNull();
-  });
-
-  it("says when there is nothing to suggest", () => {
-    render(<SuggestionCards initial={[]} canDecide />);
-    expect(screen.getByText("No suggestions right now.")).toBeTruthy();
+  it("with too little data shows the empty state with Open Dashboard and Open Reports", () => {
+    render(<InsightGrid initial={[]} days={7} answers={{}} enoughData={false} />);
+    expect(screen.getByText("No insights yet")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Open Dashboard/ }).getAttribute("href")).toBe("/dashboard");
+    expect(screen.getByRole("link", { name: /Open Reports/ }).getAttribute("href")).toBe("/reports");
+    expect(screen.getByText("Waiting for more orders")).toBeTruthy();
   });
 });
 
-describe("insight panels", () => {
-  it("formats hours and finds the busiest hour", () => {
-    expect([formatHours(null), formatHours(0.25), formatHours(5.25), formatHours(72)]).toEqual(["–", "15 min", "5.3 h", "3 days"]);
-    const peak = Array.from({ length: 7 }, () => Array(24).fill(0));
-    peak[5][19] = 4;
-    expect(busiest(peak)).toEqual({ day: 5, hour: 19, count: 4 });
+describe("brief and stat row", () => {
+  it("shows dashes and the not-enough-data note", () => {
+    render(<><Brief days={7} summary={null} confidence={null} enoughData={false} orders={12} stats={emptyStats()} /><StatRow stats={emptyStats()} /></>);
+    expect(screen.getByText(/12 in the last 7 days/)).toBeTruthy();
+    expect(screen.getByText("Not enough data")).toBeTruthy();
+    expect(screen.getAllByText("—")).toHaveLength(5);
+  });
+});
+
+describe("the map", () => {
+  const cityOf = (key: string, name: string, orders: number) => ({
+    key, name, province: "metro manila", orders, previousOrders: 2, wentOut: orders, lateOrFailed: 1, previousWentOut: 2,
+    previousLateOrFailed: 0, returned: 0, complaints: 1, deliveries: orders, freeDelivery: 1,
+  });
+  const areas: AreaFigures[] = [{
+    ...cityOf("metro manila", "Metro Manila", 26), cities: [cityOf("metro manila|quezon", "Quezon City", 17), cityOf("metro manila|pasig", "Pasig", 9)],
+  }];
+  const viewBox = () => document.querySelector("svg[role=img]")!.getAttribute("viewBox");
+  const box = (v: { x: number; y: number; w: number; h: number }) => `${v.x} ${v.y} ${v.w} ${v.h}`;
+
+  it("opens on Metro Manila with city bubbles, zooms with the buttons, and shows province shading for the whole country", () => {
+    render(<AreaSection areas={areas} unmapped={0} orders={40} days={7} enoughData />);
+    expect(viewBox()).toBe(box(VIEWS["metro-manila"]));
+    expect(document.querySelectorAll("[data-bubble]")).toHaveLength(2);
+    expect(screen.getByText("Quezon City · 17")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(Number(viewBox()!.split(" ")[2])).toBeLessThan(VIEWS["metro-manila"].w);
+
+    fireEvent.click(screen.getByRole("button", { name: "Philippines" }));
+    expect(viewBox()).toBe(box(VIEWS.philippines));
+    expect(document.querySelectorAll("[data-bubble]")).toHaveLength(0);
+    expect(document.querySelector('[data-area="metro manila"]')!.getAttribute("fill")).not.toBe("#f3f1f6");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset the map" }));
+    expect(viewBox()).toBe(box(VIEWS["metro-manila"]));
   });
 
-  it("shows how far Orders got and the busiest time", () => {
-    const peak = Array.from({ length: 7 }, () => Array(24).fill(0));
-    peak[5][19] = 4;
-    render(<OrdersPanel data={{
-      funnel: [{ key: "placed", count: 10, medianHours: null }, { key: "paid", count: 8, medianHours: 2 }, { key: "handedOver", count: 6, medianHours: 30 }, { key: "delivered", count: 5, medianHours: null }],
-      cancelled: 1, peak, cancelReasons: [], failedReasons: [{ label: "Not home", count: 2 }], pairs: [],
-    }} />);
-    expect(screen.getByText("8 · 80%")).toBeTruthy();
-    expect(screen.getByText("half within 2 h")).toBeTruthy();
-    expect(screen.getByText("Busiest: Fri around 7pm (4 Orders)")).toBeTruthy();
-    expect(screen.getByText("No cancellations in this period")).toBeTruthy();
-    expect(screen.getByText("Not home")).toBeTruthy();
+  it("switches layers and ranks the top areas with their change", () => {
+    render(<AreaSection areas={areas} unmapped={0} orders={40} days={7} enoughData />);
+    fireEvent.click(screen.getByRole("radio", { name: "Complaints" }));
+    expect(screen.getByText("Quezon City · 1")).toBeTruthy();
+    const top = screen.getByRole("region", { name: "Top areas" });
+    expect(within(top).getAllByRole("listitem")[0].textContent).toContain("Quezon City");
+    expect(within(top).getByText("+750%")).toBeTruthy();
+    fireEvent.click(within(top).getAllByRole("button", { name: /Pasig/ })[0]);
+    expect(within(top).getByRole("heading", { name: "Pasig" })).toBeTruthy();
   });
 
-  it("shows payment figures with labelled methods", () => {
-    render(<PaymentsPanel data={{
-      methods: [{ method: "gcash", orders: 4, sales: 40000, previousOrders: 2 }],
-      verify: { orders: 4, medianHours: 3, slowestHours: 10, weekdayMedianHours: 2, weekendMedianHours: null },
-      proofs: { submitted: 5, rejected: 1, reusedReference: 0 },
-      unpaid: [{ key: "under-1-day", orders: 1, value: 1000 }, { key: "1-to-3-days", orders: 0, value: 0 }, { key: "over-3-days", orders: 2, value: 5000 }],
-      refunds: { count: 0, amount: 0, reasons: [] }, nearFreeDelivery: { orders: 1, eligible: 4 },
-    }} />);
-    expect(screen.getByText("GCash")).toBeTruthy();
-    expect(screen.getByText("4 Orders · ₱400.00 · ▲ 100%")).toBeTruthy();
-    expect(screen.getByText("1 (20%)")).toBeTruthy();
-    expect(screen.getByText(/25% of the 4 Orders that paid a Delivery fee/)).toBeTruthy();
-  });
-
-  it("shows only the operations sections the person's Modules allow", () => {
-    render(<OperationsPanel data={null} stock={[{ name: "Ube Jam (250g)", available: 6, soldPerDay: 2, daysLeft: 3 }]}
-      show={{ fulfilment: false, returns: false, tickets: false, feedback: false, stock: true }} />);
-    expect(screen.getByText("6 left · ~3 days")).toBeTruthy();
-    expect(screen.getByText(/Couldn't load these figures/)).toBeTruthy();
-  });
-
-  it("has a loading state to show at once", () => {
-    render(<PanelSkeleton />);
-    expect(screen.getByRole("status", { name: "Loading figures" })).toBeTruthy();
-  });
-
-  it("switches tabs at once, keeping every panel on the page", () => {
-    render(<InsightTabs tabs={[{ value: "a", label: "Orders", content: <p>Orders panel</p> }, { value: "b", label: "Payments", content: <p>Payments panel</p> }]} />);
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Payments" }));
-    expect(screen.getByRole("tab", { name: "Payments" }).getAttribute("aria-selected")).toBe("true");
-    expect(within(screen.getByRole("tabpanel", { name: "Payments" })).getByText("Payments panel")).toBeTruthy();
-    expect(screen.getByText("Orders panel").closest("[role=tabpanel]")?.getAttribute("data-state")).toBe("inactive");
+  it("with too little data says so on the map and ranks nothing", () => {
+    render(<AreaSection areas={areas} unmapped={0} orders={12} days={7} enoughData={false} />);
+    expect(screen.getByText("Not enough orders to draw the map")).toBeTruthy();
+    expect(document.querySelectorAll("[data-bubble]")).toHaveLength(0);
+    expect(screen.getByText(/No areas to rank yet/)).toBeTruthy();
   });
 });
