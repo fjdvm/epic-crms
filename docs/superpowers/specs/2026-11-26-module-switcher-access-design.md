@@ -40,8 +40,8 @@ Why: offering a System that will refuse the person is confusing, and the Portal 
 - IMS: remove "E-Commerce Storefront" from the switcher. It is not a Portal System, so nobody can be granted it,
   and today it shows for everyone.
 - HRMS, IMS, POS: finish and commit the uncommitted switcher work already on their branches.
-- Label CREOMS as "CREOMS" in every switcher, matching the Portal home. Drop "& marketing" from its description
-  (that Module is retired).
+- Name CREOMS in full in every switcher: "Customer Relation and Ecommerce Ordering Management System" (owner's
+  decision, 2026-11-26; not the short "CREOMS"). Drop "& marketing" from its description (that Module is retired).
 - Tests in each repo: Fitz's case (CREOMS + IMS → Portal, CREOMS, IMS), the POS-only case (→ Portal, POS),
   and the Portal-unreachable fallback. IMS also asserts there is no storefront entry.
 - Per repo: run that repo's checks, then open one PR.
