@@ -21,3 +21,17 @@ describe("module switcher access", () => {
     expect(names(["NOPE"])).toHaveLength(2);
   });
 });
+
+describe("module switcher entries a person sees", () => {
+  const shown = (allowed: string[] | null) => visibleSystems(systems, allowed).map((s) => s.fullName);
+
+  it("shows the Portal, CREOMS and IMS to someone granted CREOMS and IMS", () => {
+    expect(shown(["CRMS", "IMS"])).toEqual(["Enterprise Portal", "CREOMS", "Inventory Management System"]);
+  });
+
+  it("names CREOMS as the Portal home does, without the retired marketing Module", () => {
+    const creoms = systems.find((s) => s.portalName === "CRMS")!;
+    expect(creoms.fullName).toBe("CREOMS");
+    expect(creoms.desc).not.toMatch(/marketing/i);
+  });
+});
