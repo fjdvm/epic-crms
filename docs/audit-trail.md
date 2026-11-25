@@ -296,3 +296,19 @@ audit record of #743 (`features/orders/fulfilment-audit.ts`). The attempt id or 
 replay keeps one record. A write-off waiting for a Manager is the approval workflow's own event, not a denied attempt.
 Refusals of all of these (read-only Role, Staff "Request approval", stale Order, storefront refusal) are `failure` events.
 Known limit: the cancellation request is saved right after the storefront confirms it, so a crash in that gap loses the event.
+
+## Returns gaps (#747)
+
+Return decisions (approve, decline, goods received, refunded, replaced, and a Manager's `return.decided` choice), inspection,
+write-off, Refund window extension, Refund destination change, refund proof save and the Proof reader corrections record a
+`failure` event when refused or failed, through `features/returns/returns-audit.ts`: the same action name as the success event, the
+reason in the description and as `metadata.reason`, and the operation id `<return|order>:<id>:<action>:denied:<staff id>:<hash>`, so a
+replayed refusal records once. A request waiting for a Manager is the approval workflow's own event, and a refund saved whose proof
+could not be made Permanent is not a refusal. Metadata holds ids and the reason only: an inspection records its inspection id and the
+sellable/damaged counts, never the typed values of a correction.
+
+Refund, replacement (and its Replacement Order), inspection (sellable goods go back to stock), write-off, Refund window extension and
+Refund destination change save a pending audit record first (#743); the Return id plus the inspection, window or change identity
+makes a replay one event. Corrections now have a stable operation id (the correction row) instead of a random one.
+There is no store credit or "hold batch" action in CREOMS yet; when they are built they join this group.
+Known limit: the storefront saves the change before CREOMS saves the pending record, so a crash in that gap loses the event.

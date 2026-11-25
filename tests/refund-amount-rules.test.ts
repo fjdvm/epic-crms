@@ -10,7 +10,7 @@ import { FakeFileStorage, PNG } from "./fake-file-storage";
 
 const storage = new FakeFileStorage();
 const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(async () => {}));
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: vi.fn((id: string) => storage.view(id)) } }));
 vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn() }));
 vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));

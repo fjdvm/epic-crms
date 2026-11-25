@@ -13,7 +13,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 const session = vi.hoisted(() => ({ handle: "" }));
 const audit = vi.hoisted(() => vi.fn(async (_event: import("@/lib/audit-trail").AuditEvent) => {}));
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: (id: string) => storage.view(id) } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }), headers: async () => new Headers() }));
 vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));
@@ -182,4 +182,40 @@ it("needs inspected damaged items to write off, and rolls nothing forward when t
   storefront.refusal = "IMS unavailable";
   expect(await writeOffReturn(id, { reason: "Lid cracked" })).toMatchObject({ ok: false });
   expect(storefront.writtenOff).toEqual([]);
+});
+
+const eventsOf = (outcome: "success" | "failure") => audit.mock.calls.map(([event]) => event).filter(event => event.outcome === outcome && /^(return\.inspected|writeoff)/.test(event.action));
+
+it("audits an inspection once with ids only, and its refusals as denied attempts (#747)", async () => {
+  const { id, lines } = await received();
+  await signIn("ana");
+  const inspectionId = randomUUID();
+  expect(await inspectReturn(id, inspectionId, [{ orderLineId: lines[0], condition: "sellable" }])).toMatchObject({ ok: false });
+  expect(eventsOf("failure")).toEqual([expect.objectContaining({ action: "return.inspected", target: { type: "return", id: String(id), display_name: `RMA-${id}` },
+    metadata: { inspection_id: inspectionId, reason: "Mark every item sellable or damaged." } })]);
+  expect((await inspectReturn(id, inspectionId, [{ orderLineId: lines[0], condition: "sellable" }])).ok).toBe(false);
+  expect(eventsOf("failure")[1].operationId).toBe(eventsOf("failure")[0].operationId);
+  expect(await inspectReturn(id, inspectionId, mixed(lines))).toMatchObject({ ok: true });
+  expect(await inspectReturn(id, inspectionId, mixed(lines))).toMatchObject({ ok: true });
+  // Restocking sellable goods goes through a pending audit record, so a replay is one event.
+  expect(eventsOf("success")).toEqual([expect.objectContaining({ action: "return.inspected", actor: expect.objectContaining({ id: "ana" }),
+    metadata: { inspection_id: inspectionId, sellable: 1, damaged: 1 } })]);
+  expect(await db.sql`select state from crms.pending_audit_records where event->>'action' = 'return.inspected'`).toEqual([{ state: "delivered" }]);
+  await signIn("ada");
+  expect(await inspectReturn(id, randomUUID(), mixed(lines))).toMatchObject({ ok: false });
+  expect(eventsOf("failure").at(-1)).toMatchObject({ actor: expect.objectContaining({ id: "ada" }), metadata: { reason: "Your Role can only view shop work." } });
+});
+
+it("audits a write-off through a pending record after approval, and a refused one as a denied attempt (#747)", async () => {
+  const { id, lines } = await received();
+  await signIn("mario");
+  expect(await writeOffReturn(id, { reason: "x" })).toMatchObject({ ok: false, reason: "This Return has no inspected damaged items to write off." });
+  expect(eventsOf("failure")).toEqual([expect.objectContaining({ action: "writeoff.approved", metadata: { reason: "This Return has no inspected damaged items to write off." } })]);
+  const inspectionId = randomUUID();
+  await inspectReturn(id, inspectionId, mixed(lines));
+  expect(await writeOffReturn(id, { reason: "Lid cracked" })).toMatchObject({ ok: true });
+  expect(await writeOffReturn(id, { reason: "Lid cracked" })).toMatchObject({ ok: false, reason: "These items were already written off." });
+  expect(eventsOf("success").filter(event => event.action === "writeoff.approved")).toEqual([expect.objectContaining({ metadata: { inspection_id: inspectionId } })]);
+  expect(await db.sql`select state from crms.pending_audit_records where event->>'action' = 'writeoff.approved'`).toEqual([{ state: "delivered" }]);
+  expect(eventsOf("failure")).toHaveLength(2);
 });

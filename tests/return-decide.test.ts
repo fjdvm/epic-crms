@@ -13,7 +13,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 const session = vi.hoisted(() => ({ handle: "" }));
 const audit = vi.hoisted(() => vi.fn(async (_event: import("@/lib/audit-trail").AuditEvent) => {}));
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: (id: string) => storage.view(id) } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }), headers: async () => new Headers() }));
 vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));

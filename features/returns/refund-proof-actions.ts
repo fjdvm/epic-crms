@@ -1,18 +1,19 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { FIELDS, type Field, type Findings } from "@/features/orders/proof-reader";
 import { recordUpload } from "@/features/files/server";
 import { formatPesos } from "@/features/customer-profiles/format";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
+import { auditReturnsDenied } from "./returns-audit";
 import { crmsDatabase } from "@/lib/crms-db";
 import { database } from "@/lib/db";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { RETURNS_MODULE } from "@/lib/portal/config";
 import { canWork, READ_ONLY_REASON, shopRole } from "@/lib/portal/roles";
 import { requireModule } from "@/lib/portal/staff";
+import type { Staff } from "@/lib/portal/client";
 import { loadRefundDraft } from "./refund-draft";
 import { refundFacts } from "./refund-facts";
 import { checkRefundRecord, refundMethodLabel } from "./refund-record";
@@ -31,6 +32,13 @@ const MAX_REASON = 500;
  */
 export async function saveRefundProof(id: number, form: FormData): Promise<RefundProofResult> {
   const staff = await requireModule(RETURNS_MODULE);
+  const result = await saveChecked(staff, id, form);
+  // A refusal or failure is an Audit Event too (#747); the same person refused for the same reason keeps one identity.
+  if (!result.ok && Number.isSafeInteger(id) && id >= 1) await auditReturnsDenied({ type: "return", id }, staff, "return.refund_proof_saved", "save the refund proof for", result.reason);
+  return result;
+}
+
+async function saveChecked(staff: Staff, id: number, form: FormData): Promise<RefundProofResult> {
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
   if (!(form instanceof FormData)) return { ok: false, reason: "Choose exactly one refund proof screenshot." };
@@ -104,6 +112,16 @@ export async function saveRefundProof(id: number, form: FormData): Promise<Refun
  */
 async function record(id: number, field: string, kind: "correction" | "override", value: string, reason: string): Promise<RefundProofResult> {
   const staff = await requireModule(RETURNS_MODULE);
+  const result = await recordChecked(staff, id, field, kind, value, reason);
+  // Metadata holds the proof field and the reason only, never the typed or read value.
+  if (!result.ok && Number.isSafeInteger(id) && id >= 1) {
+    await auditReturnsDenied({ type: "return", id }, staff, kind === "correction" ? "refund_proof.corrected" : "refund_proof.flag_overridden",
+      kind === "correction" ? "correct the refund proof reading of" : "proceed past a flag on the refund proof of", result.reason, (FIELDS as readonly string[]).includes(field) ? { field } : {});
+  }
+  return result;
+}
+
+async function recordChecked(staff: Staff, id: number, field: string, kind: "correction" | "override", value: string, reason: string): Promise<RefundProofResult> {
   if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
   if (!(FIELDS as readonly string[]).includes(field)) return { ok: false, reason: "Unknown detail." };
@@ -136,7 +154,7 @@ async function record(id: number, field: string, kind: "correction" | "override"
         description: kind === "correction"
           ? `${staff.name} corrected the ${f} read from the refund proof of Return RMA-${id}: ${why}`
           : `${staff.name} proceeded despite the ${original.finding} ${f} on the refund proof of Return RMA-${id}: ${why}`,
-        occurred_at: new Date().toISOString(), operationId: `refund-proof-change:${id}:${randomUUID()}`,
+        occurred_at: new Date().toISOString(), operationId: `refund-proof-change:${id}:${kind}:${f}:${made.id}`,
         metadata: { returnId: id, field: f, reason: why, originalValue: original.read, originalFinding: original.finding, ...(kind === "correction" ? { correctedValue: typed } : {}) },
       });
     } catch (error) { await crms`delete from crms.refund_proof_corrections where id = ${made.id}`; throw error; }

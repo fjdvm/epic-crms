@@ -11,7 +11,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 const session = vi.hoisted(() => ({ handle: "" }));
 const audit = vi.hoisted(() => vi.fn(async (_event: import("@/lib/audit-trail").AuditEvent) => {}));
 const storage = new FakeFileStorage();
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: (id: string) => storage.view(id) } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: session.handle }) }), headers: async () => new Headers() }));
 vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => work() }));
@@ -26,11 +26,11 @@ const notices: { userIds: string[]; body: string }[] = [];
 beforeAll(async () => {
   db = await startTestDatabase();
   await db.sql`create schema crms`;
-  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8"));
+  await db.sql.unsafe(readFileSync("docs/db/crms-approvals.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-access-audit.sql", "utf8")); await db.sql.unsafe(readFileSync("docs/db/crms-pending-audit.sql", "utf8"));
 }, 60_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.sql`truncate crms.approval_requests, crms.approval_events, order_returns, orders, customers, neon_auth."user" restart identity cascade`;
+  await db.sql`truncate crms.pending_audit_records, crms.approval_requests, crms.approval_events, order_returns, orders, customers, neon_auth."user" restart identity cascade`;
   await db.sql`update crms.approval_settings set limit_in_centavos = 500000`;
   await db.sql`insert into customers (id, full_name, email) values ('c1','Maria','maria@example.com')`;
   await db.sql`insert into neon_auth."user" (id, "emailVerified") values ('c1', true) on conflict do nothing`;
@@ -174,7 +174,11 @@ it("when the storefront refuses, nothing changes and the reason is passed on", a
   storefront.refusal = "Money was already sent.";
   expect(await changeRefundDestination(id, NEW)).toMatchObject({ ok: false, reason: "Money was already sent." });
   expect((await stored(id)).refund_account_number).toBe("09171234567");
-  expect(audit.mock.calls.filter(([e]) => e.action === "return.refund_destination_changed")).toHaveLength(0);
+  expect(audit.mock.calls.filter(([e]) => e.action === "return.refund_destination_changed" && e.outcome === "success")).toHaveLength(0);
+  // The refusal is one denied-attempt event with the reason and no account details (#747).
+  const denied = audit.mock.calls.map(([e]) => e).filter(e => e.action === "return.refund_destination_changed" && e.outcome === "failure");
+  expect(denied).toEqual([expect.objectContaining({ module: "Returns", target: { type: "return", id: String(id), display_name: `RMA-${id}` }, metadata: { reason: "Money was already sent." } })]);
+  expect(JSON.stringify(denied)).not.toMatch(/0917/);
 });
 
 it("Staff see Request approval; the request holds no full number; the approved change then goes through", async () => {

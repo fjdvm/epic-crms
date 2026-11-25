@@ -6,6 +6,8 @@ import { canWork, READ_ONLY_REASON, shopRole } from "@/lib/portal/roles";
 import { revalidatePath } from "next/cache";
 import { changeReturnStatus, changeStorefrontRefundDestination, createStorefrontReplacementOrder, extendStorefrontRefundWindow, inspectStorefrontReturn, type ReturnInspectionResult, type ReturnChangeResult, type ReturnStatusUpdate, type ReturnDecision } from "@/lib/storefront";
 import { recordAudit, staffAuditActor } from "@/lib/audit-trail";
+import type { Staff } from "@/lib/portal/client";
+import { auditReturnsDenied, auditReturnsDurable } from "./returns-audit";
 import { gatewayAuditTrail, gatewayFileStorage } from "@/lib/gateway";
 import { recordUpload } from "@/features/files/server";
 import type { ReturnResolution } from "./returns";
@@ -40,9 +42,23 @@ export async function getReturnDetail(id: number) {
   return loadReturnDetail(database, id);
 }
 
-/** Identity comes only from the Portal; CREOMS only reads the storefront-owned tables. */
+const DECISION_EVENTS = { approved: "return.approved", declined: "return.declined", "goods received": "return.goods_received", refunded: "return.refund_approved", replaced: "return.replaced" } as const;
+const DECISION_WORDS = { approved: "approve", declined: "decline", "goods received": "mark goods received on", refunded: "mark as refunded", replaced: "mark as replaced" } as const;
+/** A saved step whose follow-up failed is not a refusal; a request waiting for a Manager is the approval workflow's own event. */
+const isRefusal = (result: { ok: boolean; reason?: string; approvalId?: string }) => !result.ok && !result.approvalId && !/could not be made Permanent/.test(result.reason ?? "");
+
+/** Identity comes only from the Portal; CREOMS only reads the storefront-owned tables. Every refusal is an Audit Event (#747). */
 async function decide(id: number, decision: ReturnDecision, form?: FormData, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
   const staff = await requireModule(RETURNS_MODULE);
+  const result = await decideChecked(staff, id, decision, form, options);
+  const status = decision?.status;
+  if (isRefusal(result as { ok: boolean; reason?: string; approvalId?: string }) && Number.isSafeInteger(id) && id >= 1 && status in DECISION_EVENTS) {
+    await auditReturnsDenied({ type: "return", id }, staff, DECISION_EVENTS[status], `${DECISION_WORDS[status]}`, (result as { reason: string }).reason);
+  }
+  return result;
+}
+
+async function decideChecked(staff: Staff, id: number, decision: ReturnDecision, form?: FormData, options: ApprovalOptions = {}): Promise<ReturnChangeResult | ApprovalResult> {
   if (!canWork(staff)) return { ok: false, reason: "Your Role can only view shop work." };
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
   if (decision.status === "approved" && typeof decision.goodsRequired !== "boolean") {
@@ -125,13 +141,9 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
       // Approving the replacement sends it as a linked ₱0 Order with its own Reservation. The Return id keeps this safe to repeat.
       const created = await createStorefrontReplacementOrder(id, { id: staff.username, name: staff.name });
       if (!created.ok) return created;
-      await recordAudit(gatewayAuditTrail, {
-        action: "return.replacement_order_created", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
-        target: { type: "return", id: String(id), display_name: `RMA-${id}` },
-        description: `${staff.name} approved the replacement for Return RMA-${id} (Order #${orderId}): Replacement Order #${created.replacementOrderId} was created.`,
-        occurred_at: new Date().toISOString(), operationId: `return:${id}:replacement_order_created`,
-        metadata: { orderId, replacementOrderId: created.replacementOrderId },
-      });
+      await auditReturnsDurable({ type: "return", id }, staff, "return.replacement_order_created",
+        `${staff.name} approved the replacement for Return RMA-${id} (Order #${orderId}): Replacement Order #${created.replacementOrderId} was created.`,
+        { orderId, replacementOrderId: created.replacementOrderId }, `return:${id}:replacement_order_created`);
     }
     // Rebuild the payload so browser-supplied identity, time and unrelated fields never travel.
     const actor = { staffId: staff.username, staffName: staff.name };
@@ -147,7 +159,8 @@ async function decide(id: number, decision: ReturnDecision, form?: FormData, opt
     if (result.ok) {
       // A refund is only recorded once it was approved and carried out with proof, so it is audited as `return.refund_approved`.
       const action = update.status === "refunded" ? "return.refund_approved" : `return.${update.status.replaceAll(" ", "_")}`;
-      await recordAudit(gatewayAuditTrail, {
+      const record = update.status === "refunded" || update.status === "replaced" ? (event: Parameters<typeof recordAudit>[1]) => auditReturnsDurable({ type: "return", id }, staff, event.action, event.description, event.metadata, event.operationId) : (event: Parameters<typeof recordAudit>[1]) => recordAudit(gatewayAuditTrail, event);
+      await record({
         action, module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
         target: { type: "return", id: String(id), display_name: `RMA-${id}` },
         description: update.status === "refunded"
@@ -215,12 +228,16 @@ export type ReturnOutcome = "reject" | "refund" | "replacement";
 export async function decideReturn(id: number, choice: { outcome: ReturnOutcome; goodsRequired?: boolean; reason?: string }): Promise<ReturnChangeResult | ApprovalResult> {
   const staff = await requireModule(RETURNS_MODULE);
   const role = shopRole(staff.role);
-  if (role === "staff") return { ok: false, reason: "A Manager decides Returns. Use Request approval · decide return." };
-  if (role !== "manager") return { ok: false, reason: READ_ONLY_REASON };
+  const refused = async <T extends { ok: false; reason: string }>(refusal: T): Promise<T> => {
+    if (Number.isSafeInteger(id) && id >= 1) await auditReturnsDenied({ type: "return", id }, staff, "return.decided", "decide", refusal.reason);
+    return refusal;
+  };
+  if (role === "staff") return refused({ ok: false, reason: "A Manager decides Returns. Use Request approval · decide return." });
+  if (role !== "manager") return refused({ ok: false, reason: READ_ONLY_REASON });
   const outcome = choice?.outcome;
   if (outcome === "reject") return declineReturn(id, typeof choice.reason === "string" ? choice.reason : "");
-  if (outcome !== "refund" && outcome !== "replacement") return { ok: false, reason: "Choose reject, refund or replacement." };
-  if (typeof choice.goodsRequired !== "boolean") return { ok: false, reason: "Say whether the goods must come back." };
+  if (outcome !== "refund" && outcome !== "replacement") return refused({ ok: false, reason: "Choose reject, refund or replacement." });
+  if (typeof choice.goodsRequired !== "boolean") return refused({ ok: false, reason: "Say whether the goods must come back." });
   const approved = await approveReturn(id, choice.goodsRequired, outcome);
   if (!approved.ok || outcome === "refund" || choice.goodsRequired) return approved;
   const replaced = await markReturnReplaced(id);
@@ -302,30 +319,32 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
  */
 export async function inspectReturn(id: number, inspectionId: string, items: { orderLineId: number; condition: "sellable" | "damaged" }[]): Promise<ReturnInspectionResult> {
   const staff = await requireModule(RETURNS_MODULE);
-  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
-  if (!Number.isSafeInteger(id) || id < 1 || typeof inspectionId !== "string" || !UUID.test(inspectionId) || !Array.isArray(items)) return { ok: false, reason: "Invalid inspection." };
+  const refused = async <T extends { ok: false; reason: string }>(refusal: T): Promise<T> => {
+    if (Number.isSafeInteger(id) && id >= 1) await auditReturnsDenied({ type: "return", id }, staff, "return.inspected", "inspect", refusal.reason, typeof inspectionId === "string" && UUID.test(inspectionId) ? { inspection_id: inspectionId } : {});
+    return refusal;
+  };
+  if (!canWork(staff)) return refused({ ok: false, reason: READ_ONLY_REASON });
+  if (!Number.isSafeInteger(id) || id < 1 || typeof inspectionId !== "string" || !UUID.test(inspectionId) || !Array.isArray(items)) return refused({ ok: false, reason: "Invalid inspection." });
   try {
     const [current] = await database()`select status, order_id from public.order_returns where id = ${id}`;
-    if (!current) return { ok: false, reason: "Return was not found." };
+    if (!current) return refused({ ok: false, reason: "Return was not found." });
     const lines = await database()`select order_line_id, to_jsonb(order_return_items)->>'inspection_id' as inspection_id, to_jsonb(order_return_items)->>'condition' as condition from public.order_return_items where return_id = ${id}`;
     const resumed = lines.length > 0 && lines.every(line => line.inspection_id === inspectionId);
-    if (!resumed && (current.status !== "goods received" || lines.some(line => line.condition))) return { ok: false, reason: "Return is not ready to inspect or was already inspected." };
+    if (!resumed && (current.status !== "goods received" || lines.some(line => line.condition))) return refused({ ok: false, reason: "Return is not ready to inspect or was already inspected." });
     const ids = new Set(items.map(item => item.orderLineId));
     if (!lines.length || ids.size !== items.length || ids.size !== lines.length || !lines.every(line => ids.has(Number(line.order_line_id))) ||
-      !items.every(item => item.condition === "sellable" || item.condition === "damaged")) return { ok: false, reason: "Mark every item sellable or damaged." };
+      !items.every(item => item.condition === "sellable" || item.condition === "damaged")) return refused({ ok: false, reason: "Mark every item sellable or damaged." });
     const result = await inspectStorefrontReturn(id, { action: "inspect", inspectionId, items: items.map(({ orderLineId, condition }) => ({ orderLineId, condition })) }, staff);
-    if (!result.ok) return result;
+    if (!result.ok) return refused(result);
     const damaged = items.filter(item => item.condition === "damaged").length;
-    await recordAudit(gatewayAuditTrail, {
-      action: "return.inspected", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
-      target: { type: "return", id: String(id), display_name: `RMA-${id}` },
-      description: `${staff.name} inspected Return RMA-${id} (Order #${current.order_id}): ${items.length - damaged} sellable, ${damaged} damaged.`,
-      occurred_at: new Date().toISOString(), operationId: `return:${id}:inspected:${inspectionId}`,
-    });
+    // Sellable items go back into stock, so the event is a pending audit record (#743); the inspection id makes a replay one event.
+    await auditReturnsDurable({ type: "return", id }, staff, "return.inspected",
+      `${staff.name} inspected Return RMA-${id} (Order #${current.order_id}): ${items.length - damaged} sellable, ${damaged} damaged.`,
+      { inspection_id: inspectionId, sellable: items.length - damaged, damaged }, `return:${id}:inspected:${inspectionId}`);
     revalidatePath("/(app)/returns", "layout");
     revalidatePath(`/orders/${current.order_id}`);
     return result;
-  } catch { return { ok: false, reason: "Inspection is temporarily unavailable. Refresh the Return before retrying." }; }
+  } catch { return refused({ ok: false, reason: "Inspection is temporarily unavailable. Refresh the Return before retrying." }); }
 }
 
 /**
@@ -334,28 +353,31 @@ export async function inspectReturn(id: number, inspectionId: string, items: { o
  */
 export async function writeOffReturn(id: number, options: ApprovalOptions = {}): Promise<ReturnInspectionResult | ApprovalResult> {
   const staff = await requireModule(RETURNS_MODULE);
-  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  const refused = async <T extends { ok: false; reason: string }>(refusal: T): Promise<T> => {
+    // A request waiting for a Manager is the approval workflow's own event, not a refusal.
+    if (Number.isSafeInteger(id) && id >= 1 && !(refusal as ApprovalResult).approvalId) await auditReturnsDenied({ type: "return", id }, staff, "writeoff.approved", "write off the damaged items of", refusal.reason);
+    return refusal;
+  };
+  if (!canWork(staff)) return refused({ ok: false, reason: READ_ONLY_REASON });
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
   try {
     const [current] = await database()`select order_id from public.order_returns where id = ${id}`;
-    if (!current) return { ok: false, reason: "Return was not found." };
+    if (!current) return refused({ ok: false, reason: "Return was not found." });
     const items = await database()`select to_jsonb(order_return_items)->>'inspection_id' as inspection_id, to_jsonb(order_return_items)->>'condition' as condition,
       to_jsonb(order_return_items)->>'written_off_at' as written_off_at from public.order_return_items where return_id = ${id}`;
     const damaged = items.filter(item => item.condition === "damaged");
-    if (!damaged.length || items.some(item => !item.inspection_id)) return { ok: false, reason: "This Return has no inspected damaged items to write off." };
-    if (damaged.every(item => item.written_off_at)) return { ok: false, reason: "These items were already written off." };
+    if (!damaged.length || items.some(item => !item.inspection_id)) return refused({ ok: false, reason: "This Return has no inspected damaged items to write off." });
+    if (damaged.every(item => item.written_off_at)) return refused({ ok: false, reason: "These items were already written off." });
     const inspectionId = String(items[0].inspection_id);
     const [amount] = await database()`select coalesce(sum(quantity::bigint * price_in_centavos), 0)::text as selling from public.order_return_items where return_id = ${id}`;
     const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "write-off", targetId: String(id),
       payload: { inspectionId, source: "return" }, amountInCentavos: Number(amount.selling) }, options, async () => {
       const done = await inspectStorefrontReturn(id, { action: "write-off", inspectionId }, staff);
       if (done.ok) {
-        await recordAudit(gatewayAuditTrail, {
-          action: "writeoff.approved", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
-          target: { type: "return", id: String(id), display_name: `RMA-${id}` },
-          description: `Write-off of damaged items on Return RMA-${id} (Order #${current.order_id}) was approved and recorded by ${staff.name}.`,
-          occurred_at: new Date().toISOString(), operationId: `return:${id}:writeoff.approved:${inspectionId}`,
-        });
+        // Removing stock: a pending audit record (#743); the inspection id makes a replay one event.
+        await auditReturnsDurable({ type: "return", id }, staff, "writeoff.approved",
+          `Write-off of damaged items on Return RMA-${id} (Order #${current.order_id}) was approved and recorded by ${staff.name}.`,
+          { inspection_id: inspectionId }, `return:${id}:writeoff.approved:${inspectionId}`);
       }
       return done;
     });
@@ -363,9 +385,10 @@ export async function writeOffReturn(id: number, options: ApprovalOptions = {}):
       revalidatePath("/(app)/returns", "layout");
       revalidatePath(`/orders/${current.order_id}`);
       revalidatePath("/approvals");
+      return result;
     }
-    return result;
-  } catch { return { ok: false, reason: "Write-off is temporarily unavailable. Refresh the Return before retrying." }; }
+    return refused(result);
+  } catch { return refused({ ok: false, reason: "Write-off is temporarily unavailable. Refresh the Return before retrying." }); }
 }
 
 /**
@@ -374,26 +397,27 @@ export async function writeOffReturn(id: number, options: ApprovalOptions = {}):
  */
 export async function extendRefundWindow(orderId: number, reason: string, options: ApprovalOptions = {}): Promise<{ ok: true; endsAt: Date } | { ok: false; reason: string } | ApprovalResult> {
   const staff = await requireModule(RETURNS_MODULE);
-  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  const refused = async <T extends { ok: false; reason: string }>(refusal: T): Promise<T> => {
+    if (Number.isSafeInteger(orderId) && orderId >= 1 && !(refusal as ApprovalResult).approvalId) await auditReturnsDenied({ type: "order", id: orderId }, staff, "return.window_extended", "extend the Refund window on", refusal.reason);
+    return refusal;
+  };
+  if (!canWork(staff)) return refused({ ok: false, reason: READ_ONLY_REASON });
   if (!Number.isSafeInteger(orderId) || orderId < 1) return { ok: false, reason: "Invalid Order number." };
   const why = typeof reason === "string" ? reason.trim() : "";
-  if (!why) return { ok: false, reason: "Enter a reason for extending the window." };
+  if (!why) return refused({ ok: false, reason: "Enter a reason for extending the window." });
   try {
     const [order] = await database()<{ status: string; delivered_at: Date | null; extended_at: string | null }[]>`
       select status, delivered_at, to_jsonb(o)->>'refund_window_extended_at' as extended_at from public.orders o where id = ${orderId}`;
-    if (!order) return { ok: false, reason: "Order was not found." };
-    if (order.extended_at) return { ok: false, reason: "The Refund window was already extended once." };
-    if (order.status !== "delivered" || !order.delivered_at) return { ok: false, reason: "Only a delivered Order has a Refund window to extend." };
+    if (!order) return refused({ ok: false, reason: "Order was not found." });
+    if (order.extended_at) return refused({ ok: false, reason: "The Refund window was already extended once." });
+    if (order.status !== "delivered" || !order.delivered_at) return refused({ ok: false, reason: "Only a delivered Order has a Refund window to extend." });
     const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "return.extend-window", targetId: String(orderId),
       payload: { reason: why }, amountInCentavos: 0 }, { ...options, reason: options.reason ?? why }, async () => {
       const done = await extendStorefrontRefundWindow(orderId, why, { id: staff.username, name: staff.name });
       if (done.ok) {
-        await recordAudit(gatewayAuditTrail, {
-          action: "return.window_extended", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
-          target: { type: "order", id: String(orderId), display_name: `Order #${orderId}` },
-          description: `${staff.name} extended the Refund window on Order #${orderId} by 24 hours: ${why}`,
-          occurred_at: new Date().toISOString(), operationId: `order:${orderId}:window_extended`, metadata: { reason: why },
-        });
+        // A Manager approval: a pending audit record (#743). The window can be extended once, so the Order id is the identity.
+        await auditReturnsDurable({ type: "order", id: orderId }, staff, "return.window_extended",
+          `${staff.name} extended the Refund window on Order #${orderId} by 24 hours: ${why}`, { reason: why }, `order:${orderId}:window_extended`);
       }
       return done;
     });
@@ -401,9 +425,10 @@ export async function extendRefundWindow(orderId: number, reason: string, option
       revalidatePath("/(app)/returns", "layout");
       revalidatePath(`/orders/${orderId}`);
       revalidatePath("/approvals");
+      return result;
     }
-    return result;
-  } catch { return { ok: false, reason: "The Refund window is temporarily unavailable. Refresh the Return before retrying." }; }
+    return refused(result);
+  } catch { return refused({ ok: false, reason: "The Refund window is temporarily unavailable. Refresh the Return before retrying." }); }
 }
 
 const DESTINATION_ROW = `to_jsonb(r)->>'refund_method' as refund_method, to_jsonb(r)->>'refund_account_name' as refund_account_name,
@@ -454,40 +479,42 @@ export async function changeRefundDestination(
   options: ApprovalOptions = {},
 ): Promise<{ ok: true; destination: MaskedRefundDestination } | { ok: false; reason: string } | ApprovalResult> {
   const staff = await requireModule(RETURNS_MODULE);
-  if (!canWork(staff)) return { ok: false, reason: READ_ONLY_REASON };
+  const refused = async <T extends { ok: false; reason: string }>(refusal: T): Promise<T> => {
+    if (Number.isSafeInteger(id) && id >= 1 && !(refusal as ApprovalResult).approvalId) await auditReturnsDenied({ type: "return", id }, staff, "return.refund_destination_changed", "change the Refund destination on", refusal.reason);
+    return refusal;
+  };
+  if (!canWork(staff)) return refused({ ok: false, reason: READ_ONLY_REASON });
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, reason: "Invalid Return number." };
   const checked = checkDestination(input);
-  if (!checked.ok) return checked;
+  if (!checked.ok) return refused(checked);
   const why = typeof input.reason === "string" ? input.reason.trim() : "";
-  if (!why) return { ok: false, reason: "Enter a reason for changing the destination." };
-  if (input.customerConfirmed !== true) return { ok: false, reason: "The Customer must confirm the new destination before it can change." };
+  if (!why) return refused({ ok: false, reason: "Enter a reason for changing the destination." });
+  if (input.customerConfirmed !== true) return refused({ ok: false, reason: "The Customer must confirm the new destination before it can change." });
   const next = checked.destination;
   try {
     const row = await destinationRow(id);
-    if (!row) return { ok: false, reason: "Return was not found." };
-    if (!mayChangeDestination(row.status, row.final_resolution)) return { ok: false, reason: "The destination can change only on an approved refund that has not been sent yet." };
+    if (!row) return refused({ ok: false, reason: "Return was not found." });
+    if (!mayChangeDestination(row.status, row.final_resolution)) return refused({ ok: false, reason: "The destination can change only on an approved refund that has not been sent yet." });
     const current = readDestination(row);
-    if (current && sameDestination(current, next)) return { ok: false, reason: "That is already the confirmed destination." };
+    if (current && sameDestination(current, next)) return refused({ ok: false, reason: "That is already the confirmed destination." });
     const from = current ? describeMasked(maskDestination(current)) : "none";
     const to = describeMasked(maskDestination(next));
     const result = await approvals().run(staff, { module: RETURNS_MODULE, action: "return.change-destination", targetId: String(id),
       payload: { to, digest: destinationDigest(next) }, amountInCentavos: 0 }, { ...options, reason: options.reason ?? why }, async () => {
       const done = await changeStorefrontRefundDestination(id, { ...next, reason: why, customerConfirmed: true }, { id: staff.username, name: staff.name });
       if (done.ok) {
-        await recordAudit(gatewayAuditTrail, {
-          action: "return.refund_destination_changed", module: RETURNS_MODULE, outcome: "success", actor: staffAuditActor(staff),
-          target: { type: "return", id: String(id), display_name: `RMA-${id}` },
-          description: `${staff.name} changed the Refund destination on Return RMA-${id} (Order #${row.order_id}) from ${from} to ${to}, with the Customer's confirmation: ${why}`,
-          occurred_at: new Date().toISOString(), operationId: `return:${id}:refund_destination_changed:${done.changedAt.getTime()}`,
-          metadata: { from, to, reason: why, customerConfirmed: true },
-        });
+        // Decides where money goes: a pending audit record (#743).
+        await auditReturnsDurable({ type: "return", id }, staff, "return.refund_destination_changed",
+          `${staff.name} changed the Refund destination on Return RMA-${id} (Order #${row.order_id}) from ${from} to ${to}, with the Customer's confirmation: ${why}`,
+          { from, to, reason: why, customerConfirmed: true }, `return:${id}:refund_destination_changed:${done.changedAt.getTime()}`);
       }
       return done.ok ? { ok: true as const, destination: maskDestination(next) } : done;
     });
     if (result.ok) {
       revalidatePath("/(app)/returns", "layout");
       revalidatePath("/approvals");
+      return result;
     }
-    return result;
-  } catch { return { ok: false, reason: "The refund destination is temporarily unavailable. Refresh the Return before retrying." }; }
+    return refused(result);
+  } catch { return refused({ ok: false, reason: "The refund destination is temporarily unavailable. Refresh the Return before retrying." }); }
 }

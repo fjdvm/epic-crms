@@ -15,7 +15,7 @@ import { startTestDatabase, type TestDatabase } from "./ticket-database";
 
 const storage = new FakeFileStorage();
 const audit = vi.hoisted(() => vi.fn<import("@/lib/audit-trail").AuditTrail>(async () => {}));
-vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, get gatewayFileStorage() { return storage; } }));
+vi.mock("@/lib/gateway", () => ({ gatewayAuditTrail: audit, deliverGatewayAuditEvent: audit, get gatewayFileStorage() { return storage; } }));
 vi.mock("@/features/files/storage", () => ({ storageUrl: (url: string) => url, directFileStorage: { view: vi.fn((id: string) => storage.view(id)) } }));
 vi.mock("@/features/returns/refund-proof-start", () => ({ startRefundProofRead: vi.fn() }));
 vi.mock("@/lib/portal/staff", () => ({ requireModule: vi.fn() }));
@@ -98,6 +98,17 @@ describe("saving the refund proof first (#615)", () => {
     const wrong = details(); wrong.set("sentAmount", "99.00");
     expect(await saveRefundProof(row.id, wrong)).toMatchObject({ ok: false, reason: expect.stringContaining("must match the refund") });
     expect(await db.sql`select 1 from crms.refund_proof_drafts`).toHaveLength(0);
+  });
+
+  it("records a refused proof save as one denied attempt with the reason and no payment details (#747)", async () => {
+    const [row] = await db.sql<{ id: number }[]>`insert into order_returns (order_id, reason, amount_in_centavos) values (1, 'damaged', 10000) returning id`;
+    expect((await saveRefundProof(row.id, details())).ok).toBe(false);
+    expect((await saveRefundProof(row.id, details())).ok).toBe(false);
+    const denied = audit.mock.calls.map(([event]) => event).filter(event => event.action === "return.refund_proof_saved" && event.outcome === "failure");
+    expect(denied).toHaveLength(2);
+    expect(denied[0]).toMatchObject({ module: "Returns", target: { type: "return", id: String(row.id), display_name: `RMA-${row.id}` }, metadata: { reason: expect.stringContaining("not ready") } });
+    expect(denied[1].operationId).toBe(denied[0].operationId);
+    expect(JSON.stringify(denied)).not.toMatch(/GC-2026/);
   });
 
   it("replaces an earlier proof; the replacement is its own file with its own check", async () => {
