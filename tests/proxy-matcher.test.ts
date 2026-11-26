@@ -19,6 +19,11 @@ describe("proxy matcher", () => {
     expect(matches("/api/internal/other")).toBe(true);
   });
 
+  it("leaves the POS sales feed outside the Portal session, since it authenticates with the POS token", () => {
+    expect(matches("/api/internal/pos-sales")).toBe(false);
+    expect(matches("/api/internal/pos-sales-admin")).toBe(true);
+  });
+
   it("still guards the payment accounts routes and similarly named paths", () => {
     expect(matches("/api/payment-accounts/1/qr")).toBe(true);
     expect(matches("/api/payment-methods-admin")).toBe(true);
