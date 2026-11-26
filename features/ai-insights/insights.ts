@@ -1,4 +1,4 @@
-import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, TICKETS_MODULE } from "@/lib/portal/config";
+import { FEEDBACK_MODULE, FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, TICKETS_MODULE } from "@/lib/portal/config";
 
 /**
  * AI insights: what changed in the period, where, and what to look at next. Every figure, priority and confidence
@@ -6,8 +6,11 @@ import { FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RETURNS_MODULE, TICK
  * "why and what to do" afterwards, and nothing here changes the shop: each action only opens a screen.
  */
 
-/** The Modules whose cards the page can show; each card shows only to people who hold its Module. */
-export const AI_INSIGHTS_MODULES = [ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, RETURNS_MODULE, TICKETS_MODULE];
+/**
+ * The Modules whose cards the page can show; each card shows only to people who hold its Module. Feedback adds the
+ * Rating ranking to Top products.
+ */
+export const AI_INSIGHTS_MODULES = [ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, RETURNS_MODULE, TICKETS_MODULE, FEEDBACK_MODULE];
 
 export const PERIOD_DAYS = [7, 30] as const;
 export type PeriodDays = (typeof PERIOD_DAYS)[number];
@@ -97,6 +100,28 @@ export interface PlaceFigures {
 export interface CityFigures extends PlaceFigures { province: string }
 export interface AreaFigures extends PlaceFigures { cities: CityFigures[] }
 
+/**
+ * What one product (or one size of it) sold in a place: the whole shop ("all"), one map area ("province") or one city.
+ * Orders and ratings are counted per Order, so a product's sizes never count the same Order twice.
+ */
+export interface ProductFigures {
+  scope: "all" | "province" | "city";
+  /** The area or city key, as in AreaFigures and CityFigures; null for the whole shop. */
+  place: string | null;
+  product: string;
+  /** Null when every size is counted together; otherwise the size label ("" when the line had none). */
+  size: string | null;
+  units: number;
+  previousUnits: number;
+  /** Sales value in centavos. */
+  value: number;
+  orders: number;
+  previousOrders: number;
+  /** Orders in the period with Customer Feedback, and the sum of their star ratings. */
+  ratings: number;
+  ratingTotal: number;
+}
+
 export interface CourierFigures {
   courier: string;
   wentOut: number;
@@ -132,6 +157,8 @@ export interface InsightFacts {
   sla: SlaFigures | null;
   returns: { sold: number; returned: number; products: ReturnProduct[] } | null;
   themes: ThemeFigures[] | null;
+  /** Products by place, for "Top products" and each area's favourite. Null when they could not be read. */
+  products: ProductFigures[] | null;
 }
 
 export interface Stat { value: number | null; note: string; tone?: "up" | "down" | "warn" | null }

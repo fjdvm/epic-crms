@@ -6,7 +6,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import citiesMap from "@/lib/geo/ph-cities.json";
 import map from "@/lib/geo/ph-provinces.json";
 
-import type { AreaFigures, CityFigures, PeriodDays, PlaceFigures } from "./insights";
+import type { AreaFigures, CityFigures, PeriodDays, PlaceFigures, ProductFigures } from "./insights";
+import { DEFAULT_PRODUCT_VIEW, ProductList, ProductRanking, type ProductView } from "./product-ranking";
+import { favouriteByPlace, formatMetric, productName, rankProducts } from "./products";
 
 export const LAYERS = ["orders", "lateOrFailed", "returned", "complaints", "freeDelivery"] as const;
 export type Layer = (typeof LAYERS)[number];
@@ -49,6 +51,8 @@ export function orderChange(place: Pick<PlaceFigures, "orders" | "previousOrders
 /** One hue, light to dark; no data stays neutral. */
 const STEPS = ["#ebe2f5", "#d5c2ea", "#b597d8", "#8f63bf", "#6b3a99"];
 const LAND = "#f3f1f6";
+
+type AreaLevel = "city" | "province";
 const SEA = "#e6eef7";
 
 interface View { x: number; y: number; w: number; h: number }
@@ -80,9 +84,21 @@ function Change({ place }: { place: Pick<PlaceFigures, "orders" | "previousOrder
  * "Where it's happening" and "Top areas": Province shading for the whole country, and city outlines with bubbles once
  * zoomed in. Areas come from delivery addresses and are aggregated to city; no customer location is ever drawn.
  */
-export function AreaSection({ areas, unmapped, orders, days, enoughData }: {
+export function AreaSection({ areas, unmapped, orders, days, enoughData, products = null, canSeeRatings = false }: {
   areas: AreaFigures[]; unmapped: number; orders: number; days: PeriodDays; enoughData: boolean;
+  /** Products by place from the stored run; null for runs from before products were counted. */
+  products?: ProductFigures[] | null;
+  /** Ranking by Customer rating needs the Feedback Module. */
+  canSeeRatings?: boolean;
 }) {
+  const [productView, setProductView] = useState<ProductView>(DEFAULT_PRODUCT_VIEW);
+  const [level, setLevel] = useState<AreaLevel>("city");
+  const view_ = canSeeRatings || productView.metric !== "rating" ? productView : DEFAULT_PRODUCT_VIEW;
+  const favourites = useMemo(() => {
+    const rows = products && enoughData ? products : [];
+    const options = { bySize: view_.bySize, metric: view_.metric };
+    return { city: favouriteByPlace(rows, { scope: "city", ...options }), province: favouriteByPlace(rows, { scope: "province", ...options }) };
+  }, [products, enoughData, view_.bySize, view_.metric]);
   const [layer, setLayer] = useState<Layer>("orders");
   const [view, setView] = useState<View>(VIEWS["metro-manila"]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -194,7 +210,11 @@ export function AreaSection({ areas, unmapped, orders, days, enoughData }: {
   const hovered = hover ? byCity.get(hover.key) ?? byArea.get(hover.key) ?? null : null;
   const chosen = selected ? byCity.get(selected) ?? byArea.get(selected) ?? null : null;
 
+  const hoveredFavourite = hover ? favourites.city.get(hover.key) ?? favourites.province.get(hover.key) ?? null : null;
+
   return (
+    <div className="flex flex-col gap-4">
+    <ProductRanking products={products} view={view_} onView={setProductView} canSeeRatings={canSeeRatings} days={days} enoughData={enoughData} />
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
       <section aria-label="Where it's happening" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]">
         <div className="flex flex-wrap items-center gap-2">
@@ -292,6 +312,7 @@ export function AreaSection({ areas, unmapped, orders, days, enoughData }: {
                 {LAYER[layer].label}: {formatValue(layerValue(hovered, layer), layer)}
                 {layer !== "orders" && ` · ${hovered.orders} orders`}
               </p>
+              {hoveredFavourite && <p className="mt-0.5 text-[#52525b]">Favourite: {productName(hoveredFavourite)}</p>}
             </div>
           )}
 
@@ -311,21 +332,29 @@ export function AreaSection({ areas, unmapped, orders, days, enoughData }: {
         </p>
       </section>
 
-      <TopAreas cities={enoughData ? cities : []} chosen={chosen} onPick={setSelected} days={days} />
+      <TopAreas places={!enoughData ? [] : level === "city" ? cities : areas} level={level} onLevel={setLevel} chosen={chosen}
+        onPick={setSelected} days={days} favourites={favourites[level]} products={enoughData ? products : null} view={view_} />
+    </div>
     </div>
   );
 }
 
-function TopAreas({ cities, chosen, onPick, days }: {
-  cities: CityFigures[]; chosen: PlaceFigures | null; onPick: (key: string | null) => void; days: PeriodDays;
+function TopAreas({ places, level, onLevel, chosen, onPick, days, favourites, products, view }: {
+  places: PlaceFigures[]; level: AreaLevel; onLevel: (level: AreaLevel) => void; chosen: PlaceFigures | null;
+  onPick: (key: string | null) => void; days: PeriodDays; favourites: Map<string, ProductFigures>;
+  products: ProductFigures[] | null; view: ProductView;
 }) {
-  const ranked = cities.filter((c) => c.orders > 0).sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name)).slice(0, 8);
-  const problems = cities
+  const ranked = places.filter((c) => c.orders > 0).sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name)).slice(0, 8);
+  const problems = places
     .map((c) => ({ city: c, total: c.lateOrFailed + c.returned + c.complaints }))
     .filter((p) => p.total > 0)
     .sort((a, b) => b.total - a.total || a.city.name.localeCompare(b.city.name))
     .slice(0, 4);
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const chosenScope = chosen && "cities" in chosen ? "province" : "city";
+  const chosenProducts = chosen && products
+    ? rankProducts(products, { scope: chosenScope, place: chosen.key, bySize: view.bySize, metric: view.metric })
+    : [];
 
   return (
     <section aria-label="Top areas" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]">
@@ -352,28 +381,51 @@ function TopAreas({ cities, chosen, onPick, days }: {
               <div key={label}><dt className="text-xs text-[#71717a]">{label}</dt><dd className="tabular-nums text-[#18181b]">{value}</dd></div>
             ))}
           </dl>
+          {chosenProducts.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-[#f0edf4] pt-3">
+              <h4 className="text-xs font-semibold text-[#18181b]">Favourite products</h4>
+              <ProductList rows={chosenProducts} metric={view.metric} limit={3} />
+            </div>
+          )}
         </div>
-      ) : ranked.length === 0 ? (
-        <>
-          <p className="text-xs text-[#71717a]">Orders by delivery area, compared with {days === 7 ? "the week" : "the 30 days"} before.</p>
-          <p className="text-sm text-[#71717a]">No areas to rank yet. Rankings appear once there are enough orders.</p>
-        </>
       ) : (
         <>
-          <p className="text-xs text-[#71717a]">Orders by delivery area, compared with {days === 7 ? "the week" : "the 30 days"} before.</p>
-          <ol className="flex flex-col">
-            {ranked.map((city, index) => (
-              <li key={city.key}>
-                <button type="button" onClick={() => onPick(city.key)} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#f5f0fa]">
-                  <span className="w-4 text-xs text-[#a1a1aa]">{index + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-[#18181b]">{city.name}</span>
-                  <span className="tabular-nums font-medium text-[#18181b]">{city.orders}</span>
-                  <span className="w-12 text-right"><Change place={city} /></span>
-                </button>
-              </li>
+          <div role="radiogroup" aria-label="Areas" className="flex gap-1">
+            {(["city", "province"] as const).map((l) => (
+              <button key={l} type="button" role="radio" aria-checked={l === level} onClick={() => onLevel(l)}
+                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#52525b] hover:bg-[#f5f0fa] aria-checked:bg-[#efe7f7] aria-checked:text-[#5b2a86]">
+                {l === "city" ? "City" : "Province"}
+              </button>
             ))}
-          </ol>
-          {problems.length > 0 && (
+          </div>
+          <p className="text-xs text-[#71717a]">Orders by delivery area, compared with {days === 7 ? "the week" : "the 30 days"} before, with each area&apos;s favourite product.</p>
+          {ranked.length === 0 ? (
+            <p className="text-sm text-[#71717a]">No areas to rank yet. Rankings appear once there are enough orders.</p>
+          ) : (
+            <ol className="flex flex-col">
+              {ranked.map((place, index) => {
+                const favourite = favourites.get(place.key);
+                return (
+                  <li key={place.key}>
+                    <button type="button" onClick={() => onPick(place.key)} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#f5f0fa]">
+                      <span className="w-4 text-xs text-[#a1a1aa]">{index + 1}</span>
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[#18181b]">{place.name}</span>
+                        {favourite && (
+                          <span className="truncate text-xs text-[#71717a]">
+                            Favourite: {productName(favourite)}{view.metric !== "orders" && view.metric !== "units" ? ` · ${formatMetric(favourite, view.metric)}` : ""}
+                          </span>
+                        )}
+                      </span>
+                      <span className="tabular-nums font-medium text-[#18181b]">{place.orders}</span>
+                      <span className="w-12 text-right"><Change place={place} /></span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          {ranked.length > 0 && problems.length > 0 && (
             <div className="flex flex-col gap-1.5 border-t border-[#f0edf4] pt-3">
               <h3 className="text-xs font-semibold text-[#18181b]">Problems by area</h3>
               <ul className="flex flex-col gap-1 text-xs text-[#52525b]">
@@ -399,7 +451,12 @@ function TopAreas({ cities, chosen, onPick, days }: {
 /** Shown at once while the run loads, the same size as the cards. */
 export function AreaSectionSkeleton() {
   return (
-    <div aria-busy="true" className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+    <div aria-busy="true" className="flex flex-col gap-4">
+    <section aria-label="Top products" className="flex flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4">
+      <h2 className="text-[15px] font-semibold text-[#18181b]">Top products</h2>
+      {Array.from({ length: 5 }, (_, i) => <div key={i} className="h-6 animate-pulse rounded bg-[#f4f4f5]" />)}
+    </section>
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
       <section aria-label="Where it's happening" className="flex flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4">
         <h2 className="text-[15px] font-semibold text-[#18181b]">Where it&apos;s happening</h2>
         <div className="h-[320px] animate-pulse rounded-xl bg-[#f4f4f5] sm:h-[360px]" />
@@ -408,6 +465,7 @@ export function AreaSectionSkeleton() {
         <h2 className="text-[15px] font-semibold text-[#18181b]">Top areas</h2>
         {Array.from({ length: 6 }, (_, i) => <div key={i} className="h-6 animate-pulse rounded bg-[#f4f4f5]" />)}
       </section>
+    </div>
     </div>
   );
 }

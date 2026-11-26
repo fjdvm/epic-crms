@@ -12,7 +12,7 @@ import { DashboardExportButton } from "@/features/dashboard/export-button";
 import { PeriodNavigation, PeriodPicker } from "@/features/dashboard/period-navigation";
 import { UnusualActivityCards } from "@/features/dashboard/unusual-activity-cards";
 import { crmsDatabase } from "@/lib/crms-db";
-import { DASHBOARD_MODULE, ORDERS_MODULE } from "@/lib/portal/config";
+import { DASHBOARD_MODULE, FEEDBACK_MODULE, ORDERS_MODULE } from "@/lib/portal/config";
 import { shopRole } from "@/lib/portal/roles";
 import { canSeeAiInsights, heldModules, requireModule } from "@/lib/portal/staff";
 
@@ -58,7 +58,8 @@ async function Body({ staff, days }: { staff: Staff; days: PeriodDays }) {
       <Brief days={days} summary={run.summary} confidence={run.summaryConfidence} enoughData={run.enoughData} orders={run.orders} stats={stats} />
       <StatRow stats={stats} />
       {modules.includes(ORDERS_MODULE) && (
-        <AreaSection areas={run.areas} unmapped={run.unmapped} orders={run.orders} days={days} enoughData={run.enoughData} />
+        <AreaSection areas={run.areas} unmapped={run.unmapped} orders={run.orders} days={days} enoughData={run.enoughData}
+          products={run.products} canSeeRatings={modules.includes(FEEDBACK_MODULE)} />
       )}
       <InsightGrid key={`${run.id}`} initial={visibleInsights(run.insights, modules, state.dismissed)} days={days}
         answers={state.answers} enoughData={run.enoughData} />

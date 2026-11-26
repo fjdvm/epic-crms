@@ -6,7 +6,7 @@ import { visibleStats } from "@/features/ai-insights/view-model";
 import { auditDashboardExport } from "@/features/dashboard/export-audit";
 import { pdfResponse } from "@/lib/export/pdf-template";
 import { crmsDatabase } from "@/lib/crms-db";
-import { DASHBOARD_MODULE } from "@/lib/portal/config";
+import { DASHBOARD_MODULE, FEEDBACK_MODULE, ORDERS_MODULE } from "@/lib/portal/config";
 import { canSeeAiInsights, heldModules, requireModule } from "@/lib/portal/staff";
 
 export const runtime = "nodejs";
@@ -33,7 +33,8 @@ export async function GET(request: Request) {
     }
     const modules = await heldModules(AI_INSIGHTS_MODULES);
     const { dismissed } = await viewerState(crms, staff, run);
-    pdf = await insightsPdf(run, visibleInsights(run.insights, modules, dismissed), visibleStats(run.stats, modules), now);
+    pdf = await insightsPdf(run, visibleInsights(run.insights, modules, dismissed), visibleStats(run.stats, modules), now,
+      { products: modules.includes(ORDERS_MODULE), ratings: modules.includes(FEEDBACK_MODULE) });
   } catch (error) {
     console.error("AI insights PDF could not be made", error);
     await auditDashboardExport(staff, "dashboard.ai_insights_pdf_exported", choice, { outcome: "failure", reason: "unavailable" }, now);

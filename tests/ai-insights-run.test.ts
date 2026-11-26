@@ -58,6 +58,7 @@ async function expiring() {
 describe("the morning run", () => {
   it("stores both periods, with the AI's wording kept only when it quotes the facts' own numbers", async () => {
     await orders(31);
+    await db.sql`insert into order_lines (order_id, product_name, size_label, quantity, price_in_centavos) values (1, 'Ube Jam', '250 g', 2, 15000)`;
     const ids = await expiring();
     const result = await runInsights(sources(), now, models);
     expect(result).toEqual([
@@ -67,6 +68,11 @@ describe("the morning run", () => {
     const run = (await loadLatestRun(db.sql, 7))!;
     expect(run).toMatchObject({ days: 7, enoughData: true, orders: 31, summary: "Orders reached 31 this week. Two unpaid Orders need a look first.", summaryConfidence: "low" });
     expect(run.createdAt).toBe(now.toISOString());
+    // Products are stored with the run's figures, for Top products and each area's favourite.
+    expect(run.products).toEqual([
+      expect.objectContaining({ scope: "all", product: "Ube Jam", size: null, units: 2, value: 30000, orders: 1 }),
+      expect.objectContaining({ scope: "all", product: "Ube Jam", size: "250 g", units: 2 }),
+    ]);
     expect(run.insights[0]).toMatchObject({ key: "payments:expiring", ai: "These 2 Orders cancel soon; a reminder may save them.", records: ids.map((id) => ({ type: "order", id })) });
 
     // The prompt holds aggregates and the cards' own text; never a Customer.

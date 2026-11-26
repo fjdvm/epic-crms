@@ -7,7 +7,7 @@ import { configuredStructuredModels, structuredOutput, type StructuredModel } fr
 
 import { loadFacts, loadNowFacts, manilaDay, periodSpan, type Sources } from "./facts";
 import {
-  buildInsights, buildStats, enoughData, PERIOD_DAYS, type AreaFigures, type Confidence, type Insight, type InsightFacts,
+  buildInsights, buildStats, enoughData, PERIOD_DAYS, type AreaFigures, type ProductFigures, type Confidence, type Insight, type InsightFacts,
   type PeriodDays, type Stats,
 } from "./insights";
 
@@ -23,6 +23,8 @@ export interface InsightRun {
   stats: Stats;
   areas: AreaFigures[];
   unmapped: number;
+  /** Null for runs stored before products were counted, or when they could not be read. */
+  products: ProductFigures[] | null;
   insights: Insight[];
   summary: string | null;
   summaryConfidence: Confidence | null;
@@ -107,7 +109,7 @@ export async function runInsights(sources: Sources, now = new Date(), models: ()
     }
     for (const insight of insights) insight.ai ??= null;
     const span = periodSpan(days, now);
-    const figures = { stats, areas: facts.areas, unmapped: facts.unmapped, orders: facts.orders };
+    const figures = { stats, areas: facts.areas, unmapped: facts.unmapped, orders: facts.orders, products: facts.products };
     await sources.crms`
       insert into crms.ai_insight_runs (run_day, period_days, period_start, period_end, enough_data, figures, insights, summary,
         summary_confidence, model, sent_text, system_prompt, created_at)
@@ -125,7 +127,7 @@ export async function runInsights(sources: Sources, now = new Date(), models: ()
 
 interface RunRow {
   id: string; period_days: number; created_at: Date; period_start: Date; period_end: Date; enough_data: boolean;
-  figures: { stats: Stats; areas: AreaFigures[]; unmapped: number; orders: number }; insights: Insight[];
+  figures: { stats: Stats; areas: AreaFigures[]; unmapped: number; orders: number; products?: ProductFigures[] | null }; insights: Insight[];
   summary: string | null; summary_confidence: Confidence | null;
 }
 
@@ -138,7 +140,7 @@ export async function loadLatestRun(crms: postgres.Sql, days: PeriodDays): Promi
   return {
     id: Number(row.id), days: row.period_days as PeriodDays, createdAt: row.created_at.toISOString(),
     periodStart: row.period_start.toISOString(), periodEnd: row.period_end.toISOString(), enoughData: row.enough_data,
-    orders: row.figures.orders, stats: row.figures.stats, areas: row.figures.areas, unmapped: row.figures.unmapped,
+    orders: row.figures.orders, stats: row.figures.stats, areas: row.figures.areas, unmapped: row.figures.unmapped, products: row.figures.products ?? null,
     insights: row.insights, summary: row.summary, summaryConfidence: row.summary_confidence,
   };
 }
