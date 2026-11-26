@@ -180,6 +180,27 @@ describe("the map", () => {
     expect(within(top).getAllByRole("listitem").map((li) => li.textContent)).toEqual([expect.stringContaining("Ube Jam 250 g"), expect.stringContaining("Ube Jam 500 g")]);
   });
 
+  it("sits above the map and pages the ranking 5 at a time, back to page 1 when the ranking changes", () => {
+    const many = Array.from({ length: 12 }, (_, i) => product({ product: `Product ${String(i + 1).padStart(2, "0")}`, units: 100 - i }));
+    render(<AreaSection areas={areas} unmapped={0} orders={40} days={7} enoughData products={many} />);
+    const top = screen.getByRole("region", { name: "Top products" });
+    const map = screen.getByRole("region", { name: "Where it's happening" });
+    expect(top.compareDocumentPosition(map) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const rows = () => within(top).getAllByRole("listitem").map((li) => li.textContent);
+    expect(rows()).toHaveLength(5);
+    expect(rows()[0]).toContain("1Product 01");
+    expect(within(top).getByText("1–5 of 12")).toBeTruthy();
+    expect((within(top).getByRole("button", { name: "Previous page" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(top).getByRole("button", { name: "Next page" }));
+    expect(rows()[0]).toContain("6Product 06");
+    fireEvent.click(within(top).getByRole("button", { name: "Next page" }));
+    expect(rows()).toHaveLength(2);
+    expect(within(top).getByText("11–12 of 12")).toBeTruthy();
+    expect((within(top).getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(top).getByRole("radio", { name: "Sales value" }));
+    expect(within(top).getByText("Page 1 of 3")).toBeTruthy();
+  });
+
   it("shows each area's favourite product, by city or by province, and an area's own ranking", () => {
     render(<AreaSection areas={areas} unmapped={0} orders={40} days={7} enoughData products={products} />);
     const top = screen.getByRole("region", { name: "Top areas" });

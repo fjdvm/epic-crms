@@ -214,6 +214,7 @@ export function AreaSection({ areas, unmapped, orders, days, enoughData, product
 
   return (
     <div className="flex flex-col gap-4">
+    <ProductRanking products={products} view={view_} onView={setProductView} canSeeRatings={canSeeRatings} days={days} enoughData={enoughData} />
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
       <section aria-label="Where it's happening" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]">
         <div className="flex flex-wrap items-center gap-2">
@@ -334,7 +335,6 @@ export function AreaSection({ areas, unmapped, orders, days, enoughData, product
       <TopAreas places={!enoughData ? [] : level === "city" ? cities : areas} level={level} onLevel={setLevel} chosen={chosen}
         onPick={setSelected} days={days} favourites={favourites[level]} products={enoughData ? products : null} view={view_} />
     </div>
-    <ProductRanking products={products} view={view_} onView={setProductView} canSeeRatings={canSeeRatings} days={days} enoughData={enoughData} />
     </div>
   );
 }
@@ -452,6 +452,10 @@ function TopAreas({ places, level, onLevel, chosen, onPick, days, favourites, pr
 export function AreaSectionSkeleton() {
   return (
     <div aria-busy="true" className="flex flex-col gap-4">
+    <section aria-label="Top products" className="flex flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4">
+      <h2 className="text-[15px] font-semibold text-[#18181b]">Top products</h2>
+      {Array.from({ length: 5 }, (_, i) => <div key={i} className="h-6 animate-pulse rounded bg-[#f4f4f5]" />)}
+    </section>
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
       <section aria-label="Where it's happening" className="flex flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4">
         <h2 className="text-[15px] font-semibold text-[#18181b]">Where it&apos;s happening</h2>
@@ -462,10 +466,6 @@ export function AreaSectionSkeleton() {
         {Array.from({ length: 6 }, (_, i) => <div key={i} className="h-6 animate-pulse rounded bg-[#f4f4f5]" />)}
       </section>
     </div>
-    <section aria-label="Top products" className="flex flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4">
-      <h2 className="text-[15px] font-semibold text-[#18181b]">Top products</h2>
-      {Array.from({ length: 5 }, (_, i) => <div key={i} className="h-6 animate-pulse rounded bg-[#f4f4f5]" />)}
-    </section>
     </div>
   );
 }

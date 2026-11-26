@@ -41,7 +41,7 @@ export async function insightsPdf(run: InsightRun, insights: Insight[], stats: P
     }
   }
 
-  const ranked = products && run.enoughData ? rankProducts(products, { scope: "all", bySize: false, metric: "units" }).slice(0, 10) : [];
+  const ranked = products && run.enoughData ? rankProducts(products, { scope: "all", bySize: false, metric: "units" }).slice(0, 5) : [];
   if (ranked.length) {
     pdf.heading("Top products");
     const head = ["#", "Product", "Units sold", "Sales value", "Orders", ...(access.ratings ? ["Rating"] : [])];
