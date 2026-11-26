@@ -3,6 +3,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ticketsHref } from "@/features/tickets/ticket-params";
 import { describeTarget } from "@/features/tickets/service-level";
 
+import { formatStars } from "./format-stars";
+import { StaffTable } from "./staff-table";
 import type { TicketReport } from "./ticket-report";
 
 const CARD =
@@ -26,7 +28,7 @@ export function formatDuration(seconds: number | null): string {
 }
 
 export const formatShare = (rate: number | null) => (rate === null ? "—" : `${(rate * 100).toFixed(1)}%`);
-export const formatStars = (rating: number | null) => (rating === null ? "—" : `${rating.toFixed(1)} / 5`);
+export { formatStars };
 
 function Tile({ title, value, note }: { title: string; value: string; note: string }) {
   return (
@@ -75,23 +77,7 @@ export function TicketReportView({ report }: { report: TicketReport }) {
         <section className={PANEL} aria-labelledby="by-staff">
           <h2 id="by-staff" className="text-base font-semibold text-[#18181b]">By Staff member</h2>
           {report.staff.length === 0 ? <Empty>No Staff member holds or resolved a Ticket.</Empty> : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-xs text-[#71717a]">
-                  <tr><th className="py-1 font-medium">Staff member</th><th className="py-1 text-right font-medium">Open now</th><th className="py-1 text-right font-medium">Resolved</th><th className="py-1 text-right font-medium">Avg rating</th></tr>
-                </thead>
-                <tbody>
-                  {report.staff.map((s) => (
-                    <tr key={s.id} className={`${CLICKABLE_ROW} border-t border-[#f1eef6]`}>
-                      <td className="py-2 text-[#18181b]"><RowLink href={ticketsHref({ tab: "all", page: 1, claimedBy: s.id })} prefetch>{s.name}</RowLink></td>
-                      <td className="py-2 text-right">{s.open}</td>
-                      <td className="py-2 text-right">{s.resolved}</td>
-                      <td className="py-2 text-right">{formatStars(s.averageRating)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <StaffTable staff={report.staff} />
           )}
         </section>
       </div>

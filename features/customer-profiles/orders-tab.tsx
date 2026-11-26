@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Star } from "lucide-react";
 
@@ -10,6 +12,15 @@ import { isViewableScreenshot } from "@/features/orders/payment-screenshot";
 import { orderAnchor, type CustomerOrder } from "./orders";
 import { orderLabel as label, paymentStatusOf } from "./rules";
 import { ZoomableImage } from "@/components/zoomable-image";
+import {
+  NoMatches,
+  StateSortHeader,
+  stateAriaSort,
+  TableToolbar,
+  useTableState,
+} from "@/components/shared/table-controls/use-table-state";
+import type { ColumnDef } from "@/lib/table/sort-filter";
+import { cn } from "@/lib/utils";
 
 const PAYMENT_VARIANTS: Record<ReturnType<typeof paymentStatusOf>, BadgeProps["variant"]> = {
   Paid: "success",
@@ -26,6 +37,31 @@ function statusVariant(status: string): BadgeProps["variant"] {
 
 const HEAD = "py-1.5 text-left text-xs font-medium text-muted-foreground";
 const CELL = "py-[11px] pr-3 text-sm text-foreground";
+
+const itemsText = (o: CustomerOrder) => o.lines.map((l) => `${l.product} ×${l.quantity}`).join(", ");
+
+/** Each column's share of the card, so the table spans it edge to edge; money and the last column sit right. */
+const ORDER_COLUMNS: (ColumnDef<CustomerOrder> & { width: string; right?: boolean })[] = [
+  { key: "order", label: "Order", width: "w-[10%]", sortValue: (o) => o.id, searchText: (o) => `#${o.id}` },
+  { key: "date", label: "Date", width: "w-[13%]", sortValue: (o) => new Date(o.createdAt) },
+  { key: "items", label: "Items", width: "w-[34%] min-w-[240px]", sortValue: (o) => o.lines.reduce((n, l) => n + l.quantity, 0), searchText: itemsText },
+  { key: "total", label: "Total", width: "w-[13%] pr-6", right: true, sortValue: (o) => o.total },
+  {
+    key: "payment",
+    label: "Payment",
+    width: "w-[15%]",
+    sortValue: (o) => paymentStatusOf(o.status),
+    filter: { label: "Payment", value: (o) => paymentStatusOf(o.status) },
+  },
+  {
+    key: "status",
+    label: "Status",
+    width: "w-[15%]",
+    right: true,
+    sortValue: (o) => label(o.status),
+    filter: { label: "Status", value: (o) => label(o.status) },
+  },
+];
 
 function OrderDetails({ order }: { order: CustomerOrder }) {
   const address = order.address;
@@ -125,6 +161,8 @@ export function OrdersTab({
   /** Staff who hold the Orders, Payments or Fulfilment Module get a link to each Order's detail page. */
   canOpenOrder?: boolean;
 }) {
+  const table = useTableState(orders, ORDER_COLUMNS);
+
   return (
     <div className="space-y-[14px] rounded-xl border border-border bg-card p-5">
       <div className="flex items-center justify-between">
@@ -135,19 +173,23 @@ export function OrdersTab({
       {orders.length === 0 ? (
         <div className="p-xl text-center text-muted-foreground">This customer has no orders yet.</div>
       ) : (
+        <>
+        <TableToolbar state={table} label="Search and filter Order history" searchLabel="Search Order history" placeholder="Order no. or product" />
+        {table.rows.length === 0 ? (
+          <NoMatches noun="Orders" onClear={table.clear} />
+        ) : (
         <div className="@container overflow-x-auto">
         <table className="w-full min-w-max whitespace-nowrap">
           <thead>
             <tr className="border-b border-border-subtle">
-              <th className={`${HEAD} w-[10%]`}>Order</th>
-              <th className={`${HEAD} w-[13%]`}>Date</th>
-              <th className={`${HEAD} w-[34%] min-w-[240px]`}>Items</th>
-              <th className={`${HEAD} w-[13%]`}>Total</th>
-              <th className={`${HEAD} w-[15%]`}>Payment</th>
-              <th className={`${HEAD} w-[15%]`}>Status</th>
+              {ORDER_COLUMNS.map((c) => (
+                <th key={c.key} aria-sort={stateAriaSort(table, c.key)} className={cn(HEAD, c.width, c.right && "text-right")}>
+                  <StateSortHeader state={table} columnKey={c.key} align={c.right ? "right" : "left"} />
+                </th>
+              ))}
             </tr>
           </thead>
-          {orders.map((o) => {
+          {table.rows.map((o) => {
             const open = expanded.has(o.id);
 
             return (
@@ -171,12 +213,12 @@ export function OrdersTab({
                     )}
                   </td>
                   <td className={CELL}>{formatDate(o.createdAt)}</td>
-                  <td className={CELL}>{o.lines.map((l) => `${l.product} ×${l.quantity}`).join(", ")}</td>
-                  <td className={CELL}>{formatPesos(o.total)}</td>
+                  <td className={CELL}>{itemsText(o)}</td>
+                  <td className={cn(CELL, "pr-6 text-right")}>{formatPesos(o.total)}</td>
                   <td className={CELL}>
                     <Badge variant={PAYMENT_VARIANTS[paymentStatusOf(o.status)]}>{paymentStatusOf(o.status)}</Badge>
                   </td>
-                  <td className={CELL}>
+                  <td className={cn(CELL, "pr-0 text-right")}>
                     <Badge variant={statusVariant(o.status)}>{label(o.status)}</Badge>
                   </td>
                 </tr>
@@ -196,6 +238,8 @@ export function OrdersTab({
           })}
         </table>
         </div>
+        )}
+        </>
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import { TICKETS_MODULE, NO_ACCESS_PATH } from "@/lib/portal/config";
 import { ticketsDatabase } from "@/lib/tickets-db";
 import { crmsDatabase } from "@/lib/crms-db";
 import { loadResults, mayReadResults } from "@/features/order-assistant/data";
+import { TopQuestionsTable } from "@/features/order-assistant/top-questions-table";
 export default async function ResultsPage() {
   const staff = await requireModule(TICKETS_MODULE);
   if (!mayReadResults(staff.role)) redirect(NO_ACCESS_PATH);
@@ -75,39 +76,13 @@ export default async function ResultsPage() {
             </section>
           ))}
         </div>
-        <section className="overflow-hidden rounded-xl border border-[#e6e1ee] bg-white">
-          <div className="flex gap-2 bg-[#fafafa] px-4 py-2.5 text-xs font-medium text-[#71717a]">
-            <span className="flex-1">Top questions this week</span>
-            <span className="w-20">Asked</span>
-            <span className="w-[170px]">Answered</span>
-          </div>
-          {r.kinds.length ? (
-            r.kinds.map(([kind, count]) => {
-              const done = r.answeredByKind[kind] ?? 0;
-              const rate = Math.round((done / count) * 100);
-              return (
-                <div
-                  className="flex gap-2 border-t border-[#f0edf4] px-4 py-3 text-[13px]"
-                  key={kind}
-                >
-                  <span className="flex-1 font-medium capitalize">
-                    {kind.replaceAll("_", " ")}
-                  </span>
-                  <span className="w-20">{count}</span>
-                  <span
-                    className={`w-[170px] ${rate >= 80 ? "text-[#1e6b3a]" : "text-[#b45309]"}`}
-                  >
-                    {rate}%
-                  </span>
-                </div>
-              );
-            })
-          ) : (
-            <p className="border-t px-4 py-3 text-[13px]">
-              No stored questions this week.
-            </p>
-          )}
-        </section>
+        <TopQuestionsTable
+          rows={r.kinds.map(([kind, count]) => ({
+            kind,
+            asked: count,
+            rate: Math.round(((r.answeredByKind[kind] ?? 0) / count) * 100),
+          }))}
+        />
         <section className="space-y-3 rounded-xl border border-[#e6e1ee] bg-white p-5">
           <div className="flex items-center gap-2">
             <h2 className="flex-1 text-[15px] font-semibold">

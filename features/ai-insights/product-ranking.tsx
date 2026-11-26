@@ -1,6 +1,8 @@
 // Rendered only inside AreaSection, which is the client boundary.
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
+import { OptionFilter, SearchBox, ClearFilters, ToolbarRow } from "@/components/shared/table-controls/table-toolbar";
 
 import type { PeriodDays, ProductFigures } from "./insights";
 import { formatMetric, METRIC_LABELS, METRICS, MIN_RATINGS, productChange, productName, rankProducts, type Metric } from "./products";
@@ -50,12 +52,16 @@ function Change({ row, metric }: { row: ProductFigures; metric: Metric }) {
 }
 
 /** A ranked list of products, used by Top products and by an area's favourites. */
-export function ProductList({ rows, metric, limit, start = 0 }: { rows: ProductFigures[]; metric: Metric; limit?: number; start?: number }) {
+export function ProductList({ rows, metric, limit, start = 0, rankOf }: {
+  rows: ProductFigures[]; metric: Metric; limit?: number; start?: number;
+  /** The row's place in the full ranking, when the list is searched, filtered or reversed. */
+  rankOf?: (row: ProductFigures) => number;
+}) {
   return (
     <ol className="flex flex-col" start={start + 1}>
       {rows.slice(start, limit === undefined ? undefined : start + limit).map((row, index) => (
-        <li key={productName(row)} className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm">
-          <span className="w-5 text-xs text-[#a1a1aa]">{start + index + 1}</span>
+        <li key={productName(row)} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm">
+          <span className="w-5 text-xs text-[#a1a1aa]">{rankOf ? rankOf(row) : start + index + 1}</span>
           <span className="min-w-0 flex-1 truncate text-[#18181b]">{productName(row)}</span>
           <span className="tabular-nums font-medium text-[#18181b]">{formatMetric(row, metric)}</span>
           <span className="w-12 text-right"><Change row={row} metric={metric} /></span>
@@ -74,12 +80,33 @@ export function ProductRanking({ products, view, onView, canSeeRatings, days, en
   days: PeriodDays; enoughData: boolean;
 }) {
   const [page, setPage] = useState(0);
-  const ranked = products && enoughData ? rankProducts(products, { scope: "all", bySize: view.bySize, metric: view.metric }) : [];
-  const pages = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE));
+  const [query, setQuery] = useState("");
+  const [size, setSize] = useState<string | undefined>(undefined);
+  const [lowestFirst, setLowestFirst] = useState(false);
+  const ranked = useMemo(
+    () => (products && enoughData ? rankProducts(products, { scope: "all", bySize: view.bySize, metric: view.metric }) : []),
+    [products, enoughData, view.bySize, view.metric],
+  );
+  const rank = useMemo(() => new Map(ranked.map((row, i) => [row, i + 1])), [ranked]);
+  const sizes = useMemo(
+    () => [...new Set(ranked.map((r) => r.size).filter((s): s is string => Boolean(s)))].sort().map((s) => ({ value: s, label: s })),
+    [ranked],
+  );
+  // Searched, filtered and ordered in the browser; each row keeps its place in the full ranking.
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const kept = ranked.filter(
+      (r) => (!needle || productName(r).toLowerCase().includes(needle)) && (!view.bySize || !size || r.size === size),
+    );
+    return lowestFirst ? kept.reverse() : kept;
+  }, [ranked, query, size, lowestFirst, view.bySize]);
+  const filtered = Boolean(query.trim()) || (view.bySize && Boolean(size));
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const current = Math.min(page, pages - 1);
   const start = current * PAGE_SIZE;
-  // A new ranking starts again from the first page.
+  // A new ranking, search, filter or order starts again from the first page.
   const changeView = (next: ProductView) => { setPage(0); onView(next); };
+  const narrow = (change: () => void) => { setPage(0); change(); };
 
   return (
     <section aria-label="Top products" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]">
@@ -99,10 +126,26 @@ export function ProductRanking({ products, view, onView, canSeeRatings, days, en
               ? `Average star rating from Customer Feedback on Orders with the product. Shown from ${MIN_RATINGS} rated Orders.`
               : `All products sold, compared with ${days === 7 ? "the week" : "the 30 days"} before.`}
           </p>
-          <ProductList rows={ranked} metric={view.metric} limit={PAGE_SIZE} start={start} />
+          <ToolbarRow label="Search and filter Top products">
+            <SearchBox label="Search products" placeholder="Search product" value={query} onChange={(v) => narrow(() => setQuery(v))} />
+            {view.bySize && sizes.length > 0 && (
+              <OptionFilter label="Size" options={sizes} value={size} onChange={(v) => narrow(() => setSize(v))} />
+            )}
+            <Toggle label="Order" value={lowestFirst ? "low" : "high"} onChange={(v) => narrow(() => setLowestFirst(v === "low"))}
+              options={[{ value: "high", label: "Highest first" }, { value: "low", label: "Lowest first" }]} />
+            {filtered && <ClearFilters onClear={() => narrow(() => { setQuery(""); setSize(undefined); })} />}
+          </ToolbarRow>
+          {shown.length === 0 ? (
+            <p className="text-sm text-[#71717a]">
+              No products match.{" "}
+              <button type="button" onClick={() => narrow(() => { setQuery(""); setSize(undefined); })} className="cursor-pointer font-medium text-[#5b2a86]">Clear filters</button>
+            </p>
+          ) : (
+            <ProductList rows={shown} metric={view.metric} limit={PAGE_SIZE} start={start} rankOf={(row) => rank.get(row) ?? 0} />
+          )}
           {pages > 1 && (
             <nav aria-label="Top products pages" className="flex items-center justify-between gap-2 border-t border-[#f0edf4] pt-3 text-xs text-[#71717a]">
-              <span className="tabular-nums">{start + 1}–{Math.min(start + PAGE_SIZE, ranked.length)} of {ranked.length}</span>
+              <span className="tabular-nums">{start + 1}–{Math.min(start + PAGE_SIZE, shown.length)} of {shown.length}</span>
               <div className="flex items-center gap-1">
                 <button type="button" aria-label="Previous page" disabled={current === 0} onClick={() => setPage(current - 1)}
                   className="rounded-lg p-1.5 text-[#52525b] hover:bg-[#f5f0fa] disabled:opacity-40 disabled:hover:bg-transparent">

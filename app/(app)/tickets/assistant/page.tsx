@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
-import { Pill } from "@/features/tickets/pill";
 import { TAB_LABELS } from "@/features/tickets/ticket-list";
 import { TICKET_TABS } from "@/features/tickets/tickets";
 import { requireModule } from "@/lib/portal/staff";
@@ -11,22 +10,7 @@ import {
   mayReadResults,
   todaysCounts,
 } from "@/features/order-assistant/data";
-import {
-  handoffReason,
-  waitingFor,
-} from "@/features/order-assistant/handoff-reasons";
-import { SourceTag } from "@/features/order-assistant/source-tag";
-import { cn } from "@/lib/utils";
-
-const COLS = [
-  ["Ticket", "w-[100px] shrink-0"],
-  ["Customer", "w-[150px] shrink-0"],
-  ["Subject", "min-w-0 flex-1"],
-  ["Why handed off", "w-[230px] shrink-0"],
-  ["Order", "w-[100px] shrink-0"],
-  ["Waiting", "w-[90px] shrink-0"],
-  ["Assignee", "w-[120px] shrink-0"],
-] as const;
+import { HandoffTable } from "@/features/order-assistant/handoff-table";
 
 function Stat({ label, value, note }: { label: string; value: string; note: string }) {
   return (
@@ -113,63 +97,18 @@ export default async function AssistantTickets() {
           </Link>
         )}
       </nav>
-      <div className="min-h-0 overflow-auto rounded-xl border border-[#e6e1ee] bg-white">
-        <div className="min-w-[1000px]">
-          <div className="flex items-center gap-2 bg-[#fafafa] px-4 py-2.5 text-xs font-medium text-[#71717a]">
-            {COLS.map(([h, c]) => (
-              <div key={h} className={c}>
-                {h}
-              </div>
-            ))}
-          </div>
-          {rows.map((r) => {
-            const why = handoffReason(r.reason);
-            const href = `/tickets/${r.ticket_id}`;
-            const hours = (+now - +r.sent_at) / 3600000;
-            return (
-              <Link
-                href={href}
-                prefetch
-                key={r.ticket_id}
-                className="flex items-center gap-2 border-t border-[#f0edf4] px-4 py-3 text-[13px] text-[#18181b]"
-              >
-                <div className={cn(COLS[0][1], "font-semibold text-[#5b2a86]")}>
-                  TKT-{r.ticket_id}
-                </div>
-                <div className={cn(COLS[1][1], "truncate font-semibold")}>
-                  {r.customer_name}
-                </div>
-                <div className={cn(COLS[2][1], "flex flex-col items-start gap-0.5")}>
-                  <span className="truncate font-medium">{r.subject}</span>
-                  <SourceTag />
-                </div>
-                <div className={cn(COLS[3][1], "flex flex-col items-start gap-0.5")}>
-                  <Pill className={why.tone}>{why.label}</Pill>
-                  {why.note && (
-                    <span className="text-xs text-[#71717a]">{why.note}</span>
-                  )}
-                </div>
-                <div className={cn(COLS[4][1], "font-semibold text-[#5b2a86]")}>
-                  {r.order_id ? `BR-${r.order_id}` : "—"}
-                </div>
-                <div className={cn(COLS[5][1], hours >= 0.5 && "text-[#b45309]")}>
-                  {waitingFor(r.sent_at, now)}
-                </div>
-                <div className={COLS[6][1]}>
-                  {r.claimed_by_name ?? (
-                    <Pill className="bg-[#fdf1d8] text-[#8a5a00]">Unassigned</Pill>
-                  )}
-                </div>
-              </Link>
-            );
-          })}
-          {!rows.length && (
-            <p className="p-5 text-sm text-[#6e6680]">
-              No handed-off Tickets yet.
-            </p>
-          )}
-        </div>
-      </div>
+      <HandoffTable
+        now={now}
+        rows={rows.map((r) => ({
+          ticket_id: r.ticket_id,
+          reason: r.reason,
+          sent_at: r.sent_at,
+          subject: r.subject,
+          customer_name: r.customer_name,
+          order_id: r.order_id,
+          claimed_by_name: r.claimed_by_name,
+        }))}
+      />
       <div className="flex shrink-0 gap-2.5 rounded-[10px] bg-[#ede4f7] p-3 text-[#5b2a86]">
         <Sparkles className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div>

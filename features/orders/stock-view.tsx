@@ -1,7 +1,7 @@
 "use client";
 
-import { Link2, Pencil, Search } from "lucide-react";
-import { useState } from "react";
+import { Link2, Pencil } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import Link from "next/link";
 
@@ -11,6 +11,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ProductEditDrawer } from "./product-edit-drawer";
 import { PILL, Pill } from "@/features/tickets/pill";
 import { cn } from "@/lib/utils";
+import {
+  StateSortHeader,
+  stateAriaSort,
+  TableToolbar,
+  useTableState,
+} from "@/components/shared/table-controls/use-table-state";
+import type { ColumnDef } from "@/lib/table/sort-filter";
 
 import { LOW_STOCK_BELOW, rowLabel, shopLabel, type HoldingOrder, type StockPage, type StockRow } from "./stock";
 
@@ -29,6 +36,20 @@ function ShowsPill({ row }: { row: StockRow }) {
   const tone = isSoldOut(row) ? PILL.red : isLow(row) ? PILL.amber : row.shows === "Unknown" ? PILL.grey : PILL.green;
   return <Pill className={tone}>{shopLabel(row.shows)}</Pill>;
 }
+
+const showsText = (row: StockRow) =>
+  row.marker
+    ? row.marker.kind === "discontinued" ? "Discontinued" : row.marker.kind === "removed" ? "Removed from store" : "Not on shop"
+    : shopLabel(row.shows);
+
+const STOCK_COLUMNS: ColumnDef<StockRow>[] = [
+  { key: "product", label: "Products", sortValue: rowLabel, searchText: rowLabel },
+  { key: "price", label: "Price", sortValue: (r) => r.price },
+  { key: "stock", label: "Stocks", sortValue: (r) => r.inStock },
+  { key: "reserved", label: "Reserved", sortValue: (r) => r.reserved },
+  { key: "shows", label: "Shop shows", sortValue: showsText, filter: { label: "Shop shows", value: showsText } },
+  { key: "size", label: "Size", filter: { label: "Size", value: (r) => r.size || null } },
+];
 
 const quantity = (value: number | null) => (value === null ? "–" : value);
 const sizes = (count: number) => `${count} ${count === 1 ? "size" : "sizes"}`;
@@ -121,7 +142,6 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
 /** `canEdit` is false for the read-only Roles (Admin), who see no edit button; `canPrice` is for Manager-level Roles only. */
 export function StockView({ page, canEdit = false, canPrice = false, initialQuery = "" }: { page: StockPage; canEdit?: boolean; canPrice?: boolean; /** The search the page opened with, e.g. from an Order line. */ initialQuery?: string }) {
   const [tab, setTab] = useState<Tab>("in-store");
-  const [query, setQuery] = useState(initialQuery);
   const [opened, setOpened] = useState<StockRow | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const { summary } = page;
@@ -131,10 +151,17 @@ export function StockView({ page, canEdit = false, canPrice = false, initialQuer
     { id: "low", label: "Low stock", count: summary.low },
     { id: "sold-out", label: "Sold out", count: summary.soldOut },
   ];
-  const needle = query.trim().toLowerCase();
-  const rows = page.rows
-    .filter((row) => (tab === "in-store" ? inStore(row) : tab === "low" ? isLow(row) : tab === "sold-out" ? isSoldOut(row) : true))
-    .filter((row) => !needle || rowLabel(row).toLowerCase().includes(needle));
+  const inTab = useMemo(
+    () => page.rows.filter((row) => (tab === "in-store" ? inStore(row) : tab === "low" ? isLow(row) : tab === "sold-out" ? isSoldOut(row) : true)),
+    [page.rows, tab],
+  );
+  const table = useTableState(inTab, STOCK_COLUMNS, { initialQuery });
+  const rows = table.rows;
+  const heading = (key: string, className: string, align?: "right") => (
+    <div role="columnheader" aria-sort={stateAriaSort(table, key)} className={className}>
+      <StateSortHeader state={table} columnKey={key} align={align} />
+    </div>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
@@ -174,29 +201,29 @@ export function StockView({ page, canEdit = false, canPrice = false, initialQuer
       <div className="overflow-x-auto rounded-xl border border-[#e6e1ee] bg-white">
         <div className="min-w-[920px]">
           <div className="p-3">
-            <label className="flex w-[260px] items-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-3 py-1.5">
-              <Search className="size-3.5 text-[#71717a]" aria-hidden />
-              <input
-                type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product" aria-label="Search product"
-                className="w-full bg-transparent text-[13px] text-[#18181b] outline-none placeholder:text-[#a1a1aa]"
-              />
-            </label>
+            <TableToolbar state={table} label="Search and filter products" searchLabel="Search product" placeholder="Search product" />
           </div>
-          <div className={cn(GRID, "rounded-t-xl bg-[#fafafa] py-2.5 text-xs font-medium text-[#71717a]")}>
-            <div className="min-w-0 flex-1">Products</div>
-            <div className={COLUMN.price}>Price</div>
-            <div className={COLUMN.stock}>Stocks</div>
-            <div className={COLUMN.reserved}>Reserved</div>
-            <div className={COLUMN.shows}>Shop shows</div>
+          <div role="row" className={cn(GRID, "justify-between rounded-t-xl bg-[#fafafa] py-2.5 text-xs font-medium text-[#71717a]")}>
+            {heading("product", "min-w-0 flex-1")}
+            {heading("price", COLUMN.price, "right")}
+            {heading("stock", COLUMN.stock, "right")}
+            {heading("reserved", COLUMN.reserved, "right")}
+            {heading("shows", COLUMN.shows)}
             <div className={COLUMN.edit} />
           </div>
-          {rows.length === 0 && <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">{tab === "in-store" && !needle ? "Nothing is on the shop yet." : "No sizes here."}</p>}
+          {rows.length === 0 && (
+            <p className="border-t border-[#f0edf4] p-8 text-center text-sm text-[#6e6680]">
+              {table.filtered ? (
+                <>No sizes match. <button type="button" onClick={table.clear} className="cursor-pointer font-medium text-[#5b2a86]">Clear filters</button></>
+              ) : tab === "in-store" ? "Nothing is on the shop yet." : "No sizes here."}
+            </p>
+          )}
           {rows.map((row) => {
             // The row opens the edit drawer for those who may edit, otherwise the Orders holding it, if any.
             const open = canEdit ? () => setEditingId(row.sizeId) : (row.orders?.length ?? 0) > 0 ? () => setOpened(row) : null;
             return (
             <div key={row.sizeId} data-stock-row {...(open ? rowButton(open, `Open ${rowLabel(row)}`) : {})}
-              className={cn(GRID, "border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", open && CLICKABLE_ROW, isSoldOut(row) && "bg-[#fff7f7]")}>
+              className={cn(GRID, "justify-between border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", open && CLICKABLE_ROW, isSoldOut(row) && "bg-[#fff7f7]")}>
               <ProductImage row={row} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{rowLabel(row)}</p>

@@ -7,7 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-import { CELL, COLUMNS } from "./ticket-layout";
+import { CELL, COLUMNS, HEAD, ROW } from "./ticket-layout";
+import { StateSortHeader, stateAriaSort, useTableState } from "@/components/shared/table-controls/use-table-state";
+import type { ColumnDef } from "@/lib/table/sort-filter";
 import { ClaimProvider, useClaim } from "./claim";
 import { listTicketNotes, type TicketNote } from "./actions";
 import { EscalateDialog } from "./escalate-ui";
@@ -32,6 +34,15 @@ function ServiceCell({ clock }: { clock: Clock }) {
     : "text-[#6e6680]";
 
   return <span className={cn("font-medium", tone)}>{describeClock(clock)}</span>;
+}
+
+/** The word the Status pill shows. */
+function statusText(row: TicketRow): string {
+  if (row.status === "resolved") return "Resolved";
+  if (row.status === "completed") return "Completed";
+  if (row.overdue) return "Overdue";
+  if (row.waiting) return "Waiting";
+  return "Open";
 }
 
 function StatusPill({ row }: { row: TicketRow }) {
@@ -243,7 +254,7 @@ export function TicketRows({ rows, viewer, staffs, now, openId = null }: { rows:
             aria-label={`Open TKT-${r.id}`}
             onClick={() => choose(r.id)}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(r.id); } }}
-            className="flex cursor-pointer items-center border-b border-[#efebf4] py-[11px] hover:bg-[#faf8fc]"
+            className={cn(ROW, "cursor-pointer border-b border-[#efebf4] py-[11px] hover:bg-[#faf8fc]")}
           >
             <div className={cn(CELL, COLUMNS[0].className, "flex-col items-start gap-1 pr-3")}>
               <span className="max-w-full truncate font-medium">(#{r.id}) {r.subject}</span>
@@ -273,6 +284,48 @@ export function TicketRows({ rows, viewer, staffs, now, openId = null }: { rows:
           {row && <TicketDrawerBody key={row.id} row={row} viewer={viewer} staffs={staffs} now={now} />}
         </SheetContent>
       </Sheet>
+    </>
+  );
+}
+
+const PRIORITY_RANK: Record<string, number> = { low: 0, normal: 1, high: 2, urgent: 3 };
+
+/** Time left on the countdown; a stopped or finished clock sorts after every running one. */
+function serviceSortValue(row: TicketRow): number | null {
+  const clock = row.serviceLevel.current;
+  if (clock.state === "done" || clock.state === "met" || clock.remainingSeconds === null) return null;
+  return clock.remainingSeconds;
+}
+
+const TICKET_COLUMNS: ColumnDef<TicketRow>[] = [
+  { key: "details", label: "Details", sortValue: (r) => new Date(r.lastActivity) },
+  { key: "service", label: "Service level", sortValue: serviceSortValue },
+  { key: "assigned", label: "Assigned", sortValue: (r) => r.claimedByName },
+  { key: "priority", label: "Priority", sortValue: (r) => PRIORITY_RANK[r.priority] },
+  { key: "activity", label: "Activity status", sortValue: (r) => activityLabel(r).text },
+  { key: "status", label: "Status", sortValue: statusText },
+];
+
+/**
+ * The Tickets on this page with headings that sort in the browser, at once. The search and filters above the
+ * list (TicketToolbar) still ask the server, since they reach every page. Starts in the server's order.
+ */
+export function TicketTable(props: { rows: TicketRow[]; viewer: RowsViewer; staffs: AssignableStaff[]; now: number; openId?: number | null }) {
+  const table = useTableState(props.rows, TICKET_COLUMNS);
+
+  return (
+    <>
+      <div
+        role="row"
+        className={cn(ROW, "sticky top-0 z-10 border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]")}
+      >
+        {COLUMNS.map((col) => (
+          <div key={col.key} role="columnheader" aria-sort={stateAriaSort(table, col.key)} className={cn(HEAD, col.className)}>
+            <StateSortHeader state={table} columnKey={col.key} align={col.align} />
+          </div>
+        ))}
+      </div>
+      <TicketRows {...props} rows={table.rows} />
     </>
   );
 }

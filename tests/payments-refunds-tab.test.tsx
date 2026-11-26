@@ -25,7 +25,10 @@ it("records each settled refund on its own tab, opening at once from what the pa
   for (const text of ["Maria Santos", "₱1,200.00", "GCash", "GC-9981", "Mario Cruz"]) expect(within(row).getByText(text)).toBeTruthy();
   expect(within(row).getByRole("link", { name: "RMA-15" }).getAttribute("href")).toBe("/returns/15");
   expect(within(row).getByRole("link", { name: "#7" }).getAttribute("href")).toBe("/orders/7");
-  expect(screen.queryByRole("button", { name: /refund/i })).toBeNull();
+  // Read-only: the only buttons naming a refund are the column sort headings.
+  expect(
+    screen.queryAllByRole("button", { name: /refund/i }).filter((b) => !/^Sort by |, sorted /.test(b.getAttribute("aria-label") ?? "")),
+  ).toHaveLength(0);
 });
 
 it("names the Return without a link for Staff who cannot open Returns, and says when there are none or they could not be read", () => {

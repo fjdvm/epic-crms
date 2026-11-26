@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Check, ChevronDown, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
-import { useOptimistic, useState } from "react";
+import { useMemo, useOptimistic, useState } from "react";
 
 import { ABOVE_ROW_LINK, CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -14,6 +14,14 @@ import { PaymentProofChecksView } from "./payment-proof-checks-view";
 import { hasPaymentAnomaly } from "./payment-anomaly";
 import { ProofReadFindings } from "./proof-read-view";
 import { CELL, COLUMNS, GRID, HEAD, STEPS, TABS } from "./payments-layout";
+import {
+  NoMatches,
+  StateSortHeader,
+  stateAriaSort,
+  TableToolbar,
+  useTableState,
+} from "@/components/shared/table-controls/use-table-state";
+import type { ColumnDef } from "@/lib/table/sort-filter";
 import type { ShopRole } from "@/lib/portal/roles";
 import { ApproveAnywayDialog, CancelPaymentDialog, MarkPaidDialog, RejectProofDialog } from "./payments-actions";
 import { MANAGER_AFTER_REJECTIONS } from "./payment-methods";
@@ -26,6 +34,28 @@ import type { RefundRow } from "./refunds";
 import { RefundsTable } from "./refunds-table";
 
 const METHOD: Record<PaymentRow["method"], string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on delivery" };
+
+/** What each column sorts, searches and filters by. "Uploaded" is when the review began on the Manager review tab. */
+function paymentColumns(tab: PaymentTab | "refunds"): ColumnDef<PaymentRow>[] {
+  return [
+    { key: "order", label: "Order", sortValue: (r) => r.id, searchText: (r) => `#${r.id}` },
+    { key: "customer", label: "Customer", sortValue: (r) => r.customer.name, searchText: (r) => r.customer.name },
+    {
+      key: "method",
+      label: "Method",
+      sortValue: (r) => METHOD[r.method],
+      filter: { label: "Method", value: (r) => METHOD[r.method] },
+    },
+    { key: "reference", label: "Reference", sortValue: (r) => r.proof?.reference, searchText: (r) => r.proof?.reference },
+    { key: "amount", label: "Amount due", sortValue: (r) => r.total },
+    {
+      key: "uploaded",
+      label: "Uploaded",
+      sortValue: (r) =>
+        tab === "review" && r.review ? new Date(r.review.startedAt) : r.proof ? new Date(r.proof.submittedAt) : null,
+    },
+  ];
+}
 
 /** "10 min ago", "3 hrs ago", "2 days ago". */
 function ago(date: Date, now: Date): string {
@@ -257,7 +287,10 @@ export function PaymentsView({ rows: served, now, role = "staff", approvals = {}
   );
   const [tab, setTab] = useState<PaymentTab | "refunds">("verify");
   const summary = summarize(rows, now);
-  const shown = tab === "refunds" ? [] : summary.tabs[tab];
+  const inTab = tab === "refunds" ? [] : summary.tabs[tab];
+  const columns = useMemo(() => paymentColumns(tab), [tab]);
+  const table = useTableState(inTab, columns);
+  const shown = table.rows;
   const empty = TABS.find((t) => t.key === tab)?.empty ?? "";
 
   return (
@@ -313,20 +346,26 @@ export function PaymentsView({ rows: served, now, role = "staff", approvals = {}
         </button>
       </div>
 
+      {tab !== "refunds" && (
+        <TableToolbar state={table} label="Search and filter payments" searchLabel="Search payments" placeholder="Order no., customer or reference" />
+      )}
+
       <div className="flex min-h-0 flex-1 gap-4">
         {/* No padding on the scroller, so the sticky header sits flush at its top edge; the content carries the padding. */}
         <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[#e6e1ee] bg-white">
           {tab === "refunds" ? (
             <div className="p-5"><RefundsTable refunds={refunds} canOpenReturns={canOpenReturns} /></div>
-          ) : shown.length === 0 ? (
+          ) : inTab.length === 0 ? (
             <p className="p-8 text-center text-sm text-[#6e6680]">{empty}</p>
+          ) : shown.length === 0 ? (
+            <NoMatches noun="payments" onClear={table.clear} />
           ) : (
             <div className="min-w-[860px] pb-5">
               {/* Lined up with the row cards: the page padding, the card border and the card's own inset. */}
               <div className={`${GRID} sticky top-0 z-30 mb-2 items-center border-b border-[#efebf4] bg-white px-[29px] pt-6 pb-2 text-xs font-medium leading-[normal] text-[#6e6680]`}>
-                {COLUMNS.map((col, i) => (
-                  <div key={i} className={`${HEAD} ${col.className}`}>
-                    {col.header}
+                {COLUMNS.map((col) => (
+                  <div key={col.key} role="columnheader" aria-sort={stateAriaSort(table, col.key)} className={`${HEAD} ${col.className}`}>
+                    {col.header && <StateSortHeader state={table} columnKey={col.key} align={col.align} />}
                   </div>
                 ))}
               </div>
