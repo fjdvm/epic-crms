@@ -10,6 +10,7 @@ import { PaymentWindowForm } from "@/features/management/payment-window-form";
 import { loadPaymentWindow } from "@/features/management/payment-window";
 import { AutomaticChecksForm } from "@/features/management/automatic-checks-form";
 import { ServiceLevelsForm } from "@/features/management/service-levels-form";
+import { SettingsGroup } from "@/features/management/settings-card";
 import { loadAutomaticChecks } from "@/features/settings/automatic-checks";
 import { currentTargets } from "@/features/tickets/service-level-store";
 import { requireManagement } from "@/lib/portal/staff";
@@ -30,27 +31,21 @@ export default async function CommerceSettingsPage() {
 
   return (
     <CommerceSettingsFrame>
-      {/* One column on a phone. With two columns, the Payment window and the Service levels share a row so they sit level. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2">
-        <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:pr-8">
-          <PaymentAccountList accounts={accounts ?? []} failed={accounts === null} disabledMethods={disabled} />
-        </div>
-        <div className="mt-8 min-w-0 border-t border-[#e6e1ee] pt-8 lg:col-start-1 lg:row-start-2 lg:pr-8">
-          <PaymentWindowForm currentHours={paymentWindow} />
-        </div>
-        <div className="mt-8 min-w-0 border-t border-[#e6e1ee] pt-8 lg:col-start-2 lg:row-start-1 lg:mt-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
+      <SettingsGroup title="Payments">
+        <PaymentAccountList accounts={accounts ?? []} failed={accounts === null} disabledMethods={disabled} />
+      </SettingsGroup>
+      <SettingsGroup title="Orders and tickets">
+        {/* Equal-height cards in a 2×2 grid, so each row's Save buttons sit level. */}
+        <div className="grid grid-cols-2 gap-5">
           <FreeDeliveryForm currentInCentavos={threshold} />
-          <div className="mt-8 border-t border-[#e6e1ee] pt-8">
-            <SeniorPwdDiscountForm current={discount} />
-          </div>
-        </div>
-        <div className="mt-8 min-w-0 border-t border-[#e6e1ee] pt-8 lg:col-start-2 lg:row-start-2 lg:border-l lg:pl-8">
+          <SeniorPwdDiscountForm current={discount} />
+          <PaymentWindowForm currentHours={paymentWindow} />
           <ServiceLevelsForm current={targets} />
         </div>
-      </div>
-      <div className="mt-8 border-t border-[#e6e1ee] pt-8">
+      </SettingsGroup>
+      <SettingsGroup title="Checks and alerts">
         <AutomaticChecksForm initial={checks} />
-      </div>
+      </SettingsGroup>
     </CommerceSettingsFrame>
   );
 }

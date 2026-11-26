@@ -7,7 +7,9 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import type { AutomaticChecks } from "@/features/settings/automatic-checks";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 
+import { SettingsCard } from "./settings-card";
 import { changeAutomaticChecks } from "./settings-actions";
+
 import { centavosToPesos, pesosToCentavos, toWhole } from "./settings-format";
 
 /** Numbers are kept as typed so a half-typed value does not jump; they are checked before saving. */
@@ -54,8 +56,9 @@ export function buildChecks(draft: Draft): AutomaticChecks | null {
   };
 }
 
-const group = "space-y-2.5";
-const groupTitle = "text-sm font-semibold text-[#1f1a2e]";
+const panel = "space-y-1 rounded-lg border border-[#e6e1ee] p-4";
+const panelTitle = "pb-1 text-sm font-semibold text-[#1f1a2e]";
+const inline = "flex flex-wrap items-center gap-1.5";
 
 /**
  * Plain rules that only ever flag, never block. A Manager switches each rule and edits its numbers. The
@@ -64,7 +67,11 @@ const groupTitle = "text-sm font-semibold text-[#1f1a2e]";
 export function AutomaticChecksForm({ initial, overdueUrl = null }: { initial: AutomaticChecks | null; overdueUrl?: string | null }) {
   const [draft, setDraft] = useState<Draft | null>(initial ? draftOf(initial) : null);
   if (!draft || !initial) {
-    return <p className="text-sm text-[#dc2626]" role="alert">The Automatic checks could not be read from CREOMS. Reload to try again.</p>;
+    return (
+      <SettingsCard title="Automatic checks">
+        <p className="text-sm text-[#dc2626]" role="alert">The Automatic checks could not be read from CREOMS. Reload to try again.</p>
+      </SettingsCard>
+    );
   }
 
   const next = buildChecks(draft);
@@ -73,12 +80,16 @@ export function AutomaticChecksForm({ initial, overdueUrl = null }: { initial: A
   const edit = (change: (current: AutomaticChecks) => AutomaticChecks) => setDraft({ ...draft, checks: change(checks) });
   const setText = (key: string, value: string) => setDraft({ ...draft, text: { ...draft.text, [key]: value } });
 
-  const number = (key: string, label: string, width = "w-16") => (
-    <NumericInput aria-label={label} className={`inline-block h-8 ${width} px-2 text-center`} kind="whole" value={draft.text[key]} onChange={(e) => setText(key, e.target.value)} />
+  /** A number box kept on one line with what follows it ("+", "days", "h"), so a unit never wraps away from its number. */
+  const number = (key: string, label: string, after = "") => (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      <NumericInput aria-label={label} className="inline-block h-7 w-12 px-1.5 text-center" kind="whole" value={draft.text[key]} onChange={(e) => setText(key, e.target.value)} />
+      {after}
+    </span>
   );
   const rule = (name: string, enabled: boolean, onChange: (on: boolean) => void, label: ReactNode) => (
-    <div className="flex items-start gap-2.5 text-sm text-[#1f1a2e]" key={name}>
-      <Checkbox aria-label={name} checked={enabled} onCheckedChange={(on) => onChange(on === true)} className="mt-0.5" />
+    <div className="flex min-h-9 items-center gap-2.5 text-sm text-[#1f1a2e]" key={name}>
+      <Checkbox aria-label={name} checked={enabled} onCheckedChange={(on) => onChange(on === true)} />
       <span className="min-w-0 flex-1">{label}</span>
     </div>
   );
@@ -87,82 +98,89 @@ export function AutomaticChecksForm({ initial, overdueUrl = null }: { initial: A
   const setProof = (key: keyof typeof proof) => (on: boolean) => edit((c) => ({ ...c, paymentProof: { ...c.paymentProof, [key]: { enabled: on } } }));
 
   return (
-    <section className="space-y-5">
-      <div className="space-y-1">
-        <h2 className="text-base font-semibold text-[#1f1a2e]">Automatic checks</h2>
-        <p className="text-sm text-[#6e6680]">Simple rules that run every time. They flag things for staff; they never cancel, reject or steer a customer on their own.</p>
-      </div>
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-0">
-        <div className="space-y-6 md:pr-6">
-          <div className={group}>
-            <h3 className={groupTitle}>GCash payment proof</h3>
-            {rule("Reference already used", proof.reference.enabled, setProof("reference"), "Flag a reference number already used on another order")}
-            {rule("Amount mismatch", proof.amount.enabled, setProof("amount"), "Flag when the amount doesn't match the order total")}
-            {rule("Date before the order", proof.date.enabled, setProof("date"), "Flag when the date is before the order was placed")}
-            {rule("Recipient mismatch", proof.recipient.enabled, setProof("recipient"), "Flag when the recipient isn't the shop's GCash number")}
-          </div>
-          <div className={group}>
-            <h3 className={groupTitle}>Cash on delivery flags (shown to staff when confirming)</h3>
-            {rule("First order", cod.firstOrder.enabled, (on) => edit((c) => ({ ...c, cod: { ...c.cod, firstOrder: { enabled: on } } })), "First order")}
-            {rule("First order over an amount", cod.firstOrderOverAmount.enabled,
-              (on) => edit((c) => ({ ...c, cod: { ...c.cod, firstOrderOverAmount: { ...c.cod.firstOrderOverAmount, enabled: on } } })),
-              <span className="flex flex-wrap items-center gap-1.5">First order over ₱
-                <NumericInput aria-label="First order amount in pesos" className="inline-block h-8 w-24 px-2" kind="whole" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
-              </span>)}
-            {rule("Past refused deliveries", cod.earlierRefusal.enabled, (on) => edit((c) => ({ ...c, cod: { ...c.cod, earlierRefusal: { enabled: on } } })), "Past refused deliveries")}
+    <SettingsCard
+      title="Automatic checks"
+      description="Simple rules that run every time. They flag things for staff; they never cancel, reject or steer a customer on their own."
+      footerClassName="sticky bottom-0 z-10"
+      footer={
+        <>
+          {next === null ? (
+            <p className="text-xs text-[#dc2626]" role="alert">Enter whole numbers: counts up to 1000, days up to 3650, hours up to 8760, pesos 0 or more.</p>
+          ) : changed ? (
+            <p className="text-xs font-medium text-[#4a2377]">Unsaved changes</p>
+          ) : (
+            <p className="text-xs text-[#6e6680]">No changes</p>
+          )}
+          <OrderActionDialog
+            trigger="Save automatic checks"
+            title="Change the Automatic checks?"
+            description="The new switches and numbers apply from now on. They only flag; nothing is blocked or cancelled. The change is logged under your name."
+            confirm="Save automatic checks"
+            busy="Saving…"
+            disabled={!changed}
+            triggerDisabled={!changed}
+            run={() => changeAutomaticChecks(next)}
+            successMessage="Automatic checks saved."
+          />
+        </>
+      }
+    >
+      <div className="grid grid-cols-2 gap-4">
+        <div className={panel}>
+          <h4 className={panelTitle}>GCash payment proof</h4>
+          {rule("Reference already used", proof.reference.enabled, setProof("reference"), "Flag a reference number already used on another order")}
+          {rule("Amount mismatch", proof.amount.enabled, setProof("amount"), "Flag when the amount doesn't match the order total")}
+          {rule("Date before the order", proof.date.enabled, setProof("date"), "Flag when the date is before the order was placed")}
+          {rule("Recipient mismatch", proof.recipient.enabled, setProof("recipient"), "Flag when the recipient isn't the shop's GCash number")}
+        </div>
+        <div className={panel}>
+          <h4 className={panelTitle}>Cash on delivery flags</h4>
+          <p className="pb-1 text-xs text-[#6e6680]">Shown to staff when confirming an order.</p>
+          {rule("First order", cod.firstOrder.enabled, (on) => edit((c) => ({ ...c, cod: { ...c.cod, firstOrder: { enabled: on } } })), "First order")}
+          {rule("First order over an amount", cod.firstOrderOverAmount.enabled,
+            (on) => edit((c) => ({ ...c, cod: { ...c.cod, firstOrderOverAmount: { ...c.cod.firstOrderOverAmount, enabled: on } } })),
+            <span className={inline}>First order over ₱
+              <NumericInput aria-label="First order amount in pesos" className="inline-block h-7 w-20 px-1.5" kind="whole" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
+            </span>)}
+          {rule("Past refused deliveries", cod.earlierRefusal.enabled, (on) => edit((c) => ({ ...c, cod: { ...c.cod, earlierRefusal: { enabled: on } } })), "Past refused deliveries")}
+        </div>
+        <div className={panel}>
+          <h4 className={panelTitle}>Returns</h4>
+          {rule("Frequent returns", returns.frequentReturns.enabled,
+            (on) => edit((c) => ({ ...c, returns: { ...c.returns, frequentReturns: { ...c.returns.frequentReturns, enabled: on } } })),
+            <span className={inline}>Flag a customer with {number("returns.count", "Returns to flag", "+")} returns in {number("returns.days", "Days for returns", "days")}</span>)}
+          {rule("Photo already used", returns.reusedPhoto.enabled, (on) => edit((c) => ({ ...c, returns: { ...c.returns, reusedPhoto: { enabled: on } } })), "Flag a photo already used on another return (photo hash)")}
+        </div>
+        <div className={panel}>
+          <h4 className={panelTitle}>Senior/PWD IDs</h4>
+          <div className="flex min-h-9 items-center gap-2.5 text-sm text-[#6e6680]">
+            <Checkbox aria-label="Duplicate Senior/PWD ID" checked disabled />
+            <span className="min-w-0 flex-1">Block the same ID number on a second account (hash)</span>
+            <span className="shrink-0 rounded-full bg-[#f0f0f2] px-2 py-0.5 text-xs font-medium">Always on</span>
           </div>
         </div>
-        <div className="space-y-6 border-t border-[#e6e1ee] pt-6 md:border-t-0 md:border-l md:pt-0 md:pl-6">
-          <div className={group}>
-            <h3 className={groupTitle}>Senior/PWD IDs</h3>
-            <div className="flex items-start gap-2.5 text-sm text-[#1f1a2e]">
-              <Checkbox aria-label="Duplicate Senior/PWD ID" checked disabled className="mt-0.5" />
-              <span>Block the same ID number on a second account (hash)</span>
-            </div>
-            <p className="text-xs text-[#6e6680]">Always on. This check cannot be switched off.</p>
-          </div>
-          <div className={group}>
-            <h3 className={groupTitle}>Returns</h3>
-            {rule("Frequent returns", returns.frequentReturns.enabled,
-              (on) => edit((c) => ({ ...c, returns: { ...c.returns, frequentReturns: { ...c.returns.frequentReturns, enabled: on } } })),
-              <span className="flex flex-wrap items-center gap-1.5">Flag a customer with {number("returns.count", "Returns to flag")}+ returns in {number("returns.days", "Days for returns")} days</span>)}
-            {rule("Photo already used", returns.reusedPhoto.enabled, (on) => edit((c) => ({ ...c, returns: { ...c.returns, reusedPhoto: { enabled: on } } })), "Flag a photo already used on another return (photo hash)")}
-          </div>
-          <div className={group}>
-            <h3 className={groupTitle}>Dashboard alerts</h3>
-            {rule("Unverified payments", dash.unverifiedPayments.enabled,
-              (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, unverifiedPayments: { ...c.dashboard.unverifiedPayments, enabled: on } } })),
-              <span className="flex flex-wrap items-center gap-1.5">Unverified payments: {number("unverified.count", "Unverified payments to alert")}+ or waiting over {number("unverified.waitHours", "Hours a proof may wait")} h</span>)}
-            {rule("Returns on one product", dash.returnSpike.enabled,
-              (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, returnSpike: { ...c.dashboard.returnSpike, enabled: on } } })),
-              <span className="flex flex-wrap items-center gap-1.5">Returns on one product: {number("spike.count", "Returns on one product")}+ in {number("spike.days", "Days for returns on one product")} days</span>)}
-            {rule("Unresolved failed deliveries", dash.unresolvedFailedDeliveries.enabled,
-              (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, unresolvedFailedDeliveries: { ...c.dashboard.unresolvedFailedDeliveries, enabled: on } } })),
-              <span className="flex flex-wrap items-center gap-1.5">Unresolved failed deliveries: {number("failed.count", "Unresolved failed deliveries")}+ unresolved</span>)}
-            {rule("Orders not confirmed in time", dash.unconfirmedOrders.enabled,
-              (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, unconfirmedOrders: { ...c.dashboard.unconfirmedOrders, enabled: on } } })),
-              <span className="flex flex-wrap items-center gap-1.5">Orders not confirmed within {number("unconfirmed.hours", "Hours to confirm an order")} h</span>)}
-            {rule("Payment reviews not settled in time", dash.paymentReviews.enabled,
-              (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, paymentReviews: { ...c.dashboard.paymentReviews, enabled: on } } })),
-              <span className="flex flex-wrap items-center gap-1.5">Manager payment reviews not settled within {number("reviews.hours", "Hours to settle a payment review")} h</span>)}
-            <p className="pl-7 text-sm text-[#1f1a2e]">
-              Tickets breaching SLA: any{overdueUrl ? <> · <a className="underline" href={overdueUrl}>View overdue tickets</a></> : null}
-            </p>
-          </div>
+        <div className={`${panel} col-span-2`}>
+          <h4 className={panelTitle}>Dashboard alerts</h4>
+          {rule("Unverified payments", dash.unverifiedPayments.enabled,
+            (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, unverifiedPayments: { ...c.dashboard.unverifiedPayments, enabled: on } } })),
+            <span className={inline}>Unverified payments: {number("unverified.count", "Unverified payments to alert", "+")} or waiting over {number("unverified.waitHours", "Hours a proof may wait", "h")}</span>)}
+          {rule("Returns on one product", dash.returnSpike.enabled,
+            (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, returnSpike: { ...c.dashboard.returnSpike, enabled: on } } })),
+            <span className={inline}>Returns on one product: {number("spike.count", "Returns on one product", "+")} in {number("spike.days", "Days for returns on one product", "days")}</span>)}
+          {rule("Unresolved failed deliveries", dash.unresolvedFailedDeliveries.enabled,
+            (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, unresolvedFailedDeliveries: { ...c.dashboard.unresolvedFailedDeliveries, enabled: on } } })),
+            <span className={inline}>Unresolved failed deliveries: {number("failed.count", "Unresolved failed deliveries", "+")} unresolved</span>)}
+          {rule("Orders not confirmed in time", dash.unconfirmedOrders.enabled,
+            (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, unconfirmedOrders: { ...c.dashboard.unconfirmedOrders, enabled: on } } })),
+            <span className={inline}>Orders not confirmed within {number("unconfirmed.hours", "Hours to confirm an order", "h")}</span>)}
+          {rule("Payment reviews not settled in time", dash.paymentReviews.enabled,
+            (on) => edit((c) => ({ ...c, dashboard: { ...c.dashboard, paymentReviews: { ...c.dashboard.paymentReviews, enabled: on } } })),
+            <span className={inline}>Manager payment reviews not settled within {number("reviews.hours", "Hours to settle a payment review", "h")}</span>)}
+          <p className="flex min-h-9 items-center pl-6.5 text-sm text-[#6e6680]">
+            Tickets breaching SLA: any{overdueUrl ? <> · <a className="ml-1 underline" href={overdueUrl}>View overdue tickets</a></> : null}
+          </p>
         </div>
       </div>
-      {next === null && <p className="text-xs text-[#dc2626]" role="alert">Enter whole numbers: counts up to 1000, days up to 3650, hours up to 8760, pesos 0 or more.</p>}
-      <OrderActionDialog
-        trigger="Save automatic checks"
-        title="Change the Automatic checks?"
-        description="The new switches and numbers apply from now on. They only flag; nothing is blocked or cancelled. The change is logged under your name."
-        confirm="Save automatic checks"
-        busy="Saving…"
-        disabled={!changed}
-        triggerDisabled={!changed}
-        run={() => changeAutomaticChecks(next)}
-        successMessage="Automatic checks saved."
-      />
-    </section>
+    </SettingsCard>
   );
 }
