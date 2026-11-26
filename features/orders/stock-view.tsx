@@ -24,7 +24,7 @@ import { LOW_STOCK_BELOW, rowLabel, shopLabel, type HoldingOrder, type StockPage
 type Tab = "in-store" | "all" | "low" | "sold-out";
 
 const GRID = "flex items-center gap-2 px-4";
-const COLUMN = { price: "w-[110px] shrink-0 text-right", stock: "w-[120px] shrink-0 text-right", reserved: "w-[190px] shrink-0 text-right", shows: "w-[170px] shrink-0", edit: "w-8 shrink-0" };
+const COLUMN = { product: "w-[340px] shrink-0", price: "w-[110px] shrink-0 text-right", stock: "w-[120px] shrink-0 text-right", reserved: "w-[160px] shrink-0 text-right", shows: "w-[170px] shrink-0", edit: "w-8 shrink-0" };
 
 /** On the shop now: CREOMS gave it what the shop needs and the IMS still sells it. */
 const inStore = (row: StockRow) => row.marker === null;
@@ -204,7 +204,7 @@ export function StockView({ page, canEdit = false, canPrice = false, initialQuer
             <TableToolbar state={table} label="Search and filter products" searchLabel="Search product" placeholder="Search product" />
           </div>
           <div role="row" className={cn(GRID, "justify-between rounded-t-xl bg-[#fafafa] py-2.5 text-xs font-medium text-[#71717a]")}>
-            {heading("product", "min-w-0 flex-1")}
+            {heading("product", COLUMN.product)}
             {heading("price", COLUMN.price, "right")}
             {heading("stock", COLUMN.stock, "right")}
             {heading("reserved", COLUMN.reserved, "right")}
@@ -224,11 +224,13 @@ export function StockView({ page, canEdit = false, canPrice = false, initialQuer
             return (
             <div key={row.sizeId} data-stock-row {...(open ? rowButton(open, `Open ${rowLabel(row)}`) : {})}
               className={cn(GRID, "justify-between border-t border-[#f0edf4] py-3 text-[13px] text-[#18181b]", open && CLICKABLE_ROW, isSoldOut(row) && "bg-[#fff7f7]")}>
-              <ProductImage row={row} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{rowLabel(row)}</p>
-                {row.product !== row.imsName && <p data-ims-name className="truncate text-xs font-normal text-[#6e6680]">IMS: {row.imsName}</p>}
-                {row.marker?.kind === "not-on-shop" && <p data-missing className="truncate text-xs font-normal text-[#6e6680]">Missing: {row.marker.missing.join(", ")}</p>}
+              <div className={cn(COLUMN.product, "flex items-center gap-3")}>
+                <ProductImage row={row} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{rowLabel(row)}</p>
+                  {row.product !== row.imsName && <p data-ims-name className="truncate text-xs font-normal text-[#6e6680]">IMS: {row.imsName}</p>}
+                  {row.marker?.kind === "not-on-shop" && <p data-missing className="truncate text-xs font-normal text-[#6e6680]">Missing: {row.marker.missing.join(", ")}</p>}
+                </div>
               </div>
               <div className={COLUMN.price}>{peso(row.price)}</div>
               <div className={COLUMN.stock}>{quantity(row.inStock)}</div>
