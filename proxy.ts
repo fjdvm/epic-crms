@@ -21,6 +21,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/|api/health|api/portal/|api/payment-methods$|api/notifications/sync|api/notifications/signal|api/internal/ims-stock$|api/cron/|sign-in-error|signing-in|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
+    "/((?!_next/|api/health|api/portal/|api/payment-methods$|api/notifications/sync|api/notifications/signal|api/internal/ims-stock$|api/internal/pos-sales$|api/cron/|sign-in-error|signing-in|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
   ],
 };
