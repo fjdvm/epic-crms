@@ -53,6 +53,7 @@ const exempt: Record<string, string> = {
   "features/orders/cancellation-actions.ts#reconcileCancellationProof": "gap: group 2, evidence promotion",
   "features/returns/actions.ts#reconcileRefundProof": "gap: group 2, evidence promotion",
   "app/api/internal/ims-stock/route.ts#POST": "gap: group 1, stock changed from the inventory system",
+  "app/api/internal/ims-stock/route.ts#DELETE": "gap: group 1, deleted product removed from the inventory system",
   "app/api/notifications/sync/route.ts#POST": "gap: group 1, Staff-requested storefront sync",
   "app/api/orders/product-image/route.ts#POST": "gap: group 1, product image saved",
   "app/api/portal/logout/route.ts#POST": "gap: group 1, sign-out",

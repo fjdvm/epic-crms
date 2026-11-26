@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { applyImsFigures } from "@/features/orders/stock-count";
+import { applyImsFigures, deleteMirrorOne } from "@/features/orders/stock-count";
 import { crmsDatabase } from "@/lib/crms-db";
 import { verifyImsStockCredential } from "@/lib/ims-credential";
 
@@ -37,6 +37,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ applied });
   } catch (error) {
     console.error("The IMS stock figures could not be saved", error);
+    return NextResponse.json({ error: "stock count unavailable" }, { status: 503 });
+  }
+}
+
+const deleteId = z.coerce.number().int().min(1).max(2_147_483_647);
+
+/** Removes a Size from CREOMS's stock count when the IMS deletes it. */
+export async function DELETE(request: NextRequest) {
+  if (!verifyImsStockCredential(request.headers.get("authorization"))) return new NextResponse(null, { status: 401 });
+  const rawId = request.nextUrl.searchParams.get("productId")
+    ?? (await request.json().catch(() => undefined))?.productId;
+  const parsed = deleteId.safeParse(rawId);
+  if (!parsed.success) return NextResponse.json({ error: "invalid product id" }, { status: 400 });
+  try {
+    await deleteMirrorOne(crmsDatabase(), parsed.data);
+    return NextResponse.json({ deleted: true });
+  } catch (error) {
+    console.error("The IMS stock row could not be deleted", error);
     return NextResponse.json({ error: "stock count unavailable" }, { status: 503 });
   }
 }

@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const applied = vi.hoisted(() => ({ calls: [] as unknown[], result: true, fail: false }));
+const applied = vi.hoisted(() => ({ calls: [] as unknown[], deleted: [] as number[], result: true, fail: false }));
 vi.mock("@/lib/crms-db", () => ({ crmsDatabase: () => ({}) }));
 vi.mock("@/features/orders/stock-count", () => ({
   applyImsFigures: async (_sql: unknown, push: unknown) => {
@@ -10,9 +10,13 @@ vi.mock("@/features/orders/stock-count", () => ({
     applied.calls.push(push);
     return applied.result;
   },
+  deleteMirrorOne: async (_sql: unknown, productId: number) => {
+    if (applied.fail) throw new Error("db down");
+    applied.deleted.push(productId);
+  },
 }));
 
-import { POST } from "@/app/api/internal/ims-stock/route";
+import { DELETE, POST } from "@/app/api/internal/ims-stock/route";
 
 const secret = "ims-creoms-secret-at-least-thirty-two-chars";
 const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -26,7 +30,7 @@ const post = (payload: unknown, authorization: string | null = `Bearer ${token()
   method: "POST", headers: { "Content-Type": "application/json", ...(authorization ? { Authorization: authorization } : {}) }, body: JSON.stringify(payload),
 }));
 
-beforeEach(() => { vi.stubEnv("IMS_CREOMS_SECRET", secret); applied.calls = []; applied.result = true; applied.fail = false; });
+beforeEach(() => { vi.stubEnv("IMS_CREOMS_SECRET", secret); applied.calls = []; applied.deleted = []; applied.result = true; applied.fail = false; });
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("IMS stock push", () => {
@@ -63,5 +67,25 @@ describe("IMS stock push", () => {
     applied.fail = true;
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect((await post(body)).status).toBe(503);
+  });
+
+  it("removes a deleted IMS Size on DELETE and refuses invalid auth or product ids", async () => {
+    const del = (query: string, authorization: string | null = `Bearer ${token()}`) =>
+      DELETE(new NextRequest(`https://creoms.test/api/internal/ims-stock${query}`, {
+        method: "DELETE", headers: authorization ? { Authorization: authorization } : {},
+      }));
+
+    const ok = await del("?productId=36");
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ deleted: true });
+    expect(applied.deleted).toEqual([36]);
+
+    expect((await del("?productId=36", null)).status).toBe(401);
+    expect((await del("?productId=0")).status).toBe(400);
+    expect((await del("")).status).toBe(400);
+
+    applied.fail = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await del("?productId=36")).status).toBe(503);
   });
 });
