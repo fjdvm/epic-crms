@@ -18,7 +18,7 @@ fixed = {
     'CREOMS_GATEWAY_URL': 'https://api.buildwrite.me',
 }
 # Optional: left out of the container when no GitHub secret is set.
-optional = ['CREOMS_UPLOAD_SECRET', 'OWNER_ALERT_EMAIL', 'IMS_CREOMS_SECRET_PREVIOUS']
+optional = ['CREOMS_UPLOAD_SECRET', 'OWNER_ALERT_EMAIL', 'IMS_CREOMS_SECRET_PREVIOUS', 'POS_CREOMS_SECRET_PREVIOUS']
 # The Portal only stores a hash of this, so it is set from the Portal seed at cutover (#203/#204).
 # Until then a placeholder lets the app start; sign-in is refused by the Portal.
 PLACEHOLDER = 'pending-portal-seed-not-a-real-secret'

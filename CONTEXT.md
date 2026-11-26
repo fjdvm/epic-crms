@@ -59,6 +59,10 @@ _Avoid_: Revenue, lifetime value
 The Dashboard's money figure for a period: the sum of Order totals for Orders placed in that period that count toward Total spent, minus Refunded Return amounts. Uses the same rule as Total spent, but across all Customers and bucketed by the date the Order was placed, in Philippine Time.
 _Avoid_: Revenue
 
+**Online sales feed**:
+What the POS reads from CREOMS: the online Sales for a range of Philippine days, the Orders counted in it, and for each product and Size the units sold and the money it brought in (less Refunded Returns), with the IMS product where CREOMS knows it. It uses the Sales rule, so it always matches the Dashboard. Read-only; the POS signs each request with its own credential.
+_Avoid_: POS sync, export
+
 **Buyer**:
 A Customer with at least one Order counted in Sales in a period. A Buyer is Returning if they had an Order counted in Sales before the period began, and New if their first such Order falls inside it. A Buyer who orders twice in the period is counted once, as New or Returning by their first.
 _Avoid_: Shopper, repeat customer (Stage already uses Repeat)
