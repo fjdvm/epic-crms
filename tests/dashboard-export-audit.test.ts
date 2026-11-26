@@ -76,6 +76,15 @@ describe("AI insights PDF export", () => {
     expect(events()[0]).toMatchObject({ module: "Dashboard", action: "dashboard.ai_insights_pdf_exported", outcome: "success", target: { id: "30-days" }, metadata: { choice: "30-days" } });
   });
 
+  it("adds Top products only for people who hold Orders, and the rating only with Feedback", async () => {
+    mocks.heldModules.mockResolvedValue(["Orders"]);
+    await insightsPdf(insights());
+    expect(mocks.insightsPdf.mock.calls[0][4]).toEqual({ products: true, ratings: false });
+    mocks.heldModules.mockResolvedValue(["Orders", "Feedback"]);
+    await insightsPdf(insights());
+    expect(mocks.insightsPdf.mock.calls[1][4]).toEqual({ products: true, ratings: true });
+  });
+
   it("records the denied attempt of a Role that cannot open AI insights, and reads nothing", async () => {
     mocks.canSee.mockReturnValue(false);
     expect((await insightsPdf(insights())).status).toBe(403);

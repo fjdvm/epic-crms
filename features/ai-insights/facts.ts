@@ -9,7 +9,7 @@ import { notReplacement } from "@/lib/replacement-order";
 
 import {
   enoughData, RULES, type AreaFigures, type CityFigures, type CourierFigures, type ExpiringFigures, type InsightFacts, type PeriodDays,
-  type PlaceFigures, type ReturnProduct, type SlaFigures, type StockFigures, type ThemeFigures,
+  type PlaceFigures, type ProductFigures, type ReturnProduct, type SlaFigures, type StockFigures, type ThemeFigures,
 } from "./insights";
 
 export interface Sources { source: postgres.Sql; crms: postgres.Sql }
@@ -114,6 +114,66 @@ export async function orderFactsIn(sql: postgres.Sql, span: Span, now: Date) {
     couriers: [...couriers.values()].sort((a, b) => b.wentOut - a.wentOut || a.courier.localeCompare(b.courier)),
     lateOrFailedByCity: [...lateByCity].map(([key, orderIds]) => ({ key, orderIds })),
   };
+}
+
+interface ProductLineRow {
+  id: number; current: boolean; province: string | null; city: string | null;
+  product: string; size: string; units: number; value: number; rating: number | null;
+}
+
+interface ProductTally { row: ProductFigures; orders: Set<number>; previous: Set<number>; rated: Set<number> }
+
+/**
+ * Units, sales value, Orders and Feedback ratings per product and per size, for the whole shop, each map area and each
+ * city, now and in the period before. Orders are those counted in Sales; places come from the delivery address, worked
+ * out like orderFactsIn so the keys match. Aggregated only: no Customer, address or comment leaves this function.
+ */
+export async function productFactsIn(sql: postgres.Sql, span: Span): Promise<ProductFigures[]> {
+  const rows = await sql<ProductLineRow[]>`
+    select o.id, o.created_at >= ${span.start} as current, a.province, a.city, l.product_name as product, l.size_label as size,
+      sum(l.quantity)::int as units, sum(l.quantity::bigint * l.price_in_centavos)::float8 as value, f.rating
+    from public.order_lines l
+    join public.orders o on o.id = l.order_id
+    left join public.order_delivery_addresses a on a.order_id = o.id
+    left join public.order_feedback f on f.order_id = o.id
+    where o.status = any(${PAID_OR_FULFILLED}) and ${notReplacement(sql, "o")}
+      and o.created_at >= ${span.previous.start} and o.created_at < ${span.end}
+    group by o.id, a.province, a.city, l.product_name, l.size_label, f.rating`;
+
+  const tallies = new Map<string, ProductTally>();
+  const tally = (scope: ProductFigures["scope"], place: string | null, product: string, size: string | null, row: ProductLineRow) => {
+    const key = JSON.stringify([scope, place, product, size]);
+    let t = tallies.get(key);
+    if (!t) {
+      t = {
+        row: { scope, place, product, size, units: 0, previousUnits: 0, value: 0, orders: 0, previousOrders: 0, ratings: 0, ratingTotal: 0 },
+        orders: new Set(), previous: new Set(), rated: new Set(),
+      };
+      tallies.set(key, t);
+    }
+    if (!row.current) { t.row.previousUnits += row.units; t.previous.add(row.id); return; }
+    t.row.units += row.units;
+    t.row.value += row.value;
+    t.orders.add(row.id);
+    // One rating per Order, however many lines or sizes of the product it had.
+    if (row.rating !== null && !t.rated.has(row.id)) { t.rated.add(row.id); t.row.ratingTotal += row.rating; }
+  };
+
+  for (const row of rows) {
+    const area = row.province !== null ? addressArea(row.province, row.city ?? "") : null;
+    const name = area ? cityLabel(row.city ?? "") : "";
+    const places: [ProductFigures["scope"], string | null][] = [["all", null]];
+    if (area) places.push(["province", area]);
+    if (area && name) places.push(["city", `${area}|${cityKey(name)}`]);
+    for (const [scope, place] of places) {
+      tally(scope, place, row.product, null, row);
+      tally(scope, place, row.product, row.size, row);
+    }
+  }
+
+  return [...tallies.values()].map(({ row, orders, previous, rated }) => ({
+    ...row, value: Math.round(row.value), orders: orders.size, previousOrders: previous.size, ratings: rated.size,
+  }));
 }
 
 /** Units sold and returned per product in the period, with the Returns behind each. Declined and cancelled Returns do not count. */
@@ -277,9 +337,10 @@ export async function loadFacts(sources: Sources, days: PeriodDays, now: Date,
   shared?: { stock: StockFigures[] | null; expiring: ExpiringFigures | null; sla: SlaFigures | null }): Promise<InsightFacts> {
   const span = periodSpan(days, now);
   const soft = <T>(p: Promise<T>) => p.catch(() => null);
-  const [orders, returns, now_] = await Promise.all([
+  const [orders, returns, products, now_] = await Promise.all([
     orderFactsIn(sources.source, span, now),
     soft(returnFactsIn(sources.source, span)),
+    soft(productFactsIn(sources.source, span)),
     shared ?? loadNowFacts(sources, now),
   ]);
   // Grouping Ticket themes asks a model, so it runs only when there is enough data for the page to show insights at all.
@@ -288,7 +349,7 @@ export async function loadFacts(sources: Sources, days: PeriodDays, now: Date,
     days, orders: orders.orders, previousOrders: orders.previousOrders, wentOut: orders.wentOut, lateOrFailed: orders.lateOrFailed,
     returnsRequested: returns?.requested ?? 0, returnedOrders: orders.returnedOrders, areas: orders.areas, unmapped: orders.unmapped,
     lateOrFailedByCity: orders.lateOrFailedByCity, couriers: orders.couriers,
-    stock: now_.stock, expiring: now_.expiring, sla: now_.sla, returns: returns?.returns ?? null, themes,
+    stock: now_.stock, expiring: now_.expiring, sla: now_.sla, returns: returns?.returns ?? null, themes, products,
   };
 }
 

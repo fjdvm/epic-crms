@@ -21,7 +21,7 @@ function facts(over: Partial<InsightFacts> = {}): InsightFacts {
   return {
     days: 7, orders: 40, previousOrders: 32, wentOut: 30, lateOrFailed: 2, returnsRequested: 1, returnedOrders: 1,
     areas: [], unmapped: 0, lateOrFailedByCity: [], couriers: [], stock: [], expiring: { orders: 0, value: 0, orderIds: [], soonestHours: null },
-    sla: { atRisk: 0, breaching: 0, ticketIds: [], open: 4 }, returns: { sold: 100, returned: 2, products: [] }, themes: [], ...over,
+    sla: { atRisk: 0, breaching: 0, ticketIds: [], open: 4 }, returns: { sold: 100, returned: 2, products: [] }, themes: [], products: null, ...over,
   };
 }
 

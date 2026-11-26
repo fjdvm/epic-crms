@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { expiringFactsAt, orderFactsIn, periodSpan, returnFactsIn, slaFactsAt, stockFactsAt, themeFactsIn } from "@/features/ai-insights/facts";
+import { expiringFactsAt, orderFactsIn, periodSpan, productFactsIn, returnFactsIn, slaFactsAt, stockFactsAt, themeFactsIn } from "@/features/ai-insights/facts";
 import { DEFAULT_HISTORY } from "@/features/tickets/service-level";
 import * as structured from "@/lib/ai/structured";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -44,6 +44,46 @@ async function order(f: { created?: string; status?: string; payment?: string; p
   }
   return row.id;
 }
+
+describe("productFactsIn", () => {
+  const line = (id: number, product: string, size: string, quantity: number, price: number) =>
+    db.sql`insert into order_lines (order_id, product_name, size_label, quantity, price_in_centavos) values (${id}, ${product}, ${size}, ${quantity}, ${price})`;
+  const rated = (id: number, rating: number) => db.sql`insert into order_feedback (order_id, rating, comment) values (${id}, ${rating}, 'Masarap')`;
+
+  it("counts units, sales value, Orders and ratings per product and size, for the shop, each area and each city", async () => {
+    const pasig = await order({ created: "2026-11-22T02:00:00Z" });
+    await line(pasig, "Ube Jam", "250 g", 2, 15000);
+    await line(pasig, "Ube Jam", "500 g", 1, 25000); // a second size in the same Order
+    await rated(pasig, 5);
+    const qc = await order({ created: "2026-11-21T02:00:00Z", city: "Quezon City" });
+    await line(qc, "Ube Jam", "250 g", 1, 15000);
+    await line(qc, "Halaya", "", 3, 20000);
+    await rated(qc, 3);
+    const unplaced = await order({ created: "2026-11-21T02:00:00Z", city: "Nowhere", province: "Atlantis" });
+    await line(unplaced, "Halaya", "", 1, 20000);
+    const before = await order({ created: "2026-11-12T02:00:00Z" });
+    await line(before, "Ube Jam", "250 g", 4, 15000);
+    const cancelled = await order({ created: "2026-11-22T02:00:00Z", status: "cancelled" });
+    await line(cancelled, "Ube Jam", "250 g", 9, 15000);
+
+    const rows = await productFactsIn(db.sql, span);
+    const find = (scope: string, place: string | null, product: string, size: string | null) =>
+      rows.find((r) => r.scope === scope && r.place === place && r.product === product && r.size === size);
+
+    // Sizes together: the Pasig Order counts once, with one rating.
+    expect(find("all", null, "Ube Jam", null)).toEqual({
+      scope: "all", place: null, product: "Ube Jam", size: null, units: 4, previousUnits: 4, value: 70000, orders: 2, previousOrders: 1,
+      ratings: 2, ratingTotal: 8,
+    });
+    expect(find("all", null, "Ube Jam", "250 g")).toMatchObject({ units: 3, value: 45000, orders: 2, previousUnits: 4 });
+    expect(find("all", null, "Halaya", null)).toMatchObject({ units: 4, orders: 2, ratings: 1, ratingTotal: 3 });
+    // Places use the same keys as the map; the unplaceable address counts only for the whole shop.
+    expect(find("city", "metro manila|pasig", "Ube Jam", null)).toMatchObject({ units: 3, orders: 1, ratings: 1, ratingTotal: 5, previousUnits: 4 });
+    expect(find("city", "metro manila|quezon", "Halaya", "")).toMatchObject({ units: 3, value: 60000 });
+    expect(find("province", "metro manila", "Halaya", null)).toMatchObject({ units: 3, orders: 1 });
+    expect(rows.filter((r) => r.scope !== "all" && r.product === "Halaya").every((r) => r.units === 3)).toBe(true);
+  });
+});
 
 describe("orderFactsIn", () => {
   it("counts Orders, late or failed deliveries, returns, complaints and free delivery by city and courier, now and before", async () => {

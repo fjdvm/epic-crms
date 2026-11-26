@@ -1,6 +1,7 @@
 import { createBrandedPdf, manilaTimestamp } from "@/lib/export/pdf-template";
 
 import { CATEGORY_LABELS, CONFIDENCE_LABELS, PRIORITY_LABELS, type Insight, type Stats } from "./insights";
+import { favouriteByPlace, formatMetric, productName, rankProducts } from "./products";
 import type { InsightRun } from "./run";
 
 const STAT_LABELS: [keyof Stats, string][] = [
@@ -8,7 +9,8 @@ const STAT_LABELS: [keyof Stats, string][] = [
 ];
 
 /** The page as a PDF, from the stored run: the same figures and the same cards the person sees. Nothing is worked out again. */
-export async function insightsPdf(run: InsightRun, insights: Insight[], stats: Partial<Stats>, now: Date): Promise<Buffer> {
+export async function insightsPdf(run: InsightRun, insights: Insight[], stats: Partial<Stats>, now: Date,
+  access: { products: boolean; ratings: boolean } = { products: false, ratings: false }): Promise<Buffer> {
   const pdf = await createBrandedPdf({ title: "AI insights", subtitle: `Last ${run.days} days · updated ${manilaTimestamp.format(new Date(run.createdAt))}`, now });
   pdf.line("Suggestions only. The AI explains figures worked out in code; a person decides and acts. Nothing here changed an Order, stock, payment, Ticket or Customer.", true);
 
@@ -22,11 +24,33 @@ export async function insightsPdf(run: InsightRun, insights: Insight[], stats: P
     { widths: [0.3, 0.15, 0.55], right: [1] });
 
   const cities = run.areas.flatMap((a) => a.cities).filter((c) => c.orders > 0).sort((a, b) => b.orders - a.orders).slice(0, 10);
+  const products = access.products && run.products ? run.products : null;
   if (run.enoughData && cities.length) {
     pdf.heading("Top areas");
-    pdf.table(["Area", "Orders", "Before", "Late or failed", "Returns", "Complaints"],
-      cities.map((c) => [c.name, String(c.orders), String(c.previousOrders), String(c.lateOrFailed), String(c.returned), String(c.complaints)]),
-      { widths: [0.3, 0.12, 0.12, 0.18, 0.14, 0.14], right: [1, 2, 3, 4, 5] });
+    if (products) {
+      // The favourite is the product with the most units sold in the city, sizes counted together.
+      const favourites = favouriteByPlace(products, { scope: "city", bySize: false, metric: "units" });
+      pdf.table(["Area", "Orders", "Before", "Late or failed", "Returns", "Complaints", "Favourite product"],
+        cities.map((c) => [c.name, String(c.orders), String(c.previousOrders), String(c.lateOrFailed), String(c.returned), String(c.complaints),
+          favourites.get(c.key)?.product ?? "—"]),
+        { widths: [0.2, 0.09, 0.09, 0.13, 0.1, 0.12, 0.27], right: [1, 2, 3, 4, 5] });
+    } else {
+      pdf.table(["Area", "Orders", "Before", "Late or failed", "Returns", "Complaints"],
+        cities.map((c) => [c.name, String(c.orders), String(c.previousOrders), String(c.lateOrFailed), String(c.returned), String(c.complaints)]),
+        { widths: [0.3, 0.12, 0.12, 0.18, 0.14, 0.14], right: [1, 2, 3, 4, 5] });
+    }
+  }
+
+  const ranked = products && run.enoughData ? rankProducts(products, { scope: "all", bySize: false, metric: "units" }).slice(0, 10) : [];
+  if (ranked.length) {
+    pdf.heading("Top products");
+    const head = ["#", "Product", "Units sold", "Sales value", "Orders", ...(access.ratings ? ["Rating"] : [])];
+    pdf.table(head,
+      ranked.map((p, i) => [String(i + 1), productName(p), formatMetric(p, "units"), formatMetric(p, "value"), formatMetric(p, "orders"),
+        ...(access.ratings ? [formatMetric(p, "rating")] : [])]),
+      access.ratings
+        ? { widths: [0.06, 0.34, 0.13, 0.17, 0.11, 0.19], right: [2, 3, 4] }
+        : { widths: [0.06, 0.44, 0.15, 0.2, 0.15], right: [2, 3, 4] });
   }
 
   pdf.heading("Insights to look at");

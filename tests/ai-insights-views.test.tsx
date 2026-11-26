@@ -12,7 +12,7 @@ vi.mock("next/link", () => ({
 
 import { AreaSection, VIEWS } from "@/features/ai-insights/area-map";
 import { InsightGrid } from "@/features/ai-insights/insight-grid";
-import { emptyStats, type AreaFigures, type Insight } from "@/features/ai-insights/insights";
+import { emptyStats, type AreaFigures, type Insight, type ProductFigures } from "@/features/ai-insights/insights";
 import { Brief, StatRow } from "@/features/ai-insights/sections";
 
 const card = (over: Partial<Insight> = {}): Insight => ({
@@ -147,6 +147,60 @@ describe("the map", () => {
     expect(within(top).getByText("+750%")).toBeTruthy();
     fireEvent.click(within(top).getAllByRole("button", { name: /Pasig/ })[0]);
     expect(within(top).getByRole("heading", { name: "Pasig" })).toBeTruthy();
+  });
+
+  const product = (over: Partial<ProductFigures>): ProductFigures => ({
+    scope: "all", place: null, product: "Ube Jam", size: null, units: 0, previousUnits: 0, value: 0, orders: 1, previousOrders: 0,
+    ratings: 0, ratingTotal: 0, ...over,
+  });
+  const products: ProductFigures[] = [
+    product({ product: "Ube Jam", units: 20, previousUnits: 10, value: 300000, orders: 12, ratings: 3, ratingTotal: 12 }),
+    product({ product: "Halaya", units: 8, value: 400000, orders: 8, ratings: 3, ratingTotal: 15 }),
+    product({ product: "Ube Jam", size: "250 g", units: 15, orders: 10 }),
+    product({ product: "Ube Jam", size: "500 g", units: 5, orders: 3 }),
+    product({ scope: "city", place: "metro manila|quezon", product: "Halaya", units: 6, orders: 6 }),
+    product({ scope: "city", place: "metro manila|quezon", product: "Ube Jam", units: 2, orders: 2 }),
+    product({ scope: "city", place: "metro manila|pasig", product: "Ube Jam", units: 9, orders: 5 }),
+    product({ scope: "province", place: "metro manila", product: "Ube Jam", units: 11, orders: 7 }),
+  ];
+
+  it("ranks every product, switching the metric and counting sizes apart", () => {
+    render(<AreaSection areas={areas} unmapped={0} orders={40} days={7} enoughData products={products} canSeeRatings />);
+    const top = screen.getByRole("region", { name: "Top products" });
+    const first = () => within(top).getAllByRole("listitem")[0].textContent;
+    expect(first()).toContain("Ube Jam");
+    expect(within(top).getByText("+100%")).toBeTruthy();
+    fireEvent.click(within(top).getByRole("radio", { name: "Sales value" }));
+    expect(first()).toContain("Halaya");
+    expect(first()).toContain("₱4,000");
+    fireEvent.click(within(top).getByRole("radio", { name: "Rating" }));
+    expect(first()).toContain("5.0 ★ (3)");
+    fireEvent.click(within(top).getByRole("radio", { name: "Units sold" }));
+    fireEvent.click(within(top).getByRole("radio", { name: "Product + size" }));
+    expect(within(top).getAllByRole("listitem").map((li) => li.textContent)).toEqual([expect.stringContaining("Ube Jam 250 g"), expect.stringContaining("Ube Jam 500 g")]);
+  });
+
+  it("shows each area's favourite product, by city or by province, and an area's own ranking", () => {
+    render(<AreaSection areas={areas} unmapped={0} orders={40} days={7} enoughData products={products} />);
+    const top = screen.getByRole("region", { name: "Top areas" });
+    const items = () => within(within(top).getAllByRole("list")[0]).getAllByRole("listitem").map((li) => li.textContent);
+    expect(items()[0]).toContain("Favourite: Halaya");
+    expect(items()[1]).toContain("Favourite: Ube Jam");
+    fireEvent.click(within(top).getByRole("radio", { name: "Province" }));
+    expect(items()).toEqual([expect.stringContaining("Metro Manila")]);
+    expect(items()[0]).toContain("Favourite: Ube Jam");
+    fireEvent.click(within(top).getByRole("radio", { name: "City" }));
+    fireEvent.click(within(top).getAllByRole("button", { name: /Quezon City/ })[0]);
+    const favourites = within(top).getByRole("heading", { name: "Favourite products" }).parentElement!;
+    expect(within(favourites).getAllByRole("listitem").map((li) => li.textContent)).toEqual([expect.stringContaining("Halaya"), expect.stringContaining("Ube Jam")]);
+  });
+
+  it("hides the Rating ranking without the Feedback Module, and waits for the next run when the stored run has no products", () => {
+    const { unmount } = render(<AreaSection areas={areas} unmapped={0} orders={40} days={7} enoughData products={products} />);
+    expect(within(screen.getByRole("region", { name: "Top products" })).queryByRole("radio", { name: "Rating" })).toBeNull();
+    unmount();
+    render(<AreaSection areas={areas} unmapped={0} orders={40} days={7} enoughData />);
+    expect(screen.getByText(/Product rankings show after the next morning run/)).toBeTruthy();
   });
 
   it("with too little data says so on the map and ranks nothing", () => {
