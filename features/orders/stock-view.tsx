@@ -6,7 +6,7 @@ import { useState } from "react";
 import Link from "next/link";
 
 import { CLICKABLE_ROW, RowLink, rowButton } from "@/components/shared/row-link";
-import { ZoomableImage } from "@/components/zoomable-image";
+import { ProductThumbnail } from "@/components/product-thumbnail";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProductEditDrawer } from "./product-edit-drawer";
 import { PILL, Pill } from "@/features/tickets/pill";
@@ -74,11 +74,11 @@ function HoldingOrders({ row, onClose }: { row: StockRow | null; onClose: () => 
   );
 }
 
-/** The product's image tile; a click zooms it. No image gives a plain tile that does nothing. */
+/** The product's image tile; a click zooms it. No image, or a broken one, shows the brand logo. */
 function ProductImage({ row }: { row: StockRow }) {
   return (
     <div data-image-tile className="size-10 shrink-0 overflow-hidden rounded-lg border border-[#e6e1ee] bg-[#f5f2f9]">
-      {row.image && <ZoomableImage src={row.image} alt={row.product} className="size-10 object-cover" />}
+      <ProductThumbnail src={row.image} alt={row.product} className="size-10" />
     </div>
   );
 }

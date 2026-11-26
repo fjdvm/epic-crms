@@ -7,6 +7,8 @@ const ALLOWED = [
   "components/zoomable-image.tsx",
   "components/image-viewer.tsx",
   "components/brand/brand-lockup.tsx",
+  // The brand-logo placeholder for a product with no image; real product images still zoom.
+  "components/product-thumbnail.tsx",
   "components/loading/loading-card.tsx",
   "features/dashboard/export-button.tsx",
   "features/tickets/summary-card.tsx",

@@ -183,10 +183,19 @@ it("shows the product image before its name and zooms it with the name as captio
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("shows a plain tile that does nothing for a product with no image", () => {
+it("shows the brand logo, fitted whole and not zoomable, for a product with no image", () => {
   render(<StockView page={{ ...page, rows: [row(9, "Bare", 40, "In stock")] }} />);
-  expect(document.querySelector("[data-image-tile]")).toBeTruthy();
+  const logo = document.querySelector("[data-image-tile] img[data-default-image]");
+  expect(logo?.getAttribute("src")).toBe("/images/brand/default-product.png");
+  expect(logo?.className).toContain("object-contain");
   expect(screen.queryByRole("button", { name: /Zoom/ })).toBeNull();
+});
+
+it("swaps a product image that fails to load for the brand logo", () => {
+  render(<StockView page={{ ...page, rows: [withImage] }} />);
+  fireEvent.error(screen.getByAltText("Ube Jam"));
+  expect(document.querySelector("[data-image-tile] img[data-default-image]")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Zoom Ube Jam" })).toBeNull();
 });
 
 it("says there is no stock copy yet, and lists nothing, when CREOMS has never read the IMS", () => {
