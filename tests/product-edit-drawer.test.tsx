@@ -71,6 +71,7 @@ it("asks to confirm before publishing, then sends the description and says it is
 it("refuses to publish without an image: says so under Image and never opens the confirm", () => {
   render(<ProductEditDrawer row={{ ...row, image: null, hasShopImage: false }} onClose={vi.fn()} />);
   expect(screen.getByRole("button", { name: "Upload image" })).toBeTruthy();
+  expect(document.querySelector("img[data-default-image]")?.getAttribute("src")).toBe("/images/brand/default-product.png");
   fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
   expect(screen.getByRole("alert").textContent).toBe("Add an image before publishing. The shop shows a product only once it has one.");
   expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -91,6 +92,7 @@ it("publishes once an image is uploaded, and says the price is still needed when
   fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
   fireEvent.change(screen.getByLabelText("Product image"), { target: { files: [new File(["x"], "jam.png", { type: "image/png" })] } });
   await screen.findByAltText("New image preview");
+  expect(document.querySelector("img[data-default-image]")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Publish to store" }));
   fireEvent.click(await screen.findByRole("button", { name: "Publish" }));

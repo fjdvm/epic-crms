@@ -3,7 +3,7 @@
 import { ImagePlus, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { ZoomableImage } from "@/components/zoomable-image";
+import { ProductThumbnail } from "@/components/product-thumbnail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
@@ -163,7 +163,7 @@ function EditForm({ row, canPrice, onClose }: { row: StockRow; canPrice: boolean
           <Label htmlFor="product-image" className="text-[13px] font-medium text-[#52525b]">Image</Label>
           <div className="flex items-center gap-3">
             <div className="size-20 shrink-0 overflow-hidden rounded-lg border border-[#e6e1ee] bg-[#f5f2f9]">
-              {shown && <ZoomableImage src={shown} alt={chosen ? "New image preview" : "Current image"} className="size-20 object-cover" />}
+              <ProductThumbnail src={shown} alt={chosen ? "New image preview" : "Current image"} className="size-20" />
             </div>
             <div className="flex flex-col items-start gap-1">
               <Button ref={imageButton} type="button" variant="outline" disabled={uploading} onClick={() => picker.current?.click()} className="h-auto gap-2 rounded-lg px-3.5 py-[9px] shadow-none">
