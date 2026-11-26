@@ -85,3 +85,28 @@ export function lastSixMonths(now: Date): SalesMonth[] {
     return { start, end, label, soFar: back === 0 };
   });
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_DAYS = 366;
+
+function manilaDate(text: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]) - 1, Number(match[3])];
+  const start = manilaMidnight(year, month, day);
+  const back = new Date(start.getTime() + OFFSET_MS);
+  return back.getUTCFullYear() === year && back.getUTCMonth() === month && back.getUTCDate() === day ? start : null;
+}
+
+/**
+ * Whole Philippine days from `from` to `to`, both included, as a half-open span. None when either date is not a real
+ * `YYYY-MM-DD` date, `to` is before `from`, or the range is longer than 366 days. Days still to come simply hold no Orders.
+ */
+export function manilaDays(from: string, to: string): Span | null {
+  const start = manilaDate(from);
+  const last = manilaDate(to);
+  if (!start || !last || last < start) return null;
+  const end = new Date(last.getTime() + DAY_MS);
+  if ((end.getTime() - start.getTime()) / DAY_MS > MAX_DAYS) return null;
+  return { start, end };
+}
