@@ -1,20 +1,16 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { ABOVE_ROW_LINK, CLICKABLE_ROW, RowLink } from "@/components/shared/row-link";
 import { Button } from "@/components/ui/button";
-import { formatDate, formatPesos } from "@/features/customer-profiles/format";
-import { orderLabel } from "@/features/customer-profiles/rules";
-import { Pill } from "@/features/tickets/pill";
+import { formatPesos } from "@/features/customer-profiles/format";
 import { cn } from "@/lib/utils";
 
 import { returnLabel } from "./refund-record";
-import { returnDisplayLabel } from "./outcome";
-import { returnAnchor } from "./anchor";
-import { ReturnFlagNotes } from "./return-flag-notes";
 import type { ReturnFlag } from "./return-flags";
 import { RETURN_TABS, type ReturnList, type ReturnStats, type ReturnTab } from "./returns";
-import { STATUS_PILLS } from "./returns-table";
+import { ReturnTable } from "./return-table";
+
+export { CELL, COLUMNS, HEAD, ROW } from "./return-layout";
 
 export interface ReturnListParams {
   tab: ReturnTab;
@@ -24,20 +20,6 @@ export interface ReturnListParams {
 export const TAB_LABELS: Record<ReturnTab, string> = Object.fromEntries(
   RETURN_TABS.map((t) => [t, returnLabel(t)]),
 ) as Record<ReturnTab, string>;
-
-/** The Figma frame's columns; they share the table width in proportion. */
-export const COLUMNS: { header: string; className: string }[] = [
-  { header: "Return", className: "flex-[1_1_100px]" },
-  { header: "Customer", className: "min-w-0 flex-[2_1_150px]" },
-  { header: "Order", className: "flex-[1_1_90px]" },
-  { header: "Items", className: "min-w-0 flex-[3_1_220px]" },
-  { header: "Resolution", className: "flex-[1_1_110px]" },
-  { header: "Status", className: "flex-[1_1_130px]" },
-  { header: "Requested", className: "flex-[1_1_110px]" },
-];
-
-export const HEAD = "flex items-start overflow-clip";
-export const CELL = "flex items-start overflow-clip text-sm leading-[normal] text-[#1f1a2e]";
 
 export const RATE_CAPTION = "Of Orders delivered this month";
 export const STAT_LABELS = ["Open returns", "Return rate", "Refunded this month", "Replaced this month"] as const;
@@ -132,48 +114,7 @@ export function ReturnListView({
         {list.rows.length === 0 ? (
           <div className="p-8 text-center text-sm text-[#6e6680]">No {TAB_LABELS[params.tab]} Returns.</div>
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto">
-            <div className="min-w-[760px]">
-              <div
-                data-return-head
-                className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]"
-              >
-                {COLUMNS.map((col) => (
-                  <div key={col.header} className={cn(HEAD, col.className)}>
-                    {col.header}
-                  </div>
-                ))}
-              </div>
-              {list.rows.map((row) => (
-                <div key={row.id} id={returnAnchor(row.id)} data-return-row className={cn(CLICKABLE_ROW, "flex scroll-mt-10 items-center border-b border-[#efebf4] py-[11px]")}>
-                  <div className={cn(CELL, COLUMNS[0].className, "flex-col font-medium text-[#5b2a86]")}>
-                    <RowLink href={`/returns/${row.id}`} className="hover:underline">
-                      {row.number}
-                    </RowLink>
-                    <div className={ABOVE_ROW_LINK}><ReturnFlagNotes flags={flags?.get(row.id)} compact /></div>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[1].className)}>
-                    <span className="truncate pr-3">{row.customer.name}</span>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[2].className)}>
-                    <Link href={`/orders/${row.orderId}`} className={cn(ABOVE_ROW_LINK, "text-[#5b2a86]")}>
-                      #{row.orderId}
-                    </Link>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[3].className)}>
-                    <span className="truncate pr-3">
-                      {row.items.map((i) => `${i.product} ×${i.quantity}`).join(", ")}
-                    </span>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[4].className)}>{orderLabel(row.finalResolution ?? row.preferredResolution)}</div>
-                  <div className={cn(CELL, COLUMNS[5].className)}>
-                    <Pill className={STATUS_PILLS[row.status]}>{returnDisplayLabel(row.status, row.goodsRequired, row.replacement)}</Pill>
-                  </div>
-                  <div className={cn(CELL, COLUMNS[6].className)}>{formatDate(row.requestedAt)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ReturnTable rows={list.rows} flags={flags} />
         )}
         {list.totalPages > 1 && (
           <div className="flex shrink-0 items-center justify-between text-sm text-muted-foreground">

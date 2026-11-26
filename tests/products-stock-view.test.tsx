@@ -67,7 +67,7 @@ it("searches by product and combines with the tab", () => {
   expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(1);
   fireEvent.click(screen.getByRole("tab", { name: /Sold out/ }));
   expect(document.querySelectorAll("[data-stock-row]")).toHaveLength(0);
-  expect(screen.getByText("No sizes here.")).toBeTruthy();
+  expect(screen.getByText(/No sizes match\./)).toBeTruthy();
 });
 
 it("says so when the IMS cannot be read and implies no polling", () => {
@@ -206,7 +206,7 @@ it("says there is no stock copy yet, and lists nothing, when CREOMS has never re
 
 it("has the Products, Price, Stocks, Reserved and Shop shows columns", () => {
   render(<StockView page={page} />);
-  const header = screen.getByText("Products").parentElement as HTMLElement;
+  const header = screen.getByText("Products").closest('[role="row"]') as HTMLElement;
   expect(Array.from(header.children).map((cell) => cell.textContent).filter(Boolean)).toEqual(["Products", "Price", "Stocks", "Reserved", "Shop shows"]);
   expect(screen.queryByText("Available online")).toBeNull();
   expect(screen.queryByText("In stock (IMS)")).toBeNull();

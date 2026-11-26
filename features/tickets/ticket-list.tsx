@@ -6,8 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import type { AssignableStaff } from "./staffs";
-import { CELL, COLUMNS, HEAD } from "./ticket-layout";
-import { TicketRows, type RowsViewer } from "./ticket-rows";
+import { CELL, COLUMNS, HEAD, ROW } from "./ticket-layout";
+import { TicketTable, type RowsViewer } from "./ticket-rows";
 import {
   hasTicketFilters,
   ticketsHref,
@@ -109,14 +109,7 @@ export function TicketListView({
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
             <div className="min-w-[1130px]">
-              <div className="sticky top-0 z-10 flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
-                {COLUMNS.map((col, c) => (
-                  <div key={c} className={cn(HEAD, col.className)}>
-                    {col.header}
-                  </div>
-                ))}
-              </div>
-              <TicketRows rows={list.rows} viewer={viewer} staffs={staffs} now={now} openId={openId} />
+              <TicketTable rows={list.rows} viewer={viewer} staffs={staffs} now={now} openId={openId} />
             </div>
           </div>
         )}
@@ -177,7 +170,7 @@ export function TicketListSkeleton({
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] rounded-xl border border-[#e6e1ee] bg-white p-5">
         <div className="min-h-0 flex-1 overflow-hidden">
           <div className="min-w-[1130px]">
-            <div className="flex items-center border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
+            <div className="flex w-full items-center justify-between border-b border-[#efebf4] bg-white py-1.5 text-xs font-medium leading-[normal] text-[#6e6680]">
               {COLUMNS.map((col, c) => (
                 <div key={c} className={cn(HEAD, col.className)}>
                   {col.header}
@@ -187,7 +180,7 @@ export function TicketListSkeleton({
             {Array.from({ length: 10 }, (_, i) => (
               <div
                 key={i}
-                className="flex items-center border-b border-[#efebf4] py-[11px]"
+                className={cn(ROW, "border-b border-[#efebf4] py-[11px]")}
               >
                 {COLUMNS.map((col, c) => (
                   <div key={c} className={cn(CELL, col.className)}>

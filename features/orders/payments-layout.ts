@@ -9,16 +9,19 @@ export const TABS: { key: PaymentTab; label: string; empty: string }[] = [
   { key: "rejected", label: "Rejected", empty: "No cancelled GCash Orders in the last 30 days." },
 ];
 
-/** The Figma queue's columns. Header and rows share one grid template, so they always line up. */
-export const COLUMNS: { header: string; className: string }[] = [
-  { header: "", className: "" },
-  { header: "Order", className: "" },
-  { header: "Customer", className: "" },
-  { header: "Method", className: "" },
-  { header: "Reference", className: "" },
-  { header: "Amount due", className: "" },
-  { header: "Uploaded", className: "" },
-  { header: "", className: "justify-end" },
+/**
+ * The Figma queue's columns. Header and rows share one grid template, so they always line up; the `fr`
+ * tracks share out the card width, so the columns spread edge to edge.
+ */
+export const COLUMNS: { key: string; header: string; className: string; align?: "right" }[] = [
+  { key: "details", header: "", className: "" },
+  { key: "order", header: "Order", className: "" },
+  { key: "customer", header: "Customer", className: "" },
+  { key: "method", header: "Method", className: "" },
+  { key: "reference", header: "Reference", className: "" },
+  { key: "amount", header: "Amount due", className: "" },
+  { key: "uploaded", header: "Uploaded", className: "" },
+  { key: "action", header: "", className: "justify-end" },
 ];
 
 export const GRID =

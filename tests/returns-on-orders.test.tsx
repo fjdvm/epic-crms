@@ -143,7 +143,9 @@ describe("Returns on the Order detail page", () => {
 
     const card = screen.getByRole("heading", { name: "Returns" }).closest("section") as HTMLElement;
 
-    expect(within(card).queryAllByRole("button")).toHaveLength(0);
+    // The column sort headings are the only buttons: none acts on a Return.
+    const actions = within(card).queryAllByRole("button").filter((b) => !/^Sort by |, sorted /.test(b.getAttribute("aria-label") ?? ""));
+    expect(actions).toHaveLength(0);
     const links = within(card).getAllByRole("link");
     expect(links.map((l) => l.getAttribute("href"))).toEqual(["/returns/15"]);
     expect(links[0].closest("tr")?.className).toContain("relative");

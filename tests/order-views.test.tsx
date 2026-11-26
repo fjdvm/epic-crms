@@ -25,9 +25,11 @@ vi.mock("@/features/orders/actions", () => ({
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
-/** Every button except the Back navigation, which is not an action. */
+/** Every button except the Back navigation and the column sort headings, which are not actions. */
 const NAV = new Set(["Orders", "Returns", "Tickets"]);
-const actionButtons = () => screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? ""));
+const isSortHeading = (b: HTMLElement) => /^Sort by |, sorted /.test(b.getAttribute("aria-label") ?? "");
+const actionButtons = () =>
+  screen.queryAllByRole("button").filter((b) => !NAV.has(b.textContent ?? "") && !isSortHeading(b));
 
 
 afterEach(() => {

@@ -1,16 +1,13 @@
 "use client";
 
-import { Search } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
+import { SelectItem } from "@/components/ui/select";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  ANY,
+  FilterSelect,
+  UrlSearchInput,
+} from "@/components/shared/table-controls/table-toolbar";
 import { cn } from "@/lib/utils";
 
 import { PRIORITY_LABELS } from "./pill";
@@ -27,11 +24,6 @@ import {
   type TicketPriority,
 } from "./tickets";
 
-/** How long typing pauses before the list is asked for; the skeleton shows as soon as the address changes. */
-const TYPING_PAUSE_MS = 150;
-
-const ANY = "any";
-
 function useTicketParams(): TicketParams {
   const search = useSearchParams();
 
@@ -40,88 +32,11 @@ function useTicketParams(): TicketParams {
 
 /**
  * The search box. It stays mounted while the list under it reloads, so typing is never interrupted; the
- * address follows what is typed, and the list shows its skeleton until the matches arrive.
+ * address follows what is typed, and the list shows its skeleton until the matches arrive. The open chat
+ * may not match the new search, so it closes and the first match opens instead.
  */
-export function ChatSearchInput({
-  label,
-  placeholder,
-}: {
-  label: string;
-  placeholder: string;
-}) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const search = useSearchParams();
-  const current = search.get("q") ?? "";
-  const [value, setValue] = useState(current);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const pushed = useRef(current);
-
-  // The address changed from outside (Clear filters, Back), not by this box: show what it says.
-  useEffect(() => {
-    if (current !== pushed.current) {
-      pushed.current = current;
-      setValue(current);
-    }
-  }, [current]);
-  useEffect(() => () => clearTimeout(timer.current), []);
-
-  const change = (next: string) => {
-    setValue(next);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      pushed.current = next.trim();
-      const query = new URLSearchParams(search.toString());
-      if (next.trim()) query.set("q", next.trim());
-      else query.delete("q");
-      // The open chat may not match the new search; the first match opens instead.
-      query.delete("ticket");
-      query.delete("page");
-      const text = query.toString();
-      router.replace(text ? `${pathname}?${text}` : pathname);
-    }, TYPING_PAUSE_MS);
-  };
-
-  return (
-    <label className="flex h-9 w-full max-w-[320px] items-center gap-2 rounded-lg border border-[#e6e1ee] bg-white px-3 text-sm text-[#1f1a2e] focus-within:border-[#5b2a86]">
-      <Search className="size-4 shrink-0 text-[#6e6680]" aria-hidden />
-      <input
-        type="search"
-        aria-label={label}
-        placeholder={placeholder}
-        value={value}
-        onChange={(event) => change(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#6e6680]"
-      />
-    </label>
-  );
-}
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger
-        aria-label={label}
-        className={cn(
-          "h-9 w-auto min-w-[130px] gap-2 border-[#e6e1ee] bg-white text-sm",
-          value !== ANY && "border-[#5b2a86] bg-[#efe6f8] text-[#5b2a86]",
-        )}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>{children}</SelectContent>
-    </Select>
-  );
+export function ChatSearchInput({ label, placeholder }: { label: string; placeholder: string }) {
+  return <UrlSearchInput label={label} placeholder={placeholder} clear={["ticket"]} />;
 }
 
 /** Search, the filters and Clear filters over the Tickets list. Each change goes to the first page. */
