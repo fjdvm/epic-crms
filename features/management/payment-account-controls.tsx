@@ -65,13 +65,13 @@ export function PaymentAccountControls({ account }: { account: PaymentAccountRow
   );
 }
 
-/** Enables or disables a whole method. */
+/** Enables or disables a whole method; the page shows "Turn off" beside the method name, and screen readers hear "Turn off GCash". */
 export function PaymentMethodToggle({ method, enabled }: { method: string; enabled: boolean }) {
   const label = methodLabel(method);
   return (
     <OrderActionDialog
-      trigger={enabled ? `Disable ${label}` : `Enable ${label}`}
-      triggerClassName="bg-transparent !text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa]"
+      trigger={<>{enabled ? "Turn off" : "Turn on"}<span className="sr-only"> {label}</span></>}
+      triggerClassName="bg-transparent !text-[#1f1a2e] border border-[#e6e1ee] hover:bg-[#f7f5fa] px-3 py-1.5 text-xs"
       title={enabled ? `Disable ${label}?` : `Enable ${label}?`}
       description={enabled ? `Customers will not be offered ${label} at all. The accounts and history are kept.` : `Customers can be offered ${label} again.`}
       confirm={enabled ? "Disable method" : "Enable method"}

@@ -13,4 +13,10 @@ describe("the Commerce Settings loading state", () => {
     expect(screen.getByRole("heading", { name: "Commerce Settings" })).toBeTruthy();
     expect(screen.queryByText("Payment Management")).toBeNull();
   });
+
+  it("mirrors the page: one wide card for Payment accounts and a 2×2 grid of setting cards", () => {
+    render(<CommerceSettingsLoading />);
+
+    expect(screen.getAllByTestId("settings-card-skeleton")).toHaveLength(5);
+  });
 });
