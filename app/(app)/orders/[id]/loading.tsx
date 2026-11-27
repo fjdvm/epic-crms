@@ -8,7 +8,7 @@ export default function Loading() {
     <div
       role="status"
       aria-label="Loading Order"
-      className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden"
+      className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7"
     >
       <div className="shrink-0 space-y-2">
         <div className="self-start"><BackButton fallbackHref="/orders" label="Orders" /></div>
@@ -23,12 +23,13 @@ export default function Loading() {
         </div>
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
-        <div className="space-y-5">
-          <section className={CARD}>
-            <h2 className={CARD_TITLE}>Order status</h2>
-            <Skeleton className="h-10 w-full" />
-          </section>
+      <section className={`${CARD} shrink-0`}>
+        <h2 className={CARD_TITLE}>Order status</h2>
+        <Skeleton className="h-10 w-full" />
+      </section>
+
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.1fr)_minmax(0,1.25fr)_minmax(0,0.85fr)] grid-rows-[minmax(0,1fr)] gap-5">
+        <div className="min-h-0 space-y-5 overflow-hidden">
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Items</h2>
             <table className="w-full text-sm text-[#1f1a2e]">
@@ -66,7 +67,7 @@ export default function Loading() {
           </section>
         </div>
 
-        <div className="space-y-5">
+        <div className="min-h-0 space-y-5 overflow-hidden">
           <section className={CARD}>
             <div className="flex items-center justify-between">
               <h2 className={CARD_TITLE}>Payment</h2>
@@ -81,6 +82,9 @@ export default function Loading() {
               ))}
             </dl>
           </section>
+        </div>
+
+        <div className="min-h-0 space-y-5 overflow-hidden">
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>
             <Skeleton className="h-4 w-32" />
