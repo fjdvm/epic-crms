@@ -1,6 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { TABS } from "@/features/orders/fulfilment";
-import { BOARD_COLUMNS, COLUMN_FRAME, COLUMNS_FRAME, PAGE_FRAME, RULES } from "@/features/orders/fulfilment-layout";
+import { BOARD_COLUMNS, COLUMN_FRAME, COLUMNS_FRAME, PAGE_FRAME } from "@/features/orders/fulfilment-layout";
+import { MoveRules } from "@/features/orders/move-rules";
 
 /** Static chrome renders as-is, in the board's own frame; only the data (counts and cards) is skeleton. */
 export default function Loading() {
@@ -39,17 +40,7 @@ export default function Loading() {
           ))}
         </div>
 
-        <section className="flex flex-col gap-3.5 rounded-xl border border-[#e6e1ee] bg-white p-5 leading-[normal]">
-          <h2 className="text-base font-semibold text-[#1f1a2e]">What each move does</h2>
-          <dl className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-3">
-            {RULES.map(({ move, effect }) => (
-              <div key={move} className="space-y-1">
-                <dt className="text-[13px] font-medium text-[#1f1a2e]">{move}</dt>
-                <dd className="text-xs text-[#6e6680]">{effect}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+        <MoveRules />
       </div>
     </div>
   );

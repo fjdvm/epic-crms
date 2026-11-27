@@ -513,6 +513,16 @@ describe("the All active board", () => {
     expect(screen.getByText("Showing 1–20 of 21 Orders")).toBeTruthy();
   });
 
+  it.each([
+    ["the board", () => everyPhase()],
+    ["the loading skeleton", () => render(<Loading />)],
+  ])("keeps What each move does folded away on %s, to be opened when wanted", (_where, show) => {
+    show();
+    const panel = screen.getByText("What each move does").closest("details") as HTMLDetailsElement;
+    expect(panel.open).toBe(false);
+    expect(within(panel).getByText("To pack → Preparing")).toBeTruthy();
+  });
+
   it("shows the five columns while loading", () => {
     render(<Loading />);
     for (const name of ["To pack", "Preparing", "Out for delivery", "Failed", "Completed"]) {

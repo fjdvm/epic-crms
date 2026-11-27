@@ -10,8 +10,9 @@ import { formatDate } from "@/features/customer-profiles/format";
 import { orderLabel } from "@/features/customer-profiles/rules";
 
 import { ordersOnTab, TABS, type FulfilmentBoard, type FulfilmentOrder, type FulfilmentTab } from "./fulfilment";
-import { BOARD_COLUMNS, boardStatusLabel, COLUMN_FRAME, COLUMNS_FRAME, RULES } from "./fulfilment-layout";
+import { BOARD_COLUMNS, boardStatusLabel, COLUMN_FRAME, COLUMNS_FRAME } from "./fulfilment-layout";
 import { FulfilmentMove, type MoveStatus } from "./fulfilment-moves";
+import { MoveRules } from "./move-rules";
 
 /** The columns a card may be dragged to from each column: only its Order's one next move. */
 const DROPS: Record<string, string> = {
@@ -204,17 +205,7 @@ export function FulfilmentBoardView({ board: served }: { board: FulfilmentBoard 
         {tab === "all-active" ? <Columns board={board} moves={moves} /> : <Grid key={tab} tab={tab} orders={ordersOnTab(board, tab)} moves={moves} />}
       </div>
 
-      <section className="flex flex-col gap-3.5 rounded-xl border border-[#e6e1ee] bg-white p-5 leading-[normal]">
-        <h2 className="text-base font-semibold text-[#1f1a2e]">What each move does</h2>
-        <dl className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-3">
-          {RULES.map(({ move, effect }) => (
-            <div key={move} className="space-y-1">
-              <dt className="text-[13px] font-medium text-[#1f1a2e]">{move}</dt>
-              <dd className="text-xs text-[#6e6680]">{effect}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+      <MoveRules />
     </div>
   );
 }
