@@ -11,7 +11,7 @@ vi.mock("next/link", () => ({
 }));
 
 import { AreaSection, VIEWS } from "@/features/ai-insights/area-map";
-import { InsightGrid } from "@/features/ai-insights/insight-grid";
+import { InsightGrid, tabFor } from "@/features/ai-insights/insight-grid";
 import { emptyStats, type AreaFigures, type Insight, type ProductFigures } from "@/features/ai-insights/insights";
 import { Brief, StatRow } from "@/features/ai-insights/sections";
 
@@ -51,6 +51,16 @@ describe("Insights to look at", () => {
     fireEvent.click(screen.getByRole("tab", { name: /Stock/ }));
     expect(screen.queryByText(card().headline)).toBeNull();
     expect(screen.getByText(stock.headline)).toBeTruthy();
+  });
+
+  it("has a Feedback tab, which a ?category=feedback link opens", () => {
+    const low = card({ key: "feedback:low:halaya", category: "feedback", module: "Feedback", headline: "Low ratings on Halaya: 3 of 8" });
+    render(<InsightGrid initial={[card(), low]} days={7} answers={{}} enoughData initialTab={tabFor("feedback")} />);
+    expect(screen.getByRole("tab", { name: /Feedback/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(low.headline)).toBeTruthy();
+    expect(screen.queryByText(card().headline)).toBeNull();
+    expect(tabFor("nonsense")).toBe("all");
+    expect(tabFor(undefined)).toBe("all");
   });
 
   it("dismisses at once and puts the card back with the reason when the server refuses", async () => {
@@ -105,7 +115,7 @@ describe("brief and stat row", () => {
     render(<><Brief days={7} summary={null} confidence={null} enoughData={false} orders={12} stats={emptyStats()} /><StatRow stats={emptyStats()} /></>);
     expect(screen.getByText(/12 in the last 7 days/)).toBeTruthy();
     expect(screen.getByText("Not enough data")).toBeTruthy();
-    expect(screen.getAllByText("—")).toHaveLength(5);
+    expect(screen.getAllByText("—")).toHaveLength(6);
   });
 });
 

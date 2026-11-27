@@ -1,6 +1,8 @@
 import type postgres from "postgres";
 
 import { recordAudit, staffAuditActor, type AuditTrail } from "@/lib/audit-trail";
+import { orderAnchor } from "@/features/customer-profiles/orders";
+import { customerNameSql } from "@/lib/deleted-customer";
 import { cityLabel } from "@/lib/geo/areas";
 import { DASHBOARD_MODULE } from "@/lib/portal/config";
 import { shopRole } from "@/lib/portal/roles";
@@ -95,6 +97,8 @@ const STATUS: Record<string, string> = {
   refunded: "Refunded", replaced: "Replaced", declined: "Declined",
 };
 const status = (s: string) => STATUS[s] ?? s;
+const stars = (rating: number) => "★".repeat(rating) + "☆".repeat(Math.max(0, 5 - rating));
+const snippet = (text: string | null) => (text && text.trim() ? `“${text.trim().length > 80 ? `${text.trim().slice(0, 79)}…` : text.trim()}”` : null);
 
 /**
  * The records behind a card, read now so names and statuses are current. Shown only to the person on the page; none of
@@ -106,7 +110,7 @@ export async function loadEvidence(
   const found = await find(crms, viewer, modules, days, key);
   if (!found.ok) return found;
   const ids = (type: RecordType) => found.insight.records.filter((r) => r.type === type).map((r) => r.id);
-  const [orders, tickets, returns] = await Promise.all([
+  const [orders, tickets, returns, feedback] = await Promise.all([
     ids("order").length ? source<{ id: number; name: string; city: string | null; status: string }[]>`
       select o.id, c.full_name as name, a.city, o.status from public.orders o join public.customers c on c.id = o.customer_id
       left join public.order_delivery_addresses a on a.order_id = o.id where o.id in ${source(ids("order"))}` : [],
@@ -118,6 +122,11 @@ export async function loadEvidence(
         (select array_agg(distinct i.product_name) from public.order_return_items i where i.return_id = r.id) as products
       from public.order_returns r join public.orders o on o.id = r.order_id join public.customers c on c.id = o.customer_id
       where r.id in ${source(ids("return"))}` : [],
+    ids("feedback").length ? source<{ order_id: number; rating: number; comment: string | null; customer_id: string; name: string; deleted: boolean }[]>`
+      select f.order_id, f.rating, f.comment, c.id as customer_id, ${source.unsafe(customerNameSql("c"))} as name,
+        (to_jsonb(c)->>'deleted_at' is not null) as deleted
+      from public.order_feedback f join public.orders o on o.id = f.order_id join public.customers c on c.id = o.customer_id
+      where f.order_id in ${source(ids("feedback"))}` : [],
   ]);
   const join = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join(" · ");
   const byKey = new Map<string, EvidenceRecord>([
@@ -129,6 +138,12 @@ export async function loadEvidence(
     }]),
     ...returns.map((r): [string, EvidenceRecord] => [`return:${r.id}`, {
       type: "return", id: r.id, label: `Return #${r.id}`, detail: join(r.name, `Order #${r.order_id}`, (r.products ?? []).join(", ")), status: status(r.status), href: `/returns/${r.id}`,
+    }]),
+    // The customer's profile opens on the Order; a deleted customer has no profile, so their Order opens instead.
+    ...feedback.map((f): [string, EvidenceRecord] => [`feedback:${f.order_id}`, {
+      type: "feedback", id: f.order_id, label: `${stars(f.rating)} Order #${f.order_id}`, detail: join(f.name, snippet(f.comment)),
+      status: `${f.rating} ${f.rating === 1 ? "star" : "stars"}`,
+      href: f.deleted ? `/orders/${f.order_id}` : `/customer-profiles/${encodeURIComponent(f.customer_id)}#${orderAnchor(f.order_id)}`,
     }]),
   ]);
   return { ok: true, records: found.insight.records.map((r) => byKey.get(`${r.type}:${r.id}`)).filter((r): r is EvidenceRecord => !!r) };

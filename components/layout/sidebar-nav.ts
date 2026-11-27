@@ -9,7 +9,6 @@ import {
   Mail,
   MessageCircle,
   RotateCcw,
-  Star,
   Ticket,
   Users2,
   Package,
@@ -121,13 +120,6 @@ export const conversationsItem: NavItem = {
   icon: MessageCircle,
 };
 
-export const feedbackItem: NavItem = {
-  group: "CUSTOMER SUPPORT",
-  name: "Feedback",
-  href: "/feedback",
-  icon: Star,
-};
-
 export const commerceSettingsItem: NavItem = {
   group: "MANAGEMENT",
   name: "Commerce Settings",
@@ -147,7 +139,6 @@ export const sidebarItems: NavItem[] = [
   returnsItem,
   ticketsItem,
   conversationsItem,
-  feedbackItem,
   approvalsItem,
   commerceSettingsItem,
 ];

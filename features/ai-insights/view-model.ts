@@ -1,10 +1,10 @@
-import { FULFILMENT_MODULE, ORDERS_MODULE, RETURNS_MODULE, TICKETS_MODULE } from "@/lib/portal/config";
+import { FEEDBACK_MODULE, FULFILMENT_MODULE, ORDERS_MODULE, RETURNS_MODULE, TICKETS_MODULE } from "@/lib/portal/config";
 
 import type { Stats } from "./insights";
 
 /** Which Module each stat tile needs; a tile from a Module the person does not hold shows a dash. */
 export const STAT_MODULES: Record<keyof Stats, string> = {
-  orders: ORDERS_MODULE, lateOrFailed: FULFILMENT_MODULE, returns: RETURNS_MODULE, openTickets: TICKETS_MODULE, stockWatch: ORDERS_MODULE,
+  orders: ORDERS_MODULE, lateOrFailed: FULFILMENT_MODULE, returns: RETURNS_MODULE, openTickets: TICKETS_MODULE, stockWatch: ORDERS_MODULE, rating: FEEDBACK_MODULE,
 };
 
 export function visibleStats(stats: Stats, modules: readonly string[]): Stats {

@@ -7,8 +7,8 @@ import { FEEDBACK_MODULE, FULFILMENT_MODULE, ORDERS_MODULE, PAYMENTS_MODULE, RET
  */
 
 /**
- * The Modules whose cards the page can show; each card shows only to people who hold its Module. Feedback adds the
- * Rating ranking to Top products.
+ * The Modules whose cards the page can show; each card shows only to people who hold its Module. Feedback brings the
+ * Feedback cards, the Average rating tile and the Rating ranking in Top products.
  */
 export const AI_INSIGHTS_MODULES = [ORDERS_MODULE, PAYMENTS_MODULE, FULFILMENT_MODULE, RETURNS_MODULE, TICKETS_MODULE, FEEDBACK_MODULE];
 
@@ -36,18 +36,28 @@ export const RULES = {
   deliveryRisePoints: 10,
   /** Ticket themes: at least this many Tickets in one theme. */
   themeMinTickets: 3,
+  /** A rating of this many stars or fewer is a low rating. */
+  lowRating: 3,
+  /** A product's low ratings: at least this many rated Orders, this many low ones, and this share of them low. */
+  ratingMinOrders: 5,
+  ratingMinLow: 2,
+  ratingLowShare: 0.3,
+  /** The shop's average rating: at least this many ratings in both periods, and a fall of at least this many stars. */
+  ratingDropMinCount: 10,
+  ratingDrop: 0.3,
   /** Confidence by sample size: High from this many, Medium from that many, Low below. */
   sampleHigh: 30,
   sampleMedium: 10,
 } as const;
 
-export type Category = "stock" | "payments" | "support" | "returns" | "delivery";
+export type Category = "stock" | "payments" | "support" | "returns" | "delivery" | "feedback";
 export type Priority = "high" | "watch" | "info";
 export type Confidence = "high" | "medium" | "low";
-export type RecordType = "order" | "ticket" | "return";
+/** A "feedback" record is the Feedback on one Order, so its id is the Order's. */
+export type RecordType = "order" | "ticket" | "return" | "feedback";
 
 export const CATEGORY_LABELS: Record<Category, string> = {
-  stock: "Stock", payments: "Payments", support: "Support", returns: "Returns", delivery: "Delivery",
+  stock: "Stock", payments: "Payments", support: "Support", returns: "Returns", delivery: "Delivery", feedback: "Feedback",
 };
 export const PRIORITY_LABELS: Record<Priority, string> = { high: "High", watch: "Watch", info: "Info" };
 export const CONFIDENCE_LABELS: Record<Confidence, string> = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
@@ -135,6 +145,13 @@ export interface StockFigures { key: string; name: string; available: number; so
 export interface ExpiringFigures { orders: number; value: number; orderIds: number[]; soonestHours: number | null }
 export interface SlaFigures { atRisk: number; breaching: number; ticketIds: number[]; open: number }
 export interface ReturnProduct { product: string; sold: number; returned: number; returnIds: number[] }
+/** One product's ratings in the period, counted per Order; `lowOrderIds` are its low-rated Orders, newest first. */
+export interface RatedProduct { product: string; rated: number; low: number; lowOrderIds: number[] }
+/** Customer Feedback given in the period and the one before, by when it was given. */
+export interface FeedbackFigures {
+  count: number; total: number; previousCount: number; previousTotal: number;
+  low: number; lowOrderIds: number[]; products: RatedProduct[];
+}
 export interface ThemeFigures { label: string; ticketIds: number[]; product: string | null; productTickets: number; area: string | null; areaTickets: number }
 
 /** Everything the rules read, computed in SQL and code. No Customer is in here: IDs, names of places, products and couriers only. */
@@ -157,12 +174,14 @@ export interface InsightFacts {
   sla: SlaFigures | null;
   returns: { sold: number; returned: number; products: ReturnProduct[] } | null;
   themes: ThemeFigures[] | null;
+  /** Null when it could not be read; optional so facts saved before Feedback joined still load. */
+  feedback?: FeedbackFigures | null;
   /** Products by place, for "Top products" and each area's favourite. Null when they could not be read. */
   products: ProductFigures[] | null;
 }
 
 export interface Stat { value: number | null; note: string; tone?: "up" | "down" | "warn" | null }
-export interface Stats { orders: Stat; lateOrFailed: Stat; returns: Stat; openTickets: Stat; stockWatch: Stat }
+export interface Stats { orders: Stat; lateOrFailed: Stat; returns: Stat; openTickets: Stat; stockWatch: Stat; rating: Stat }
 
 const pct = (share: number) => Math.round(share * 100);
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -357,14 +376,92 @@ export function buildInsights(facts: InsightFacts): Insight[] {
     });
   }
 
+  out.push(...feedbackInsights(facts));
+
   const rank: Record<Priority, number> = { high: 0, watch: 1, info: 2 };
   return out.sort((a, b) => rank[a.priority] - rank[b.priority] || a.key.localeCompare(b.key));
 }
 
-/** The five figures at the top of the page. Null values are shown as a dash. */
+/** The Feedback cards: products with many low ratings, and a fall in the shop's average rating. */
+function feedbackInsights(facts: InsightFacts): Insight[] {
+  const feedback = facts.feedback;
+  if (!feedback) return [];
+  const out: Insight[] = [];
+  const when = periodWords(facts.days);
+  const low = `${RULES.lowRating} stars or fewer`;
+
+  const worst = feedback.products
+    .filter((p) => p.rated >= RULES.ratingMinOrders && p.low >= RULES.ratingMinLow && p.low / p.rated >= RULES.ratingLowShare)
+    .sort((a, b) => b.low / b.rated - a.low / a.rated || b.low - a.low || a.product.localeCompare(b.product))
+    .slice(0, 2);
+  for (const p of worst) {
+    const { confidence, reason } = confidenceFor(p.rated);
+    out.push({
+      key: `feedback:low:${slug(p.product)}`, category: "feedback", module: FEEDBACK_MODULE,
+      priority: p.low / p.rated >= 0.5 ? "high" : "watch", confidence, confidenceReason: reason,
+      headline: `Low ratings on ${p.product}: ${p.low} of ${p.rated}`,
+      basedOn: `${pct(p.low / p.rated)}% of the rated Orders with ${p.product} got ${low}`,
+      steps: [
+        `Read the star ratings Customers gave ${when}, one per Order.`,
+        `Counted, for each product, the rated Orders that had it and how many got ${low}.`,
+        `${p.product}: ${p.low} of ${p.rated} (${pct(p.low / p.rated)}%), at or above the ${pct(RULES.ratingLowShare)}% this card needs.`,
+      ],
+      numbers: { percent: pct(p.low / p.rated), low: p.low },
+      records: p.lowOrderIds.slice(0, MAX_RECORDS).map((id) => ({ type: "feedback", id })),
+      action: { label: "Open Customer Profiles", href: "/customer-profiles" },
+      nextStep: `Read what these Customers wrote, and check recent ${p.product} batches and the packing.`,
+    });
+  }
+
+  const { count, total, previousCount, previousTotal } = feedback;
+  if (count >= RULES.ratingDropMinCount && previousCount >= RULES.ratingDropMinCount) {
+    const average = total / count, previous = previousTotal / previousCount;
+    const fall = Math.round((previous - average) * 10) / 10;
+    if (fall >= RULES.ratingDrop) {
+      const { confidence, reason } = confidenceFor(count);
+      out.push({
+        key: "feedback:drop", category: "feedback", module: FEEDBACK_MODULE,
+        priority: fall >= 0.6 ? "high" : "watch", confidence, confidenceReason: reason,
+        headline: `The average rating fell to ${average.toFixed(1)} stars`,
+        basedOn: `From ${previous.toFixed(1)} ${before(facts.days)}, over ${plural(count, "rating")}`,
+        steps: [
+          `Averaged the ${plural(count, "star rating")} Customers gave ${when}: ${average.toFixed(1)}.`,
+          `Averaged the ${plural(previousCount, "rating")} ${before(facts.days)}: ${previous.toFixed(1)}.`,
+          `It fell ${fall.toFixed(1)} stars, at or above the ${RULES.ratingDrop} this card needs.`,
+        ],
+        // Tenths of a star, so a further fall brings back a dismissed card.
+        numbers: { fallTenths: Math.round(fall * 10), low: feedback.low },
+        records: feedback.lowOrderIds.slice(0, MAX_RECORDS).map((id) => ({ type: "feedback", id })),
+        action: { label: "Open Customer Profiles", href: "/customer-profiles" },
+        nextStep: "Read the low ratings below together and look for what they share: a product, an area or the delivery.",
+      });
+    }
+  }
+  return out;
+}
+
+/** The six figures at the top of the page. Null values are shown as a dash. */
 export function emptyStats(): Stats {
   const none = () => ({ value: null, note: "No data yet" });
-  return { orders: none(), lateOrFailed: none(), returns: none(), openTickets: none(), stockWatch: none() };
+  return { orders: none(), lateOrFailed: none(), returns: none(), openTickets: none(), stockWatch: none(), rating: none() };
+}
+
+/** Runs saved before the Average rating tile have no `rating`; the tile waits for the next morning run. */
+export function withRating(stats: Omit<Stats, "rating"> & Partial<Pick<Stats, "rating">>): Stats {
+  return { ...stats, rating: stats.rating ?? { value: null, note: "From the next morning run" } };
+}
+
+function ratingStat(feedback: FeedbackFigures | null | undefined, days: PeriodDays): Stat {
+  if (!feedback) return { value: null, note: "Not available" };
+  if (!feedback.count) return { value: null, note: "No ratings yet" };
+  const average = Math.round((feedback.total / feedback.count) * 10) / 10;
+  const previous = feedback.previousCount ? Math.round((feedback.previousTotal / feedback.previousCount) * 10) / 10 : null;
+  const change = previous === null ? null : Math.round((average - previous) * 10) / 10;
+  return {
+    value: average,
+    note: change === null ? plural(feedback.count, "rating") : `${change >= 0 ? "+" : ""}${change.toFixed(1)} vs ${before(days)}`,
+    tone: change === null || change === 0 ? null : change > 0 ? "up" : "down",
+  };
 }
 
 export function buildStats(facts: InsightFacts): Stats {
@@ -391,6 +488,7 @@ export function buildStats(facts: InsightFacts): Stats {
     stockWatch: facts.stock
       ? { value: facts.stock.length, note: firstStock ? `${firstStock.name} in ~${plural(firstStock.daysLeft, "day")}` : "Nothing running low", tone: facts.stock.length ? "warn" : null }
       : { value: null, note: "Not available" },
+    rating: ratingStat(facts.feedback, facts.days),
   };
 }
 

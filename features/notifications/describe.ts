@@ -1,4 +1,4 @@
-import { feedbackAnchor } from "@/features/feedback/anchor";
+import { orderAnchor } from "@/features/customer-profiles/orders";
 import { returnAnchor } from "@/features/returns/anchor";
 
 import { SENIOR_PWD_PAGE } from "@/lib/portal/pages";
@@ -21,7 +21,7 @@ export function describeNotification(n: Notification): { text: string; href: str
     case "ticket-message":
       return { text: `${n.customerName} sent a message on ${ticket}`, href };
     case "feedback-low":
-      return { text: `${n.customerName} rated Order #${n.orderId} ${stars}`, href: `/feedback#${feedbackAnchor(n.orderId!)}` };
+      return { text: `${n.customerName} rated Order #${n.orderId} ${stars}`, href: `/customer-profiles/${encodeURIComponent(n.customerId)}#${orderAnchor(n.orderId!)}` };
     case "order-free-delivery":
       return { text: `${n.customerName} placed Order #${n.orderId} · Free delivery, confirmed. No quote is needed`, href: `/orders/${n.orderId}` };
     case "order-placed":

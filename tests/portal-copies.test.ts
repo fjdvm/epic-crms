@@ -142,7 +142,7 @@ const alertCases = [
   ["ticket-message", "Tickets", null, "Jane Doe sent a message on TKT-7", "/tickets/7"],
   ["ticket-message", "Tickets", "ada.staff", "Jane Doe sent a message on TKT-7", "/tickets/7"],
   ["ticket-not-fixed", "Tickets", "ada.staff", "Jane Doe says TKT-7 is not fixed", "/tickets/7"],
-  ["feedback-low", "Feedback", null, "Jane Doe rated Order #1 2 stars", "/feedback#feedback-1"],
+  ["feedback-low", "Feedback", null, "Jane Doe rated Order #1 2 stars", "/customer-profiles/c1#order-1"],
   ["return-requested", "Returns", null, "Jane Doe requested Return RMA-8", "/returns#return-8"],
   ["order-placed", "Orders", null, "Jane Doe placed Order #1", "/orders/1"],
   ["order-delivery-fee", "Orders", null, "Jane Doe placed Order #1, which needs a Delivery fee", "/orders/1"],

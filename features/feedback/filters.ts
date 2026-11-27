@@ -37,21 +37,6 @@ export function parseFilters(raw: Record<string, string | string[] | undefined>)
   };
 }
 
-/** The page address for these filters; the defaults (All time, every rating, every product, page 1) leave no trace. */
-export function feedbackHref(filters: FeedbackFilters): string {
-  const query = new URLSearchParams();
-
-  if (filters.from) query.set("from", filters.from);
-  if (filters.to) query.set("to", filters.to);
-  if (filters.stars !== undefined) query.set("stars", String(filters.stars));
-  if (filters.product) query.set("product", filters.product);
-  if (filters.page > 1) query.set("page", String(filters.page));
-
-  const text = query.toString();
-
-  return text ? `/feedback?${text}` : "/feedback";
-}
-
 /** Today's date in the Philippines, "YYYY-MM-DD". */
 export function manilaToday(now: Date = new Date()): string {
   return new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);

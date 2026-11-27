@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowRight, CreditCard, LayoutDashboard, LifeBuoy, Package, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Truck, X,
+  ArrowRight, CreditCard, LayoutDashboard, LifeBuoy, Package, RotateCcw, Sparkles, Star, ThumbsDown, ThumbsUp, Truck, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -15,8 +15,15 @@ import {
 import type { EvidenceRecord } from "./store";
 
 const ENDPOINT = "/api/dashboard/ai-insights";
-const TABS: ("all" | Category)[] = ["all", "stock", "payments", "support", "returns", "delivery"];
-const ICONS: Record<Category, typeof Package> = { stock: Package, payments: CreditCard, support: LifeBuoy, returns: RotateCcw, delivery: Truck };
+export const TABS: ("all" | Category)[] = ["all", "stock", "payments", "support", "returns", "delivery", "feedback"];
+const ICONS: Record<Category, typeof Package> = {
+  stock: Package, payments: CreditCard, support: LifeBuoy, returns: RotateCcw, delivery: Truck, feedback: Star,
+};
+
+/** The tab a `?category=` link opens; anything else opens All. */
+export function tabFor(category: string | undefined): (typeof TABS)[number] {
+  return TABS.find((t) => t === category) ?? "all";
+}
 const PRIORITY_STYLE: Record<Priority, string> = {
   high: "bg-[#fef2f2] text-[#b91c1c]", watch: "bg-[#fffbeb] text-[#b45309]", info: "bg-[#f4f4f5] text-[#52525b]",
 };
@@ -43,11 +50,12 @@ async function send(payload: Record<string, unknown>) {
  * "Insights to look at". Buttons only open screens or the Evidence drawer; nothing here changes the shop.
  * Dismiss and Helpful / Not helpful are personal, optimistic, and rolled back with the reason if refused.
  */
-export function InsightGrid({ initial, days, answers: initialAnswers, enoughData, waiting }: {
+export function InsightGrid({ initial, days, answers: initialAnswers, enoughData, waiting, initialTab = "all" }: {
   initial: Insight[]; days: PeriodDays; answers: Record<string, boolean>; enoughData: boolean; waiting?: boolean;
+  initialTab?: (typeof TABS)[number];
 }) {
   const [cards, setCards] = useState(initial);
-  const [tab, setTab] = useState<(typeof TABS)[number]>("all");
+  const [tab, setTab] = useState<(typeof TABS)[number]>(initialTab);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Insight | null>(null);
   const [answers, setAnswers] = useState(initialAnswers);

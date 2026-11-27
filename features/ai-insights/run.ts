@@ -7,7 +7,7 @@ import { configuredStructuredModels, structuredOutput, type StructuredModel } fr
 
 import { loadFacts, loadNowFacts, manilaDay, periodSpan, type Sources } from "./facts";
 import {
-  buildInsights, buildStats, enoughData, PERIOD_DAYS, type AreaFigures, type ProductFigures, type Confidence, type Insight, type InsightFacts,
+  buildInsights, buildStats, enoughData, PERIOD_DAYS, withRating, type AreaFigures, type ProductFigures, type Confidence, type Insight, type InsightFacts,
   type PeriodDays, type Stats,
 } from "./insights";
 
@@ -127,7 +127,7 @@ export async function runInsights(sources: Sources, now = new Date(), models: ()
 
 interface RunRow {
   id: string; period_days: number; created_at: Date; period_start: Date; period_end: Date; enough_data: boolean;
-  figures: { stats: Stats; areas: AreaFigures[]; unmapped: number; orders: number; products?: ProductFigures[] | null }; insights: Insight[];
+  figures: { stats: Parameters<typeof withRating>[0]; areas: AreaFigures[]; unmapped: number; orders: number; products?: ProductFigures[] | null }; insights: Insight[];
   summary: string | null; summary_confidence: Confidence | null;
 }
 
@@ -140,7 +140,7 @@ export async function loadLatestRun(crms: postgres.Sql, days: PeriodDays): Promi
   return {
     id: Number(row.id), days: row.period_days as PeriodDays, createdAt: row.created_at.toISOString(),
     periodStart: row.period_start.toISOString(), periodEnd: row.period_end.toISOString(), enoughData: row.enough_data,
-    orders: row.figures.orders, stats: row.figures.stats, areas: row.figures.areas, unmapped: row.figures.unmapped, products: row.figures.products ?? null,
+    orders: row.figures.orders, stats: withRating(row.figures.stats), areas: row.figures.areas, unmapped: row.figures.unmapped, products: row.figures.products ?? null,
     insights: row.insights, summary: row.summary, summaryConfidence: row.summary_confidence,
   };
 }

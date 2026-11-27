@@ -173,3 +173,46 @@ describe("periods and labels", () => {
     expect(cityLabel("City of Makati")).toBe("Makati");
   });
 });
+
+describe("the Feedback rules", () => {
+  const feedback = (over: Partial<NonNullable<InsightFacts["feedback"]>> = {}): InsightFacts["feedback"] => ({
+    count: 20, total: 90, previousCount: 20, previousTotal: 92, low: 3, lowOrderIds: [30, 20, 10], products: [], ...over,
+  });
+
+  it("flags a product with many low ratings, with its Feedback as evidence", () => {
+    const cards = buildInsights(facts({ feedback: feedback({ products: [
+      { product: "Halaya", rated: 8, low: 3, lowOrderIds: [12, 11, 10] },
+      { product: "Ube Jam", rated: 12, low: 1, lowOrderIds: [9] },
+    ] }) })).filter((c) => c.category === "feedback");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      key: "feedback:low:halaya", module: "Feedback", priority: "watch", confidence: "low", headline: "Low ratings on Halaya: 3 of 8",
+      numbers: { percent: 38, low: 3 }, records: [{ type: "feedback", id: 12 }, { type: "feedback", id: 11 }, { type: "feedback", id: 10 }],
+    });
+  });
+
+  it("needs enough rated Orders: four bad ratings out of four is not a pattern yet", () => {
+    const cards = buildInsights(facts({ feedback: feedback({ products: [{ product: "Halaya", rated: 4, low: 4, lowOrderIds: [1, 2, 3, 4] }] }) }));
+    expect(cards.filter((c) => c.category === "feedback")).toEqual([]);
+  });
+
+  it("flags a fall in the average rating of 0.3 stars or more, and not a smaller one", () => {
+    const fell = buildInsights(facts({ feedback: feedback({ total: 82, previousTotal: 92 }) })).find((c) => c.key === "feedback:drop");
+    expect(fell).toMatchObject({ headline: "The average rating fell to 4.1 stars", basedOn: "From 4.6 the week before, over 20 ratings", numbers: { fallTenths: 5 } });
+    expect(buildInsights(facts({ feedback: feedback({ total: 88, previousTotal: 92 }) })).find((c) => c.key === "feedback:drop")).toBeUndefined();
+    // Too few ratings in either period: no card.
+    expect(buildInsights(facts({ feedback: feedback({ count: 9, total: 30 }) })).find((c) => c.key === "feedback:drop")).toBeUndefined();
+  });
+
+  it("makes no Feedback cards when Feedback could not be read, and shows the Average rating tile from the ratings", () => {
+    expect(buildInsights(facts({ feedback: null })).filter((c) => c.category === "feedback")).toEqual([]);
+    expect(buildStats(facts({ feedback: feedback({ total: 82, previousTotal: 92 }) })).rating).toEqual({ value: 4.1, note: "-0.5 vs the week before", tone: "down" });
+    expect(buildStats(facts({ feedback: null })).rating.value).toBeNull();
+  });
+
+  it("hides the Average rating tile without the Feedback Module", () => {
+    const stats = buildStats(facts({ feedback: feedback() }));
+    expect(visibleStats(stats, ["Orders"]).rating).toEqual({ value: null, note: "Not in your Modules" });
+    expect(visibleStats(stats, ["Feedback"]).rating.value).toBe(4.5);
+  });
+});

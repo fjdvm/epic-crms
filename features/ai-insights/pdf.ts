@@ -6,6 +6,7 @@ import type { InsightRun } from "./run";
 
 const STAT_LABELS: [keyof Stats, string][] = [
   ["orders", "Orders"], ["lateOrFailed", "Late or failed"], ["returns", "Returns & damage"], ["openTickets", "Open tickets"], ["stockWatch", "Stock watch"],
+  ["rating", "Average rating"],
 ];
 
 /** The page as a PDF, from the stored run: the same figures and the same cards the person sees. Nothing is worked out again. */

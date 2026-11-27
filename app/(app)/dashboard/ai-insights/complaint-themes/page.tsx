@@ -19,14 +19,14 @@ export default async function ComplaintThemesPage({ searchParams }: { searchPara
   const { from, to } = parseFilters(await searchParams);
   const today = manilaToday();
   const href = (kind: QuickRange | null) => {
-    if (!kind) return "/feedback/complaint-themes";
+    if (!kind) return "/dashboard/ai-insights/complaint-themes";
     const r = quickRange(kind, today);
-    return `/feedback/complaint-themes?from=${r.from}&to=${r.to}`;
+    return `/dashboard/ai-insights/complaint-themes?from=${r.from}&to=${r.to}`;
   };
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
       <div className="shrink-0 space-y-1">
-        <p className="text-xs text-[#6e6680]"><Link href="/feedback" className="hover:underline">Feedback</Link> / Complaint themes</p>
+        <p className="text-xs text-[#6e6680]"><Link href="/dashboard/ai-insights?category=feedback" className="hover:underline">AI insights</Link> / Complaint themes</p>
         <h1 className="text-2xl font-semibold leading-[normal] text-[#1f1a2e]">Complaint themes <span className="ml-1 rounded-full bg-[#ede4f7] px-2 py-0.5 align-middle text-xs font-medium text-[#5b2a86]">AI</span></h1>
         <p className="text-sm text-[#6e6680]">AI reads the period&apos;s tickets, returns and feedback and groups the same problems. Made when you open this page, not on a timer.</p>
       </div>
