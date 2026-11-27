@@ -23,10 +23,14 @@ as Returning if they had a counted Order before that month started. It returns
 an empty months array when the entire six-month window has no Buyers; otherwise
 months with no Buyers have zero counts and a `null` returning share.
 
-Payment and receiving breakdowns group the Order's stored `payment_method` and
-`fulfillment_method`. Each group includes the count of counted Orders and their
-Sales after Refunded Return amounts, including Delivery fees. No Orders produces
-empty arrays.
+The payment breakdown groups the Order's stored `payment_method`. Each group
+includes the count of counted Orders and their Sales after Refunded Return
+amounts, including Delivery fees. No Orders produces an empty array. The card
+lists GCash, Maya, Bank transfer and Cash on Delivery, each as a share of all
+counted Orders.
+
+The Orders tile is `{ placed, counted }`: every non-cancelled Order placed in the
+period, and how many of those are counted in Sales.
 
 Dashboard analytics are cached together for five minutes per database connection,
 period, six-month window and visible widget set. Different Module combinations

@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { STAGE_LABELS } from "@/features/customer-profiles/rules";
 
 import type { Breakdown } from "./breakdowns";
+import { NO_ORDERS_STAGE_LABEL, STAGES_NOTE } from "./count-notes";
 import type { CustomersByStage } from "./customers";
 import type { Widget } from "./figures";
 import { PeriodComparison } from "./stat-tile";
@@ -11,18 +12,19 @@ import { PeriodComparison } from "./stat-tile";
 const CARD =
   "flex min-w-0 flex-col gap-3 rounded-xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]";
 const count = (value: number) => value.toLocaleString("en-PH");
+const SUMMARY_STAGE_LABELS = { ...STAGE_LABELS, new: NO_ORDERS_STAGE_LABEL };
 
 export function CustomersByStageCard({ widget }: { widget: Breakdown<CustomersByStage> }) {
   return (
     <section className={CARD}>
       <div className="space-y-1">
         <h2 className="text-base font-semibold text-[#18181b]">Customers by Stage</h2>
-        <p className="text-xs text-[#71717a]">As of today</p>
+        <p className="text-xs text-[#71717a]">{STAGES_NOTE}</p>
       </div>
       {widget.ok ? (
         <>
           <ul className="space-y-3">
-            {Object.entries(STAGE_LABELS).map(([stage, label]) => (
+            {Object.entries(SUMMARY_STAGE_LABELS).map(([stage, label]) => (
               <li key={stage} className="flex items-center justify-between gap-3 text-sm">
                 <span className="text-[#71717a]">{label}</span>
                 <span className="font-semibold tabular-nums text-[#18181b]">
@@ -69,7 +71,7 @@ export function CustomersByStageSkeleton() {
     <section role="status" aria-label="Loading Customers by Stage" className={CARD}>
       <div className="space-y-1">
         <h2 className="text-base font-semibold text-[#18181b]">Customers by Stage</h2>
-        <p className="text-xs text-[#71717a]">As of today</p>
+        <p className="text-xs text-[#71717a]">{STAGES_NOTE}</p>
       </div>
       {Object.keys(STAGE_LABELS).map((stage) => <Skeleton key={stage} className="h-5 w-full" />)}
       <Skeleton className="h-10 w-full" />

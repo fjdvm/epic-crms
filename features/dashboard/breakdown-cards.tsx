@@ -3,6 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   bestSellersHeadline, buyersHeadline, METHOD_LABELS, paymentHeadline,
 } from "./breakdown-headlines";
+import { BUYERS_CARD_NOTE, PAYMENT_NOTE } from "./count-notes";
 import type { BestSellers, Breakdown, MonthlyBuyers, PaymentAndReceiving } from "./breakdowns";
 
 const CARD =
@@ -99,6 +100,7 @@ export function BuyersCard({ widget }: { widget: Breakdown<MonthlyBuyers> }) {
   return (
     <section className={CARD}>
       <h2 className="text-[15px] font-semibold leading-snug text-[#18181b]">{buyersHeadline(widget.months)}</h2>
+      <p className="text-xs text-[#71717a]">{BUYERS_CARD_NOTE}</p>
       <ol className="flex w-full flex-col gap-3">
         {widget.months.map((m) => {
           return (
@@ -124,7 +126,7 @@ export function BuyersSkeleton() {
   return <CardSkeleton title="New vs returning Buyers" rows={6} />;
 }
 
-/** Only the two methods Staff care about are listed, even at zero; the design's Maya and Bank transfer are dropped. */
+/** Every method is listed, even at zero, so the shares are of all counted Orders. */
 function section(rows: PaymentAndReceiving["payment"], known: string[]) {
   const total = rows.reduce((sum, r) => sum + r.orders, 0);
 
@@ -160,7 +162,8 @@ export function PaymentCard({ widget }: { widget: Breakdown<PaymentAndReceiving>
   return (
     <section className={CARD}>
       <h2 className="text-[15px] font-semibold leading-snug text-[#18181b]">{paymentHeadline(widget.payment)}</h2>
-      <Section title="Payment method" rows={section(widget.payment, ["gcash", "cash-on-delivery"])} />
+      <p className="text-xs text-[#71717a]">{PAYMENT_NOTE}</p>
+      <Section title="Payment method" rows={section(widget.payment, Object.keys(METHOD_LABELS))} />
     </section>
   );
 }

@@ -92,7 +92,7 @@ describe("Dashboard PDF export", () => {
 
   it("renders every figures kind, including zero and empty states", async () => {
     mocks.figures.mockResolvedValue({
-      orders: { ok: true, current: 8, previous: 4 },
+      orders: { ok: true, current: { placed: 8, counted: 6 }, previous: { placed: 4, counted: 4 } },
       averageRating: { ok: true, current: { average: null, count: 0 }, previous: { average: 4.5, count: 2 } },
       returningBuyers: { ok: true, current: { share: 0.25, buyers: 4 }, previous: { share: null, buyers: 0 } },
       monthlySales: { ok: true, months: [{ label: "2026-10", start: now, end: now, soFar: true, sales: 123456 }] },
@@ -112,7 +112,7 @@ describe("Dashboard PDF export", () => {
     } satisfies DashboardFigures);
     const text = await readPdf(await GET(request()));
     for (const expected of [
-      "Orders", "No Feedback yet", "4.5 stars - From 2 Feedback", "25% (4 Buyers)",
+      "Orders", "No Feedback yet", "4.5 stars - From 2 Feedback", "25% (4 Buyers with Orders counted in Sales)", "8 placed - 6 counted in Sales", "No Orders yet: 1",
       "2026-10 (so far): ₱1,235", "Ube & Leche Flan: ₱1,000 - 2 units - 80% of Sales",
       "Other products and Delivery fees: ₱250 (20%)", "3 New / 1 Returning (25%)",
       "GCash: 4 Orders", "No Orders in this period", "Customers by Stage - As of today",
@@ -124,7 +124,7 @@ describe("Dashboard PDF export", () => {
 
   it("notes each failed widget and keeps the successful figures", async () => {
     mocks.figures.mockResolvedValue({
-      sales: { ok: false }, orders: { ok: true, current: 42, previous: 30 },
+      sales: { ok: false }, orders: { ok: true, current: { placed: 42, counted: 40 }, previous: { placed: 30, counted: 30 } },
       monthlySales: { ok: false }, bestSellers: { ok: false }, customersByStage: { ok: false },
       attention: { paymentProofs: { ok: false }, openTickets: { ok: true, count: 2, oldest: null, overdue: 1 } },
     } satisfies DashboardFigures);

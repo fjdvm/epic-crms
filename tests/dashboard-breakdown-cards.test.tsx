@@ -87,6 +87,7 @@ describe("the New vs returning Buyers card", () => {
     expect(screen.getByText("Sep")).toBeTruthy();
     expect(screen.getByText("3 new · 1 returning")).toBeTruthy();
     expect(screen.getByText("25% returning")).toBeTruthy();
+    expect(screen.getByText("Last six months · Orders counted in Sales · new = first-time Buyer")).toBeTruthy();
   });
 
   it("says there are no Orders when there are no Buyers", () => {
@@ -106,22 +107,21 @@ describe("the New vs returning Buyers card", () => {
 });
 
 describe("the How customers pay card", () => {
-  it("shows GCash vs Cash on Delivery, and never Maya or Bank transfer", () => {
+  it("shows all four payment methods as shares of every counted Order", () => {
     render(
       <PaymentCard
         widget={{
           ok: true,
-          payment: [{ method: "cash-on-delivery", orders: 1, sales: 100 }, { method: "gcash", orders: 3, sales: 300 }, { method: "maya", orders: 2, sales: 200 }],
+          payment: [{ method: "cash-on-delivery", orders: 1, sales: 100 }, { method: "gcash", orders: 5, sales: 500 }, { method: "maya", orders: 4, sales: 400 }],
         }}
       />,
     );
 
-    expect(screen.getByText("GCash")).toBeTruthy();
-    expect(screen.getByText("Cash on Delivery")).toBeTruthy();
-    expect(screen.queryByText("Pickup")).toBeNull();
-    expect(screen.getByText("3 Orders")).toBeTruthy();
-    expect(screen.getByText("50%")).toBeTruthy();
-    expect(screen.queryByText(/Maya|Bank transfer/)).toBeNull();
+    expect(screen.getByText("Orders counted in Sales")).toBeTruthy();
+    for (const [label, share] of [["GCash", "50%"], ["Maya", "40%"], ["Bank transfer", "0%"], ["Cash on Delivery", "10%"]]) {
+      expect(screen.getByText(label).parentElement!.textContent).toBe(`${label}${share}`);
+    }
+    expect(screen.getByText("4 Orders")).toBeTruthy();
   });
 
   it("says there are no Orders in an empty period", () => {

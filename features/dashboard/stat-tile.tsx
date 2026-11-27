@@ -1,7 +1,8 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import type { BuyersFigure, RatingFigure, Widget } from "./figures";
+import { buyersCounted, ordersNote } from "./count-notes";
+import type { BuyersFigure, OrdersFigure, RatingFigure, Widget } from "./figures";
 
 const CARD =
   "flex min-w-0 flex-col items-start gap-1.5 rounded-xl border border-[#e6e1ee] bg-white px-5 py-4 leading-[normal]";
@@ -70,8 +71,24 @@ export function BuyersTile({ widget }: { widget: Widget<BuyersFigure> }) {
     <section className={CARD}>
       <Title>Returning Buyers</Title>
       <p className="text-[26px] font-bold text-[#18181b]">{Math.round(current.share * 100)}%</p>
-      <p className="text-xs text-[#71717a]">of {current.buyers} Buyers</p>
+      <p className="text-xs text-[#71717a]">of {buyersCounted(current.buyers)}</p>
       <Moved delta={points} unit=" pts" absent="No Buyers last period" />
+    </section>
+  );
+}
+
+export function OrdersTile({ widget }: { widget: Widget<OrdersFigure> }) {
+  if (!widget.ok) return <FailedTile title="Orders" />;
+
+  const { current, previous } = widget;
+  const note = ordersNote(current);
+
+  return (
+    <section className={CARD}>
+      <Title>Orders</Title>
+      <p className="text-[26px] font-bold text-[#18181b]">{current.placed}</p>
+      {note && <p className="text-xs text-[#71717a]">{note}</p>}
+      <PeriodComparison current={current.placed} previous={previous.placed} absent="No Orders last period" />
     </section>
   );
 }

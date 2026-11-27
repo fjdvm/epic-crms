@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
+import { BuyersTile, OrdersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
 
 afterEach(cleanup);
 
@@ -72,6 +72,12 @@ describe("the Average order tile", () => {
 describe("the Returning Buyers tile", () => {
   const widget = (share: number | null, buyers: number) => ({ share, buyers });
 
+  it("says Buyer for one", () => {
+    render(<BuyersTile widget={{ ok: true, current: widget(0, 1), previous: widget(null, 0) }} />);
+
+    expect(screen.getByText("of 1 Buyer with Orders counted in Sales")).toBeTruthy();
+  });
+
   it("shows the share and how it moved in points", () => {
     render(
       <BuyersTile
@@ -84,7 +90,7 @@ describe("the Returning Buyers tile", () => {
     );
 
     expect(screen.getByText("50%")).toBeTruthy();
-    expect(screen.getByText("of 4 Buyers")).toBeTruthy();
+    expect(screen.getByText("of 4 Buyers with Orders counted in Sales")).toBeTruthy();
     expect(screen.getByText("↑ 25 pts vs previous period")).toBeTruthy();
   });
 
@@ -174,6 +180,38 @@ describe("the Average rating tile", () => {
 
   it("shows Couldn't load when it failed", () => {
     render(<RatingTile widget={{ ok: false }} />);
+
+    expect(screen.getByText("Couldn't load")).toBeTruthy();
+  });
+});
+
+describe("the Orders tile", () => {
+  const show = (placed: number, counted: number) => render(
+    <OrdersTile widget={{ ok: true, current: { placed, counted }, previous: { placed: 4, counted: 4 } }} />,
+  );
+
+  it("splits the Orders placed into counted in Sales and not yet", () => {
+    show(2, 1);
+
+    expect(screen.getByText("2")).toBeTruthy();
+    expect(screen.getByText("1 counted in Sales · 1 not counted yet")).toBeTruthy();
+    expect(screen.getByText("↓ 50% vs previous period")).toBeTruthy();
+  });
+
+  it("says when all are counted", () => {
+    show(3, 3);
+
+    expect(screen.getByText("All counted in Sales")).toBeTruthy();
+  });
+
+  it("says nothing about Sales with no Orders", () => {
+    show(0, 0);
+
+    expect(screen.queryByText(/counted/)).toBeNull();
+  });
+
+  it("shows Couldn't load when it failed", () => {
+    render(<OrdersTile widget={{ ok: false }} />);
 
     expect(screen.getByText("Couldn't load")).toBeTruthy();
   });

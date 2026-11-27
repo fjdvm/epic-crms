@@ -103,7 +103,19 @@ describe("Dashboard Orders", () => {
     await order("cancelled", "2026-10-25T04:00:00Z");
     await order("paid", "2026-10-24T04:00:00Z");
 
-    expect((await figures(ALL)).orders).toEqual({ ok: true, current: 2, previous: 1 });
+    expect((await figures(ALL)).orders).toEqual({
+      ok: true, current: { placed: 2, counted: 1 }, previous: { placed: 1, counted: 1 },
+    });
+  });
+
+  it("says how many are counted in Sales, matching the Buyer figures", async () => {
+    await order("paid", "2026-10-25T02:00:00Z", 1, null, "c1");
+    await order("confirmed", "2026-10-25T03:00:00Z", 1, null, "c2");
+
+    const result = await figures(ALL);
+
+    expect(result.orders).toMatchObject({ current: { placed: 2, counted: 1 } });
+    expect(result.returningBuyers).toMatchObject({ current: { buyers: 1 } });
   });
 
   it("is withheld without the Orders Module", async () => {
@@ -124,7 +136,9 @@ describe("a failing widget", () => {
     const result = await loadDashboardFigures(flaky, { period: today, modules: ALL });
 
     expect(result.sales).toEqual({ ok: false });
-    expect(result.orders).toEqual({ ok: true, current: 1, previous: 0 });
+    expect(result.orders).toEqual({
+      ok: true, current: { placed: 1, counted: 1 }, previous: { placed: 0, counted: 0 },
+    });
   });
 });
 
