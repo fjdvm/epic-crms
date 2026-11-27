@@ -367,6 +367,30 @@ describe("an Order's detail", () => {
   });
 });
 
+describe("an Order's detail layout", () => {
+  const column = (name: string) => screen.getByRole("region", { name });
+  const headings = (name: string) => within(column(name)).queryAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+
+  it("splits the cards into three columns that each scroll on their own", () => {
+    render(<OrderDetailView role="staff" order={detail({ status: "delivered", packedBy: { id: "s1", name: "Ana", at: new Date("2026-10-21T00:00:00Z") } })} modules={["Orders", "Returns"]} returns={[]} />);
+
+    expect(headings("Order items")).toEqual(["Items", "Returns"]);
+    expect(headings("Payment")).toEqual(["Payment"]);
+    expect(headings("Customer and delivery")).toEqual(["Customer", "Delivery address", "Packing", "Delivery photo"]);
+    for (const name of ["Order items", "Payment", "Customer and delivery"]) {
+      expect(column(name).className).toContain("overflow-y-auto");
+      expect(column(name).tabIndex).toBe(0);
+    }
+  });
+
+  it("keeps Order status above the columns, and fills the third column on a cancelled Order", () => {
+    render(<OrderDetailView order={detail({ status: "cancelled" })} />);
+
+    expect(screen.getByRole("heading", { name: "Order status" }).closest('[role="region"], section[aria-label]')).toBeNull();
+    expect(headings("Customer and delivery")).toEqual(["Customer", "Delivery address"]);
+  });
+});
+
 const ORDERS = ["Orders"];
 
 /** A Server Action the test settles by hand, so what shows while it runs can be checked. */

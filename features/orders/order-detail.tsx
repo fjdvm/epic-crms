@@ -153,6 +153,8 @@ function DeliveryPhoto({ order, url }: { order: OrderDetail; url: string | null 
   );
 }
 
+const COLUMN = "min-h-0 space-y-5 overflow-y-auto";
+
 /** An Order with everything Staff need to read it, and the actions the viewer's Modules allow. */
 export function OrderDetailView({
   order,
@@ -205,7 +207,7 @@ export function OrderDetailView({
 
   return (
     <OrderLiveProvider status={order.status}>
-    <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
       <div className="shrink-0 space-y-2">
         <div className="self-start"><BackButton fallbackHref={backToReturns ? "/returns" : "/orders"} label={backToReturns ? "Returns" : "Orders"} /></div>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -260,15 +262,16 @@ export function OrderDetailView({
         {order.emailFailures && order.emailFailures.length > 0 && <EmailNotSent orderId={order.id} failures={order.emailFailures} modules={modules} role={role} />}
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
-        <div className="space-y-5">
-          <section className={CARD}>
-            <h2 className={CARD_TITLE}>Order status</h2>
-            <div className="overflow-x-auto">
-              <LiveProgress order={order} />
-            </div>
-          </section>
+      <section className={cn(CARD, "shrink-0")}>
+        <h2 className={CARD_TITLE}>Order status</h2>
+        <div className="overflow-x-auto">
+          <LiveProgress order={order} />
+        </div>
+      </section>
 
+      {/* The page never grows: each column scrolls on its own. */}
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.1fr)_minmax(0,1.25fr)_minmax(0,0.85fr)] grid-rows-[minmax(0,1fr)] gap-5">
+        <section aria-label="Order items" tabIndex={0} className={COLUMN}>
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Items</h2>
             <div className="overflow-x-auto">
@@ -344,38 +347,9 @@ export function OrderDetailView({
               <ReturnsTable returns={returns} empty="No Returns on this Order." />
             </section>
           )}
+        </section>
 
-          <section className={CARD}>
-            <h2 className={CARD_TITLE}>Delivery address</h2>
-            {address?.region ? (
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-[#1f1a2e]" aria-label="Structured delivery address">
-                {(
-                  [
-                    ["Country", address.country],
-                    ["Region", address.region],
-                    ["Province", address.province],
-                    ["City", address.city],
-                    ["Barangay", address.barangay],
-                    ["Street", address.street],
-                  ] as const
-                ).map(([label, value]) => (
-                  <div key={label}>
-                    <dt className="text-xs text-[#6b6580]">{label}</dt>
-                    <dd>{value || "—"}</dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p className="text-sm text-[#1f1a2e]">
-                {address
-                  ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
-                  : "No delivery address is saved on this Order."}
-              </p>
-            )}
-          </section>
-        </div>
-
-        <div className="space-y-5">
+        <section aria-label="Payment" tabIndex={0} className={COLUMN}>
           <section className={CARD}>
             <div className="flex items-center justify-between">
               <h2 className={CARD_TITLE}>Payment</h2>
@@ -416,28 +390,9 @@ export function OrderDetailView({
               </div>
             )}
           </section>
+        </section>
 
-          {(order.status === "delivered" || order.status === "received") && (
-            <DeliveryPhoto order={order} url={deliveryPhotoUrl} />
-          )}
-
-          {dispatch && order.fulfillmentMethod === "delivery" && (
-            <DispatchRecordCard
-              orderId={order.id}
-              record={dispatch}
-              editable={order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) && (role === undefined || role === "staff" || role === "manager")}
-            />
-          )}
-
-          {order.packedBy && (
-            <section className={CARD}>
-              <h2 className={CARD_TITLE}>Packing</h2>
-              <p className="text-sm text-[#1f1a2e]">
-                Packed by {order.packedBy.name} · {formatDate(order.packedBy.at)}
-              </p>
-            </section>
-          )}
-
+        <section aria-label="Customer and delivery" tabIndex={0} className={COLUMN}>
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer</h2>
             {order.customer.deleted ? (
@@ -456,7 +411,57 @@ export function OrderDetailView({
               <Link href="/approvals?type=id-check" className="text-xs font-medium text-[#5b2a86]">Review this ID</Link>
             )}
           </section>
-        </div>
+
+          <section className={CARD}>
+            <h2 className={CARD_TITLE}>Delivery address</h2>
+            {address?.region ? (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-[#1f1a2e]" aria-label="Structured delivery address">
+                {(
+                  [
+                    ["Country", address.country],
+                    ["Region", address.region],
+                    ["Province", address.province],
+                    ["City", address.city],
+                    ["Barangay", address.barangay],
+                    ["Street", address.street],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-[#6b6580]">{label}</dt>
+                    <dd>{value || "—"}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-[#1f1a2e]">
+                {address
+                  ? `${address.street}, ${address.barangay}, ${address.city}, ${address.province} ${address.postalCode}, ${address.country}`
+                  : "No delivery address is saved on this Order."}
+              </p>
+            )}
+          </section>
+
+          {dispatch && order.fulfillmentMethod === "delivery" && (
+            <DispatchRecordCard
+              orderId={order.id}
+              record={dispatch}
+              editable={order.status === "dispatched" && modules.includes(FULFILMENT_MODULE) && (role === undefined || role === "staff" || role === "manager")}
+            />
+          )}
+
+          {order.packedBy && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Packing</h2>
+              <p className="text-sm text-[#1f1a2e]">
+                Packed by {order.packedBy.name} · {formatDate(order.packedBy.at)}
+              </p>
+            </section>
+          )}
+
+          {(order.status === "delivered" || order.status === "received") && (
+            <DeliveryPhoto order={order} url={deliveryPhotoUrl} />
+          )}
+        </section>
       </div>
     </div>
     </OrderLiveProvider>
