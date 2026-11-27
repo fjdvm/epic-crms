@@ -19,7 +19,6 @@ const DROPS: Record<string, string> = {
   "to-pack": "preparing",
   preparing: "out-for-delivery",
   "out-for-delivery": "completed",
-  failed: "completed",
 };
 
 export function allowsDrop(from: string, to: string): boolean {
