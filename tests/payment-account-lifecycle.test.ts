@@ -112,7 +112,8 @@ describe("Payment account lifecycle", () => {
     expect(await deletePaymentAccount(db.sql, audit, files, manager, b)).toEqual({ ok: true });
     expect(await ids()).toEqual([a]);
     expect(events()[0]).toMatchObject({ action: "payment_account.deleted", metadata: { number_last4: "1212" } });
-    expect(JSON.stringify(events())).not.toMatch(/0918|555/);
+    // Not bare "555": the event's millisecond timestamp can hold it by chance.
+    expect(JSON.stringify(events())).not.toMatch(/0\D?9\D?1\D?8\D?5\D?5\D?5/);
     expect((await deletePaymentAccount(db.sql, audit, files, manager, b)).ok).toBe(false);
   });
   it("reports a method available only when it is enabled and has an active account", async () => {
