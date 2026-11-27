@@ -1,6 +1,18 @@
 import { FEEDBACK_MODULE, FULFILMENT_MODULE, ORDERS_MODULE, RETURNS_MODULE, TICKETS_MODULE } from "@/lib/portal/config";
 
-import type { Stats } from "./insights";
+import type { Category, Stats } from "./insights";
+
+/**
+ * The category tabs of "Insights to look at". Here, not in the client grid, because the server page reads `?category=`
+ * with `tabFor`, and a server component cannot call a function exported from a "use client" file.
+ */
+export const TABS: ("all" | Category)[] = ["all", "stock", "payments", "support", "returns", "delivery", "feedback"];
+export type Tab = (typeof TABS)[number];
+
+/** The tab a `?category=` link opens; anything else opens All. */
+export function tabFor(category: string | undefined): Tab {
+  return TABS.find((t) => t === category) ?? "all";
+}
 
 /** Which Module each stat tile needs; a tile from a Module the person does not hold shows a dash. */
 export const STAT_MODULES: Record<keyof Stats, string> = {
