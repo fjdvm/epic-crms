@@ -7,14 +7,14 @@ import { CustomersByStageCard, CustomersByStageSkeleton, NewCustomersCard, NewCu
 afterEach(cleanup);
 
 describe("Customers by Stage", () => {
-  it("shows all five Stages as of today and links At risk to Customer Profiles", () => {
+  it("shows all five Stages as of today, saying what they count, and links At risk to Customer Profiles", () => {
     render(<CustomersByStageCard widget={{ ok: true, counts: {
       new: 12, "first-order": 8, repeat: 25, "at-risk": 6, lost: 3,
     } }} />);
 
     expect(screen.getByRole("heading", { name: "Customers by Stage" })).toBeTruthy();
-    expect(screen.getByText("As of today")).toBeTruthy();
-    for (const [label, count] of [["New", "12"], ["First order", "8"], ["Repeat", "25"], ["At risk", "6"], ["Lost", "3"]]) {
+    expect(screen.getByText("As of today · all verified Customers · counts every Order not cancelled, paid or not")).toBeTruthy();
+    for (const [label, count] of [["No Orders yet", "12"], ["First order", "8"], ["Repeat", "25"], ["At risk", "6"], ["Lost", "3"]]) {
       expect(within(screen.getByText(label).closest("li")!).getByText(count)).toBeTruthy();
     }
     expect(screen.getByRole("link", { name: /6 At risk Customers/ }).getAttribute("href"))
@@ -62,7 +62,7 @@ it("fails the Stage card without hiding New Customers", () => {
       leads={{ ok: true, count: 2 }} periodLabel="7 days" />
   </>);
 
-  expect(screen.getByText("As of today")).toBeTruthy();
+  expect(screen.getByText(/^As of today/)).toBeTruthy();
   expect(screen.getByText("Couldn't load")).toBeTruthy();
   expect(screen.queryByRole("link")).toBeNull();
   expect(screen.getByText("3")).toBeTruthy();
@@ -91,6 +91,6 @@ it("labels each card's own skeleton", () => {
 
   expect(screen.getByRole("status", { name: "Loading Customers by Stage" })).toBeTruthy();
   expect(screen.getByRole("status", { name: "Loading New Customers" })).toBeTruthy();
-  expect(screen.getByText("As of today")).toBeTruthy();
+  expect(screen.getByText(/^As of today/)).toBeTruthy();
   expect(screen.getByText("This month")).toBeTruthy();
 });

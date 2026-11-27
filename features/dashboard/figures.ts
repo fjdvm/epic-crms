@@ -22,6 +22,13 @@ export interface RatingFigure {
   count: number;
 }
 
+export interface OrdersFigure {
+  /** Every non-cancelled Order placed, paid or not. */
+  placed: number;
+  /** Those of them counted in Sales, as the other Order and Buyer figures count them. */
+  counted: number;
+}
+
 export interface BuyersFigure {
   /** Share of Buyers who are Returning, 0 to 1, or none when there are no Buyers. */
   share: number | null;
@@ -36,7 +43,7 @@ export interface MonthlySales {
 export interface DashboardFigures {
   /** Centavos. */
   sales?: Widget;
-  orders?: Widget;
+  orders?: Widget<OrdersFigure>;
   /** Centavos. */
   averageOrder?: Widget;
   averageRating?: Widget<RatingFigure>;
@@ -83,12 +90,13 @@ export async function salesIn(sql: postgres.Sql, span: Span): Promise<number> {
   return Number(row.sales);
 }
 
-export async function ordersIn(sql: postgres.Sql, span: Span): Promise<number> {
-  const [row] = await sql<{ orders: number }[]>`
-    select count(*)::int as orders from public.orders
+export async function ordersIn(sql: postgres.Sql, span: Span): Promise<OrdersFigure> {
+  const [row] = await sql<{ placed: number; counted: number }[]>`
+    select count(*)::int as placed, (count(*) filter (where status = any(${PAID_OR_FULFILLED})))::int as counted
+    from public.orders
     where status <> 'cancelled' and ${notReplacement(sql, "orders")} and created_at >= ${span.start} and created_at < ${span.end}`;
 
-  return row.orders;
+  return { placed: row.placed, counted: row.counted };
 }
 
 /** Sales divided by the Orders counted in Sales (not all Orders), in whole centavos. */

@@ -1,5 +1,6 @@
 import { createBrandedPdf, manilaDate as date, manilaTimestamp as timestamp, BRAND } from "@/lib/export/pdf-template";
 
+import { BUYERS_CARD_NOTE, buyersCounted, NO_ORDERS_STAGE_LABEL, PAYMENT_NOTE, STAGES_NOTE } from "./count-notes";
 import type { DashboardFigures, Widget } from "./figures";
 import type { Attention } from "./attention";
 import { PERIOD_LABELS, type Period, type PeriodPreset } from "./period";
@@ -44,9 +45,9 @@ export async function dashboardPdf(
   };
 
   tile("Sales", figures.sales, money);
-  tile("Orders", figures.orders, String);
+  tile("Orders", figures.orders, ({ placed, counted }) => `${placed} placed - ${counted} counted in Sales`);
   tile("Average order", figures.averageOrder, money);
-  tile("Returning Buyers", figures.returningBuyers, (value) => `${percent(value.share)} (${value.buyers} Buyers)`);
+  tile("Returning Buyers", figures.returningBuyers, (value) => `${percent(value.share)} (${buyersCounted(value.buyers)})`);
   tile("Average rating", figures.averageRating, (value) => value.average === null
     ? "No Feedback yet" : `${value.average.toFixed(1)} stars - From ${value.count} Feedback`);
 
@@ -93,6 +94,7 @@ export async function dashboardPdf(
 
   const buyers = figures.monthlyBuyers;
   if (section("New vs returning Buyers - last six months", buyers) && buyers?.ok) {
+    line(BUYERS_CARD_NOTE, true);
     if (buyers.months.length === 0) line("No Orders in this period", true);
     const maximum = Math.max(0, ...buyers.months.map((month) => month.new + month.returning));
     for (const month of buyers.months) {
@@ -103,6 +105,7 @@ export async function dashboardPdf(
   const payment = figures.paymentAndReceiving;
   if (section("How customers pay", payment) && payment?.ok) {
     const labels: Record<string, string> = { gcash: "GCash", maya: "Maya", "bank-transfer": "Bank transfer", "cash-on-delivery": "Cash on Delivery" };
+    line(PAYMENT_NOTE, true);
     const rows = payment.payment;
     if (rows.length === 0) line("No Orders in this period", true);
     const maximum = Math.max(0, ...rows.map((row) => row.orders));
@@ -111,7 +114,8 @@ export async function dashboardPdf(
 
   const stages = figures.customersByStage;
   if (section("Customers by Stage - As of today", stages) && stages?.ok) {
-    const labels = { new: "New", "first-order": "First order", repeat: "Repeat", "at-risk": "At risk", lost: "Lost" };
+    line(STAGES_NOTE, true);
+    const labels = { new: NO_ORDERS_STAGE_LABEL, "first-order": "First order", repeat: "Repeat", "at-risk": "At risk", lost: "Lost" };
     const maximum = Math.max(0, ...Object.values(stages.counts));
     for (const key of Object.keys(labels) as (keyof typeof labels)[]) {
       bar(`${labels[key]}: ${stages.counts[key]}`, stages.counts[key], maximum);

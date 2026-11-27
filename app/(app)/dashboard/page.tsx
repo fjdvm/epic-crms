@@ -13,7 +13,7 @@ import { NeedsAttention, NeedsAttentionFailed, NeedsAttentionSkeleton } from "@/
 import { loadDashboardFigures, visibleWidgets, type DashboardWidgets } from "@/features/dashboard/figures";
 import { PERIOD_LABELS, PERIOD_PRESETS, resolvePeriod } from "@/features/dashboard/period";
 import { SalesChart, SalesChartSkeleton } from "@/features/dashboard/sales-chart";
-import { BuyersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
+import { BuyersTile, OrdersTile, RatingTile, StatTile, StatTileSkeleton } from "@/features/dashboard/stat-tile";
 import { DASHBOARD_DATA_MODULES, DASHBOARD_MODULE } from "@/lib/portal/config";
 import { heldModules, requireModule } from "@/lib/portal/staff";
 import { RoleStrip } from "@/features/dashboard/role-strip";
@@ -42,11 +42,11 @@ async function SalesTile({ figures }: FigureProps) {
   return <StatTile title="Sales" widget={widget} format={(centavos) => pesos.format(centavos / 100)} />;
 }
 
-async function OrdersTile({ figures }: FigureProps) {
+async function OrdersFigureTile({ figures }: FigureProps) {
   const widget = await (await figures).orders;
   if (!widget) return null;
 
-  return <StatTile title="Orders" widget={widget} format={String} />;
+  return <OrdersTile widget={widget} />;
 }
 
 async function AverageOrderTile({ figures }: FigureProps) {
@@ -150,7 +150,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             )}
             {show.orders && (
               <Suspense fallback={<StatTileSkeleton title="Orders" />}>
-                <OrdersTile figures={figures} />
+                <OrdersFigureTile figures={figures} />
               </Suspense>
             )}
             {show.averageOrder && (
