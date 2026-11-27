@@ -8,6 +8,8 @@ export interface EmailOutcomeRow { order_id: number; kind: string; occurrence?: 
 
 const ACTOR: AuditEvent["actor"] = { type: "process", id: "creoms", display_name: "CREOMS" };
 const REASON_MAX = 200;
+/** Audit Events sent per signal; the rest wait for the next one. */
+export const MAX_AUDIT_PER_SYNC = 100;
 const EMAIL_ADDRESS = /[^\s<>"'(),;:]+@[^\s<>"'(),;:]+/g;
 
 /** A failure reason is kept for the trail, but never with a Customer's email address in it. */
@@ -74,8 +76,12 @@ export async function syncOrderAudit(ports: OrderAuditPorts): Promise<{ delivere
     ...(await ports.outcomes()).map(emailEvent).filter((event): event is AuditEvent => event !== null),
   ];
   const done = await ports.delivered(events.map((event) => event.operationId));
+  // The gateway gives CREOMS one request budget for everything (file uploads too), so a backlog drains a little
+  // per signal, oldest first, and a 429 ends the run at once.
+  const pending = events.filter((e) => !done.has(e.operationId))
+    .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at)).slice(0, MAX_AUDIT_PER_SYNC);
   let delivered = 0, failed = 0;
-  for (const event of events.filter((e) => !done.has(e.operationId))) {
+  for (const event of pending) {
     try {
       await ports.deliver(event);
       await ports.markDelivered(event.operationId);
@@ -83,6 +89,7 @@ export async function syncOrderAudit(ports: OrderAuditPorts): Promise<{ delivere
     } catch (error) {
       console.error("CREOMS Audit Event could not be recorded", error);
       failed += 1;
+      if (error && typeof error === "object" && "status" in error && error.status === 429) break;
     }
   }
   return { delivered, failed };

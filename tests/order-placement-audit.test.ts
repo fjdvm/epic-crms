@@ -57,6 +57,38 @@ describe("order placement audit", () => {
     expect(deliver).toHaveBeenCalledTimes(2);
   });
 
+  it("delivers at most 100 events per signal, oldest first, so a backlog never floods the gateway", async () => {
+    const deliver = vi.fn(async () => {});
+    const orders = Array.from({ length: 150 }, (_, i) => ({ id: 150 - i, created_at: new Date(at.getTime() + (150 - i) * 1000) }));
+    const p = ports(orders, [], new Set(), deliver);
+    expect(await syncOrderAudit(p)).toEqual({ delivered: 100, failed: 0 });
+    expect((deliver.mock.calls[0] as unknown as [AuditEvent])[0].target.id).toBe("1");
+    expect(await syncOrderAudit(p)).toEqual({ delivered: 50, failed: 0 });
+    expect(deliver).toHaveBeenCalledTimes(150);
+  });
+
+  it("stops the run at the first 429 and leaves the rest for the next signal", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const ledger = new Set<string>();
+    const deliver = vi.fn(async (e: AuditEvent) => {
+      if (e.target.id === "3") throw Object.assign(new Error("rate limited"), { status: 429 });
+    });
+    const orders = [1, 2, 3, 4, 5].map((id) => ({ id, created_at: new Date(at.getTime() + id * 1000) }));
+    expect(await syncOrderAudit(ports(orders, [], ledger, deliver))).toEqual({ delivered: 2, failed: 1 });
+    expect(deliver).toHaveBeenCalledTimes(3);
+    expect(ledger.size).toBe(2);
+  });
+
+  it("keeps going after a 400 refusal", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const deliver = vi.fn(async (e: AuditEvent) => {
+      if (e.target.id === "1") throw Object.assign(new Error("refused"), { status: 400 });
+    });
+    const orders = [1, 2, 3].map((id) => ({ id, created_at: new Date(at.getTime() + id * 1000) }));
+    expect(await syncOrderAudit(ports(orders, [], new Set(), deliver))).toEqual({ delivered: 2, failed: 1 });
+    expect(deliver).toHaveBeenCalledTimes(3);
+  });
+
   it("keeps a refused delivery for the next signal and does not stop the others", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const ledger = new Set<string>();

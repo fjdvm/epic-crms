@@ -37,7 +37,7 @@ export const deliverGatewayAuditEvent: AuditTrail = async (event) => {
     body: JSON.stringify({ ...fields, source: "CRMS", idempotency_key: idempotencyKey }),
     signal: AbortSignal.timeout(5_000),
   });
-  if (!response.ok) throw new Error(`The gateway refused the audit event: ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`The gateway refused the audit event: ${response.status}`), { status: response.status });
 };
 
 /** Where the Customer reviews a Ticket in the storefront. */
