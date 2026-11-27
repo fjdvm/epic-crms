@@ -119,9 +119,9 @@ describe("the header bell", () => {
     await userEvent.click(screen.getByTitle("Notifications"));
 
     const one = await screen.findByRole("link", { name: /Ada Lim rated Order #1042 1 star/ });
-    expect(one.getAttribute("href")).toBe("/feedback#feedback-1042");
+    expect(one.getAttribute("href")).toBe("/customer-profiles/u-ada#order-1042");
     const three = await screen.findByRole("link", { name: /Ben Cruz rated Order #1040 3 stars/ });
-    expect(three.getAttribute("href")).toBe("/feedback#feedback-1040");
+    expect(three.getAttribute("href")).toBe("/customer-profiles/u-ben#order-1040");
   });
 
   it("words a Requested Return alert and links it to that Return on the Returns page", async () => {

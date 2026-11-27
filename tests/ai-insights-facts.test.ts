@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { expiringFactsAt, orderFactsIn, periodSpan, productFactsIn, returnFactsIn, slaFactsAt, stockFactsAt, themeFactsIn } from "@/features/ai-insights/facts";
+import { expiringFactsAt, feedbackFactsIn, orderFactsIn, periodSpan, productFactsIn, returnFactsIn, slaFactsAt, stockFactsAt, themeFactsIn } from "@/features/ai-insights/facts";
 import { DEFAULT_HISTORY } from "@/features/tickets/service-level";
 import * as structured from "@/lib/ai/structured";
 import { startTestDatabase, type TestDatabase } from "./ticket-database";
@@ -206,5 +206,35 @@ describe("themeFactsIn", () => {
     const themes = await themeFactsIn({ source: db.sql, crms: db.sql }, span);
     expect(themes).toEqual([{ label: "Leaking lids", ticketIds: [...ids].reverse(), product: "Ube halaya", productTickets: 3, area: "Pasig", areaTickets: 2 }]);
     expect(String(spy.mock.calls[0][0].prompt)).not.toMatch(/Maria|maria@example/);
+  });
+});
+
+describe("feedbackFactsIn", () => {
+  const line = (id: number, product: string, size: string) =>
+    db.sql`insert into order_lines (order_id, product_name, size_label, quantity, price_in_centavos) values (${id}, ${product}, ${size}, 1, 15000)`;
+  const rated = (id: number, rating: number, given: string) =>
+    db.sql`insert into order_feedback (order_id, rating, comment, created_at) values (${id}, ${rating}, 'Masarap', ${at(given)})`;
+
+  it("counts ratings by when they were given, and a product once per Order however many sizes it had", async () => {
+    const a = await order({ created: "2026-11-10T02:00:00Z" });
+    await line(a, "Ube Jam", "250 g");
+    await line(a, "Ube Jam", "500 g");
+    await line(a, "Halaya", "");
+    await rated(a, 2, "2026-11-20T02:00:00Z"); // an older Order rated inside the period counts now
+    const b = await order();
+    await line(b, "Ube Jam", "250 g");
+    await rated(b, 5, "2026-11-22T02:00:00Z");
+    const c = await order({ created: "2026-11-10T02:00:00Z" });
+    await line(c, "Halaya", "");
+    await rated(c, 4, "2026-11-12T02:00:00Z"); // the period before
+    const d = await order();
+    await rated(d, 1, "2026-11-25T02:00:00Z"); // today, after the period
+
+    const facts = await feedbackFactsIn(db.sql, span);
+    expect(facts).toMatchObject({ count: 2, total: 7, previousCount: 1, previousTotal: 4, low: 1, lowOrderIds: [a] });
+    expect(facts.products.sort((x, y) => x.product.localeCompare(y.product))).toEqual([
+      { product: "Halaya", rated: 1, low: 1, lowOrderIds: [a] },
+      { product: "Ube Jam", rated: 2, low: 1, lowOrderIds: [a] },
+    ]);
   });
 });

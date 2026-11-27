@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AreaSection, AreaSectionSkeleton } from "@/features/ai-insights/area-map";
-import { InsightGrid, InsightGridSkeleton } from "@/features/ai-insights/insight-grid";
+import { InsightGrid, InsightGridSkeleton, tabFor, type TABS } from "@/features/ai-insights/insight-grid";
 import { AI_INSIGHTS_MODULES, emptyStats, type PeriodDays } from "@/features/ai-insights/insights";
 import { loadLatestRun } from "@/features/ai-insights/run";
 import { Brief, HowThisWorks, StatRow, StatRowSkeleton } from "@/features/ai-insights/sections";
@@ -32,7 +33,7 @@ function Unavailable() {
 }
 
 /** Reads the stored morning run, and this person's dismissals and answers. Never works anything out and never calls a model. */
-async function Body({ staff, days }: { staff: Staff; days: PeriodDays }) {
+async function Body({ staff, days, tab }: { staff: Staff; days: PeriodDays; tab: (typeof TABS)[number] }) {
   const crms = crmsDatabase();
   const [run, modules] = await Promise.all([loadLatestRun(crms, days).catch(() => undefined), heldModules(AI_INSIGHTS_MODULES)]);
   if (run === undefined) return <Unavailable />;
@@ -62,8 +63,19 @@ async function Body({ staff, days }: { staff: Staff; days: PeriodDays }) {
           products={run.products} canSeeRatings={modules.includes(FEEDBACK_MODULE)} />
       )}
       <InsightGrid key={`${run.id}`} initial={visibleInsights(run.insights, modules, state.dismissed)} days={days}
-        answers={state.answers} enoughData={run.enoughData} />
+        answers={state.answers} enoughData={run.enoughData} initialTab={tab} />
+      {modules.includes(FEEDBACK_MODULE) && <ComplaintThemesLink />}
     </>
+  );
+}
+
+/** Complaint themes moved here with the Feedback page: Managers make them, Admin reads the kept result. */
+function ComplaintThemesLink() {
+  return (
+    <p className="-mt-2 text-xs text-[#71717a]">
+      Want the same problems grouped across Tickets, Returns and Feedback?{" "}
+      <Link href={`${AI_INSIGHTS_PATH}/complaint-themes`} prefetch className="font-medium text-[#5b2a86] hover:underline">Open Complaint themes</Link>
+    </p>
   );
 }
 
@@ -76,7 +88,9 @@ export default async function AiInsightsPage({ searchParams }: { searchParams: S
   if (!canSeeAiInsights(staff.role)) redirect("/dashboard");
   const readOnly = shopRole(staff.role) === "admin";
 
-  const raw = (await searchParams).period;
+  const params = await searchParams;
+  const raw = params.period;
+  const tab = tabFor(Array.isArray(params.category) ? params.category[0] : params.category);
   const preset = PRESETS.find((p) => p === (Array.isArray(raw) ? raw[0] : raw)) ?? "7-days";
   const days: PeriodDays = preset === "30-days" ? 30 : 7;
 
@@ -100,7 +114,7 @@ export default async function AiInsightsPage({ searchParams }: { searchParams: S
           </div>
         </div>
         <Suspense key={preset} fallback={<><StatRowSkeleton /><AreaSectionSkeleton /><InsightGridSkeleton /></>}>
-          <Body staff={staff} days={days} />
+          <Body staff={staff} days={days} tab={tab} />
         </Suspense>
         <UnusualActivityCards
           canDismiss={shopRole(staff.role) === "manager"}

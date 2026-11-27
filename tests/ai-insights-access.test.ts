@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/headers", () => ({ cookies: vi.fn(), headers: vi.fn() }));
-vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+const nav = vi.hoisted(() => ({ redirect: vi.fn(), requireModule: vi.fn() }));
+vi.mock("next/navigation", () => ({ redirect: nav.redirect }));
+vi.mock("@/lib/portal/staff", async (actual) => ({ ...(await actual<typeof import("@/lib/portal/staff")>()), requireModule: nav.requireModule }));
 
+import FeedbackPage from "@/app/(app)/feedback/page";
 import { canSeeAiInsights, shellPages } from "@/lib/portal/staff";
 
 describe("AI Insights in the shell", () => {
@@ -22,5 +25,20 @@ describe("AI Insights in the shell", () => {
   it("still adds Approvals for a Role holding a Module whose requests it lists", () => {
     expect(shellPages(["/returns"], "Staff / Employee")).toEqual(["/returns", "/approvals"]);
     expect(shellPages(["/tickets"], "Staff / Employee")).toEqual(["/tickets"]);
+  });
+});
+
+describe("the old Feedback page", () => {
+  it("sends Manager-level Roles and Admin to the Feedback cards, and Staff to Customer Profiles", async () => {
+    for (const [role, to] of [
+      ["CREOMS Manager", "/dashboard/ai-insights?category=feedback"], ["CEO", "/dashboard/ai-insights?category=feedback"],
+      ["Admin", "/dashboard/ai-insights?category=feedback"], ["Staff / Employee", "/customer-profiles"],
+    ]) {
+      nav.redirect.mockClear();
+      nav.requireModule.mockResolvedValueOnce({ id: "s1", name: "Rhea", role });
+      await FeedbackPage();
+      expect(nav.requireModule).toHaveBeenLastCalledWith("Feedback");
+      expect(nav.redirect).toHaveBeenCalledWith(to);
+    }
   });
 });

@@ -50,18 +50,19 @@ export function Brief({ days, summary, confidence, enoughData, orders, stats, wa
 
 const STAT_ORDER: [keyof Stats, string][] = [
   ["orders", "Orders"], ["lateOrFailed", "Late or failed"], ["returns", "Returns & damage"], ["openTickets", "Open tickets"], ["stockWatch", "Stock watch"],
+  ["rating", "Average rating"],
 ];
 const TONE = { up: "text-[#15803d]", down: "text-[#b91c1c]", warn: "text-[#b45309]" } as const;
 
 export function StatRow({ stats }: { stats: Stats }) {
   return (
-    <ul aria-label="This period in numbers" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <ul aria-label="This period in numbers" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {STAT_ORDER.map(([key, label]) => {
         const stat = stats[key];
         return (
           <li key={key} className="flex min-w-0 flex-col gap-1 rounded-2xl border border-[#e6e1ee] bg-white px-4 py-3 leading-[normal]">
             <span className="text-xs text-[#71717a]">{label}</span>
-            <span className="text-2xl font-semibold tabular-nums text-[#18181b]">{stat.value === null ? "—" : stat.value.toLocaleString("en-PH")}</span>
+            <span className="text-2xl font-semibold tabular-nums text-[#18181b]">{stat.value === null ? "—" : key === "rating" ? `${stat.value.toFixed(1)} ★` : stat.value.toLocaleString("en-PH")}</span>
             <span className={`truncate text-xs ${stat.tone ? TONE[stat.tone] : "text-[#71717a]"}`} title={stat.note}>{stat.note}</span>
           </li>
         );
@@ -72,8 +73,8 @@ export function StatRow({ stats }: { stats: Stats }) {
 
 export function StatRowSkeleton() {
   return (
-    <div aria-busy="true" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-[86px] rounded-2xl" />)}
+    <div aria-busy="true" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-[86px] rounded-2xl" />)}
     </div>
   );
 }

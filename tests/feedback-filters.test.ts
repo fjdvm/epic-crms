@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { feedbackHref, manilaToday, parseFilters, quickRange } from "@/features/feedback/filters";
+import { manilaToday, parseFilters, quickRange } from "@/features/feedback/filters";
 
 describe("parseFilters", () => {
   it("defaults to All time, every rating, page 1", () => {
@@ -35,25 +35,6 @@ describe("parseFilters", () => {
   });
 });
 
-describe("feedbackHref", () => {
-  it("is the bare page for the defaults", () => {
-    expect(feedbackHref({ page: 1 })).toBe("/feedback");
-  });
-
-  it("keeps the range, stars and page", () => {
-    expect(feedbackHref({ from: "2026-10-01", to: "2026-10-31", stars: 2, page: 2 })).toBe(
-      "/feedback?from=2026-10-01&to=2026-10-31&stars=2&page=2",
-    );
-  });
-});
-
-describe("feedbackHref with a product", () => {
-  it("keeps the product, encoded, with the other filters", () => {
-    expect(feedbackHref({ product: "Smooth tub & more", stars: 2, page: 1 })).toBe(
-      "/feedback?stars=2&product=Smooth+tub+%26+more",
-    );
-  });
-});
 
 describe("manilaToday", () => {
   it("is the date in the Philippines, which is ahead of UTC by 8 hours", () => {

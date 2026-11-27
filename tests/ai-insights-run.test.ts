@@ -160,3 +160,29 @@ describe("per person", () => {
     expect((await loadEvidence(sources(), staff, ALL, 7, "payments:expiring")).ok).toBe(false);
   });
 });
+
+describe("Feedback cards", () => {
+  it("stores a low-ratings card and shows its Feedback as evidence, only to people with the Feedback Module", async () => {
+    await orders(31);
+    const ratings = [1, 2, 5, 5, 5, 2];
+    for (const [i, rating] of ratings.entries()) {
+      await db.sql`insert into order_lines (order_id, product_name, size_label, quantity, price_in_centavos) values (${i + 1}, 'Halaya', '', 1, 20000)`;
+      await db.sql`insert into order_feedback (order_id, rating, comment, created_at)
+        values (${i + 1}, ${rating}, ${rating <= 3 ? "Dumating na sira ang garapon" : "Masarap"}, ${new Date("2026-11-22T03:00:00Z")})`;
+    }
+    await runInsights(sources(), now, models);
+    const run = (await loadLatestRun(db.sql, 7))!;
+    expect(run.insights.find((i) => i.key === "feedback:low:halaya")).toMatchObject({
+      category: "feedback", module: "Feedback", priority: "high", headline: "Low ratings on Halaya: 3 of 6",
+      records: [{ type: "feedback", id: 6 }, { type: "feedback", id: 2 }, { type: "feedback", id: 1 }],
+    });
+    expect(run.stats.rating).toMatchObject({ value: 3.3 });
+
+    const result = await loadEvidence(sources(), manager, [...ALL, "Feedback"], 7, "feedback:low:halaya");
+    expect(result).toEqual({ ok: true, records: [6, 2, 1].map((id) => ({
+      type: "feedback", id, label: `${id === 1 ? "★☆☆☆☆" : "★★☆☆☆"} Order #${id}`, detail: "Maria Santos · “Dumating na sira ang garapon”",
+      status: id === 1 ? "1 star" : "2 stars", href: `/customer-profiles/c1#order-${id}`,
+    })) });
+    expect((await loadEvidence(sources(), manager, ALL, 7, "feedback:low:halaya")).ok).toBe(false);
+  });
+});

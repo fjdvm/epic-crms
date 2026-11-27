@@ -8,7 +8,6 @@ import { StaffProvider } from "@/components/layout/staff-context";
 import AppLoading from "@/app/(app)/loading";
 import CustomerProfilesLoading from "@/app/(app)/customer-profiles/loading";
 import CustomerProfileLoading from "@/app/(app)/customer-profiles/[id]/loading";
-import FeedbackLoading from "@/app/(app)/feedback/loading";
 import TicketsLoading from "@/app/(app)/tickets/loading";
 import FulfilmentLoading from "@/app/(app)/fulfilment/loading";
 import ConversationsLoading from "@/app/(app)/conversations/loading";
@@ -63,7 +62,6 @@ const detailLoadings = [
 /** These pages keep their static chrome and skeleton only the data. */
 const chromeLoadings = [
   ["Customer Profiles", CustomerProfilesLoading, "Customer Profiles"],
-  ["Feedback", FeedbackLoading, "Feedback"],
   ["Tickets", TicketsLoading, "Tickets"],
   ["Fulfilment", FulfilmentLoading, "Fulfilment"],
 ] as const;

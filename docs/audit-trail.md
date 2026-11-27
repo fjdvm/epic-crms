@@ -316,12 +316,13 @@ Known limit: the storefront saves the change before CREOMS saves the pending rec
 ## Feedback gaps (#750)
 
 CREOMS has no Feedback reply or review publish/hide action yet (reviews are moderated in the storefront), so the only Feedback
-write actions are Analyze (`feedback.analysis_run`) and the product suggestions (`feedback.product_advice`), which already record
-their successes. Refused or failed attempts now record a `failure` event with the same action name through
-`features/feedback/feedback-audit.ts`: a view-only Role (Admin), a run that could not start (`no-keys`, `busy`, `cooling-down` with its
+write actions were Analyze (`feedback.analysis_run`) and the product suggestions (`feedback.product_advice`), which recorded
+their successes. Both left with the Feedback page when Feedback moved into AI insights; Sentiment is now labelled only by the
+scheduled run, which records as `schedule`, and older `feedback.*` events stay in the trail. Refused or failed attempts recorded a `failure` event with the same action name through
+`features/feedback/feedback-audit.ts` (removed with them): a view-only Role (Admin), a run that could not start (`no-keys`, `busy`, `cooling-down` with its
 end time) or that threw, and a suggestion request that produced nothing (`unavailable`). The operation id is
 `feedback:<action>:denied:<staff id>:<hash of reason and metadata>`, so a replayed refusal records once. Metadata holds the reason
-only. When Feedback reply or publish/hide are built in CREOMS, they must record through this module.
+only. When Feedback reply or publish/hide are built in CREOMS, they must record their refusals the same way.
 Known limit: a later identical refusal (same person, action and reason) shares one identity.
 
 

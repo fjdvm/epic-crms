@@ -185,10 +185,11 @@ describe("the sidebar", () => {
     for (const name of ["Orders", "Payments", "Fulfilment"]) expect(screen.queryByText(name)).toBeNull();
   });
 
-  it("shows the Feedback item only with the Feedback page permitted", async () => {
+  it("never shows a Feedback item: Feedback lives in AI insights and each customer's profile", async () => {
     renderSidebar(["/customer-profiles", "/feedback"]);
+    await screen.findByRole("link", { name: "Customer Profiles" });
 
-    expect(await screen.findByRole("link", { name: "Feedback" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Feedback" })).toBeNull();
   });
 
   it("hides Feedback entirely, not even dimmed, without the Feedback Module", async () => {

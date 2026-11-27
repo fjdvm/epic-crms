@@ -11,7 +11,6 @@ import { writeUnits } from "./audit-coverage-scan";
 const exempt: Record<string, string> = {
   // Reads: nothing changes.
   "features/customer-profiles/task-actions.ts#listTaskOwners": "read-only: lists Staff to assign",
-  "features/feedback/actions.ts#loadProductAdvice": "read-only: loads stored advice",
   "features/notifications/actions.ts#staffNotificationsLiveUrl": "read-only: returns a socket URL",
   "features/orders/actions.ts#loadCancellableOrderItems": "read-only",
   "features/orders/actions.ts#loadPaymentQueue": "read-only",

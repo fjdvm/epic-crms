@@ -8,7 +8,7 @@ import { addressArea, areaName, cityKey, cityLabel } from "@/lib/geo/areas";
 import { notReplacement } from "@/lib/replacement-order";
 
 import {
-  enoughData, RULES, type AreaFigures, type CityFigures, type CourierFigures, type ExpiringFigures, type InsightFacts, type PeriodDays,
+  enoughData, RULES, type AreaFigures, type CityFigures, type CourierFigures, type ExpiringFigures, type FeedbackFigures, type InsightFacts, type PeriodDays,
   type PlaceFigures, type ProductFigures, type ReturnProduct, type SlaFigures, type StockFigures, type ThemeFigures,
 } from "./insights";
 
@@ -176,6 +176,39 @@ export async function productFactsIn(sql: postgres.Sql, span: Span): Promise<Pro
   }));
 }
 
+interface FeedbackRow { order_id: number; current: boolean; rating: number; products: string[] | null }
+
+/**
+ * Customer Feedback given in the period and the one before (by when it was given), with each product's low ratings.
+ * One rating per Order; a product counts once per Order however many of its sizes the Order had. Only stars, Order IDs
+ * and product names leave this function: no Customer and no comment.
+ */
+export async function feedbackFactsIn(sql: postgres.Sql, span: Span): Promise<FeedbackFigures> {
+  const rows = await sql<FeedbackRow[]>`
+    select f.order_id, f.created_at >= ${span.start} as current, f.rating,
+      (select array_agg(distinct l.product_name) from public.order_lines l where l.order_id = f.order_id) as products
+    from public.order_feedback f
+    where f.created_at >= ${span.previous.start} and f.created_at < ${span.end}
+    order by f.created_at desc, f.order_id desc`;
+  const out: FeedbackFigures = { count: 0, total: 0, previousCount: 0, previousTotal: 0, low: 0, lowOrderIds: [], products: [] };
+  const products = new Map<string, FeedbackFigures["products"][number]>();
+  for (const row of rows) {
+    if (!row.current) { out.previousCount++; out.previousTotal += row.rating; continue; }
+    out.count++;
+    out.total += row.rating;
+    const low = row.rating <= RULES.lowRating;
+    if (low) { out.low++; out.lowOrderIds.push(row.order_id); }
+    for (const product of row.products ?? []) {
+      let p = products.get(product);
+      if (!p) products.set(product, (p = { product, rated: 0, low: 0, lowOrderIds: [] }));
+      p.rated++;
+      if (low) { p.low++; p.lowOrderIds.push(row.order_id); }
+    }
+  }
+  out.products = [...products.values()];
+  return out;
+}
+
 /** Units sold and returned per product in the period, with the Returns behind each. Declined and cancelled Returns do not count. */
 export async function returnFactsIn(sql: postgres.Sql, span: Span) {
   const between = (column: postgres.PendingQuery<postgres.Row[]>) => sql`${column} >= ${span.start} and ${column} < ${span.end}`;
@@ -337,10 +370,11 @@ export async function loadFacts(sources: Sources, days: PeriodDays, now: Date,
   shared?: { stock: StockFigures[] | null; expiring: ExpiringFigures | null; sla: SlaFigures | null }): Promise<InsightFacts> {
   const span = periodSpan(days, now);
   const soft = <T>(p: Promise<T>) => p.catch(() => null);
-  const [orders, returns, products, now_] = await Promise.all([
+  const [orders, returns, products, feedback, now_] = await Promise.all([
     orderFactsIn(sources.source, span, now),
     soft(returnFactsIn(sources.source, span)),
     soft(productFactsIn(sources.source, span)),
+    soft(feedbackFactsIn(sources.source, span)),
     shared ?? loadNowFacts(sources, now),
   ]);
   // Grouping Ticket themes asks a model, so it runs only when there is enough data for the page to show insights at all.
@@ -349,7 +383,7 @@ export async function loadFacts(sources: Sources, days: PeriodDays, now: Date,
     days, orders: orders.orders, previousOrders: orders.previousOrders, wentOut: orders.wentOut, lateOrFailed: orders.lateOrFailed,
     returnsRequested: returns?.requested ?? 0, returnedOrders: orders.returnedOrders, areas: orders.areas, unmapped: orders.unmapped,
     lateOrFailedByCity: orders.lateOrFailedByCity, couriers: orders.couriers,
-    stock: now_.stock, expiring: now_.expiring, sla: now_.sla, returns: returns?.returns ?? null, themes, products,
+    stock: now_.stock, expiring: now_.expiring, sla: now_.sla, returns: returns?.returns ?? null, themes, products, feedback,
   };
 }
 
