@@ -57,6 +57,8 @@ function goodsLine(detail: ReturnDetail): string | null {
   return detail.goodsRequired ? "The goods must come back." : "The goods do not need to come back.";
 }
 
+const COLUMN = "min-h-0 space-y-5 overflow-y-auto";
+
 /** One Return with everything Staff need to decide it, and the steps its status allows. */
 export function ReturnDetailView({
   detail,
@@ -103,7 +105,7 @@ export function ReturnDetailView({
 
   return (
     <OptimisticReturn status={detail.status}>
-    <div className="flex flex-col gap-5 px-8 py-7 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 overflow-hidden px-8 py-7">
       <div className="shrink-0 space-y-2">
         <div className="self-start"><BackButton fallbackHref="/returns" label="Returns" /></div>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -140,8 +142,9 @@ export function ReturnDetailView({
         <div className="shrink-0"><EmailNotSent orderId={detail.orderId} failures={detail.emailFailures} role={role} /></div>
       )}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:overflow-y-auto">
-        <div className="space-y-5">
+      {/* The page never grows: each column scrolls on its own. */}
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.1fr)_minmax(0,1.25fr)_minmax(0,0.85fr)] grid-rows-[minmax(0,1fr)] gap-5">
+        <section aria-label="Customer's request" tabIndex={0} className={COLUMN}>
           {flags && flags.length > 0 && (
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Flags</h2>
@@ -187,7 +190,9 @@ export function ReturnDetailView({
               <p className="text-sm text-[#6e6680]">The video could not be loaded. Reload to try again.</p>
             )}
           </section>
+        </section>
 
+        <section aria-label="Goods and refund" tabIndex={0} className={COLUMN}>
           {detail.items.length > 0 && ["goods received", "refunded", "replaced"].includes(detail.status) && (
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Inspect what came back</h2>
@@ -237,9 +242,7 @@ export function ReturnDetailView({
               </div>
             </dl>
           </section>
-        </div>
 
-        <div className="space-y-5">
           {detail.refundRecord && (
             <section className={CARD}>
               <h2 className={CARD_TITLE}>Refund sent</h2>
@@ -251,22 +254,19 @@ export function ReturnDetailView({
               </dl>
             </section>
           )}
-          <section className={CARD}>
-            <h2 className={CARD_TITLE}>History</h2>
-            <ol className="space-y-3 text-sm text-[#1f1a2e]">
-              {detail.history.map((step, i) => (
-                <li key={i} className="space-y-0.5">
-                  <p className="font-medium">{returnLabel(step.status)}</p>
-                  <p className="text-xs text-[#6e6680]">
-                    {step.actor.name}
-                    {step.actor.type === "customer" ? " (Customer)" : ""} · {dateTime(step.at)}
-                  </p>
-                  {step.note && <p className="text-xs text-[#6e6680]">{step.note}</p>}
-                </li>
-              ))}
-            </ol>
-          </section>
 
+          {(detail.refundProofFileId || savedProof) && (
+            <section className={CARD}>
+              <h2 className={CARD_TITLE}>Refund proof</h2>
+              <Photo url={refundProofUrl ?? null} alt={`Refund proof for ${detail.number}`} />
+              {!detail.refundRecord && <SavedProofDetails proof={savedProof} />}
+              <ProofReadFindings read={refundRead} role={role ?? null} subject="refund"
+                changes={savedProof && detail.status !== "refunded" ? { correct: correctRefundReading.bind(null, detail.id), proceed: proceedDespiteRefundFlag.bind(null, detail.id) } : undefined} />
+            </section>
+          )}
+        </section>
+
+        <section aria-label="Order and history" tabIndex={0} className={COLUMN}>
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Order</h2>
             <dl className="space-y-1 text-sm text-[#1f1a2e]">
@@ -323,16 +323,6 @@ export function ReturnDetailView({
             </section>
           )}
 
-          {(detail.refundProofFileId || savedProof) && (
-            <section className={CARD}>
-              <h2 className={CARD_TITLE}>Refund proof</h2>
-              <Photo url={refundProofUrl ?? null} alt={`Refund proof for ${detail.number}`} />
-              {!detail.refundRecord && <SavedProofDetails proof={savedProof} />}
-              <ProofReadFindings read={refundRead} role={role ?? null} subject="refund"
-                changes={savedProof && detail.status !== "refunded" ? { correct: correctRefundReading.bind(null, detail.id), proceed: proceedDespiteRefundFlag.bind(null, detail.id) } : undefined} />
-            </section>
-          )}
-
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Delivery photo</h2>
             {deliveryPhotoUrl === undefined ? (
@@ -343,7 +333,23 @@ export function ReturnDetailView({
               <Photo url={deliveryPhotoUrl} alt={`Delivery photo for Order #${detail.orderId}`} />
             )}
           </section>
-        </div>
+
+          <section className={CARD}>
+            <h2 className={CARD_TITLE}>History</h2>
+            <ol className="space-y-3 text-sm text-[#1f1a2e]">
+              {detail.history.map((step, i) => (
+                <li key={i} className="space-y-0.5">
+                  <p className="font-medium">{returnLabel(step.status)}</p>
+                  <p className="text-xs text-[#6e6680]">
+                    {step.actor.name}
+                    {step.actor.type === "customer" ? " (Customer)" : ""} · {dateTime(step.at)}
+                  </p>
+                  {step.note && <p className="text-xs text-[#6e6680]">{step.note}</p>}
+                </li>
+              ))}
+            </ol>
+          </section>
+        </section>
       </div>
     </div>
     </OptimisticReturn>

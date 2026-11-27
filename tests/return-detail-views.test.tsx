@@ -203,6 +203,29 @@ describe("the Return detail", () => {
   });
 });
 
+describe("the Return detail layout", () => {
+  const column = (name: string) => screen.getByRole("region", { name });
+  const headings = (name: string) => within(column(name)).queryAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+
+  it("splits the cards into three columns that each scroll on their own", () => {
+    view(detail());
+
+    expect(headings("Customer's request")).toEqual(["Reason", "Defect images", "Video"]);
+    expect(headings("Goods and refund")).toEqual(["Items"]);
+    expect(headings("Order and history")).toEqual(["Order", "Refund destination", "Refund window", "Delivery photo", "History"]);
+    for (const name of ["Customer's request", "Goods and refund", "Order and history"]) {
+      expect(column(name).className).toContain("overflow-y-auto");
+      expect(column(name).tabIndex).toBe(0);
+    }
+  });
+
+  it("keeps the inspection and refund proof together in the Goods and refund column", () => {
+    view(detail({ status: "goods received", goodsRequired: true, finalResolution: "refund", refundProofFileId: "proof-1" }), undefined, undefined, { refundProofUrl: "https://files/proof-1" });
+
+    expect(headings("Goods and refund")).toEqual(["Inspect what came back", "Items", "Refund proof"]);
+  });
+});
+
 describe("deciding a Return", () => {
   const open = (overrides: Partial<ReturnDetail> = {}, stock?: import("@/features/returns/replacement-stock").ReplacementStock) => {
     render(<ReturnDetailView detail={detail(overrides)} imageUrls={[]} stock={stock} />);
