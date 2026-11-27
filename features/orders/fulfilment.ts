@@ -31,7 +31,7 @@ export type FulfilmentBoardResult = { ok: true; board: FulfilmentBoard } | { ok:
 
 const COMPLETED = ["delivered", "received"];
 
-/** The one tab an Order belongs to; a tab is a view, never a status. */
+/** The phase an Order is in. Tabs are views, never statuses. */
 export function tabOf(order: FulfilmentOrder): Exclude<FulfilmentTab, "all-active" | "all"> | null {
   if (readyToPrepare(order)) return "to-pack";
   if (order.status === "preparing") return "preparing";
@@ -48,6 +48,8 @@ export function ordersOnTab(board: FulfilmentBoard, tab: FulfilmentTab): Fulfilm
   if (tab === "all-active") return openOrders;
   if (tab === "all") return [...openOrders, ...done];
   if (tab === "completed") return done;
+  // Out for delivery holds every dispatched Order; Failed lists the ones with an open failed delivery on their own.
+  if (tab === "out-for-delivery") return openOrders.filter(o => o.status === "dispatched");
   return openOrders.filter(o => tabOf(o) === tab);
 }
 

@@ -78,7 +78,7 @@ describe("Fulfilment board data", () => {
     expect(result.tab("out-for-delivery").map(row => row.id)).toEqual([dispatched]);
     expect(result.tab("completed").map(row => row.id)).toEqual([delivered, boundary]);
   });
-  it("puts a dispatched Order with an open failed delivery on Failed, and back to Out for delivery once it is closed", async () => {
+  it("keeps a dispatched Order with an open failed delivery on Out for delivery, and lists it on Failed until it is closed", async () => {
     const failed = await order("dispatched");
     const rebooked = await order("dispatched");
     const clean = await order("dispatched");
@@ -86,7 +86,7 @@ describe("Fulfilment board data", () => {
     await failedAttempt(rebooked, true);
     const result = await board();
     expect(result.tab("failed").map(row => row.id)).toEqual([failed]);
-    expect(result.tab("out-for-delivery").map(row => row.id)).toEqual([rebooked, clean]);
+    expect(result.tab("out-for-delivery").map(row => row.id)).toEqual([failed, rebooked, clean]);
   });
   it("lists Completed by the original completion time, including received Orders", async () => {
     const received = await order("received");

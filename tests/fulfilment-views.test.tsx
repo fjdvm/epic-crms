@@ -106,7 +106,7 @@ describe("the Fulfilment board", () => {
     expect(within(c).getByRole("link", { name: /Failed delivery/ }).className).toContain("z-10");
   });
 
-  it("filters the same Orders by tab: Failed apart from Out for delivery, Completed apart from the rest", () => {
+  it("filters the same Orders by tab: Failed also on Out for delivery, Completed apart from the rest", () => {
     board({
       ready: [card({ id: 1 })],
       dispatched: [card({ id: 3, status: "dispatched" }), card({ id: 5, status: "dispatched", failedOpen: true })],
@@ -118,8 +118,9 @@ describe("the Fulfilment board", () => {
     expect(screen.queryByRole("link", { name: "#3" })).toBeNull();
     tab("Out for delivery");
     expect(screen.getByRole("link", { name: "#3" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "#5" })).toBeNull();
+    expect(screen.getByRole("link", { name: "#5" })).toBeTruthy();
     tab("Failed");
+    expect(screen.queryByRole("link", { name: "#3" })).toBeNull();
     expect(screen.getByRole("link", { name: "#5" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Failed delivery/ }).getAttribute("href")).toBe("/orders/5/failed-delivery");
     tab("Completed");
@@ -418,8 +419,8 @@ describe("the All active board", () => {
     everyPhase();
     expect(links(column("To pack"))).toEqual(["#1"]);
     expect(links(column("Preparing"))).toEqual(["#2"]);
-    expect(links(column("Out for delivery"))).toEqual(["#3"]);
-    expect(links(column("Failed"))).toContain("#5");
+    expect(links(column("Out for delivery"))).toEqual(expect.arrayContaining(["#3", "#5"]));
+    expect(screen.queryByRole("region", { name: "Failed" })).toBeNull();
     expect(links(column("Completed"))).toEqual(["#4"]);
   });
 
@@ -444,7 +445,7 @@ describe("the All active board", () => {
     ["to-pack", "preparing", true],
     ["preparing", "out-for-delivery", true],
     ["out-for-delivery", "completed", true],
-    ["failed", "completed", true],
+    ["failed", "completed", false],
     ["to-pack", "out-for-delivery", false],
     ["preparing", "to-pack", false],
     ["out-for-delivery", "failed", false],
@@ -523,11 +524,12 @@ describe("the All active board", () => {
     expect(within(panel).getByText("To pack → Preparing")).toBeTruthy();
   });
 
-  it("shows the five columns while loading", () => {
+  it("shows the four columns while loading", () => {
     render(<Loading />);
-    for (const name of ["To pack", "Preparing", "Out for delivery", "Failed", "Completed"]) {
+    for (const name of ["To pack", "Preparing", "Out for delivery", "Completed"]) {
       expect(screen.getByRole("region", { name })).toBeTruthy();
     }
+    expect(screen.queryByRole("region", { name: "Failed" })).toBeNull();
   });
 });
 
