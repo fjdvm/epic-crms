@@ -29,7 +29,7 @@ export default async function ConversationsPage({
     <div className="lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       {/* One card: the search sits at the top of the inbox column, outside the keyed Suspense so typing keeps its focus. */}
       <div className="grid w-full grid-cols-1 overflow-hidden bg-white lg:h-full lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]">
-        <div className="border-b border-[#e6e1ee] p-2 lg:col-start-1 lg:row-start-1 lg:border-r">
+        <div className="flex h-[60px] items-center border-b border-[#e6e1ee] px-2 *:w-full lg:col-start-1 lg:row-start-1 lg:border-r">
           <ChatSearchInput
             label="Search chats"
             placeholder="Ticket no., customer, email or order"

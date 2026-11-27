@@ -1,43 +1,47 @@
 "use client";
 
+import { Ellipsis } from "lucide-react";
 import { useState } from "react";
 
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { useClaim } from "./claim";
 import { EscalateDialog } from "./escalate-ui";
-import { NoteBox } from "./notes";
 import { useHold } from "./hold";
 
-const OUTLINE =
-  "rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium leading-[normal] whitespace-nowrap text-[#1f1a2e] disabled:opacity-50";
-
-/** The chat's Add internal note and Escalate buttons, each opening its own dialog. Needs the Claim, Hold and Notes providers. */
-export function TicketMoreMenu({ ticketId, canNote, canEscalate }: { ticketId: number; canNote: boolean; canEscalate: boolean }) {
-  const { isClaimer, escalation } = useClaim();
+/** The chat's ⋯ menu: the Claimer's Release and Escalate. Needs the Claim and Hold providers. */
+export function TicketMoreMenu({ ticketId, canEscalate }: { ticketId: number; canEscalate: boolean }) {
+  const { isClaimer, escalation, pending, release } = useClaim();
   const { status } = useHold();
-  const [noting, setNoting] = useState(false);
-  const mayEscalate = canEscalate && status !== "completed" && isClaimer && !escalation;
-
-  if (!canNote && !mayEscalate) return null;
+  const [escalating, setEscalating] = useState(false);
+  const mayRelease = status !== "completed" && isClaimer && !escalation;
+  const mayEscalate = mayRelease && canEscalate;
 
   return (
     <>
-      {canNote && (
-        <button type="button" className={OUTLINE} onClick={() => setNoting(true)}>
-          Add internal note
-        </button>
+      {mayRelease && (
+        // Not modal, so choosing Escalate hands focus to its dialog without leaving the page unclickable.
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger
+            aria-label="More actions"
+            className="flex size-[37px] shrink-0 items-center justify-center rounded-lg border border-[#e6e1ee] bg-white text-[#1f1a2e]"
+          >
+            <Ellipsis aria-hidden className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={pending} onSelect={release}>
+              Release
+            </DropdownMenuItem>
+            {mayEscalate && <DropdownMenuItem onSelect={() => setEscalating(true)}>Escalate</DropdownMenuItem>}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
-      {mayEscalate && <EscalateDialog ticketId={ticketId} />}
-
-      <Dialog open={noting} onOpenChange={setNoting}>
-        <DialogContent className="max-w-[520px] gap-4">
-          <DialogTitle className="text-lg font-semibold text-[#1f1a2e]">Internal note on TKT-{ticketId}</DialogTitle>
-          <DialogDescription className="sr-only">Write a note only Staff can see.</DialogDescription>
-          <NoteBox inline onSaved={() => setNoting(false)} />
-        </DialogContent>
-      </Dialog>
-
+      <EscalateDialog ticketId={ticketId} controlled={{ open: escalating, onOpenChange: setEscalating }} />
     </>
   );
 }
