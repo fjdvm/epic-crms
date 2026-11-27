@@ -5,6 +5,7 @@ import { BackgroundRefresh } from "@/features/orders/background-refresh";
 import { mayReadFulfilmentReport } from "@/features/reports/fulfilment-report";
 import { loadFulfilmentBoard } from "@/features/orders/fulfilment";
 import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
+import { PAGE_FRAME } from "@/features/orders/fulfilment-layout";
 import { FULFILMENT_MODULE } from "@/lib/portal/config";
 import { requireModule } from "@/lib/portal/staff";
 import { ticketsDatabase } from "@/lib/tickets-db";
@@ -15,7 +16,7 @@ export default async function FulfilmentPage() {
   const result = await loadFulfilmentBoard(ticketsDatabase);
 
   return (
-    <div className="flex flex-col gap-5 px-4 py-7 sm:px-8">
+    <div className={PAGE_FRAME}>
       <BackgroundRefresh />
       <div className="flex items-start gap-2">
        <div className="flex-1 space-y-1">

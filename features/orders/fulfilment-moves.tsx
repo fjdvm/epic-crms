@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 
+import { cn } from "@/lib/utils";
+
 import { OrderActionDialog } from "./action-dialog";
 import { deliverOrder, dispatchOrder, startPreparing } from "./actions";
 import { CourierFields, useCourierForm } from "./courier-fields";
@@ -39,6 +41,14 @@ function CollectedAmount({ move, total, value, onChange }: { move: string; total
     </div>
   );
 }
+
+/** Each phase's button has its own colour: brand purple to pack, blue to dispatch, green to deliver. */
+const PACK_COLOUR = "bg-primary hover:bg-primary/90";
+const DISPATCH_COLOUR = "bg-[#1d4ed8] hover:bg-[#1e40af]";
+const DELIVER_COLOUR = "bg-[#15803d] hover:bg-[#166534]";
+
+/** Lets the board open a move's dialog when a card is dropped. */
+type DialogControl = { open?: boolean; onOpenChange?: (open: boolean) => void };
 
 const totalText = (total: number) => (total / 100).toFixed(2);
 
@@ -86,7 +96,7 @@ function ProofOfDelivery({ source, onSource, photo, onPhoto, link, onLink, linkE
 const PHOTO_LINK_REASON = "Paste the image link as a web address starting with https://.";
 
 /** Marking delivered needs the proof of delivery, so this keeps the chosen file or pasted link for the dialog. */
-function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: number; cod: boolean; total: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
+function MarkDelivered({ id, cod, total, triggerClassName, onMove, ...control }: DialogControl & { id: number; cod: boolean; total: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
   const [source, setSource] = useState<ProofSource>("upload");
   const [photo, setPhoto] = useState<File | null>(null);
   const [link, setLink] = useState("");
@@ -96,8 +106,9 @@ function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: numbe
 
   return (
     <OrderActionDialog
+      {...control}
       trigger="Mark as delivered"
-      triggerClassName={triggerClassName}
+      triggerClassName={cn(DELIVER_COLOUR, triggerClassName)}
       title={`Mark Order #${id} as delivered?`}
       description="The store records the delivery time now and emails the Customer."
       confirm="Mark as delivered"
@@ -130,13 +141,14 @@ function MarkDelivered({ id, cod, total, triggerClassName, onMove }: { id: numbe
  * A Delivery Order needs the courier; the booking's https share link and rider details are optional and can be added later.
  * Dispatching shows the move at once and rolls back with the reason if the server refuses.
  */
-function DispatchDelivery({ id, triggerClassName, onMove }: { id: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
+function DispatchDelivery({ id, triggerClassName, onMove, ...control }: DialogControl & { id: number; triggerClassName?: string; onMove?: (status: MoveStatus) => void }) {
   const form = useCourierForm();
 
   return (
     <OrderActionDialog
+      {...control}
       trigger="Mark as dispatched"
-      triggerClassName={triggerClassName}
+      triggerClassName={cn(DISPATCH_COLOUR, triggerClassName)}
       title={`Mark Order #${id} as dispatched?`}
       description="Record the courier booking. The Customer is emailed once, with the tracking link if you add one. A dispatched Order can no longer be cancelled."
       confirm="Mark as dispatched"
@@ -160,7 +172,8 @@ export function FulfilmentMove({
   order,
   triggerClassName,
   onMove,
-}: {
+  ...control
+}: DialogControl & {
   order: { id: number; status: string; paymentMethod: string; total: number };
   triggerClassName?: string;
   /** Shows the Order in its next status at once; every move calls it, and a refusal rolls it back. */
@@ -171,8 +184,9 @@ export function FulfilmentMove({
   if (readyToPrepare(order)) {
     return (
       <OrderActionDialog
+        {...control}
         trigger="Pack order"
-        triggerClassName={triggerClassName}
+        triggerClassName={cn(PACK_COLOUR, triggerClassName)}
         title={`Pack Order #${id}?`}
         description="Your name is recorded as the packer and the stock is deducted. The Order moves to Preparing; Staff with the Orders Module can still cancel it until it is dispatched."
         confirm="Pack order"
@@ -184,10 +198,10 @@ export function FulfilmentMove({
     );
   }
   if (order.status === "preparing") {
-    return <DispatchDelivery id={id} triggerClassName={triggerClassName} onMove={onMove} />;
+    return <DispatchDelivery {...control} id={id} triggerClassName={triggerClassName} onMove={onMove} />;
   }
   if (order.status === "dispatched") {
-    return <MarkDelivered id={id} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />;
+    return <MarkDelivered {...control} id={id} cod={order.paymentMethod === "cash-on-delivery"} total={order.total} triggerClassName={triggerClassName} onMove={onMove} />;
   }
   return null;
 }

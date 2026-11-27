@@ -44,6 +44,8 @@ export function OrderActionDialog({
   run,
   successMessage,
   onOptimistic,
+  open: openProp,
+  onOpenChange,
 }: {
   /** The button's label on the page. */
   trigger: React.ReactNode;
@@ -73,9 +75,14 @@ export function OrderActionDialog({
    * moves with no outside effect (ADR-0002); the dialog then closes immediately instead of spinning.
    */
   onOptimistic?: () => void;
+  /** Set both to open the dialog from outside the button, as a drop on the Fulfilment board does. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   const [pending, setPending] = useState(false);
 
   const [, startTransition] = useTransition();
