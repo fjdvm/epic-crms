@@ -61,6 +61,8 @@ function view(selected: TicketDetail | null = ticket(), viewerId = "bernice", ca
   return render(<ConversationsView conversations={conversations} viewerId={viewerId} viewerName="Bernice" now={NOW} canDraft={canDraft} escalatedIds={escalatedIds} />);
 }
 
+const openMore = () => fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "Enter" });
+
 describe("the Conversations page as designed", () => {
   it("lists each chat with Customer name, preview, time and Ticket number, linking to it", () => {
     view();
@@ -68,7 +70,7 @@ describe("the Conversations page as designed", () => {
     const list = screen.getByRole("navigation", { name: "Chats" });
     const ana = within(list).getByRole("link", { name: /Ana Reyes/ });
 
-    expect(ana.textContent).toBe("ARAna Reyes TKT-2063hMy receipt was rejected");
+    expect(ana.textContent).toBe("Ana Reyes TKT-2063hMy receipt was rejected");
     expect(ana.getAttribute("href")).toBe("/conversations?ticket=206");
     expect(within(list).getByRole("link", { name: /Maria Santos/ }).textContent).toContain("5m");
     expect(within(list).getByRole("link", { name: /Maria Santos/ }).getAttribute("aria-current")).toBe("true");
@@ -127,24 +129,37 @@ describe("the Conversations page as designed", () => {
     expect(within(tabs).getByRole("tab", { name: "Mine" }).getAttribute("href")).toBe("/conversations?q=maria");
   });
 
-  it("puts Add internal note in the header button row, not beside the reply box", async () => {
+  it("offers Internal note as a tab beside Reply, not as a header button", () => {
     view();
 
-    expect(screen.queryByRole("tab", { name: "Internal note" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Add internal note" }));
+    expect(screen.queryByRole("button", { name: "Add internal note" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Internal note" }));
 
-    expect(await screen.findByPlaceholderText("Write a note for your teammates…")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Write a note for your teammates…")).toBeTruthy();
+    expect(screen.queryByText(/Only the claimer can reply/)).toBeNull();
   });
 
-  it("offers Escalate as a button only while the Ticket is not already escalated", async () => {
-    const first = view();
-    expect(screen.getByRole("button", { name: "Escalate" })).toBeTruthy();
-    first.unmount();
+  it("keeps Release and Escalate inside More actions", async () => {
+    view();
 
-    view(ticket(), "bernice", false, [208]);
-    expect(screen.getByRole("button", { name: "Add internal note" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Release" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Escalate" })).toBeNull();
+    openMore();
+
+    expect(await screen.findByRole("menuitem", { name: "Release" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Escalate" }));
+    expect(await screen.findByRole("dialog", { name: "Escalate TKT-208?" })).toBeTruthy();
+  });
+
+  it("offers no Escalate once the Ticket is escalated, and no More actions to a non-claimer", () => {
+    const escalated = view(ticket(), "bernice", false, [208]);
+    openMore();
+    expect(screen.getByRole("menuitem", { name: "Release" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Escalate" })).toBeNull();
+    escalated.unmount();
+
+    view(ticket(), "carlo");
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
   });
 
   it("opens an image full screen, steps through the chat's images and closes it", () => {
@@ -209,7 +224,7 @@ describe("the read-only chat for Admin", () => {
     expect(within(chat).queryByRole("textbox")).toBeNull();
     expect(within(chat).queryByRole("tab", { name: "Internal note" })).toBeNull();
     expect(within(chat).queryByRole("button", { name: "Claim" })).toBeNull();
-    expect(within(chat).queryByRole("button", { name: "Release" })).toBeNull();
+    expect(within(chat).queryByRole("button", { name: "More actions" })).toBeNull();
   });
 });
 

@@ -71,6 +71,7 @@ export function ClaimButton({ ticketId }: { ticketId: number }) {
 export function TicketActions({
   ticketId,
   withReply = true,
+  withRelease = true,
   canReassign = false,
   canEscalate = false,
   className,
@@ -82,6 +83,8 @@ export function TicketActions({
   canEscalate?: boolean;
   /** Offer the Reply link to the composer; off where the composer sits beside the actions. */
   withReply?: boolean;
+  /** Off where Release sits in a ⋯ menu instead. */
+  withRelease?: boolean;
   className?: string;
 }) {
   const { claimer, isClaimer, escalation, pending: claiming, claim: claimTicket, release: releaseTicket } = useClaim();
@@ -100,7 +103,7 @@ export function TicketActions({
           Claim
         </button>
       )}
-      {status !== "completed" && isClaimer && !escalation && (
+      {withRelease && status !== "completed" && isClaimer && !escalation && (
         <button
           type="button"
           className={OUTLINE}

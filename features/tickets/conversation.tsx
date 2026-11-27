@@ -360,9 +360,11 @@ export function Conversation({
           </div>
         )}
         {mode === "note" && canNote ? <NoteBox inline /> : mode === "ai" && draftPanel ? draftPanel : replyArea}
-        <p className="text-[13px] leading-[normal] text-[#6e6680]">
-          Only the claimer can reply. Nothing sends until you press Send. Images: JPG or PNG up to 5 MB.
-        </p>
+        {mode === "reply" && (
+          <p className="text-[13px] leading-[normal] text-[#6e6680]">
+            Only the claimer can reply. Nothing sends until you press Send. Images: JPG or PNG up to 5 MB.
+          </p>
+        )}
       </div>
       )}
     </div>

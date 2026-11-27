@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, MessageCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -8,7 +8,6 @@ import { Conversation } from "./conversation";
 import { draftDisabledReason } from "./draft";
 import { NotesProvider } from "./notes";
 import { CHAT_SCOPES, inboxTime, type ChatScope, type Conversations } from "./conversations";
-import { initials } from "./initials";
 import { ClaimedBy, ClaimProvider } from "./claim";
 import { HoldProvider, HoldSummary } from "./hold";
 import { TicketActions } from "./ticket-controls";
@@ -69,7 +68,7 @@ export function ConversationsView({
               aria-selected={tab === scope}
               href={href(tab)}
               className={cn(
-                "rounded-md px-3 py-1 text-[15px] font-medium leading-[normal]",
+                "flex-1 rounded-md px-3 py-1 text-center text-[15px] font-medium leading-[normal]",
                 tab === scope ? "bg-[#efe6f8] text-[#5b2a86]" : "text-[#6e6680]",
               )}
             >
@@ -95,9 +94,9 @@ export function ConversationsView({
             >
               <span
                 aria-hidden
-                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#e6e1ee] text-[13px] font-semibold text-[#3e3650]"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#e6e1ee] text-[#3e3650]"
               >
-                {initials(chat.customerName)}
+                <MessageCircle className="size-4" />
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                 <span className="flex items-start gap-1.5">
@@ -156,7 +155,7 @@ function SelectedChat({
       <HoldProvider ticketId={ticket.id} status={ticket.status} hold={ticket.hold}>
         <NotesProvider key={ticket.id} ticketId={ticket.id} viewerName={viewerName}>
           <section aria-label="Chat" className="flex h-[70vh] min-h-0 w-full min-w-0 flex-col lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:h-auto">
-            <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[#e6e1ee] px-3 py-2">
+            <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-[#e6e1ee] px-3">
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-xl font-semibold leading-[normal] text-[#1f1a2e]">
                   {customer.name} · TKT-{ticket.id}
@@ -166,15 +165,15 @@ function SelectedChat({
                   {order && ` · BR-${order.id}`}
                 </p>
               </div>
-              {!readOnly && <TicketActions ticketId={ticket.id} withReply={false} className="flex-wrap" />}
-              {!readOnly && <TicketMoreMenu ticketId={ticket.id} canNote canEscalate={!escalated} />}
+              {!readOnly && <TicketActions ticketId={ticket.id} withReply={false} withRelease={false} />}
               <Link
                 href={`/tickets/${ticket.id}`}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6e1ee] bg-white px-3 py-1.5 text-[15px] font-medium leading-[normal] text-[#1f1a2e]"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6e1ee] bg-white px-[14px] py-[9px] text-sm font-medium whitespace-nowrap leading-[normal] text-[#1f1a2e]"
               >
                 <ArrowRight aria-hidden className="size-3.5" />
                 Open ticket
               </Link>
+              {!readOnly && <TicketMoreMenu ticketId={ticket.id} canEscalate={!escalated} />}
             </header>
             <HoldSummary />
             <Conversation
@@ -185,7 +184,7 @@ function SelectedChat({
               viewerName={viewerName}
               customerName={customer.name.split(" ")[0]}
               scrollable
-              canNote={false}
+              canNote={!readOnly}
               readOnly={readOnly}
               draftDisabledReason={canDraft ? draftDisabledReason(ticket.status, isClaimer) : undefined}
               canReply={ticket.status !== "completed" && isClaimer}
