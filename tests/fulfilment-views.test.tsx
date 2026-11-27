@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { deliverOrder, dispatchOrder, startPreparing } from "@/features/orders/actions";
 import { importDeliveryPhotoLink } from "@/features/files/actions";
-import { FulfilmentBoardView } from "@/features/orders/fulfilment-board";
+import Loading from "@/app/(app)/fulfilment/loading";
+import { allowsDrop, FulfilmentBoardView } from "@/features/orders/fulfilment-board";
 import type { FulfilmentBoard, FulfilmentOrder } from "@/features/orders/fulfilment";
 import { OrderDetailView } from "@/features/orders/order-detail";
 import type { OrderDetail } from "@/features/orders/orders";
@@ -21,6 +22,18 @@ vi.mock("@/features/orders/actions", () => ({
   dispatchOrder: vi.fn(),
   deliverOrder: vi.fn(),
 }));
+/** jsdom has no layout to drag across, so tests hand the real board the drop the library would report. */
+const drag = vi.hoisted(() => ({ end: null as unknown as (result: unknown) => void }));
+vi.mock("@hello-pangea/dnd", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@hello-pangea/dnd")>();
+  return {
+    ...real,
+    DragDropContext: (props: React.ComponentProps<typeof real.DragDropContext>) => {
+      drag.end = props.onDragEnd as (result: unknown) => void;
+      return <real.DragDropContext {...props} />;
+    },
+  };
+});
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
@@ -65,6 +78,10 @@ const choosePhoto = (dialog: HTMLElement, file: File) =>
 
 const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name: new RegExp(`^${name}\\d`) }));
 const cardFor = (id: number) => screen.getByRole("link", { name: `#${id}` }).closest("[data-fulfilment-card]") as HTMLElement;
+const column = (name: string) => screen.getByRole("region", { name });
+const links = (el: HTMLElement) => within(el).queryAllByRole("link").map((l) => l.textContent);
+const dropOn = (id: number, from: string, to: string | null) =>
+  act(() => drag.end({ draggableId: String(id), source: { droppableId: from, index: 0 }, destination: to && { droppableId: to, index: 0 } }));
 
 describe("the Fulfilment board", () => {
   it("has the seven tabs with their counts, named in screen wording", () => {
@@ -108,7 +125,7 @@ describe("the Fulfilment board", () => {
     tab("Completed");
     expect(screen.getByRole("link", { name: "#4" })).toBeTruthy();
     tab("All active");
-    expect(screen.queryByRole("link", { name: "#4" })).toBeNull();
+    expect(within(column("Completed")).getByRole("link", { name: "#4" })).toBeTruthy();
     tab("All");
     expect(screen.getByRole("link", { name: "#4" })).toBeTruthy();
   });
@@ -118,6 +135,7 @@ describe("the Fulfilment board", () => {
       dispatched: [card({ id: 3, status: "dispatched" })],
     });
     expect(within(cardFor(3)).getByText("Out for delivery")).toBeTruthy();
+    expect(column("Out for delivery")).toBeTruthy();
     expect(screen.queryByText("Dispatched")).toBeNull();
   });
 
@@ -384,6 +402,122 @@ describe("moving an Order on the board", () => {
     expect(deliverOrder).not.toHaveBeenCalled();
     tab("Out for delivery");
     await waitFor(() => expect(screen.getByRole("link", { name: "#1042" })).toBeTruthy());
+  });
+});
+
+describe("the All active board", () => {
+  const everyPhase = () =>
+    board({
+      ready: [card({ id: 1 })],
+      preparing: [card({ id: 2, status: "preparing" })],
+      dispatched: [card({ id: 3, status: "dispatched" }), card({ id: 5, status: "dispatched", failedOpen: true })],
+      delivered: [card({ id: 4, status: "delivered", deliveredAt: new Date("2026-10-21T00:00:00Z") })],
+    });
+
+  it("has a column for each phase, each holding its own Orders", () => {
+    everyPhase();
+    expect(links(column("To pack"))).toEqual(["#1"]);
+    expect(links(column("Preparing"))).toEqual(["#2"]);
+    expect(links(column("Out for delivery"))).toEqual(["#3"]);
+    expect(links(column("Failed"))).toContain("#5");
+    expect(links(column("Completed"))).toEqual(["#4"]);
+  });
+
+  it("keeps the other tabs as one grid", () => {
+    everyPhase();
+    tab("Preparing");
+    expect(screen.queryByRole("region", { name: "To pack" })).toBeNull();
+    expect(screen.getByRole("link", { name: "#2" })).toBeTruthy();
+  });
+
+  it("gives each phase's button its own colour", () => {
+    everyPhase();
+    const classes = (id: number, name: string) => within(cardFor(id)).getByRole("button", { name }).className;
+    expect(classes(1, "Pack order")).toContain("bg-primary");
+    expect(classes(2, "Mark as dispatched")).toContain("bg-[#1d4ed8]");
+    expect(classes(2, "Mark as dispatched")).not.toContain("bg-primary");
+    expect(classes(3, "Mark as delivered")).toContain("bg-[#15803d]");
+    expect(classes(3, "Mark as delivered")).not.toContain("bg-primary");
+  });
+
+  it.each([
+    ["to-pack", "preparing", true],
+    ["preparing", "out-for-delivery", true],
+    ["out-for-delivery", "completed", true],
+    ["failed", "completed", true],
+    ["to-pack", "out-for-delivery", false],
+    ["preparing", "to-pack", false],
+    ["out-for-delivery", "failed", false],
+    ["preparing", "preparing", false],
+    ["completed", "out-for-delivery", false],
+  ])("allows a drag from %s to %s: %s", (from, to, allowed) => {
+    expect(allowsDrop(from, to)).toBe(allowed);
+  });
+
+  it("asks with the move's own dialog after a drop, and Cancel leaves the card where it was", () => {
+    everyPhase();
+    dropOn(1, "to-pack", "preparing");
+
+    const dialog = screen.getByRole("alertdialog", { name: "Pack Order #1?" });
+    expect(startPreparing).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(links(column("To pack"))).toEqual(["#1"]);
+    expect(startPreparing).not.toHaveBeenCalled();
+  });
+
+  it("moves the dropped card at once on confirm, and puts it back with the reason on refusal", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof startPreparing>>>();
+    vi.mocked(startPreparing).mockReturnValue(pending.promise);
+    everyPhase();
+    dropOn(1, "to-pack", "preparing");
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Pack order" }));
+
+    expect(links(column("Preparing"))).toEqual(["#1", "#2"]);
+    await act(async () => pending.settle({ ok: false, reason: "Out of stock." }));
+    expect(toast.error).toHaveBeenCalledWith("Out of stock.");
+    await waitFor(() => expect(links(column("To pack"))).toEqual(["#1"]));
+  });
+
+  it.each([
+    [2, "preparing", "to-pack"],
+    [2, "preparing", null],
+    [1, "to-pack", "completed"],
+  ])("does nothing when Order %s is dropped from %s on %s", (id, from, to) => {
+    everyPhase();
+    dropOn(id, from, to);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("pages a long column 20 at a time, leaving the others alone", () => {
+    board({
+      ready: Array.from({ length: 21 }, (_, i) => card({ id: 100 + i })),
+      preparing: [card({ id: 2, status: "preparing" })],
+    });
+    const ready = column("To pack");
+    expect(links(ready)).toHaveLength(20);
+    fireEvent.click(within(ready).getByRole("button", { name: "Next page" }));
+    expect(links(ready)).toEqual(["#120"]);
+    expect(links(column("Preparing"))).toEqual(["#2"]);
+    expect(within(column("Preparing")).queryByRole("button", { name: "Next page" })).toBeNull();
+  });
+
+  it("pages the grid of another tab, and starts again at page 1 on a new tab", () => {
+    board({ ready: Array.from({ length: 21 }, (_, i) => card({ id: 100 + i })) });
+    tab("To pack");
+    expect(screen.getByText("Showing 1–20 of 21 Orders")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Showing 21–21 of 21 Orders")).toBeTruthy();
+    tab("All");
+    expect(screen.getByText("Showing 1–20 of 21 Orders")).toBeTruthy();
+  });
+
+  it("shows the five columns while loading", () => {
+    render(<Loading />);
+    for (const name of ["To pack", "Preparing", "Out for delivery", "Failed", "Completed"]) {
+      expect(screen.getByRole("region", { name })).toBeTruthy();
+    }
   });
 });
 

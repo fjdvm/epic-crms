@@ -56,6 +56,8 @@ interface TablePaginationProps {
   pagination: ClientPagination<unknown>;
   /** Noun for the range summary, e.g. "companies". Defaults to "items". */
   itemLabel?: string;
+  /** Arrows and page number only, for a narrow place such as a board column. */
+  compact?: boolean;
 }
 
 /**
@@ -66,17 +68,20 @@ interface TablePaginationProps {
 export function TablePagination({
   pagination,
   itemLabel = "items",
+  compact = false,
 }: TablePaginationProps) {
   const { page, totalPages, total, rangeStart, rangeEnd, goPrev, goNext } =
     pagination;
 
   return (
-    <div className="flex items-center justify-between pt-2">
-      <p className="text-sm text-muted-foreground">
-        {total === 0
-          ? `No ${itemLabel}`
-          : `Showing ${rangeStart}–${rangeEnd} of ${total} ${itemLabel}`}
-      </p>
+    <div className={`flex items-center pt-2 ${compact ? "justify-center" : "justify-between"}`}>
+      {!compact && (
+        <p className="text-sm text-muted-foreground">
+          {total === 0
+            ? `No ${itemLabel}`
+            : `Showing ${rangeStart}–${rangeEnd} of ${total} ${itemLabel}`}
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <Button
           variant="outline"
