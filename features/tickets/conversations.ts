@@ -3,6 +3,7 @@ import { customerNameSql } from "@/lib/deleted-customer";
 
 import type { ShopRole } from "@/lib/portal/roles";
 import { formatDate } from "@/features/customer-profiles/format";
+import { searchParamsKey } from "@/lib/search-params-key";
 
 import type { FileStorage } from "./attachments";
 import { loadTicket, type TicketDetail } from "./ticket";
@@ -113,10 +114,59 @@ export interface Conversations {
 
 export type ConversationsResult = { ok: true; conversations: Conversations } | { ok: false };
 
+/** The Suspense key of the inbox: its tab and search reload it, opening a chat does not. */
+export function inboxKey(raw: Record<string, string | string[] | undefined>): string {
+  const { ticket: _ticket, ...inbox } = raw;
+
+  return searchParamsKey(inbox);
+}
+
+/** The chat to open: the one asked for, else the newest. A Manager-level Role may open any Ticket by id, even one outside the list. */
+export function openChatId(chats: ConversationRow[], asked: number | undefined, openAny: boolean): number | undefined {
+  return chats.find((c) => c.ticketId === asked)?.ticketId ?? (openAny ? asked : undefined) ?? chats[0]?.ticketId;
+}
+
+function unreadable(error: unknown): { ok: false } {
+  console.error("Conversations could not read the ecommerce database", error);
+
+  return { ok: false };
+}
+
 /**
- * The inbox and the open chat. An unreachable database becomes `{ ok: false }` so the page can say
- * so in place instead of crashing into the framework's generic error page.
+ * The inbox rows. An unreachable database becomes `{ ok: false }` so the page can say so in place instead of
+ * crashing into the framework's generic error page.
  */
+export async function loadChats(
+  connect: () => postgres.Sql,
+  viewerId: string,
+  search?: string,
+  scope: ChatScope = "mine",
+): Promise<{ ok: true; chats: ConversationRow[] } | { ok: false }> {
+  try {
+    return { ok: true, chats: await listConversations(connect(), viewerId, search, scope) };
+  } catch (error) {
+    return unreadable(error);
+  }
+}
+
+/** The open chat, loaded apart from the inbox so each can show on its own. Null when there is none to open. */
+export async function loadOpenChat(
+  connect: () => postgres.Sql,
+  id: number | undefined,
+  storage?: FileStorage,
+): Promise<{ ok: true; selected: TicketDetail | null } | { ok: false }> {
+  if (id === undefined) return { ok: true, selected: null };
+
+  try {
+    const result = await loadTicket(connect, id, storage);
+
+    return result.ok ? { ok: true, selected: result.ticket } : { ok: false };
+  } catch (error) {
+    return unreadable(error);
+  }
+}
+
+/** The inbox and the open chat together. */
 export async function loadConversations(
   connect: () => postgres.Sql,
   viewerId: string,
@@ -124,20 +174,13 @@ export async function loadConversations(
   storage?: FileStorage,
   search?: string,
   scope: ChatScope = "mine",
-  /** A Manager-level Role may open any Ticket by id, even one outside the list. Staff never can: they see only their own and unclaimed. */
   openAny = false,
 ): Promise<ConversationsResult> {
-  try {
-    const chats = await listConversations(connect(), viewerId, search, scope);
-    const id = chats.find((c) => c.ticketId === selectedId)?.ticketId ?? (openAny ? selectedId : undefined) ?? chats[0]?.ticketId;
-    if (id === undefined) return { ok: true, conversations: { chats, selected: null } };
+  const inbox = await loadChats(connect, viewerId, search, scope);
+  if (!inbox.ok) return inbox;
 
-    const result = await loadTicket(connect, id, storage);
-    if (!result.ok) return { ok: false };
+  const chat = await loadOpenChat(connect, openChatId(inbox.chats, selectedId, openAny), storage);
+  if (!chat.ok) return chat;
 
-    return { ok: true, conversations: { chats, selected: result.ticket } };
-  } catch (error) {
-    console.error("Conversations could not read the ecommerce database", error);
-    return { ok: false };
-  }
+  return { ok: true, conversations: { chats: inbox.chats, selected: chat.selected } };
 }

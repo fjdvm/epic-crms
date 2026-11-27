@@ -1,8 +1,9 @@
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { allowedScope, loadConversations, scopesFor } from "@/features/tickets/conversations";
-import { ConversationsView } from "@/features/tickets/conversations-view";
+import { allowedScope, inboxKey, loadChats, loadOpenChat, openChatId, scopesFor } from "@/features/tickets/conversations";
+import { ChatPane, ConversationsNavigation } from "@/features/tickets/conversations-navigation";
+import { ConversationChat, ConversationInbox } from "@/features/tickets/conversations-view";
 import { ChatSearchInput } from "@/features/tickets/ticket-toolbar";
 import { ticketFileStorage } from "@/features/files/server";
 import { TICKETS_MODULE } from "@/lib/portal/config";
@@ -12,12 +13,12 @@ import { ticketsDatabase } from "@/lib/tickets-db";
 import { searchParamsKey } from "@/lib/search-params-key";
 import { openEscalatedIds } from "@/features/tickets/escalate";
 import { crmsDatabase } from "@/lib/crms-db";
-import { ConversationsSkeleton } from "@/features/tickets/conversations-skeleton";
+import { ChatSkeleton, InboxSkeleton } from "@/features/tickets/conversations-skeleton";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-// Nothing here waits on the Portal or the database, so the skeleton reaches the browser at once. Keyed so a
-// new tab, filter or page shows it at once too, instead of holding the old view until the data lands.
+// Nothing here waits on the Portal or the database, so the skeleton reaches the browser at once. The inbox and
+// the chat load behind their own boundaries: opening a chat reloads only the chat, a new tab or search both.
 export default async function ConversationsPage({
   searchParams,
 }: {
@@ -35,64 +36,81 @@ export default async function ConversationsPage({
             placeholder="Ticket no., customer, email or order"
           />
         </div>
-        <Suspense key={searchParamsKey(raw)} fallback={<ConversationsSkeleton />}>
-          <ConversationsData raw={raw} />
-        </Suspense>
+        <ConversationsNavigation>
+          <Suspense key={`inbox:${inboxKey(raw)}`} fallback={<InboxSkeleton />}>
+            <InboxData raw={raw} />
+          </Suspense>
+          <ChatPane>
+            <Suspense key={`chat:${searchParamsKey(raw)}`} fallback={<ChatSkeleton />}>
+              <ChatData raw={raw} />
+            </Suspense>
+          </ChatPane>
+        </ConversationsNavigation>
       </div>
     </div>
   );
 }
 
-async function ConversationsData({ raw }: { raw: Awaited<SearchParams> }) {
+const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+
+/** What both columns need, read once per request. The Module is proved before anything is read. */
+const loadInbox = cache(async (raw: Awaited<SearchParams>) => {
   const staff = await requireModule(TICKETS_MODULE);
 
-  const ticket = raw.ticket;
-  const asked = Array.isArray(ticket) ? ticket[0] : ticket;
-  const selectedId =
-    asked && /^\d{1,9}$/.test(asked) ? Number(asked) : undefined;
-
-  const asking = raw.q;
-  const query = ((Array.isArray(asking) ? asking[0] : asking) ?? "").trim();
-
-  const picked = Array.isArray(raw.tab) ? raw.tab[0] : raw.tab;
+  const asked = first(raw.ticket);
+  const selectedId = asked && /^\d{1,9}$/.test(asked) ? Number(asked) : undefined;
+  const query = (first(raw.q) ?? "").trim();
   const role = shopRole(staff.role);
-  const scope = allowedScope(role, picked);
+  const scope = allowedScope(role, first(raw.tab));
 
-  const result = await loadConversations(
-    ticketsDatabase,
-    staff.username,
-    selectedId,
-    ticketFileStorage,
-    query,
-    scope,
-    role === "manager" || role === "admin",
-  );
+  const result = await loadChats(ticketsDatabase, staff.username, query, scope);
+  const openId = result.ok ? openChatId(result.chats, selectedId, role === "manager" || role === "admin") : undefined;
 
-  const escalatedIds = await openEscalatedIds(crmsDatabase()).catch(() => [] as number[]);
+  return { staff, role, query, scope, result, openId };
+});
 
-  if (!result.ok) {
-    return (
-      <Alert variant="destructive" className="col-span-full m-5 w-auto">
-        <AlertTitle>Conversations are temporarily unavailable</AlertTitle>
-        <AlertDescription>
-          CREOMS could not read the store&apos;s Tickets. Reload to try again;
-          if it keeps happening, tell whoever maintains CREOMS.
-        </AlertDescription>
-      </Alert>
-    );
-  }
+async function InboxData({ raw }: { raw: Awaited<SearchParams> }) {
+  const { role, query, scope, result, openId } = await loadInbox(raw);
+
+  if (!result.ok) return <Unavailable />;
+
+  return <ConversationInbox chats={result.chats} selectedId={openId} query={query} scope={scope} scopes={scopesFor(role)} />;
+}
+
+async function ChatData({ raw }: { raw: Awaited<SearchParams> }) {
+  const { staff, query, result, openId } = await loadInbox(raw);
+
+  // The inbox says the read failed, across both columns.
+  if (!result.ok) return null;
+
+  const [chat, escalatedIds] = await Promise.all([
+    loadOpenChat(ticketsDatabase, openId, ticketFileStorage),
+    openEscalatedIds(crmsDatabase()).catch(() => [] as number[]),
+  ]);
+
+  if (!chat.ok) return <Unavailable chatOnly />;
 
   return (
-    <ConversationsView
-      conversations={result.conversations}
+    <ConversationChat
+      selected={chat.selected}
       viewerId={staff.username}
       viewerName={staff.name}
       query={query}
-      scope={scope}
-      scopes={scopesFor(role)}
       canDraft={canWork(staff)}
       readOnly={!canWork(staff)}
       escalatedIds={escalatedIds}
     />
+  );
+}
+
+function Unavailable({ chatOnly = false }: { chatOnly?: boolean }) {
+  return (
+    <Alert variant="destructive" className={chatOnly ? "m-5 h-fit w-auto lg:col-start-2 lg:row-span-2 lg:row-start-1" : "col-span-full m-5 w-auto"}>
+      <AlertTitle>Conversations are temporarily unavailable</AlertTitle>
+      <AlertDescription>
+        CREOMS could not read the store&apos;s Tickets. Reload to try again;
+        if it keeps happening, tell whoever maintains CREOMS.
+      </AlertDescription>
+    </Alert>
   );
 }
