@@ -230,7 +230,7 @@ export function AreaSection({ areas, unmapped, orders, days, enoughData, product
           ))}
         </div>
 
-        <div ref={frameRef} className="relative h-[320px] overflow-hidden rounded-xl border border-[#ece8f1] sm:h-[360px]" style={{ background: SEA }}
+        <div ref={frameRef} className="relative min-h-[360px] flex-1 overflow-hidden rounded-xl border border-[#ece8f1]" style={{ background: SEA }}
           onMouseLeave={() => setHover(null)}>
           <svg
             ref={svgRef}
@@ -238,7 +238,7 @@ export function AreaSection({ areas, unmapped, orders, days, enoughData, product
             preserveAspectRatio="xMidYMid meet"
             role="img"
             aria-label={`Map of delivery areas by ${LAYER[layer].label.toLowerCase()}. The Top areas list has the same figures.`}
-            className="size-full cursor-grab touch-none select-none active:cursor-grabbing"
+            className="absolute inset-0 size-full cursor-grab touch-none select-none active:cursor-grabbing"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -400,7 +400,7 @@ function TopAreas({ places, level, onLevel, chosen, onPick, days, favourites, pr
           </div>
           <p className="text-xs text-[#71717a]">Orders by delivery area, compared with {days === 7 ? "the week" : "the 30 days"} before, with each area&apos;s favourite product.</p>
           {ranked.length === 0 ? (
-            <p className="text-sm text-[#71717a]">No areas to rank yet. Rankings appear once there are enough orders.</p>
+            <p className="m-auto text-center text-sm text-[#71717a]">No areas to rank yet. Rankings appear once there are enough orders.</p>
           ) : (
             <ol className="flex flex-col">
               {ranked.map((place, index) => {
@@ -459,7 +459,7 @@ export function AreaSectionSkeleton() {
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
       <section aria-label="Where it's happening" className="flex flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4">
         <h2 className="text-[15px] font-semibold text-[#18181b]">Where it&apos;s happening</h2>
-        <div className="h-[320px] animate-pulse rounded-xl bg-[#f4f4f5] sm:h-[360px]" />
+        <div className="min-h-[360px] flex-1 animate-pulse rounded-xl bg-[#f4f4f5]" />
       </section>
       <section aria-label="Top areas" className="flex flex-col gap-3 rounded-2xl border border-[#e6e1ee] bg-white px-5 py-4">
         <h2 className="text-[15px] font-semibold text-[#18181b]">Top areas</h2>
