@@ -13,17 +13,12 @@ import {
   CATEGORY_LABELS, CONFIDENCE_LABELS, PRIORITY_LABELS, type Category, type Confidence, type Insight, type PeriodDays, type Priority,
 } from "./insights";
 import type { EvidenceRecord } from "./store";
+import { TABS, type Tab } from "./view-model";
 
 const ENDPOINT = "/api/dashboard/ai-insights";
-export const TABS: ("all" | Category)[] = ["all", "stock", "payments", "support", "returns", "delivery", "feedback"];
 const ICONS: Record<Category, typeof Package> = {
   stock: Package, payments: CreditCard, support: LifeBuoy, returns: RotateCcw, delivery: Truck, feedback: Star,
 };
-
-/** The tab a `?category=` link opens; anything else opens All. */
-export function tabFor(category: string | undefined): (typeof TABS)[number] {
-  return TABS.find((t) => t === category) ?? "all";
-}
 const PRIORITY_STYLE: Record<Priority, string> = {
   high: "bg-[#fef2f2] text-[#b91c1c]", watch: "bg-[#fffbeb] text-[#b45309]", info: "bg-[#f4f4f5] text-[#52525b]",
 };
@@ -52,15 +47,15 @@ async function send(payload: Record<string, unknown>) {
  */
 export function InsightGrid({ initial, days, answers: initialAnswers, enoughData, waiting, initialTab = "all" }: {
   initial: Insight[]; days: PeriodDays; answers: Record<string, boolean>; enoughData: boolean; waiting?: boolean;
-  initialTab?: (typeof TABS)[number];
+  initialTab?: Tab;
 }) {
   const [cards, setCards] = useState(initial);
-  const [tab, setTab] = useState<(typeof TABS)[number]>(initialTab);
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Insight | null>(null);
   const [answers, setAnswers] = useState(initialAnswers);
 
-  const count = (t: (typeof TABS)[number]) => (t === "all" ? cards.length : cards.filter((c) => c.category === t).length);
+  const count = (t: Tab) => (t === "all" ? cards.length : cards.filter((c) => c.category === t).length);
   const shown = tab === "all" ? cards : cards.filter((c) => c.category === tab);
 
   async function dismiss(card: Insight) {

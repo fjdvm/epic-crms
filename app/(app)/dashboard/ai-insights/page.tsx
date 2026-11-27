@@ -3,12 +3,12 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AreaSection, AreaSectionSkeleton } from "@/features/ai-insights/area-map";
-import { InsightGrid, InsightGridSkeleton, tabFor, type TABS } from "@/features/ai-insights/insight-grid";
+import { InsightGrid, InsightGridSkeleton } from "@/features/ai-insights/insight-grid";
 import { AI_INSIGHTS_MODULES, emptyStats, type PeriodDays } from "@/features/ai-insights/insights";
 import { loadLatestRun } from "@/features/ai-insights/run";
 import { Brief, HowThisWorks, StatRow, StatRowSkeleton } from "@/features/ai-insights/sections";
 import { viewerState, visibleInsights } from "@/features/ai-insights/store";
-import { updatedLabel, visibleStats } from "@/features/ai-insights/view-model";
+import { tabFor, updatedLabel, visibleStats, type Tab } from "@/features/ai-insights/view-model";
 import { DashboardExportButton } from "@/features/dashboard/export-button";
 import { PeriodNavigation, PeriodPicker } from "@/features/dashboard/period-navigation";
 import { UnusualActivityCards } from "@/features/dashboard/unusual-activity-cards";
@@ -33,7 +33,7 @@ function Unavailable() {
 }
 
 /** Reads the stored morning run, and this person's dismissals and answers. Never works anything out and never calls a model. */
-async function Body({ staff, days, tab }: { staff: Staff; days: PeriodDays; tab: (typeof TABS)[number] }) {
+async function Body({ staff, days, tab }: { staff: Staff; days: PeriodDays; tab: Tab }) {
   const crms = crmsDatabase();
   const [run, modules] = await Promise.all([loadLatestRun(crms, days).catch(() => undefined), heldModules(AI_INSIGHTS_MODULES)]);
   if (run === undefined) return <Unavailable />;

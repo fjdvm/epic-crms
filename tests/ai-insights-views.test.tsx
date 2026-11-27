@@ -11,7 +11,8 @@ vi.mock("next/link", () => ({
 }));
 
 import { AreaSection, VIEWS } from "@/features/ai-insights/area-map";
-import { InsightGrid, tabFor } from "@/features/ai-insights/insight-grid";
+import { InsightGrid } from "@/features/ai-insights/insight-grid";
+import { tabFor } from "@/features/ai-insights/view-model";
 import { emptyStats, type AreaFigures, type Insight, type ProductFigures } from "@/features/ai-insights/insights";
 import { Brief, StatRow } from "@/features/ai-insights/sections";
 
