@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 
+import { DEFAULT_PRODUCT_IMAGE } from "@/lib/brand-images";
 import { cn } from "@/lib/utils";
 import { ZoomableImage } from "@/components/zoomable-image";
-
-/** Shown for a product with no image, or one whose image fails to load. */
-export const DEFAULT_PRODUCT_IMAGE = "/images/brand/default-product.png";
 
 /**
  * A product's image, filling its tile. A click zooms a real image. With no image, or one that fails to load,

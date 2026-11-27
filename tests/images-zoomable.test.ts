@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 /** Raw <img> is allowed only where the image is not a photo to inspect. */
 const ALLOWED = [
   "components/zoomable-image.tsx",
+  // The photo behind ZoomableImage and the viewers, with the brand logo while it loads.
+  "components/loading-image.tsx",
   "components/image-viewer.tsx",
   "components/brand/brand-lockup.tsx",
   // The brand-logo placeholder for a product with no image; real product images still zoom.

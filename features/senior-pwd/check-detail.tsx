@@ -6,8 +6,10 @@ import { Check, IdCard, Lock, ScanSearch, Sparkles, TriangleAlert } from "lucide
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ImageViewer } from "@/components/image-viewer";
+import { LoadingImage } from "@/components/loading-image";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DEFAULT_PRODUCT_IMAGE } from "@/lib/brand-images";
 import { OrderActionDialog } from "@/features/orders/action-dialog";
 import { APPROVALS_ID_CHECKS } from "@/lib/portal/pages";
 import type { ShopRole } from "@/lib/portal/roles";
@@ -33,8 +35,7 @@ function PhotoCard({ v, photos }: { v: Verification; photos: Photos | { error: s
     : [];
   const picture = (side: number) => (
     <button type="button" aria-label={`Zoom ${sides[side].caption}`} onClick={() => setViewing(side)} className="cursor-zoom-in">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={sides[side].url} alt={sides[side].caption} className="max-h-96 w-full object-contain" />
+      <LoadingImage src={sides[side].url} alt={sides[side].caption} className="max-h-96 w-full object-contain" />
     </button>
   );
   return (
@@ -45,7 +46,12 @@ function PhotoCard({ v, photos }: { v: Verification; photos: Photos | { error: s
           <Lock aria-hidden className="size-3" /> Deleted after review
         </span>
       </div>
-      {photos === null && <div role="status" aria-label="Loading ID photo" className="h-72 animate-pulse rounded-lg bg-[#f1edf6]" />}
+      {photos === null && (
+        <div role="status" aria-label="Loading ID photo" className={frame}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- small static placeholder */}
+          <img src={DEFAULT_PRODUCT_IMAGE} alt="" className="max-h-40 max-w-xs animate-pulse object-contain" />
+        </div>
+      )}
       {photos && "error" in photos && (
         <div className={frame}>
           <p role="alert" className="max-w-xs px-4 py-8 text-center text-[13px] text-[#6e6680]">{photos.error}</p>

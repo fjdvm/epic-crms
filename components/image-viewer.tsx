@@ -13,6 +13,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { LoadingImage } from "@/components/loading-image";
 
 import { initials } from "@/features/tickets/initials";
 
@@ -190,8 +191,9 @@ export function ImageViewer({
                 <ChevronLeft aria-hidden className="size-5" />
               </button>
             )}
-            {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed address */}
-            <img
+            <LoadingImage
+              key={image.id}
+              placeholderClassName="rounded-md bg-white p-4"
               src={image.url}
               alt={
                 image.senderName
@@ -237,8 +239,8 @@ export function ImageViewer({
                         : "border-transparent opacity-60",
                     )}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <LoadingImage
+                      placeholderClassName="bg-white"
                       src={other.url}
                       alt=""
                       className="size-full object-cover"

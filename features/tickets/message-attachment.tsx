@@ -1,3 +1,4 @@
+import { LoadingImage } from "@/components/loading-image";
 import { ZoomableImage } from "@/components/zoomable-image";
 import { FileText } from "lucide-react";
 
@@ -55,8 +56,7 @@ export function MessageAttachment({
   if (onOpenImage)
     return (
       <button type="button" aria-label={`Open image from ${message.senderName}`} onClick={onOpenImage} className="block cursor-zoom-in">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt={`Image attached by ${message.senderName}`} className={imageClassName} />
+        <LoadingImage src={url} alt={`Image attached by ${message.senderName}`} className={imageClassName} />
       </button>
     );
 
